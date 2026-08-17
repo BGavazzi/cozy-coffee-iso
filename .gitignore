@@ -1,0 +1,8 @@
+# generated assets / working files
+out/
+batch_runs/
+*.psd
+*.aseprite~
+__pycache__/
+.venv/
+venv/
