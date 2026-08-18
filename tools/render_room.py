@@ -18,8 +18,8 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent))
 import assetlib as A  # noqa: E402
-from isorender import DimetricCamera, dot  # noqa: E402
-from mesh import rasterize  # noqa: E402
+from isorender import DimetricCamera, camera_light, dot  # noqa: E402
+from mesh import ShadowMap, rasterize  # noqa: E402
 from pixelize import (  # noqa: E402
     apply_outline, downsample_modal, load_palette, shade_toon,
 )
@@ -102,6 +102,7 @@ def main() -> int:
     ap.add_argument("--factor", type=int, default=3)
     ap.add_argument("--azimuth", type=float, default=45.0)
     ap.add_argument("--out", default=str(ROOT / "proof" / "shop.png"))
+    ap.add_argument("--no-shadows", action="store_true")
     args = ap.parse_args()
 
     mesh = build_room()
@@ -114,7 +115,12 @@ def main() -> int:
     size = args.target * args.factor
     ramps = load_palette()
     print(f"rasterizing {size}x{size} -> {args.target}x{args.target} ...")
-    mat, lam, _ = rasterize(mesh, cam, size, target=centre)
+    sm = None
+    if not args.no_shadows:
+        print("building shadow map ...")
+        sm = ShadowMap(mesh, camera_light(cam), res=768)
+    mat, lam, _ = rasterize(mesh, cam, size, target=centre, shadows=sm,
+                            fill=0.0 if args.no_shadows else 0.16)
 
     px = downsample_modal(shade_toon(mat, lam, size, ramps, dither=True),
                           size, args.factor)

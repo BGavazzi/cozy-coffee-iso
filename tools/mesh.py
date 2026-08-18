@@ -134,10 +134,74 @@ def save_obj(mesh: Mesh, path: Path | str) -> None:
 
 # --- rasterizer --------------------------------------------------------------
 
+class ShadowMap:
+    """Orthographic depth buffer rendered from the key light.
+
+    Cast shadows are not decoration here. Every isometric reference names them as
+    the primary device that grounds an object to the floor, and without them
+    props read as floating. They also fix a measured defect: with only
+    axis-aligned faces the lambert term is bimodal, so a 7-step ramp collapses to
+    about 3 used steps. Shadow gives the mid and dark steps something to describe.
+    """
+
+    def __init__(self, mesh: Mesh, light: Vec, res: int = 512):
+        self.dir = light
+        up = (0.0, 0.0, 1.0) if abs(light[2]) < 0.99 else (0.0, 1.0, 0.0)
+        self.right = norm(cross(up, light))
+        self.up = norm(cross(light, self.right))
+        us = [dot(v, self.right) for v in mesh.verts]
+        vs = [dot(v, self.up) for v in mesh.verts]
+        self.u0, self.v0 = min(us), min(vs)
+        pad = 1e-3
+        self.su = (max(us) - self.u0) + pad
+        self.sv = (max(vs) - self.v0) + pad
+        self.res = res
+        self.depth = [-1e30] * (res * res)
+
+        for tri, _, _ in mesh.faces:
+            a, b, c = (mesh.verts[i] for i in tri)
+            pa, pb, pc = (self._project(p) for p in (a, b, c))
+            area = ((pb[0] - pa[0]) * (pc[1] - pa[1]) -
+                    (pb[1] - pa[1]) * (pc[0] - pa[0]))
+            if abs(area) < 1e-12:
+                continue
+            x0 = max(0, int(min(pa[0], pb[0], pc[0])))
+            x1 = min(res - 1, int(max(pa[0], pb[0], pc[0])) + 1)
+            y0 = max(0, int(min(pa[1], pb[1], pc[1])))
+            y1 = min(res - 1, int(max(pa[1], pb[1], pc[1])) + 1)
+            for py in range(y0, y1 + 1):
+                fy = py + 0.5
+                for px in range(x0, x1 + 1):
+                    fx = px + 0.5
+                    w0 = ((pb[0]-pa[0])*(fy-pa[1]) - (pb[1]-pa[1])*(fx-pa[0])) / area
+                    w1 = ((pc[0]-pb[0])*(fy-pb[1]) - (pc[1]-pb[1])*(fx-pb[0])) / area
+                    w2 = 1.0 - w0 - w1
+                    if w0 < -1e-9 or w1 < -1e-9 or w2 < -1e-9:
+                        continue
+                    z = pa[2] * w1 + pb[2] * w2 + pc[2] * w0
+                    i = py * res + px
+                    if z > self.depth[i]:
+                        self.depth[i] = z
+
+    def _project(self, p: Vec):
+        return ((dot(p, self.right) - self.u0) / self.su * self.res,
+                (dot(p, self.up) - self.v0) / self.sv * self.res,
+                dot(p, self.dir))
+
+    def lit(self, p: Vec, bias: float = 0.012) -> bool:
+        x, y, z = self._project(p)
+        ix, iy = int(x), int(y)
+        if not (0 <= ix < self.res and 0 <= iy < self.res):
+            return True
+        return z + bias >= self.depth[iy * self.res + ix]
+
+
 def rasterize(mesh: Mesh, cam: DimetricCamera, size: int,
-              target: Vec = (0.0, 0.0, 0.62), smooth: bool = False):
+              target: Vec = (0.0, 0.0, 0.62), smooth: bool = False,
+              shadows: "ShadowMap | None" = None, fill: float = 0.0):
     """Orthographic scanline z-buffer. Returns (material, lambert, normal)."""
     light = camera_light(cam)
+    fill_dir = norm((-light[0], -light[1], abs(light[2]) * 0.5 + 0.3))
     inv = size / (2.0 * cam.span)
 
     mat: list[str | None] = [None] * (size * size)
@@ -199,7 +263,16 @@ def rasterize(mesh: Mesh, cam: DimetricCamera, size: int,
                     n = mul(n, -1.0)
                 mat[i] = material
                 nrm[i] = n
-                lam[i] = min(1.0, 0.10 + 0.92 * max(0.0, dot(n, light)))
+
+                key = max(0.0, dot(n, light))
+                if shadows is not None and key > 0.0:
+                    world = add(add(mul(a, w1), mul(b, w2)), mul(c, w0))
+                    if not shadows.lit(world):
+                        key *= 0.18          # in shadow: keep a little bounce
+                # A weak opposing fill lifts the fully-turned-away face off the
+                # bottom of the ramp, so mid steps get used instead of clamping.
+                amb = fill * max(0.0, dot(n, fill_dir))
+                lam[i] = min(1.0, 0.10 + 0.80 * key + amb)
     return mat, lam, nrm
 
 
