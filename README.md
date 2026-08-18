@@ -1,33 +1,79 @@
 # cozy-coffee-iso
 
-Design and technical spec for an **isometric pixel-art cozy coffee shop sim**, plus the
-asset-generation pipeline that has to feed it.
+An **automated factory for 2D game sprites**, driven by a clear art direction —
+with humans doing the part that cannot be automated: critiquing whether the
+output actually looks good.
 
-The interesting problem here isn't the game — it's that "usable sprite" is a *technical
-contract*, not an aesthetic one: fixed canvas, footprint-anchored pivot, 1-bit alpha,
-locked palette, one light direction, consistent 2:1 dimetric projection. Diffusion
-models are natively bad at every one of those. So the architecture separates the two
-concerns: **generation decides appearance, and a deterministic stage enforces spec**,
-with an auto-reject gate between them.
+Art stops being the constraint once this works. Content becomes the constraint,
+which is the point.
+
+## The division of labour
+
+| | owns | why |
+|---|---|---|
+| **Factory** | every sprite, every direction, every frame | volume |
+| **Automated review** | spec conformance | cheap, exhaustive, deterministic |
+| **Humans** | *does it look good* | not automatable, and the entire point |
+
+## Run it
+
+    pip install -r tools/requirements.txt
+
+    python tools/render_batch.py                        # generate a direction set
+    python tools/review_queue.py build "sprites/*.png"   # auto-review + contact sheet
+    # fill verdict + reason in review/verdicts.jsonl
+    python tools/review_queue.py stats                   # what to automate next
+
+## The loop is a ratchet
+
+Every human rejection carries a reason. Reasons that recur get promoted into the
+automated tier, so **human review volume falls as the factory matures**. `stats`
+names the next check to write rather than leaving it to guesswork.
+
+This has already happened once. The first batch rotated the camera with a
+world-fixed light, so the lit face drifted around the object between directions.
+Every frame was individually valid — no per-sprite check could catch it — but it
+was obvious to a person scanning the contact sheet. The fix was conceptual: in an
+isometric game the camera is fixed and the *object* rotates, so the key light
+belongs in the camera basis. That finding is now an automated check and will
+never need a human again.
+
+## Why generation goes through 3D
+
+2D diffusion plus post-processing fails projection consistency, direction
+coherence and frame-to-frame coherence *structurally*. All three are normally
+fixed by a human retouching frames — exactly the cost a factory exists to remove.
+So correctness is made structural instead: model once, render deterministically
+across 8 azimuths. Diablo 2 and Age of Empires 2 solved it this way for the same
+reason.
+
+Projection is verified, not assumed: a ground-plane unit square measures
+`0.500000000000` — exactly 2:1 dimetric.
 
 ## What's here
 
-- **[ASSET_SPEC.md](ASSET_SPEC.md)** — the full thing:
-  - Projection and palette decisions, and why 2:1 dimetric rather than true isometric
-  - Complete asset manifest (~250 assets, ~130 animation frames) with frame-count math
-  - Per-asset technical contract (§5) and the conformance auto-reject gate (§6)
-  - An honest read on where AI generation actually helps and where it loses to doing it by hand (§7)
+- **[PIPELINE.md](PIPELINE.md)** — the nine stages, what is built, what is not
+- **[ASSET_SPEC.md](ASSET_SPEC.md)** — the rubric: projection, palette, per-asset contract
+- **[style_bible.yaml](style_bible.yaml)** — the art direction, as an **input**.
+  Swap it to retarget the factory at a different game.
+- **`tools/`** — renderer, pixelizer, palette forge, reviewer, review queue
 
-## Status
+## Art direction (case study one)
 
-Spec only — no pipeline code yet. Four open decisions are listed at the end of the spec;
-they're what blocks building.
+Studio Ghibli colour sensibility through 16-bit pixel-art constraints — expressly
+*not* the soft-rendered diffusion "Ghibli filter", whose gradients and diffuse
+edges are exactly what a locked palette and 1-bit alpha destroy. The precedent is
+SNES-era JRPG background art, which already borrowed Ghibli's palette and light
+while staying inside pixel-art limits.
 
-## The short version, if you only read one thing
+The 40-colour palette is **computed in OKLab, not hand-picked**, so two properties
+are provable rather than hoped for: every pair survives quantization distinctly,
+and the warm-light / cool-shadow hue shift — the rule doing most of the "Ghibli"
+work — is a parameter that cannot be forgotten on asset 180.
 
-Point AI generation at the ~200 static *variations* (the 40th chair, customer outfit
-recolors, texture variants), not at the ~130 animation frames. At 48–64 px, one pixel of
-frame-to-frame jitter reads as noise, and no current model holds sub-pixel temporal
-coherence at that scale. Animate by hand.
+    python tools/palette_forge.py     # exits non-zero on constraint failure
 
-That makes this a **variation engine with a hard conformance gate**, not a sprite generator.
+Loads into Aseprite via `palette/palette.gpl`.
+
+A coffee shop interior was chosen deliberately: it exercises wood, ceramic,
+foliage, fabric and skin — most of the material range a 2D game needs.

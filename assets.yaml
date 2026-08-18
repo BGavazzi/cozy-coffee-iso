@@ -1,0 +1,170 @@
+# Asset manifest for the cozy coffee shop. Consumed by tools/manifest.py.
+#
+# Fields
+#   id    unique slug, becomes the sprite filename stem
+#   cat   category
+#   fp    footprint in tile units [width, depth]
+#   h     height in tile units (drives camera framing)
+#   mat   palette ramps the asset draws from (see style_bible.yaml)
+#   sym   rotational symmetry: radial | 4fold | 2fold | none
+#         -> determines how many of the 8 azimuths are actually distinct.
+#            A round table needs 1 render, a square crate 2, a chair 8.
+#            This is the single largest saving in the whole render budget.
+#   prio  1 = needed for a playable vertical slice, 2 = fills the room out,
+#         3 = variety and polish
+#   clips animation clips (characters and FX only); frames per clip
+
+room:
+  tiles: [14, 10]
+  tile_px: [64, 32]
+
+# --- Tiles ------------------------------------------------------------------
+tiles:
+  - {id: floor_wood_plank,    cat: floor, fp: [1,1], h: 0,   mat: [wood],           sym: 2fold, prio: 1}
+  - {id: floor_wood_worn,     cat: floor, fp: [1,1], h: 0,   mat: [wood],           sym: 2fold, prio: 2}
+  - {id: floor_tile_check,    cat: floor, fp: [1,1], h: 0,   mat: [cream, neutral], sym: 4fold, prio: 1}
+  - {id: floor_tile_hex,      cat: floor, fp: [1,1], h: 0,   mat: [cream, sky],     sym: 4fold, prio: 3}
+  - {id: floor_concrete,      cat: floor, fp: [1,1], h: 0,   mat: [neutral],        sym: 4fold, prio: 2}
+  - {id: floor_rug_round,     cat: floor, fp: [2,2], h: 0,   mat: [rose, wood],     sym: radial, prio: 2}
+  - {id: floor_rug_runner,    cat: floor, fp: [3,1], h: 0,   mat: [rose, cream],    sym: 2fold, prio: 3}
+  - {id: wall_plaster,        cat: wall,  fp: [1,0], h: 1.5, mat: [cream],          sym: 2fold, prio: 1}
+  - {id: wall_wainscot,       cat: wall,  fp: [1,0], h: 1.5, mat: [wood, cream],    sym: 2fold, prio: 1}
+  - {id: wall_brick,          cat: wall,  fp: [1,0], h: 1.5, mat: [rose, neutral],  sym: 2fold, prio: 2}
+  - {id: wall_corner_inner,   cat: wall,  fp: [1,1], h: 1.5, mat: [cream],          sym: none,  prio: 1}
+  - {id: wall_corner_outer,   cat: wall,  fp: [1,1], h: 1.5, mat: [cream],          sym: none,  prio: 1}
+  - {id: wall_door,           cat: wall,  fp: [1,0], h: 1.5, mat: [wood, sky],      sym: 2fold, prio: 1}
+  - {id: wall_window,         cat: wall,  fp: [1,0], h: 1.5, mat: [wood, sky],      sym: 2fold, prio: 1}
+  - {id: wall_window_wide,    cat: wall,  fp: [2,0], h: 1.5, mat: [wood, sky],      sym: 2fold, prio: 2}
+  - {id: wall_shelf_niche,    cat: wall,  fp: [1,0], h: 1.5, mat: [wood, cream],    sym: 2fold, prio: 3}
+
+# --- Props ------------------------------------------------------------------
+props:
+  # service equipment
+  - {id: espresso_machine_2group, cat: service, fp: [2,1], h: 1.1, mat: [neutral, wood],   sym: none,  prio: 1}
+  - {id: espresso_machine_1group, cat: service, fp: [1,1], h: 1.0, mat: [neutral, wood],   sym: none,  prio: 3}
+  - {id: grinder_burr,        cat: service, fp: [1,1], h: 0.9, mat: [neutral, wood],   sym: none,  prio: 1}
+  - {id: grinder_hand,        cat: service, fp: [1,1], h: 0.5, mat: [wood, neutral],   sym: radial, prio: 3}
+  - {id: drip_brewer,         cat: service, fp: [1,1], h: 0.8, mat: [neutral, cream],  sym: none,  prio: 2}
+  - {id: pourover_stand,      cat: service, fp: [1,1], h: 0.7, mat: [wood, cream],     sym: none,  prio: 2}
+  - {id: kettle_gooseneck,    cat: service, fp: [1,1], h: 0.4, mat: [neutral],         sym: none,  prio: 2}
+  - {id: pastry_case,         cat: service, fp: [2,1], h: 1.0, mat: [wood, cream],     sym: 2fold, prio: 1}
+  - {id: register_till,       cat: service, fp: [1,1], h: 0.5, mat: [neutral, wood],   sym: none,  prio: 1}
+  - {id: sink_double,         cat: service, fp: [2,1], h: 0.9, mat: [neutral],         sym: 2fold, prio: 2}
+  - {id: fridge_under,        cat: service, fp: [1,1], h: 0.9, mat: [neutral],         sym: 2fold, prio: 2}
+  - {id: ice_machine,         cat: service, fp: [1,1], h: 1.0, mat: [neutral],         sym: 2fold, prio: 3}
+  - {id: cup_warmer,          cat: service, fp: [1,1], h: 0.3, mat: [neutral, cream],  sym: 2fold, prio: 3}
+  - {id: bean_hopper,         cat: service, fp: [1,1], h: 0.6, mat: [neutral, wood],   sym: radial, prio: 3}
+
+  # counters and structure
+  - {id: counter_straight,    cat: counter, fp: [1,1], h: 0.9, mat: [wood],           sym: 2fold, prio: 1}
+  - {id: counter_corner_l,    cat: counter, fp: [1,1], h: 0.9, mat: [wood],           sym: none,  prio: 1}
+  - {id: counter_corner_r,    cat: counter, fp: [1,1], h: 0.9, mat: [wood],           sym: none,  prio: 1}
+  - {id: counter_end,         cat: counter, fp: [1,1], h: 0.9, mat: [wood],           sym: none,  prio: 1}
+  - {id: counter_pass,        cat: counter, fp: [1,1], h: 0.9, mat: [wood, cream],    sym: none,  prio: 2}
+  - {id: bar_top_window,      cat: counter, fp: [3,1], h: 0.9, mat: [wood],           sym: 2fold, prio: 2}
+  - {id: shelf_wall,          cat: counter, fp: [2,0], h: 0.6, mat: [wood],           sym: 2fold, prio: 2}
+  - {id: shelf_tall,          cat: counter, fp: [1,1], h: 1.6, mat: [wood],           sym: none,  prio: 2}
+
+  # seating and tables
+  - {id: table_2top_round,    cat: seating, fp: [1,1], h: 0.7, mat: [wood],           sym: radial, prio: 1}
+  - {id: table_2top_square,   cat: seating, fp: [1,1], h: 0.7, mat: [wood],           sym: 4fold, prio: 2}
+  - {id: table_4top,          cat: seating, fp: [2,1], h: 0.7, mat: [wood],           sym: 2fold, prio: 1}
+  - {id: table_communal,      cat: seating, fp: [4,2], h: 0.7, mat: [wood],           sym: 2fold, prio: 3}
+  - {id: chair_wood,          cat: seating, fp: [1,1], h: 0.9, mat: [wood],           sym: none,  prio: 1}
+  - {id: chair_metal,         cat: seating, fp: [1,1], h: 0.9, mat: [neutral, wood],  sym: none,  prio: 3}
+  - {id: chair_cushioned,     cat: seating, fp: [1,1], h: 0.9, mat: [wood, rose],     sym: none,  prio: 2}
+  - {id: stool_bar,           cat: seating, fp: [1,1], h: 0.8, mat: [wood, neutral],  sym: radial, prio: 2}
+  - {id: stool_low,           cat: seating, fp: [1,1], h: 0.4, mat: [wood],           sym: radial, prio: 3}
+  - {id: sofa_2seat,          cat: seating, fp: [2,1], h: 0.8, mat: [rose, wood],     sym: none,  prio: 2}
+  - {id: armchair,            cat: seating, fp: [1,1], h: 0.8, mat: [rose, wood],     sym: none,  prio: 2}
+  - {id: booth_bench,         cat: seating, fp: [2,1], h: 1.0, mat: [rose, wood],     sym: none,  prio: 3}
+
+  # dressing and decor
+  - {id: plant_monstera,      cat: decor, fp: [1,1], h: 1.3, mat: [foliage, rose], sym: none, prio: 1}
+  - {id: plant_fern,          cat: decor, fp: [1,1], h: 0.7, mat: [foliage, wood],    sym: none,  prio: 2}
+  - {id: plant_succulent,     cat: decor, fp: [1,1], h: 0.25, mat: [foliage, cream],  sym: radial, prio: 2}
+  - {id: plant_hanging,       cat: decor, fp: [1,1], h: 0.8, mat: [foliage, wood],    sym: none,  prio: 3}
+  - {id: bookshelf,           cat: decor, fp: [1,1], h: 1.5, mat: [wood, rose],       sym: none,  prio: 2}
+  - {id: menu_chalkboard,     cat: decor, fp: [1,0], h: 0.9, mat: [wood, neutral],    sym: 2fold, prio: 1}
+  - {id: menu_wall_board,     cat: decor, fp: [2,0], h: 0.7, mat: [wood, cream],      sym: 2fold, prio: 2}
+  - {id: wall_art_framed,     cat: decor, fp: [1,0], h: 0.5, mat: [wood, sky],        sym: 2fold, prio: 2}
+  - {id: wall_clock,          cat: decor, fp: [1,0], h: 0.3, mat: [wood, cream],      sym: 2fold, prio: 2}
+  - {id: lamp_pendant,        cat: decor, fp: [1,1], h: 0.5, mat: [neutral, lamp_glow],   sym: radial, prio: 1}
+  - {id: lamp_floor,          cat: decor, fp: [1,1], h: 1.4, mat: [neutral, lamp_glow],   sym: radial, prio: 3}
+  - {id: lamp_table,          cat: decor, fp: [1,1], h: 0.4, mat: [wood, lamp_glow],      sym: radial, prio: 3}
+  - {id: coat_rack,           cat: decor, fp: [1,1], h: 1.5, mat: [wood, rose],       sym: none,  prio: 3}
+  - {id: crate_stack,         cat: decor, fp: [1,1], h: 0.9, mat: [wood],             sym: 4fold, prio: 2}
+  - {id: chalkboard_easel,    cat: decor, fp: [1,1], h: 1.1, mat: [wood, neutral],    sym: none,  prio: 3}
+  - {id: bin_waste,           cat: decor, fp: [1,1], h: 0.6, mat: [neutral, wood],    sym: radial, prio: 3}
+
+  # small props
+  - {id: cup_espresso,        cat: small, fp: [1,1], h: 0.1, mat: [cream],            sym: radial, prio: 1}
+  - {id: cup_latte,           cat: small, fp: [1,1], h: 0.15, mat: [cream],           sym: radial, prio: 1}
+  - {id: cup_togo,            cat: small, fp: [1,1], h: 0.2, mat: [cream, wood],      sym: radial, prio: 1}
+  - {id: mug_ceramic,         cat: small, fp: [1,1], h: 0.15, mat: [cream, rose],     sym: none,  prio: 2}
+  - {id: saucer,              cat: small, fp: [1,1], h: 0.03, mat: [cream],           sym: radial, prio: 1}
+  - {id: teapot,              cat: small, fp: [1,1], h: 0.25, mat: [cream, rose],     sym: none,  prio: 3}
+  - {id: milk_jug,            cat: small, fp: [1,1], h: 0.2, mat: [neutral],          sym: none,  prio: 2}
+  - {id: sugar_caddy,         cat: small, fp: [1,1], h: 0.15, mat: [wood, cream],     sym: 4fold, prio: 2}
+  - {id: napkin_holder,       cat: small, fp: [1,1], h: 0.15, mat: [neutral, cream],  sym: 2fold, prio: 3}
+  - {id: tip_jar,             cat: small, fp: [1,1], h: 0.2, mat: [cream, gold_coin],      sym: radial, prio: 2}
+  - {id: laptop_open,         cat: small, fp: [1,1], h: 0.2, mat: [neutral],          sym: none,  prio: 2}
+  - {id: book_stack,          cat: small, fp: [1,1], h: 0.15, mat: [rose, cream],     sym: none,  prio: 3}
+  - {id: bean_sack,           cat: small, fp: [1,1], h: 0.5, mat: [wood, cream],      sym: none,  prio: 2}
+  - {id: pastry_plate,        cat: small, fp: [1,1], h: 0.1, mat: [cream, wood],      sym: radial, prio: 2}
+
+# --- Characters -------------------------------------------------------------
+# One base rig per role. Archetypes are mesh + palette swaps sharing motion clips,
+# so archetype count multiplies render time but not authoring time.
+characters:
+  - id: barista_player
+    cat: character
+    fp: [1,1]
+    h: 1.7
+    mat: [wood, rose, cream, neutral]
+    sym: none
+    prio: 1
+    variants: 1
+    clips: {idle: 4, walk: 8, carry_walk: 8, brew: 6, wipe: 6, serve: 4, pour: 6, sit: 4}
+  - id: customer
+    cat: character
+    fp: [1,1]
+    h: 1.65
+    mat: [wood, rose, cream, foliage, sky, neutral]
+    sym: none
+    prio: 1
+    variants: 8
+    clips: {walk: 8, sit_idle: 4, sip: 4, wait_impatient: 4, talk: 4, leave: 8}
+
+# --- FX ---------------------------------------------------------------------
+# Rendered through the same camera path; loops must close exactly.
+fx:
+  - {id: fx_steam_cup,     cat: fx, fp: [1,1], h: 0.4, mat: [cream, sky],  sym: radial, prio: 1, clips: {loop: 4}}
+  - {id: fx_steam_machine, cat: fx, fp: [1,1], h: 0.5, mat: [cream, sky],  sym: none,   prio: 2, clips: {loop: 4}}
+  - {id: fx_pour_coffee,   cat: fx, fp: [1,1], h: 0.4, mat: [wood],        sym: none,   prio: 1, clips: {loop: 4}}
+  - {id: fx_pour_milk,     cat: fx, fp: [1,1], h: 0.4, mat: [cream],       sym: none,   prio: 2, clips: {loop: 4}}
+  - {id: fx_door_swing,    cat: fx, fp: [1,1], h: 1.5, mat: [wood, sky],   sym: none,   prio: 2, clips: {open: 4, close: 4}}
+  - {id: fx_ceiling_fan,   cat: fx, fp: [2,2], h: 0.2, mat: [wood],        sym: radial, prio: 3, clips: {loop: 4}}
+  - {id: fx_rain_window,   cat: fx, fp: [1,0], h: 1.5, mat: [sky],         sym: 2fold,  prio: 3, clips: {loop: 6}}
+  - {id: fx_order_ready,   cat: fx, fp: [1,1], h: 0.5, mat: [gold_coin, cream, accent_read], sym: radial, prio: 1, clips: {loop: 4}}
+  - {id: fx_coin_pickup,   cat: fx, fp: [1,1], h: 0.3, mat: [gold_coin],        sym: radial, prio: 2, clips: {once: 6}}
+  - {id: fx_hearts,        cat: fx, fp: [1,1], h: 0.4, mat: [rose],        sym: radial, prio: 2, clips: {once: 6}}
+
+# --- UI ---------------------------------------------------------------------
+# 2D only: no projection or footprint constraints apply, so sym is always radial
+# (one render) and these bypass the 3D stages entirely.
+ui:
+  - {id: ui_ticket,          cat: ui, prio: 1}
+  - {id: ui_icon_espresso,   cat: ui, prio: 1}
+  - {id: ui_icon_latte,      cat: ui, prio: 1}
+  - {id: ui_icon_cappuccino, cat: ui, prio: 2}
+  - {id: ui_icon_tea,        cat: ui, prio: 2}
+  - {id: ui_icon_pastry,     cat: ui, prio: 2}
+  - {id: ui_icon_cold_brew,  cat: ui, prio: 3}
+  - {id: ui_coin,            cat: ui, prio: 1}
+  - {id: ui_clock_day,       cat: ui, prio: 1}
+  - {id: ui_dialogue_frame,  cat: ui, prio: 1}
+  - {id: ui_nameplate,       cat: ui, prio: 2}
+  - {id: ui_upgrade_frame,   cat: ui, prio: 2}
+  - {id: ui_star_rating,     cat: ui, prio: 2}
+  - {id: ui_heart_mood,      cat: ui, prio: 3}

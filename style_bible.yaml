@@ -1,0 +1,118 @@
+# Style bible - the human-facing control surface for the whole pipeline.
+#
+# Everything downstream reads this file. Creative direction edits it; nothing
+# else. See PIPELINE.md section 7.
+
+art_direction:
+  target: >-
+    Studio Ghibli colour sensibility expressed through 16-bit pixel art
+    constraints. Not soft-rendered Ghibli - Ghibli's *colour science* filtered
+    through a locked palette and hard pixel edges.
+
+  precedent: >-
+    SNES-era JRPG backgrounds (Secret of Mana, Terranigma, Illusion of Gaia)
+    already solved this. They borrowed Ghibli's palette and light handling
+    directly while staying strictly within pixel-art constraints. That is the
+    reference point, not the diffusion "Ghibli filter" look.
+
+  # What we take from Ghibli, and what we deliberately do not.
+  adopt:
+    - warm light / cool shadow hue shifting (the single most defining rule)
+    - high-key value distribution; most of the frame sits in the upper mids
+    - modest chroma, peaking in mid-tones, never neon
+    - verdant greens, warm creams, sky blues, warm woods, muted terracotta
+    - almost never pure black or pure white
+  reject:
+    - soft airbrushed gradients      # destroyed by palette quantization
+    - diffuse edge falloff           # incompatible with 1-bit alpha
+    - painterly texture noise        # becomes dither mud at 64px
+  substitute:
+    gradients: ordered dithering between adjacent ramp steps
+    soft_edges: selective coloured outline, tinted per surface
+    atmosphere: value compression toward the ramp's light end, not blur
+
+# --- Palette ----------------------------------------------------------------
+# Ramps are generated in OKLab by tools/palette_forge.py, not hand-picked, so
+# perceptual spacing is provable rather than eyeballed.
+
+palette:
+  total_colours: 40
+  min_delta_e: 0.035          # below this two entries collapse under quantization
+
+  # Painterly hue-shift anchors. Shadows bend toward the cool anchor, highlights
+  # toward the warm one. This is what reads as "Ghibli" more than any hue choice.
+  hue_shift:
+    cool_anchor: 275          # violet-blue
+    warm_anchor: 85           # warm yellow
+    cool_amount: 0.24
+    warm_amount: 0.22
+
+  chroma_falloff: 0.26        # aggressive falloff makes all warm ramps converge at the light end
+
+  ramps:
+    # One wood ramp, not two. Two warm ramps 15deg apart with overlapping
+    # lightness always collide under quantization - the forge caught it.
+    # Also the skin ramp - wood_3..wood_6 are textbook flesh tones. Wood and
+    # skin are genuinely the same hue family, and at 40 colours the palette
+    # cannot afford to pretend otherwise: three separate warm ramps plus cream
+    # will not pack into a high-key, low-chroma gamut. The forge proved this
+    # across several attempts before the structure was changed.
+    wood:        { hue: 50,  steps: 7, lightness: [0.30, 0.90], chroma: 0.085 }
+    cream:       { hue: 85,  steps: 5, lightness: [0.72, 0.97], chroma: 0.040 }
+    # Ghibli greens are yellow-leaning and luminous, not teal. Floor kept off
+    # the very bottom so the dark end does not clip to a saturated pine.
+    foliage:     { hue: 150, steps: 6, lightness: [0.42, 0.88], chroma: 0.080 }
+    sky:         { hue: 235, steps: 7, lightness: [0.46, 0.94], chroma: 0.070 }
+    # Fabric, awnings, cushions, cups. cool_amount near zero: bending red
+    # toward violet gives plum, which reads as bruising wherever it touches
+    # skin-adjacent surfaces.
+    rose:        { hue: 14,  steps: 6, lightness: [0.50, 0.86], chroma: 0.115,
+                   cool_amount: 0.06 }
+    neutral:     { hue: 285, steps: 6, lightness: [0.26, 0.82], chroma: 0.022 }
+
+  # Spot colours outside the ramp system.
+  spot:
+    lamp_glow:     { hue: 90,  lightness: 0.935, chroma: 0.150 } # must out-glow any wood highlight
+    accent_read:   { hue: 15,  lightness: 0.62, chroma: 0.145 }  # UI / interactable
+    gold_coin:     { hue: 95,  lightness: 0.780, chroma: 0.160 } # currency, UI positive
+
+  constraints:
+    no_pure_black: true
+    no_pure_white: true
+    min_lightness: 0.15
+    max_lightness: 0.99
+    outline_source: neutral   # outline colour comes from the neutral ramp, never #000
+
+# --- Rendering conventions --------------------------------------------------
+
+rendering:
+  outline:
+    mode: selective           # not a uniform 1px keyline around everything
+    tint: true                # outline hue borrows from the surface it bounds
+    pure_black: false
+  dithering:
+    enabled: true
+    pattern: ordered_4x4
+    scope: adjacent_ramp_steps_only   # never dither across ramp families
+  shading:
+    ramp_steps_visible: true  # flat banding is the goal, not a defect
+    smooth_gradients: false
+
+# --- Resolved project decisions ---------------------------------------------
+
+decisions:
+  room_scale:
+    value: single_fixed_room
+    detail: 14 x 10 tiles, camera locked, no scrolling
+    rationale: >-
+      Agreed by both parties. Bounds the tile budget at ~40 and keeps the
+      furniture-rearrangement loop (the actual game) tile-based.
+  projection:
+    value: dimetric_2to1
+    detail: camera elevation 30deg (Blender RotX=60), RotZ=45+k*45
+  directions:
+    value: CONTESTED
+    detail: see README - 8 (project direction) vs 4 (Rafael). Blocking.
+  human_cleanup:
+    value: CONTESTED
+    detail: see README - excluded (project direction) vs acceptable (Rafael). Blocking.
