@@ -18,6 +18,7 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent))
 from isorender import AZIMUTH_STEP, DimetricCamera, coffee_scene, render  # noqa: E402
+from mesh import load_obj, rasterize  # noqa: E402
 from pixelize import (  # noqa: E402
     apply_outline, downsample_modal, load_palette, shade_toon,
 )
@@ -25,9 +26,15 @@ from pixelize import (  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def render_sprite(scene, azimuth, target, factor, ramps):
+def render_sprite(source, azimuth, target, factor, ramps, smooth=False):
+    """`source` is either an analytic Scene or a Mesh. Everything downstream of
+    the buffers is identical, which is the point: generation stages are pluggable."""
     size = target * factor
-    mat, lam, _ = render(scene, DimetricCamera(azimuth), size)
+    cam = DimetricCamera(azimuth)
+    if hasattr(source, "faces"):
+        mat, lam, _ = rasterize(source, cam, size, smooth=smooth)
+    else:
+        mat, lam, _ = render(source, cam, size)
 
     px = downsample_modal(shade_toon(mat, lam, size, ramps, dither=True), size, factor)
 
@@ -66,20 +73,30 @@ def main() -> int:
     ap.add_argument("--out", default=str(ROOT / "sprites"))
     ap.add_argument("--target", type=int, default=64)
     ap.add_argument("--factor", type=int, default=4)
+    ap.add_argument("--mesh", help="OBJ to render; omit to use the analytic test scene")
+    ap.add_argument("--name", default=None, help="asset name for output files")
+    ap.add_argument("--smooth", action="store_true", help="interpolate vertex normals")
     args = ap.parse_args()
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     ramps = load_palette()
-    scene = coffee_scene()
+    if args.mesh:
+        source = load_obj(args.mesh)
+        asset = args.name or Path(args.mesh).stem
+        print(f"mesh: {len(source.verts)} verts, {len(source.faces)} tris")
+    else:
+        source = coffee_scene()
+        asset = args.name or "crate_cup"
 
     manifest = []
     for k in range(8):
         az = 45.0 + k * AZIMUTH_STEP
-        img, px = render_sprite(scene, az, args.target, args.factor, ramps)
-        name = f"crate_cup_dir{k}.png"
+        img, px = render_sprite(source, az, args.target, args.factor, ramps,
+                                smooth=args.smooth)
+        name = f"{asset}_dir{k}.png"
         img.save(out / name)
-        manifest.append({"asset": "crate_cup", "direction": k, "azimuth": az,
+        manifest.append({"asset": asset, "direction": k, "azimuth": az,
                          "file": name, **(footprint(px, args.target) or {})})
         print(f"  dir{k}  az={az:5.1f}  {name}")
 

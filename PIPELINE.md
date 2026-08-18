@@ -142,7 +142,7 @@ foliage, fabric and skin — most of the material range a 2D game needs.
 | Stage | State |
 |---|---|
 | 1–4 (concept, mesh, rig, motion) | specified, tooling verified available, not built |
-| 5 (render) | working — `isorender.py`, exact 2:1, 8 azimuths, camera-space key |
+| 5 (render) | working — exact 2:1, 8 azimuths, camera-space key. **Consumes OBJ meshes** via `mesh.py`, or analytic primitives as a fixture |
 | 6 (pixelize) | working — `pixelize.py`, ramp-quantized, zero contamination |
 | 7 (metadata) | partial — pivot/footprint from silhouette; needs mesh bbox |
 | 8 (auto-review) | working — `art_review.py`, 7 checks + direction-set |

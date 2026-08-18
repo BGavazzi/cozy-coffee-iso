@@ -1,26 +1,26 @@
 [
   {
-    "asset": "crate_cup",
+    "asset": "meshcup",
     "direction": 0,
     "azimuth": 45.0,
-    "file": "crate_cup_dir0.png",
+    "file": "meshcup_dir0.png",
     "bbox": [
       9,
       16,
-      54,
+      53,
       56
     ],
     "pivot": [
       32,
       56
     ],
-    "coverage": 0.3245
+    "coverage": 0.3215
   },
   {
-    "asset": "crate_cup",
+    "asset": "meshcup",
     "direction": 1,
     "azimuth": 90.0,
-    "file": "crate_cup_dir1.png",
+    "file": "meshcup_dir1.png",
     "bbox": [
       16,
       16,
@@ -28,33 +28,33 @@
       53
     ],
     "pivot": [
-      32,
+      31,
       53
     ],
-    "coverage": 0.2783
+    "coverage": 0.2788
   },
   {
-    "asset": "crate_cup",
+    "asset": "meshcup",
     "direction": 2,
     "azimuth": 135.0,
-    "file": "crate_cup_dir2.png",
+    "file": "meshcup_dir2.png",
     "bbox": [
       9,
-      15,
-      54,
+      14,
+      53,
       56
     ],
     "pivot": [
       32,
       56
     ],
-    "coverage": 0.3186
+    "coverage": 0.3159
   },
   {
-    "asset": "crate_cup",
+    "asset": "meshcup",
     "direction": 3,
     "azimuth": 180.0,
-    "file": "crate_cup_dir3.png",
+    "file": "meshcup_dir3.png",
     "bbox": [
       16,
       16,
@@ -62,33 +62,33 @@
       53
     ],
     "pivot": [
-      32,
+      31,
       53
     ],
-    "coverage": 0.2786
+    "coverage": 0.2788
   },
   {
-    "asset": "crate_cup",
+    "asset": "meshcup",
     "direction": 4,
     "azimuth": 225.0,
-    "file": "crate_cup_dir4.png",
+    "file": "meshcup_dir4.png",
     "bbox": [
       9,
       16,
-      54,
+      53,
       56
     ],
     "pivot": [
       32,
       56
     ],
-    "coverage": 0.3237
+    "coverage": 0.3203
   },
   {
-    "asset": "crate_cup",
+    "asset": "meshcup",
     "direction": 5,
     "azimuth": 270.0,
-    "file": "crate_cup_dir5.png",
+    "file": "meshcup_dir5.png",
     "bbox": [
       16,
       16,
@@ -96,33 +96,33 @@
       53
     ],
     "pivot": [
-      32,
+      31,
       53
     ],
-    "coverage": 0.2705
+    "coverage": 0.2708
   },
   {
-    "asset": "crate_cup",
+    "asset": "meshcup",
     "direction": 6,
     "azimuth": 315.0,
-    "file": "crate_cup_dir6.png",
+    "file": "meshcup_dir6.png",
     "bbox": [
       9,
       16,
-      54,
+      53,
       56
     ],
     "pivot": [
       32,
       56
     ],
-    "coverage": 0.3174
+    "coverage": 0.3142
   },
   {
-    "asset": "crate_cup",
+    "asset": "meshcup",
     "direction": 7,
     "azimuth": 360.0,
-    "file": "crate_cup_dir7.png",
+    "file": "meshcup_dir7.png",
     "bbox": [
       16,
       16,
@@ -130,9 +130,9 @@
       53
     ],
     "pivot": [
-      32,
+      31,
       53
     ],
-    "coverage": 0.2705
+    "coverage": 0.2708
   }
 ]

@@ -1,8 +1,8 @@
-{"file": "sprites\\crate_cup_dir0.png", "auto": [], "worst": null, "verdict": "accept", "reason": null}
-{"file": "sprites\\crate_cup_dir1.png", "auto": [], "worst": null, "verdict": "reject", "reason": "crate top face too close in value to saucer - silhouette merges"}
-{"file": "sprites\\crate_cup_dir2.png", "auto": [{"severity": "note", "check": "ramp-coherence", "message": "ramps used by under 2% of pixels: foliage (5px)", "fix": "Often stray pixels rather than a choice. Harmless if intentional.", "where": null}], "worst": "note", "verdict": "accept", "reason": null}
-{"file": "sprites\\crate_cup_dir3.png", "auto": [], "worst": null, "verdict": "reject", "reason": "cup reads flat, needs a rim highlight"}
-{"file": "sprites\\crate_cup_dir4.png", "auto": [], "worst": null, "verdict": "accept", "reason": null}
-{"file": "sprites\\crate_cup_dir5.png", "auto": [], "worst": null, "verdict": "reject", "reason": "crate top face too close in value to saucer - silhouette merges"}
-{"file": "sprites\\crate_cup_dir6.png", "auto": [], "worst": null, "verdict": "accept", "reason": null}
-{"file": "sprites\\crate_cup_dir7.png", "auto": [], "worst": null, "verdict": "reject", "reason": "crate top face too close in value to saucer - silhouette merges"}
+{"file": "sprites\\meshcup_dir0.png", "auto": [], "worst": null, "verdict": null, "reason": null}
+{"file": "sprites\\meshcup_dir1.png", "auto": [], "worst": null, "verdict": null, "reason": null}
+{"file": "sprites\\meshcup_dir2.png", "auto": [{"severity": "note", "check": "ramp-coherence", "message": "ramps used by under 2% of pixels: foliage (7px)", "fix": "Often stray pixels rather than a choice. Harmless if intentional.", "where": null}], "worst": "note", "verdict": null, "reason": null}
+{"file": "sprites\\meshcup_dir3.png", "auto": [], "worst": null, "verdict": null, "reason": null}
+{"file": "sprites\\meshcup_dir4.png", "auto": [], "worst": null, "verdict": null, "reason": null}
+{"file": "sprites\\meshcup_dir5.png", "auto": [], "worst": null, "verdict": null, "reason": null}
+{"file": "sprites\\meshcup_dir6.png", "auto": [], "worst": null, "verdict": null, "reason": null}
+{"file": "sprites\\meshcup_dir7.png", "auto": [], "worst": null, "verdict": null, "reason": null}
