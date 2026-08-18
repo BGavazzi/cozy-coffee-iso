@@ -148,6 +148,18 @@ foliage, fabric and skin — most of the material range a 2D game needs.
 | 8 (auto-review) | working — `art_review.py`, 7 checks + direction-set |
 | 9 (human critique) | working — `review_queue.py`, contact sheet + ratchet |
 
-`isorender.py` is currently a software raytracer standing in for Blender, so the
-deterministic half runs with no GPU or DCC dependency. Stages 5–9 are complete
-end to end; stages 1–4 replace the placeholder scene with generated meshes.
+`isorender.py` is a software raytracer and `mesh.py` an orthographic rasterizer,
+both standing in for Blender so the deterministic half runs with no GPU or DCC
+dependency. Stages 5-9 are complete end to end.
+
+**The mesh seam is open.** `render_batch.py --mesh asset.obj` runs the full chain
+from arbitrary geometry, so stages 1-4 now have somewhere to deliver.
+Rasterization is used rather than raytracing because orthographic projection is
+affine, which makes a scanline z-buffer both exact and far faster. It was
+cross-checked against the raytracer on the same scene tessellated: **99.40%
+material agreement**, 0.7% coverage difference, mean lambert error 0.014 -- the
+residual being faceted tessellation approximating analytic surfaces.
+
+Next up is stage 2. `torch 2.11.0+cu128` with working CUDA is already present in
+the ComfyUI venv and 104 GB is free on the drive; TRELLIS 2 additionally needs
+`bitsandbytes` and `gguf` for 8-bit `low_memory_mode` at 512^3.
