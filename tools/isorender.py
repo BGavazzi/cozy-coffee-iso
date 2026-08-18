@@ -190,11 +190,27 @@ def verify_projection(tol: float = 1e-6) -> float:
 
 # --- render -----------------------------------------------------------------
 
-LIGHT = norm((-0.55, -0.35, 0.76))   # fixed key, screen-space upper-left (NW)
+# Key light, defined in CAMERA space, not world space.
+#
+# In an isometric game the camera never moves; the eight "directions" are the
+# object facing differently. Rotating the camera with a world-fixed light drags
+# the light around the object, so the same surface reads lit in one direction and
+# shadowed in another -- which violates the single-fixed-key rule and is
+# instantly visible across a direction set. Anchoring the light to the camera
+# basis is equivalent to rotating the object under a fixed light, which is what
+# the game actually does.
+LIGHT_CAM = (-0.50, 0.55, 0.67)      # (right, up, toward viewer) -> upper-left key
+
+
+def camera_light(cam: DimetricCamera) -> Vec:
+    """Resolve the camera-space key into world space for this azimuth."""
+    lx, ly, lz = LIGHT_CAM
+    return norm(add(add(mul(cam.right, lx), mul(cam.up, ly)), mul(cam.dir, lz)))
 
 
 def render(scene: Scene, cam: DimetricCamera, size: int):
     """Returns (material_id, lambert, normal, mask) buffers, row-major."""
+    light = camera_light(cam)
     mat: list[str | None] = [None] * (size * size)
     lam: list[float] = [0.0] * (size * size)
     nrm: list[Vec] = [(0.0, 0.0, 0.0)] * (size * size)
@@ -213,7 +229,7 @@ def render(scene: Scene, cam: DimetricCamera, size: int):
             # Ambient floor only. A half-lambert wrap compresses everything into
             # the ramp's light end, which wastes most of the ramp -- and the
             # ramp is the entire shading budget once this is quantized.
-            d_ = max(0.0, dot(h.normal, LIGHT))
+            d_ = max(0.0, dot(h.normal, light))
             lam[i] = min(1.0, 0.10 + 0.92 * d_)
     return mat, lam, nrm
 

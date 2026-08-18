@@ -1,104 +1,153 @@
-# Review Pipeline
+# Pipeline Architecture
 
-**Scope: we give feedback on art. We do not make it.**
+**Goal: an automated factory that generates the sprite set for a 2D game, given
+a clear art direction. Humans critique the quality of what it produces.**
 
-Art is not the binding constraint on this project — content is. Systems,
-progression, recipes, customer behaviour, dialogue and economy are what a cozy
-sim lives or dies on, and they are where effort should go. Art needs to be
-*consistent*, not *automated*. Consistency is a review problem, and review is
-cheap. Generation is expensive and was the wrong thing to build.
+The division of labour is the design:
 
-So the deliverable is a **critic**: something that reads a sprite made by
-anyone — hand-pixelled, AI-generated, rendered, bought — and reports what is
-inconsistent with the spec, where, and what to do about it.
-
-`ASSET_SPEC.md` is therefore not a manufacturing contract. It is the rubric.
-
----
-
-## What the reviewer checks
-
-`tools/art_review.py` reads an image and emits ranked findings. It is
-deliberately **not** pass/fail. Severity is a claim about *confidence*, not
-authority — a note may well be the right artistic call and the tool cannot tell.
-
-| Check | Severity | Detects |
+| | owns | why |
 |---|---|---|
-| `alpha` | blocker | semi-transparent pixels; spec requires 1-bit |
-| `grid` | blocker | art that was upscaled and is off its native pixel grid |
-| `palette` | blocker / warning | off-palette colours, with the nearest legal entry named |
-| `ramp-coherence` | warning / note | shading that wanders between colour families |
-| `extremes` | warning | pure black or pure white |
-| `silhouette` | warning / note | canvas-edge bleed, sparse or unreadable shapes |
-| `light-direction` | note | highlights not sitting upper-left |
+| **Factory** | generating every sprite, every direction, every frame | volume |
+| **Automated tier** | spec conformance — palette, alpha, grid, projection, pivots | cheap, exhaustive, deterministic |
+| **Humans** | *does it look good* | not automatable, and the entire point |
 
-Every finding carries a concrete fix, not just a complaint.
-
-    python tools/art_review.py sprite.png            # human-readable
-    python tools/art_review.py "sprites/*.png" --json  # machine-readable
+Art stops being the constraint once this works. Content becomes the constraint,
+which is the intended outcome.
 
 ---
 
-## The one check worth explaining
+## Why generation goes through 3D
 
-`ramp-coherence` exists because of a specific, measured failure mode.
+Pure 2D diffusion plus post-processing fails three requirements *structurally*:
 
-When shading is matched to the *nearest palette colour* rather than picked from
-the surface's own ramp, it wanders between colour families as the gradient
-moves. A cream ceramic cup renders **blue-grey**, because its shadow side lands
-nearer the violet `neutral` ramp than its own. That single artifact is what
-"looks like a shrunk 3D render" actually means, and it is the most common way a
-technically-valid sprite still looks wrong.
+- **Projection consistency** — models drift a few degrees per generation, and no
+  post-process can re-project a 2D sprite to a corrected angle.
+- **Direction coherence** — eight independent generations of "the same" chair are
+  eight different chairs.
+- **Temporal coherence** — at 48–64 px, one pixel of frame-to-frame jitter reads
+  as noise.
 
-It shows up as an elevated rate of adjacent pixels belonging to different ramps:
+All three are normally fixed by a human retouching frames. At factory volume
+that is precisely the cost being eliminated, so correctness has to be
+**structural** — guaranteed by construction, not corrected afterward.
 
-| | clean toon shading | nearest-colour matched |
+The answer is the Diablo 2 / Fallout / Age of Empires 2 technique: model once,
+render deterministically.
+
+```
+STAGE 1  concept art     SDXL + style LoRA          [AI]
+STAGE 2  mesh            TRELLIS 2 (8GB @ 512^3)    [AI]
+STAGE 3  rig             UniRig (SIGGRAPH '25)      [AI]
+STAGE 4  motion          HY-Motion 1.0 / Kimodo     [AI]
+STAGE 5  render          orthographic, 8 azimuths   [CODE, deterministic]
+STAGE 6  pixelize        ramp-quantize + dither     [CODE, deterministic]
+STAGE 7  metadata        pivot/footprint from mesh  [CODE, exact]
+STAGE 8  auto-review     spec conformance           [CODE]
+STAGE 9  human critique  aesthetic judgement        [HUMAN]
+```
+
+| Requirement | 2D approach | 3D intermediate |
 |---|---|---|
-| cross-ramp adjacency | 2.7% | **6.0%** |
-| ramps touched | 3 | 4 (incl. spurious `neutral`) |
-
-**Stated limit:** from pixels alone this cannot *prove* contamination. A
-deliberately grey cup and a contaminated cream one are identical bytes. The
-check reports suspicion and names its evidence; the artist decides. That is the
-correct division of labour for a critic.
-
-Guidance for whoever is making the art: pick shading steps from the surface's
-own ramp, dither only between adjacent steps of that same ramp, and never
-downsample by averaging — averaging manufactures colours the palette does not
-contain.
+| 2:1 dimetric projection | drifts | camera matrix, exact (verified to 12 dp) |
+| 8 directions consistent | eight objects | one mesh, 8 azimuths |
+| Frame-to-frame coherence | jitter | zero by construction |
+| Fixed key light | violated | fixed light rig |
+| Pivot / footprint | inferred | mesh bbox, exact |
 
 ---
 
-## Tooling
+## Stage 6 is where "looks rendered" is won or lost
 
-| Tool | Role |
+Measured, not asserted. **Quantize the lighting, not the image.**
+
+The naive chain — smooth-shade, average during downsample, snap to nearest
+palette colour — fails twice. Averaging manufactures colours the palette does not
+contain, and nearest-colour search has no idea what material it is shading. A
+cream ceramic cup renders **blue-grey**, because its shadow side lands nearer the
+violet `neutral` ramp than its own. That artifact *is* what "shrunk 3D render"
+means.
+
+Instead: bind each material to a ramp, map the lambert term to a discrete ramp
+*index*, dither only between adjacent steps of that same ramp, and take the modal
+rather than mean colour when downsampling.
+
+| | naive | ramp-quantized |
+|---|---|---|
+| distinct colours | 17 | 10 |
+| cross-ramp leak | **157 px (11.8%)** | **0** |
+| cross-ramp adjacency | 6.0% | 2.7% |
+
+Contamination is not reduced. It is impossible.
+
+---
+
+## Stages 8 and 9: the critique loop
+
+The factory generates faster than anyone can look, so critique is itself a
+throughput problem.
+
+    python tools/render_batch.py                       # generate
+    python tools/review_queue.py build "sprites/*.png" # auto-review + contact sheet
+    # humans fill verdict + reason in review/verdicts.jsonl
+    python tools/review_queue.py stats                 # what to automate next
+
+**Stage 8** rejects spec violations before a human wastes attention on them:
+palette membership, 1-bit alpha, pixel-grid alignment, ramp coherence,
+silhouette, canvas bleed, plus cross-sprite checks over a whole direction set.
+
+**Stage 9** is a contact sheet with findings already annotated. Humans judge only
+what survived, and only on aesthetics.
+
+### The loop is a ratchet
+
+Every rejection carries a reason. Reasons that recur get promoted into stage 8,
+so **human review volume falls as the factory matures**. `stats` reports which
+reasons are recurring hardest, so the next check to write is never a guess:
+
+```
+judged 8/8   accepted 4   rejected 4
+
+recurring rejection reasons (automation candidates):
+    3  (75.0%)  crate top face too close in value to saucer - silhouette merges  <-- worth automating
+    1  (25.0%)  cup reads flat, needs a rim highlight
+
+4 rejected sprites passed every automated check.
+  That gap is exactly what the next check should cover.
+```
+
+**This has already happened once.** The first batch rotated the camera with a
+world-fixed light, so the lit face drifted around the object between directions.
+Every frame was individually valid, so no per-sprite check caught it — but it was
+obvious to a person scanning the contact sheet. The fix was conceptual: in an
+isometric game the camera is fixed and the *object* rotates, so the key light
+belongs in the camera basis. That finding is now `check_direction_set`, and it
+will never need a human again.
+
+That is the whole thesis of the factory in one example.
+
+---
+
+## Portability
+
+The art direction is an **input**, not a hardcode. `style_bible.yaml` holds the
+palette ramps, hue-shift rule, outline and dithering conventions, and projection.
+Swapping it retargets the factory at a different game. The cozy coffee shop is
+case study one, chosen because a coffee shop interior exercises wood, ceramic,
+foliage, fabric and skin — most of the material range a 2D game needs.
+
+---
+
+## Status
+
+| Stage | State |
 |---|---|
-| `tools/art_review.py` | the reviewer — the actual product |
-| `tools/palette_forge.py` | generates + validates the locked palette from `style_bible.yaml` |
-| `tools/oklab.py` | perceptual colour space, used by both |
-| `tools/isorender.py` | test-fixture renderer; produces sample sprites to review |
-| `tools/pixelize.py` | reference implementation of correct vs naive quantization |
+| 1–4 (concept, mesh, rig, motion) | specified, tooling verified available, not built |
+| 5 (render) | working — `isorender.py`, exact 2:1, 8 azimuths, camera-space key |
+| 6 (pixelize) | working — `pixelize.py`, ramp-quantized, zero contamination |
+| 7 (metadata) | partial — pivot/footprint from silhouette; needs mesh bbox |
+| 8 (auto-review) | working — `art_review.py`, 7 checks + direction-set |
+| 9 (human critique) | working — `review_queue.py`, contact sheet + ratchet |
 
-`isorender.py` and `pixelize.py` are **fixtures and reference, not production**.
-They exist so the reviewer can be tested against known-good and known-bad input,
-and so the shading guidance above can be demonstrated rather than asserted.
-
----
-
-## Descoped: the generation architecture
-
-An earlier revision specified a full generation pipeline — concept art via SDXL,
-mesh via TRELLIS 2, rigging via UniRig, motion via HY-Motion, deterministic
-Blender render across 8 azimuths. It is recorded in this repo's history rather
-than deleted, because the reasoning still holds *if* asset volume ever becomes
-the bottleneck.
-
-It is not the plan. Two reasons:
-
-1. **Art is the lesser constraint.** Building a factory optimises the thing that
-   was not limiting.
-2. **It solved consistency by removing humans**, when consistency is achievable
-   far more cheaply by telling humans precisely what is inconsistent.
-
-The one durable finding from that work is the quantization result above, which
-now lives on as review guidance instead of as a render stage.
+`isorender.py` is currently a software raytracer standing in for Blender, so the
+deterministic half runs with no GPU or DCC dependency. Stages 5–9 are complete
+end to end; stages 1–4 replace the placeholder scene with generated meshes.
