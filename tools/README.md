@@ -72,3 +72,42 @@ it is impossible.
 
 Outline colour is the bounding surface's own darkest ramp step, so "tinted per
 surface" and "never pure black" hold by construction rather than by choice.
+
+## Asset manifest
+
+    python tools/manifest.py            # summary + render budget
+    python tools/manifest.py --queue 1  # work queue for a priority tier
+    python tools/manifest.py --check    # validate against the style bible
+
+`assets.yaml` enumerates **106 distinct assets** across tiles, props, characters,
+FX and UI, each declaring footprint, height, palette ramps, rotational symmetry
+and priority tier.
+
+### Symmetry is the budget
+
+Eight azimuths is the worst case, not the default. A round table is identical
+from every angle (1 render), a square crate repeats every 90 degrees (2), only
+asymmetric objects need all 8. Declaring symmetry per asset is free and cuts
+**43% of the static render budget**:
+
+| section | if all 8 | actual | avoided |
+|---|---|---|---|
+| tiles | 128 | 63 | 51% |
+| props | 512 | 322 | 37% |
+| fx | 400 | 208 | 48% |
+| **static total** | **1040** | **593** | **43%** |
+
+### But characters are the real budget
+
+Characters are **80% of all renders** (2416 of 3023), because 8 customer
+archetypes share motion clips but each still needs its own 8 azimuths x 32
+frames. Cutting one archetype saves more than every prop optimisation combined.
+That is the number to argue about when scoping, and it is not obvious until the
+manifest is machine-readable.
+
+### Validation
+
+`--check` cross-references every declared material against `style_bible.yaml`,
+catches duplicate ids and bad symmetry classes, warns when tier-1 furniture
+would not leave room to walk, and flags palette ramps no asset uses — dead weight
+in a 40-colour budget. It caught four stale ramp names on first run.
