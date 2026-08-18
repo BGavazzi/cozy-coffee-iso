@@ -46,6 +46,7 @@ MATERIAL_RAMPS = {
     "foliage": "foliage",
     "rose": "rose",
     "sky": "sky",
+    "neutral": "neutral",
 }
 
 
