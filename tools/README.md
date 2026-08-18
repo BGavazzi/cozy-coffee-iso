@@ -111,3 +111,25 @@ manifest is machine-readable.
 catches duplicate ids and bad symmetry classes, warns when tier-1 furniture
 would not leave room to walk, and flags palette ramps no asset uses — dead weight
 in a 40-colour budget. It caught four stale ramp names on first run.
+
+## Characters and layout
+
+    python tools/preview_characters.py   # roster + one archetype x 8 directions
+    python tools/render_room.py          # full shop, reports collisions
+
+`character.py` assembles figures from six part slots -- legs, torso, arms, head,
+hair, accessory -- rather than authoring each one whole. Nine characters in the
+preview are the same parts library with different short specs, so a tenth
+archetype costs a few lines instead of a mesh. The render budget is unchanged;
+the **authoring** budget collapses, which is the number that mattered.
+
+Proportions are chibi-leaning on purpose. The first pass was 4:1 height to width
+and read as a totem pole at 40 px; cozy comparables sit nearer 2.5:1. There is
+also a `seated=True` pose, because parking a standing figure at seat height reads
+as standing *on* the chair.
+
+`layout.py` derives footprints from mesh XY bounds and reports overlaps
+exceeding a share of the smaller object. Not all overlap is a defect -- a chair
+tucked under a table is correct -- so specific pairs are whitelisted and the test
+is proportional rather than binary. It caught two chairs from adjacent tables
+sharing a square at 67% overlap on first run.

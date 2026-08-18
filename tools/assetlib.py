@@ -68,15 +68,25 @@ def wall_run(start, along: str, length: int, height=1.6,
     t = 0.12
     for i in range(length):
         if i in openings:
-            #
-
-            # Sill and lintel only, leaving the aperture clear.
+            # A bare aperture reads as a hole punched in a wall. Glass needs a
+            # frame, a bright pane, and mullions to catch the light.
+            a, b = 0.38, 1.22                       # sill height, head height
             if along == "x":
-                m.add_box((x0 + i, y0, 0), (x0 + i + 1, y0 + t, 0.35), WOOD)
-                m.add_box((x0 + i, y0, 1.25), (x0 + i + 1, y0 + t, height), WOOD)
+                m.add_box((x0 + i, y0, 0), (x0 + i + 1, y0 + t, a), WOOD)
+                m.add_box((x0 + i, y0, b), (x0 + i + 1, y0 + t, height), WOOD)
+                m.add_box((x0 + i, y0 + t * 0.30, a), (x0 + i + 1, y0 + t * 0.70, b), GLASS)
+                for fx in (0.0, 0.94):              # jambs
+                    m.add_box((x0 + i + fx, y0, a), (x0 + i + fx + 0.06, y0 + t, b), WOOD)
+                m.add_box((x0 + i + 0.47, y0 + t * 0.2, a), (x0 + i + 0.53, y0 + t * 0.8, b), WOOD)
+                m.add_box((x0 + i, y0 - 0.05, a - 0.05), (x0 + i + 1, y0 + t, a), WOOD)  # sill
             else:
-                m.add_box((x0, y0 + i, 0), (x0 + t, y0 + i + 1, 0.35), WOOD)
-                m.add_box((x0, y0 + i, 1.25), (x0 + t, y0 + i + 1, height), WOOD)
+                m.add_box((x0, y0 + i, 0), (x0 + t, y0 + i + 1, a), WOOD)
+                m.add_box((x0, y0 + i, b), (x0 + t, y0 + i + 1, height), WOOD)
+                m.add_box((x0 + t * 0.30, y0 + i, a), (x0 + t * 0.70, y0 + i + 1, b), GLASS)
+                for fy in (0.0, 0.94):
+                    m.add_box((x0, y0 + i + fy, a), (x0 + t, y0 + i + fy + 0.06, b), WOOD)
+                m.add_box((x0 + t * 0.2, y0 + i + 0.47, a), (x0 + t * 0.8, y0 + i + 0.53, b), WOOD)
+                m.add_box((x0 - 0.05, y0 + i, a - 0.05), (x0 + t, y0 + i + 1, a), WOOD)
             continue
         if along == "x":
             m.add_box((x0 + i, y0, 0), (x0 + i + 1, y0 + t, 0.5), WOOD)      # wainscot
@@ -89,10 +99,14 @@ def wall_run(start, along: str, length: int, height=1.6,
 
 # --- props -------------------------------------------------------------------
 
-def counter() -> Mesh:
+def counter(kick=True) -> Mesh:
+    """Modular: the body spans the FULL tile so a run tiles seamlessly.
+    Insetting it left a seam between every adjacent module."""
     m = Mesh()
-    m.add_box((0.05, 0.05, 0.0), (0.95, 0.95, 0.82), WOOD)
-    m.add_box((0.0, 0.0, 0.82), (1.0, 1.0, 0.90), CERAMIC)     # worktop
+    m.add_box((0.0, 0.06, 0.10), (1.0, 0.94, 0.82), WOOD)       # carcass, full width
+    if kick:
+        m.add_box((0.0, 0.12, 0.0), (1.0, 0.88, 0.10), "neutral")  # recessed plinth
+    m.add_box((0.0, 0.0, 0.82), (1.0, 1.0, 0.92), CERAMIC)      # worktop, overhangs
     return m
 
 
@@ -135,26 +149,28 @@ def pastry_case() -> Mesh:
 
 def table_round() -> Mesh:
     m = Mesh()
-    m.add_cylinder((0.5, 0.5, 0.0), 0.09, 0.60, WOOD, 10)
-    m.add_cylinder((0.5, 0.5, 0.60), 0.42, 0.08, WOOD, 20)
-    m.add_cylinder((0.5, 0.5, 0.0), 0.26, 0.04, WOOD, 14)       # base
+    m.add_cylinder((0.5, 0.5, 0.0), 0.13, 0.58, WOOD, 12)       # thicker column
+    m.add_cylinder((0.5, 0.5, 0.58), 0.44, 0.11, WOOD, 20)      # thicker top
+    m.add_cylinder((0.5, 0.5, 0.0), 0.30, 0.06, WOOD, 14)       # base
     return m
 
 
 def table_4top() -> Mesh:
     m = Mesh()
-    m.add_box((0.06, 0.06, 0.60), (1.94, 0.94, 0.68), WOOD)
-    for cx, cy in ((0.20, 0.16), (1.80, 0.16), (0.20, 0.84), (1.80, 0.84)):
-        m.add_box((cx - 0.05, cy - 0.05, 0), (cx + 0.05, cy + 0.05, 0.60), WOOD)
+    m.add_box((0.05, 0.05, 0.58), (1.95, 0.95, 0.70), WOOD)
+    for cx, cy in ((0.22, 0.18), (1.78, 0.18), (0.22, 0.82), (1.78, 0.82)):
+        m.add_box((cx - 0.085, cy - 0.085, 0), (cx + 0.085, cy + 0.085, 0.58), WOOD)
     return m
 
 
-def chair() -> Mesh:
+def chair(cushion=None) -> Mesh:
     m = Mesh()
-    m.add_box((0.24, 0.24, 0.42), (0.76, 0.76, 0.50), WOOD)     # seat
-    m.add_box((0.22, 0.66, 0.50), (0.78, 0.78, 0.96), WOOD)     # back
-    for cx, cy in ((0.29, 0.29), (0.71, 0.29), (0.29, 0.71), (0.71, 0.71)):
-        m.add_box((cx - 0.04, cy - 0.04, 0), (cx + 0.04, cy + 0.04, 0.42), WOOD)
+    m.add_box((0.20, 0.20, 0.40), (0.80, 0.80, 0.52), WOOD)     # seat, thicker
+    m.add_box((0.20, 0.66, 0.52), (0.80, 0.80, 1.00), WOOD)     # back, taller
+    for cx, cy in ((0.28, 0.28), (0.72, 0.28), (0.28, 0.72), (0.72, 0.72)):
+        m.add_box((cx - 0.075, cy - 0.075, 0), (cx + 0.075, cy + 0.075, 0.40), WOOD)
+    if cushion:
+        m.add_box((0.23, 0.23, 0.52), (0.77, 0.77, 0.58), cushion)
     return m
 
 
@@ -217,4 +233,28 @@ def menu_board() -> Mesh:
     m = Mesh()
     m.add_box((0.10, 0.0, 0.55), (0.90, 0.06, 1.30), WOOD)
     m.add_box((0.16, 0.06, 0.61), (0.84, 0.08, 1.24), METAL)
+    return m
+
+
+def table_clutter(kind: str = "cafe") -> Mesh:
+    """Tables with one cup read as showroom furniture. Occupied tables need
+    stuff on them."""
+    m = Mesh()
+    if kind == "cafe":
+        m.add_cylinder((0.42, 0.46, 0.0), 0.115, 0.02, CERAMIC, 12)   # saucer
+        m.add_cylinder((0.42, 0.46, 0.02), 0.075, 0.115, CERAMIC, 12)  # cup
+        m.add_cylinder((0.62, 0.40, 0.0), 0.055, 0.09, CERAMIC, 10)    # second cup
+        m.add_box((0.30, 0.62, 0.0), (0.50, 0.76, 0.05), FABRIC)       # napkin
+        m.add_box((0.60, 0.62, 0.0), (0.70, 0.70, 0.10), WOOD)         # caddy
+    elif kind == "work":
+        m.add_box((0.26, 0.34, 0.0), (0.66, 0.62, 0.03), METAL)        # laptop base
+        m.add_box((0.26, 0.60, 0.03), (0.66, 0.64, 0.30), GLASS)       # screen
+        m.add_cylinder((0.74, 0.42, 0.0), 0.07, 0.12, CERAMIC, 10)
+    elif kind == "books":
+        m.add_box((0.28, 0.36, 0.0), (0.62, 0.64, 0.06), FABRIC)
+        m.add_box((0.30, 0.38, 0.06), (0.60, 0.62, 0.11), CERAMIC)
+        m.add_cylinder((0.72, 0.48, 0.0), 0.075, 0.12, CERAMIC, 10)
+    elif kind == "counter":
+        for cx in (0.24, 0.44, 0.64):
+            m.add_cylinder((cx, 0.5, 0.0), 0.055, 0.09, CERAMIC, 8)
     return m

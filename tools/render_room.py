@@ -18,6 +18,8 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent))
 import assetlib as A  # noqa: E402
+import character as C  # noqa: E402
+from layout import Layout  # noqa: E402
 from isorender import DimetricCamera, camera_light, dot  # noqa: E402
 from mesh import ShadowMap, rasterize  # noqa: E402
 from pixelize import (  # noqa: E402
@@ -34,56 +36,74 @@ def build_room():
     The camera looks from +x/+y, so the *far* walls -- the only two that may be
     drawn -- are at x=0 and y=0. Walling the near sides would occlude the room,
     which is why isometric games only ever build the back two.
+
+    Seating is placed on all four sides of each table rather than two, and every
+    placement is tracked so `Layout.collisions()` can catch interpenetration.
     """
-    put = A.transformed
-    parts = [
-        A.floor(ROOM_W, ROOM_D, checker=False),
-        A.wall_run((0, 0), "x", ROOM_W, openings=(4, 5, 10, 11)),   # far-right wall
-        A.wall_run((0, 0), "y", ROOM_D, openings=(6, 7)),           # far-left wall
-    ]
+    L = Layout()
+    add = L.add
 
-    # --- service counter run against the far-right wall
+    add(A.floor(ROOM_W, ROOM_D, checker=False), name="floor", track=False)
+    add(A.wall_run((0, 0), "x", ROOM_W, openings=(4, 5, 10, 11)), name="wall", track=False)
+    add(A.wall_run((0, 0), "y", ROOM_D, openings=(6, 7)), name="wall", track=False)
+
+    # --- service counter run against the far-right wall (modules tile flush)
     for i in range(6):
-        parts.append(put(A.counter(), at=(2.0 + i, 0.9, 0)))
-    parts.append(put(A.espresso_machine(), at=(2.3, 1.0, 0.90)))
-    parts.append(put(A.grinder(),          at=(4.4, 1.0, 0.90)))
-    parts.append(put(A.register(),         at=(6.3, 1.0, 0.90)))
-    parts.append(put(A.plant_small(),      at=(7.2, 1.0, 0.90)))
-    parts.append(put(A.pastry_case(),      at=(2.2, 2.15, 0.0)))
-    for mx in (3.0, 4.5):
-        parts.append(put(A.menu_board(), at=(mx, 0.06, 0)))
+        add(A.counter(), at=(2.0 + i, 0.85, 0), name=f"counter#{i}")
+    add(A.espresso_machine(), at=(2.3, 0.95, 0.92), name="prop#espresso")
+    add(A.grinder(),          at=(4.4, 0.95, 0.92), name="prop#grinder")
+    add(A.register(),         at=(6.3, 0.95, 0.92), name="prop#register")
+    add(A.plant_small(),      at=(7.15, 0.95, 0.92), name="prop#plant")
+    add(A.table_clutter("counter"), at=(5.35, 0.95, 0.92), name="clutter#counter")
+    add(A.pastry_case(), at=(2.2, 2.05, 0), name="prop#pastry")
+    for mx in (3.1, 4.6):
+        add(A.menu_board(), at=(mx, 0.04, 0), name=f"decor#menu{mx}")
 
-    # --- seating in the open floor
-    for tx, ty in ((3.2, 5.2), (6.4, 7.4), (3.4, 8.4), (12.2, 6.9)):
-        parts.append(put(A.table_round(), at=(tx, ty, 0)))
-        parts.append(put(A.chair(), rot_z=180, at=(tx, ty + 1.05, 0)))
-        parts.append(put(A.chair(), rot_z=0,   at=(tx, ty - 1.05, 0)))
-        parts.append(put(A.cup_and_saucer(), at=(tx + 0.10, ty + 0.05, 0.68)))
+    # --- cafe tables, chairs on all four sides
+    tables = [(3.3, 5.3, "cafe"), (6.6, 7.7, "books"), (11.9, 8.2, "cafe")]
+    for n, (tx, ty, clutter) in enumerate(tables):
+        add(A.table_round(), at=(tx, ty, 0), name=f"table#{n}")
+        add(A.table_clutter(clutter), at=(tx, ty, 0.69), name=f"clutter#{n}")
+        for k, (dx, dy, rot) in enumerate((
+                (0.0, 1.15, 180), (0.0, -1.15, 0), (1.15, 0.0, 270), (-1.15, 0.0, 90))):
+            add(A.chair(cushion="rose" if (n + k) % 3 == 0 else None),
+                at=(tx + dx, ty + dy, 0), rot=rot, name=f"chair#{n}_{k}")
 
-    parts.append(put(A.table_4top(), at=(9.4, 4.6, 0)))
-    for cx in (9.7, 10.9):
-        parts.append(put(A.chair(), rot_z=0,   at=(cx, 3.55, 0)))
-        parts.append(put(A.chair(), rot_z=180, at=(cx, 5.65, 0)))
-    parts.append(put(A.cup_and_saucer(), at=(10.2, 5.0, 0.68)))
+    # --- 4-top with four chairs
+    add(A.table_4top(), at=(9.5, 4.5, 0), name="table#4top")
+    add(A.table_clutter("work"), at=(9.9, 4.5, 0.71), name="clutter#4top")
+    for cx in (9.8, 11.0):
+        add(A.chair(), at=(cx, 3.35, 0), rot=0,   name=f"chair#4t_{cx}a")
+        add(A.chair(), at=(cx, 5.65, 0), rot=180, name=f"chair#4t_{cx}b")
 
     # --- window bar with stools along the far-left wall
     for i in range(3):
-        parts.append(put(A.counter(), at=(0.55, 5.4 + i * 1.4, 0)))
-        parts.append(put(A.stool(),   at=(1.75, 5.4 + i * 1.4, 0)))
+        add(A.counter(kick=False), at=(0.45, 5.3 + i * 1.5, 0), name=f"bar#{i}")
+        add(A.stool(), at=(1.70, 5.3 + i * 1.5, 0), name=f"stool#{i}")
 
     # --- dressing
-    parts.append(put(A.plant_large(), at=(0.5, 3.4, 0)))
-    parts.append(put(A.plant_large(), at=(12.4, 1.1, 0)))
-    parts.append(put(A.plant_large(), at=(6.9, 4.4, 0)))
-    parts.append(put(A.plant_small(), at=(9.4, 8.6, 0)))
-    parts.append(put(A.crate(),       at=(12.6, 8.9, 0)))
-    parts.append(put(A.bookshelf(),   at=(9.9, 0.35, 0)))
-    parts.append(put(A.crate(),       at=(0.6, 1.2, 0)))
-    parts.append(put(A.crate(),       at=(0.6, 1.2, 0.52)))
-    for lx, ly in ((3.2, 5.4), (6.6, 7.6), (9.9, 4.6)):
-        parts.append(put(A.pendant_lamp(), at=(lx - 0.5, ly - 0.5, 0.60)))
+    add(A.plant_large(), at=(0.5, 3.2, 0),  name="decor#plant1")
+    add(A.plant_large(), at=(12.5, 1.0, 0), name="decor#plant2")
+    add(A.plant_large(), at=(7.1, 4.2, 0),  name="decor#plant3")
+    add(A.bookshelf(),   at=(9.9, 0.25, 0), name="decor#shelf")
+    add(A.crate(), at=(0.55, 1.15, 0),      name="decor#crate1")
+    add(A.crate(), at=(0.55, 1.15, 0.52),   name="decor#crate2")
+    add(A.crate(), at=(13.15, 1.9, 0),      name="decor#crate3")
+    for lx, ly in ((3.3, 5.3), (6.6, 7.6), (9.9, 4.5)):
+        add(A.pendant_lamp(), at=(lx - 0.5, ly - 0.5, 0.60), name=f"decor#lamp{lx}",
+            track=False)
 
-    return A.merge(*parts)
+    # --- characters
+    add(C.build(C.BARISTA), at=(4.9, 1.95, 0), rot=0, name="char#barista")
+    seated = [(3.3, 5.3 - 0.95, 0, 0), (3.3, 5.3 + 0.95, 180, 2),
+              (6.6, 7.6 - 0.95, 0, 4), (9.8, 3.55, 0, 1), (11.0, 5.45, 180, 6)]
+    for i, (cx, cy, rot, who) in enumerate(seated):
+        add(C.build(C.CUSTOMERS[who], seated=True), at=(cx, cy, 0.52), rot=rot,
+            name=f"char#seat{i}")
+    add(C.build(C.CUSTOMERS[3]), at=(6.0, 2.6, 0), rot=200, name="char#queue0")
+    add(C.build(C.CUSTOMERS[7]), at=(6.8, 3.3, 0), rot=200, name="char#queue1")
+
+    return L
 
 
 def frame(mesh, cam, target_px, margin=0.04):
@@ -105,7 +125,16 @@ def main() -> int:
     ap.add_argument("--no-shadows", action="store_true")
     args = ap.parse_args()
 
-    mesh = build_room()
+    L = build_room()
+    hits = L.collisions()
+    print(f"placements: {len(L.items)}")
+    if hits:
+        print(f"  COLLISIONS ({len(hits)}):")
+        for h in hits:
+            print(f"    {h}")
+    else:
+        print("  no collisions")
+    mesh = L.mesh()
     print(f"room mesh: {len(mesh.verts)} verts, {len(mesh.faces)} tris")
 
     cam = DimetricCamera(args.azimuth)
