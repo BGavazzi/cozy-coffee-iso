@@ -1,222 +1,104 @@
-# Pipeline Architecture — Fully Automated Asset Generation
+# Review Pipeline
 
-**Operating constraints (fixed by project direction):**
+**Scope: we give feedback on art. We do not make it.**
 
-1. **Maximum quality.** 8 directions everywhere. No quality traded for frame count.
-2. **No human touches a pixel.** AI or code performs all creation *and* all validation.
-   Humans participate only in creative direction — guiding, approving concepts, setting
-   the style bible.
+Art is not the binding constraint on this project — content is. Systems,
+progression, recipes, customer behaviour, dialogue and economy are what a cozy
+sim lives or dies on, and they are where effort should go. Art needs to be
+*consistent*, not *automated*. Consistency is a review problem, and review is
+cheap. Generation is expensive and was the wrong thing to build.
 
-These two constraints rule out the pure-2D approach. What follows is what they require
-instead.
+So the deliverable is a **critic**: something that reads a sprite made by
+anyone — hand-pixelled, AI-generated, rendered, bought — and reports what is
+inconsistent with the spec, where, and what to do about it.
 
----
-
-## 1. Why 2D diffusion + post-processing cannot satisfy this
-
-A 2D pipeline (SDXL → downsample → quantize) fails three requirements *structurally*,
-not incidentally:
-
-- **Projection consistency.** Models drift a few degrees per generation. In an isometric
-  scene mismatched angles are the most visible possible defect, and there is no
-  deterministic post-process that can re-project a 2D sprite to a corrected angle.
-- **8-direction coherence.** Eight independently generated views of "the same" chair are
-  eight different chairs. Nothing in the 2D chain ties them to one object.
-- **Temporal coherence.** At 48–64 px, one pixel of frame-to-frame jitter reads as noise.
-  No current image or video model holds sub-pixel coherence at that scale.
-
-All three are normally solved by a human cleaning up frames. That option is excluded.
-So correctness must become **structural** — guaranteed by construction rather than
-achieved by correction.
+`ASSET_SPEC.md` is therefore not a manufacturing contract. It is the rubric.
 
 ---
 
-## 2. The architecture: 3D intermediate, pre-rendered to sprites
+## What the reviewer checks
 
-This is the technique behind Diablo 2, Fallout 1/2, Age of Empires 2 and StarCraft, and
-it is the correct answer here for precisely the same reason it was correct then: when
-sprite output must be consistent across hundreds of assets and thousands of frames, you
-model once and render deterministically.
+`tools/art_review.py` reads an image and emits ranked findings. It is
+deliberately **not** pass/fail. Severity is a claim about *confidence*, not
+authority — a note may well be the right artistic call and the tool cannot tell.
 
-```
-┌─ HUMAN: creative direction ──────────────────────────────────────┐
-│  style bible · palette · silhouette rules · concept approve/reject│
-└────────────────────────┬─────────────────────────────────────────┘
-                         │
-   STAGE 1  concept art        SDXL + style LoRA          [AI]
-   STAGE 2  mesh               TRELLIS 2                  [AI]
-   STAGE 3  rig                UniRig                     [AI]
-   STAGE 4  motion             HY-Motion 1.0 / Kimodo     [AI]
-   STAGE 5  render             Blender headless, ortho    [CODE, deterministic]
-   STAGE 6  pixelize           NN downsample + quantize   [CODE, deterministic]
-   STAGE 7  metadata           from mesh geometry         [CODE, exact]
-   STAGE 8  validate           closed loop + auto-repair  [CODE]
-                         │
-                         └──► escalate unfixable to creative direction
-```
-
-Stages 5–8 are fully deterministic. Same inputs, same bytes out.
-
----
-
-## 3. What each guarantee becomes
-
-| Requirement | 2D approach | 3D intermediate |
+| Check | Severity | Detects |
 |---|---|---|
-| 2:1 dimetric projection | Hoped for, drifts | **Camera matrix. Exact.** |
-| 8 directions consistent | Eight different objects | **One mesh, 8 azimuths** |
-| Frame-to-frame coherence | Jitter, needs cleanup | **Zero jitter by construction** |
-| Fixed light direction | Violated constantly | **Fixed light rig** |
-| Pivot / footprint | Inferred from silhouette | **Mesh world-space bbox, exact** |
-| Palette | Deterministic either way | Deterministic |
+| `alpha` | blocker | semi-transparent pixels; spec requires 1-bit |
+| `grid` | blocker | art that was upscaled and is off its native pixel grid |
+| `palette` | blocker / warning | off-palette colours, with the nearest legal entry named |
+| `ramp-coherence` | warning / note | shading that wanders between colour families |
+| `extremes` | warning | pure black or pure white |
+| `silhouette` | warning / note | canvas-edge bleed, sparse or unreadable shapes |
+| `light-direction` | note | highlights not sitting upper-left |
+
+Every finding carries a concrete fix, not just a complaint.
+
+    python tools/art_review.py sprite.png            # human-readable
+    python tools/art_review.py "sprites/*.png" --json  # machine-readable
 
 ---
 
-## 4. Stage detail
+## The one check worth explaining
 
-### Stage 1 — Concept art `[AI, 2D]`
+`ramp-coherence` exists because of a specific, measured failure mode.
 
-SDXL + style LoRA trained on the approved reference set. Produces a clean, well-lit
-three-quarter concept per asset. **This is the only human gate:** creative direction
-approves or rejects the *concept*. Rejection re-rolls with adjusted conditioning.
+When shading is matched to the *nearest palette colour* rather than picked from
+the surface's own ramp, it wanders between colour families as the gradient
+moves. A cream ceramic cup renders **blue-grey**, because its shadow side lands
+nearer the violet `neutral` ramp than its own. That single artifact is what
+"looks like a shrunk 3D render" actually means, and it is the most common way a
+technically-valid sprite still looks wrong.
 
-Output requirements: single subject, neutral background, even lighting, no dramatic
-perspective. TRELLIS 2 reconstructs better from flat, legible input than from
-atmospheric art.
+It shows up as an elevated rate of adjacent pixels belonging to different ramps:
 
-### Stage 2 — Mesh `[AI]`
+| | clean toon shading | nearest-colour matched |
+|---|---|---|
+| cross-ramp adjacency | 2.7% | **6.0%** |
+| ramps touched | 3 | 4 (incl. spurious `neutral`) |
 
-[TRELLIS 2](https://github.com/microsoft/TRELLIS) (Microsoft Research, 4B params,
-open source, commercial-use permitted). On 8 GB: `low_memory_mode` with 8-bit
-bitsandbytes quantization, 512×512 input, 512³ voxel resolution.
+**Stated limit:** from pixels alone this cannot *prove* contamination. A
+deliberately grey cup and a contaminated cream one are identical bytes. The
+check reports suspicion and names its evidence; the artist decides. That is the
+correct division of labour for a critic.
 
-**Known limitation:** thin geometry (chair legs, cup handles, plant fronds) degrades at
-512³. Partly hidden by the downsample to 64 px, but genuinely breaks on the thinnest
-features. Renting a 24 GB GPU for this stage alone is the clean mitigation.
-
-### Stage 3 — Rig `[AI]`
-
-[UniRig](https://github.com/VAST-AI-Research/UniRig) (SIGGRAPH 2025, Tsinghua + Tripo).
-Predicts skeleton and skinning weights across characters, animals, and organic shapes.
-1–5 s inference. Static props skip this stage entirely.
-
-### Stage 4 — Motion `[AI]`
-
-[HY-Motion 1.0](https://hunyuanmotion.net/) (Tencent, open source, ~1B params, produces
-clean looping game-character motion) or [Kimodo](https://github.com/nv-tlabs/kimodo)
-(NVIDIA, SMPL-X support). Both emit SMPL-H, retargeted onto the UniRig skeleton.
-
-Clip library to generate: `idle`, `walk`, `carry_walk`, `brew`, `wipe`, `serve`, `pour`,
-`sit_down`, `sit_idle`, `sip`, `wait_impatient`, `talk`, `stand_up`, `leave`.
-
-Loops must close exactly — first and last pose identical — enforced in validation.
-
-### Stage 5 — Render `[CODE, deterministic]`
-
-Blender headless (`blender -b -P render.py`).
-
-**Camera — the exact numbers:**
-- Orthographic projection.
-- `RotX = 60°` → camera elevation 30° → screen-space edge slope of `arctan(1/2) = 26.57°`,
-  i.e. exactly 2 pixels across per 1 pixel up. This is what makes clean pixel stair-steps.
-  *(True isometric would be `RotX = 54.736°`, which gives 1:1.155 and irregular steps.
-  Do not use it.)*
-- `RotZ = 45° + k·45°` for `k = 0..7` → the eight directions.
-- Render at an **integer multiple** of target resolution (8× — a 64×32 tile renders at
-  512×256) so the downsample is an exact block average/pick.
-
-**Shading:** NPR/toon only. Flat, banded ramps — never smooth gradients. Smooth shading
-survives quantization badly and is the main reason naive 3D-to-pixel looks like shrunk
-3D rather than pixel art.
-
-**Lights:** one fixed key from screen-space upper-left (NW), plus flat fill. Identical
-across every asset and every azimuth, never touched.
-
-### Stage 6 — Pixelize `[CODE, deterministic]`
-
-In strict order:
-1. Nearest-neighbor downsample by the integer factor to native resolution.
-2. Quantize to the locked palette (ordered dithering only where the style bible allows).
-3. Alpha threshold to 1-bit. Hard edges, zero fringe.
-4. Selective outline pass per the style bible convention.
-
-### Stage 7 — Metadata `[CODE, exact]`
-
-Because the source is 3D, this is computed rather than guessed:
-- **Footprint** — mesh XY bounding box in world space, in tile units.
-- **Pivot** — footprint center projected through the same camera matrix. Exact, and
-  therefore Y-sorting is exact.
-- Frame rects, animation loop points, direction index.
-
-Emitted as JSON alongside the sheet. This stage is why the 3D path solves depth-sorting
-that the 2D path could only approximate.
-
-### Stage 8 — Validate `[CODE, closed loop]`
-
-Not a pass/fail report — a control loop.
-
-**Deterministically auto-repairable** (fix silently, re-verify):
-palette drift · alpha fringe · canvas dimensions · off-grid detail · pivot placement ·
-outline inconsistency · non-closing animation loop
-
-**Detectable, not auto-repairable** (bounded retry with adjusted parameters, max 3):
-degenerate mesh · silhouette area outside tolerance · footprint mismatch vs. declared ·
-frame-to-frame delta above threshold · direction-set inconsistency
-
-**Escalate to creative direction** (the human's sanctioned role):
-anything that fails 3 retries, plus aesthetic judgement, which no validator can make.
+Guidance for whoever is making the art: pick shading steps from the surface's
+own ramp, dither only between adjacent steps of that same ramp, and never
+downsample by averaging — averaging manufactures colours the palette does not
+contain.
 
 ---
 
-## 5. Revised scope — 8 directions everywhere
+## Tooling
 
-Frame counts that were prohibitive in 2D become render time here.
+| Tool | Role |
+|---|---|
+| `tools/art_review.py` | the reviewer — the actual product |
+| `tools/palette_forge.py` | generates + validates the locked palette from `style_bible.yaml` |
+| `tools/oklab.py` | perceptual colour space, used by both |
+| `tools/isorender.py` | test-fixture renderer; produces sample sprites to review |
+| `tools/pixelize.py` | reference implementation of correct vs naive quantization |
 
-| Set | Unique frames | × 8 dir | Notes |
-|---|---|---|---|
-| Barista | 46 | **368** | idle 4, walk 8, carry 8, brew 6, wipe 6, serve 4, pour 6, sit 4 |
-| Customer base rig | 32 | **256** | walk 8, sit_idle 4, sip 4, wait 4, talk 4, leave 8 |
-| Customers × 8 archetypes | — | **2048** | shared motion clips, swapped mesh + palette |
-| Props (static) | 80 | **640** | one render per azimuth |
-| Tiles | ~40 | — | procedural, no 3D needed |
-| FX | ~12 loops | — | Blender particles, same render path |
-| UI | ~30 | — | 2D only, no conformance constraints |
-
-**≈ 3,400 rendered frames.** At ~2–4 s/frame that is a few hours unattended — the
-correct trade when machine time replaces human time.
+`isorender.py` and `pixelize.py` are **fixtures and reference, not production**.
+They exist so the reviewer can be tested against known-good and known-bad input,
+and so the shading guidance above can be demonstrated rather than asserted.
 
 ---
 
-## 6. Honest assessment of the residual risk
+## Descoped: the generation architecture
 
-**The hard problem moves rather than disappearing.** In 2D, consistency was hard and
-hand-authored character was free. Here it is exactly inverted: geometry, projection, and
-coherence are solved, but *a rendered 3D scene looks rendered*. Toon shading, flat ramps,
-and aggressive palette quantization close most of the gap. They do not close all of it.
+An earlier revision specified a full generation pipeline — concept art via SDXL,
+mesh via TRELLIS 2, rigging via UniRig, motion via HY-Motion, deterministic
+Blender render across 8 azimuths. It is recorded in this repo's history rather
+than deleted, because the reasoning still holds *if* asset volume ever becomes
+the bottleneck.
 
-A low-denoise img2img style pass would close more — and is viable for **static props**,
-where there is no temporal dimension to disturb. It must **not** be applied to animation
-frames, because per-frame diffusion reintroduces exactly the jitter this architecture
-exists to eliminate.
+It is not the plan. Two reasons:
 
-So the residual quality question is not "will assets be consistent" — they will be,
-provably. It is "will they read as pixel art or as small 3D renders." That is a question
-of creative direction and shader authoring, which is where human effort should go under
-these constraints.
+1. **Art is the lesser constraint.** Building a factory optimises the thing that
+   was not limiting.
+2. **It solved consistency by removing humans**, when consistency is achievable
+   far more cheaply by telling humans precisely what is inconsistent.
 
-**Second risk:** 8 GB runs every stage, but sequentially and slowly, and TRELLIS 2 is at
-its floor. Budget for cloud GPU on stage 2 if mesh quality becomes the binding limit.
-
----
-
-## 7. Human interface
-
-The complete human-facing control surface:
-
-- **`style_bible.yaml`** — reference set, locked palette, outline convention, shading
-  ramp definitions, silhouette rules, prop manifest, prompt templates.
-- **Concept approval queue** — approve/reject stage-1 concepts.
-- **Escalation queue** — assets that failed 3 retries, plus aesthetic calls.
-
-No pixel editing. No frame fixing. Everything downstream of concept approval is machine
-work, and everything from stage 5 onward is deterministic and reproducible.
+The one durable finding from that work is the quantization result above, which
+now lives on as review guidance instead of as a render stage.

@@ -1,57 +1,65 @@
 # cozy-coffee-iso
 
-Design and technical spec for an **isometric pixel-art cozy coffee shop sim**, plus the
-asset-generation pipeline that has to feed it.
+Art direction and a **review tool** for an isometric pixel-art cozy coffee shop sim.
 
-The interesting problem here isn't the game — it's that "usable sprite" is a *technical
-contract*, not an aesthetic one: fixed canvas, footprint-anchored pivot, 1-bit alpha,
-locked palette, one light direction, consistent 2:1 dimetric projection. Diffusion
-models are natively bad at every one of those. So the architecture separates the two
-concerns: **generation decides appearance, and a deterministic stage enforces spec**,
-with an auto-reject gate between them.
+**Art is not the binding constraint on this project — content is.** Systems,
+progression, recipes, customer behaviour, economy and dialogue are what a cozy sim
+lives or dies on. Art needs to be *consistent*, not *automated*, and consistency is
+a review problem rather than a generation problem.
 
-Two project constraints drive the design: **maximum quality (8 directions everywhere)**,
-and **no human ever touches a pixel** — AI or code does all creation *and* all validation,
-with humans limited to creative direction.
+So this repo does not make art. It tells you what is wrong with art someone else
+made — hand-pixelled, AI-generated, rendered, or bought.
+
+## Use it
+
+    pip install -r tools/requirements.txt
+    python tools/art_review.py sprite.png
+    python tools/art_review.py "sprites/*.png" --json
+
+Findings are ranked and each carries a concrete fix. It is **not** pass/fail:
+severity is a claim about confidence, not authority. A note may well be the right
+artistic call and the tool cannot tell.
+
+```
+sprite.png
+  [warning] ramp-coherence: cross-ramp adjacency is 6.0% (clean toon shading
+            measures ~2.5%); ramps present: {'cream': 176, 'neutral': 157, ...}
+         -> Shading appears to wander between colour families rather than staying
+            on one ramp. Typical cause is matching shaded pixels to the nearest
+            palette colour instead of picking a step of the surface's own ramp.
+```
 
 ## What's here
 
-- **[PIPELINE.md](PIPELINE.md)** — the architecture those constraints require, and why
-  pure 2D diffusion cannot satisfy them
-- **[ASSET_SPEC.md](ASSET_SPEC.md)** — projection and palette decisions, the full asset
-  manifest with frame-count math, the per-asset technical contract, and the closed-loop
-  conformance gate
+- **[ASSET_SPEC.md](ASSET_SPEC.md)** — the rubric. Projection, palette, per-asset
+  contract, asset manifest.
+- **[PIPELINE.md](PIPELINE.md)** — what the reviewer checks and why.
+- **[style_bible.yaml](style_bible.yaml)** — the single control surface. Edit this;
+  the palette and the reviewer both read from it.
+- **`tools/`** — reviewer, palette forge, and test fixtures.
 
-## The short version, if you only read one thing
+## Art direction
 
-You cannot get 8-direction, temporally-coherent, spec-exact pixel animation out of image
-diffusion plus post-processing — not without a human fixing frames. So don't. **Go through
-3D and pre-render**, the way Diablo 2, Fallout, Age of Empires 2 and StarCraft did, for
-exactly the same reason: when nobody can fix a pixel afterward, correctness has to be
-*structural* rather than hoped for.
+Studio Ghibli colour sensibility expressed through 16-bit pixel-art constraints —
+explicitly *not* the soft-rendered diffusion "Ghibli filter" look, whose gradients
+and diffuse edges are exactly what a locked palette and 1-bit alpha destroy. The
+precedent is SNES-era JRPG background art (Secret of Mana, Terranigma), which
+already borrowed Ghibli's palette and light handling while staying inside pixel-art
+limits.
 
-```
-concept art (SDXL)  →  mesh (TRELLIS 2)  →  rig (UniRig)  →  motion (HY-Motion)
-                    →  render (Blender, ortho, 8 azimuths)
-                    →  pixelize (nearest-neighbor + palette quantize)
-                    →  validate (closed loop, auto-repair, bounded retry)
-```
+The 40-colour palette is **computed in OKLab, not hand-picked**, so two properties
+are checkable rather than hoped for: every pair is provably far enough apart to
+survive quantization, and the warm-light / cool-shadow hue shift — the single rule
+doing most of the "Ghibli" work — is a parameter that cannot be forgotten on asset
+180.
 
-Projection drift becomes impossible — it's a camera matrix. Eight directions become eight
-azimuths of one mesh, consistent by construction. Frame jitter goes to zero. Pivots and
-footprints are computed from mesh geometry rather than guessed from silhouettes.
+    python tools/palette_forge.py    # regenerate; exits non-zero on constraint failure
 
-And the economics invert: extra directions cost render time instead of authoring time, so
-"all 8" stops being expensive and becomes the default.
+Loads into Aseprite via `palette/palette.gpl`.
 
-**The honest trade:** the hard problem *moves* rather than disappearing. Geometry and
-coherence get solved, but a rendered 3D scene looks rendered. Toon shading with flat ramps
-and aggressive palette quantization close most of that gap — not all of it. That residual
-is a creative-direction and shader-authoring problem, which is exactly where human effort
-should go under these constraints.
+## Settled
 
-## Status
-
-Spec and architecture only — no code yet. Recommended first build is the deterministic
-half (render → pixelize → metadata → validate) driven by a placeholder mesh, proving the
-contract end to end before spending GPU time on generation.
+- 2:1 dimetric projection, camera elevation 30 degrees (verified to 12 decimals)
+- 64x32 base tile, single fixed 14x10 room, camera locked
+- 40-colour locked palette, no pure black, no pure white
+- One fixed key light from upper-left
