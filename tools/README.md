@@ -36,3 +36,39 @@ rejection was a real design error rather than a tuning nit:
    skin-adjacent surfaces. Hence the per-ramp `cool_amount` override.
 
 None of those would have been obvious by eye until a hundred assets in.
+
+## Proving the shading claim
+
+    python tools/prove_shading.py     # -> proof/comparison.png
+
+`isorender.py` is a small orthographic dimetric raytracer standing in for the
+Blender stage, so the deterministic half of the pipeline could be built and
+tested before any DCC dependency exists. `verify_projection()` asserts that a
+ground-plane unit square projects at exactly 2:1 rather than trusting the
+arithmetic - it measures 0.500000000000.
+
+`pixelize.py` implements the conformance stage, and deliberately implements
+*both* quantization strategies so the difference can be measured:
+
+| | naive | ramp-quantized |
+|---|---|---|
+| distinct colours | 17 | 10 |
+| ramps touched | wood, cream, foliage, **neutral** | wood, cream, foliage |
+| cross-ramp leak | **157 px (11.8%)** | **0** |
+
+The naive path smooth-shades, averages during downsample, then snaps each pixel
+to its nearest palette entry. Both later steps are the problem: averaging
+manufactures colours that were never in the palette, and nearest-colour search
+has no idea what material it is shading. In the comparison sheet this shows up
+unmistakably - the cream ceramic cup renders **blue-grey**, because its shadow
+side landed nearer the violet `neutral` ramp than to its own. That artifact is
+precisely what "looks like a shrunk 3D render" means.
+
+The ramp-quantized path binds each material to a ramp, maps the lambert term to
+a discrete ramp *index*, and emits that exact colour. Gradients are recovered by
+ordered dithering between adjacent steps **of the same ramp**. Downsampling
+takes the modal colour, never the mean. Cross-ramp contamination is not reduced;
+it is impossible.
+
+Outline colour is the bounding surface's own darkest ramp step, so "tinted per
+surface" and "never pure black" hold by construction rather than by choice.
