@@ -25,6 +25,7 @@ Both paths are implemented so the difference can be measured rather than argued.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -50,6 +51,30 @@ MATERIAL_RAMPS = {
 }
 
 
+def material(m: str) -> tuple[str, int]:
+    """Split a material token into (ramp, tone offset).
+
+    A trailing signed integer shifts the shaded result along the material's own
+    ramp: `"wood-3"` is wood, three steps darker. This is the pixel-art idiom of
+    drawing detail with value rather than with geometry -- eyes, panel seams and
+    fabric folds are a darker step of the surface they sit on, not a new colour.
+    Crucially it stays palette-exact, because the result is still a step of the
+    same ramp, so cross-ramp contamination remains structurally impossible.
+
+    Offsets compose by summing, so `"neutral-2+1"` is neutral one step down.
+    That matters for modular assembly: a part may brighten whatever material it
+    is handed (a hair bun is `mat + "+1"`) without needing to know that the spec
+    already darkened it.
+    """
+    parts = _TONE_RE.findall(m)
+    base = _TONE_RE.sub("", m)
+    return MATERIAL_RAMPS[base], sum(int(p) for p in parts)
+
+
+_TONE_RE = re.compile(r"[+-]\d+")
+
+
+
 def load_palette(path: Path | None = None) -> dict[str, list[tuple[int, int, int]]]:
     path = path or ROOT / "palette" / "palette.json"
     entries = json.loads(path.read_text(encoding="utf-8"))
@@ -70,12 +95,13 @@ def shade_toon(mat, lam, size, ramps, dither=True):
             m = mat[i]
             if m is None:
                 continue
-            ramp = ramps[MATERIAL_RAMPS[m]]
+            rname, tone = material(m)
+            ramp = ramps[rname]
             n = len(ramp)
 
             # Continuous position along the ramp, then split into index + fraction.
-            pos = lam[i] * (n - 1)
-            idx = int(pos)
+            pos = lam[i] * (n - 1) + tone
+            idx = int(pos // 1)
             frac = pos - idx
 
             if dither and idx < n - 1:
@@ -95,8 +121,9 @@ def shade_smooth(mat, lam, size, ramps):
     for i, m in enumerate(mat):
         if m is None:
             continue
-        ramp = ramps[MATERIAL_RAMPS[m]]
-        base = ramp[len(ramp) // 2]
+        rname, tone = material(m)
+        ramp = ramps[rname]
+        base = ramp[max(0, min(len(ramp) - 1, len(ramp) // 2 + tone))]
         s = 0.35 + 0.95 * lam[i]
         out[i] = tuple(max(0, min(255, int(c * s))) for c in base)
     return out
@@ -175,7 +202,7 @@ def apply_outline(px, mat_small, size, ramps, selective=True):
                         edge = True
                         break
             if edge and m is not None:
-                out[i] = ramps[MATERIAL_RAMPS[m]][0]
+                out[i] = ramps[material(m)[0]][0]
     return out
 
 

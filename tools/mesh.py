@@ -53,6 +53,36 @@ class Mesh:
                      (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)):
             self.add_quad(*(p[i] for i in quad), material=material)
 
+    def add_prism(self, centre: Vec, rx: float, ry: float, height: float,
+                  material: str, segments: int = 8, phase: float = math.pi / 8,
+                  cap_material: str | None = None) -> None:
+        """An n-gon prism with independent x/y radii.
+
+        Boxes are the wrong primitive for anything that must look the same from
+        every camera azimuth: a box's projected width swings by half between its
+        face-on and corner-on views. An octagon's swings by about 8%, so a
+        character built from prisms keeps a stable silhouette through all eight
+        directions -- and reads as rounded rather than blocky, which is what the
+        art direction wants anyway.
+        """
+        cx, cy, cz = centre
+        top, bot = cz + height, cz
+        ring = [(cx + rx * math.cos(2 * math.pi * i / segments + phase),
+                 cy + ry * math.sin(2 * math.pi * i / segments + phase))
+                for i in range(segments)]
+        cap = cap_material or material
+        for i in range(segments):
+            x0, y0 = ring[i]
+            x1, y1 = ring[(i + 1) % segments]
+            self.add_quad((x0, y0, bot), (x1, y1, bot),
+                          (x1, y1, top), (x0, y0, top), material)
+            ci = len(self.verts)
+            self.verts += [(cx, cy, top), (x0, y0, top), (x1, y1, top)]
+            self.faces.append(((ci, ci + 1, ci + 2), None, cap))
+            ci = len(self.verts)
+            self.verts += [(cx, cy, bot), (x1, y1, bot), (x0, y0, bot)]
+            self.faces.append(((ci, ci + 1, ci + 2), None, cap))
+
     def add_cylinder(self, centre: Vec, radius: float, height: float,
                      material: str, segments: int = 24) -> None:
         cx, cy, cz = centre
@@ -198,10 +228,27 @@ class ShadowMap:
 
 def rasterize(mesh: Mesh, cam: DimetricCamera, size: int,
               target: Vec = (0.0, 0.0, 0.62), smooth: bool = False,
-              shadows: "ShadowMap | None" = None, fill: float = 0.0):
-    """Orthographic scanline z-buffer. Returns (material, lambert, normal)."""
+              shadows: "ShadowMap | None" = None, fill: float = 0.0,
+              bounce: float = 0.0):
+    """Orthographic scanline z-buffer. Returns (material, lambert, normal).
+
+    Three light terms, and the third is not decoration:
+
+    * **key** -- one directional light, upper-left, anchored to the camera basis.
+    * **fill** -- a soft opposing wash so shadow sides do not go to a single flat
+      value.
+    * **bounce** -- a weak light along the view direction.
+
+    Bounce exists because a character's face is a vertical surface and the key
+    comes from above, so without it every face sits permanently at the bottom of
+    its ramp: measured, skin peaked at 0.56 lambert and never rose past step 3 of
+    7, leaving heads as dark lumps. Cozy games all light faces this way. It is
+    also what stops the fronts of props -- the sides turned toward the player --
+    from being the darkest thing on screen.
+    """
     light = camera_light(cam)
     fill_dir = norm((-light[0], -light[1], abs(light[2]) * 0.5 + 0.3))
+    view = cam.dir
     inv = size / (2.0 * cam.span)
 
     mat: list[str | None] = [None] * (size * size)
@@ -272,7 +319,8 @@ def rasterize(mesh: Mesh, cam: DimetricCamera, size: int,
                 # A weak opposing fill lifts the fully-turned-away face off the
                 # bottom of the ramp, so mid steps get used instead of clamping.
                 amb = fill * max(0.0, dot(n, fill_dir))
-                lam[i] = min(1.0, 0.10 + 0.80 * key + amb)
+                bnc = bounce * max(0.0, dot(n, view))
+                lam[i] = min(1.0, 0.10 + 0.80 * key + amb + bnc)
     return mat, lam, nrm
 
 

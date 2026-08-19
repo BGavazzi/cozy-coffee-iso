@@ -49,14 +49,47 @@ def merge(*meshes: Mesh) -> Mesh:
 # --- structure ---------------------------------------------------------------
 
 def floor(w: int, d: int, tone_a=WOOD, tone_b=CERAMIC, checker=False) -> Mesh:
+    """Board flooring: one slab, with flat tone overlays for planks and seams.
+
+    A single unbroken quad was 63% of the frame at one ramp step, the clearest
+    tell of a blockout -- every comparable in the genre breaks its floor with
+    plank seams, worn patches or tiling.
+
+    Two traps here, both hit in review. First, restraint: half-tile boards with
+    a two-step-dark seam turned the floor into a barcode that pulled the eye off
+    every prop in the room. Second, and less obvious: laying planks as separate
+    boxes leaves a 0.06 vertical face at every joint. Those faces are turned
+    away from the key light, so they shaded to ramp step 0 and put 15% of the
+    floor at the darkest colour in the palette -- a black grid, produced by
+    geometry that was only ever meant to be a tone change.
+
+    So: one slab, and the variation is flat overlays a thousandth of a unit
+    above it, with no vertical extent to catch a shadow.
+    """
     m = Mesh()
-    if not checker:
-        m.add_box((0, 0, -0.06), (w, d, 0.0), tone_a)
+    if checker:
+        for x in range(w):
+            for y in range(d):
+                m.add_box((x, y, -0.06), (x + 1, y + 1, 0.0),
+                          tone_a if (x + y) % 2 == 0 else tone_b)
         return m
-    for x in range(w):
-        for y in range(d):
-            m.add_box((x, y, -0.06), (x + 1, y + 1, 0.0),
-                      tone_a if (x + y) % 2 == 0 else tone_b)
+    m.add_box((0, 0, -0.06), (w, d, 0.0), tone_a)
+    board, tones = 1.0, ("", "", "-1", "", "")
+    for i in range(int(d / board)):
+        y0, y1 = i * board, min(d, (i + 1) * board)
+        t = tones[i % len(tones)]
+        if t:
+            m.add_box((0, y0, 0.0), (w, y1 - 0.03, 0.0012), tone_a + t)
+        m.add_box((0, y1 - 0.03, 0.0), (w, y1, 0.0018), tone_a + "-1")   # seam
+    return m
+
+
+def rug(w: float, d: float, mat=FABRIC) -> Mesh:
+    """A rug is the cheapest way to give a seating cluster its own ground and to
+    put a second hue into a floor that is otherwise all one material."""
+    m = Mesh()
+    m.add_box((0, 0, 0.001), (w, d, 0.012), mat + "-2")
+    m.add_box((0.18, 0.18, 0.012), (w - 0.18, d - 0.18, 0.020), mat + "-1")
     return m
 
 
@@ -164,13 +197,25 @@ def table_4top() -> Mesh:
 
 
 def chair(cushion=None) -> Mesh:
+    """Back at -y, so a chair at rot=0 has its back away from a table to its +y.
+
+    The back is an open frame -- two stiles, a top rail, a mid slat -- rather
+    than one filled panel. A solid back is 16 x 13 px of unbroken wood at room
+    scale and reads as a partition wall, which is what review actually flagged.
+    The gaps are what make the silhouette say "chair".
+    """
     m = Mesh()
-    m.add_box((0.20, 0.20, 0.40), (0.80, 0.80, 0.52), WOOD)     # seat, thicker
-    m.add_box((0.20, 0.66, 0.52), (0.80, 0.80, 1.00), WOOD)     # back, taller
+    seat_z = 0.45                      # ~28% of character height; was 0.52
     for cx, cy in ((0.28, 0.28), (0.72, 0.28), (0.28, 0.72), (0.72, 0.72)):
-        m.add_box((cx - 0.075, cy - 0.075, 0), (cx + 0.075, cy + 0.075, 0.40), WOOD)
+        m.add_box((cx - 0.078, cy - 0.078, 0), (cx + 0.078, cy + 0.078, seat_z - 0.07),
+                  WOOD)
+    m.add_box((0.18, 0.18, seat_z - 0.07), (0.82, 0.82, seat_z), WOOD)      # seat
+    for sx in (0.20, 0.68):                                                 # stiles
+        m.add_box((sx, 0.20, seat_z), (sx + 0.12, 0.32, 1.02), WOOD)
+    m.add_box((0.20, 0.21, 0.88), (0.80, 0.31, 1.02), "wood+1")             # top rail
+    m.add_box((0.26, 0.22, 0.63), (0.74, 0.30, 0.73), "wood-1")             # mid slat
     if cushion:
-        m.add_box((0.23, 0.23, 0.52), (0.77, 0.77, 0.58), cushion)
+        m.add_box((0.21, 0.21, seat_z), (0.79, 0.79, seat_z + 0.06), cushion)
     return m
 
 

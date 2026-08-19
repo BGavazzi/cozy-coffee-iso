@@ -43,7 +43,10 @@ def build_room():
     L = Layout()
     add = L.add
 
-    add(A.floor(ROOM_W, ROOM_D, checker=False), name="floor", track=False)
+    add(A.floor(ROOM_W, ROOM_D), name="floor", track=False)
+    for rx, ry, rw, rd, rm in ((2.2, 4.1, 2.6, 2.6, "foliage"),
+                               (10.5, 6.9, 3.0, 2.8, "rose")):
+        add(A.rug(rw, rd, rm), at=(rx, ry, 0), name="floor#rug", track=False)
     add(A.wall_run((0, 0), "x", ROOM_W, openings=(4, 5, 10, 11)), name="wall", track=False)
     add(A.wall_run((0, 0), "y", ROOM_D, openings=(6, 7)), name="wall", track=False)
 
@@ -98,7 +101,7 @@ def build_room():
     seated = [(3.3, 5.3 - 0.95, 0, 0), (3.3, 5.3 + 0.95, 180, 2),
               (6.6, 7.6 - 0.95, 0, 4), (9.8, 3.55, 0, 1), (11.0, 5.45, 180, 6)]
     for i, (cx, cy, rot, who) in enumerate(seated):
-        add(C.build(C.CUSTOMERS[who], seated=True), at=(cx, cy, 0.52), rot=rot,
+        add(C.build(C.CUSTOMERS[who], seated=True), at=(cx, cy, 0.45), rot=rot,
             name=f"char#seat{i}")
     add(C.build(C.CUSTOMERS[3]), at=(6.0, 2.6, 0), rot=200, name="char#queue0")
     add(C.build(C.CUSTOMERS[7]), at=(6.8, 3.3, 0), rot=200, name="char#queue1")
@@ -149,7 +152,8 @@ def main() -> int:
         print("building shadow map ...")
         sm = ShadowMap(mesh, camera_light(cam), res=768)
     mat, lam, _ = rasterize(mesh, cam, size, target=centre, shadows=sm,
-                            fill=0.0 if args.no_shadows else 0.16)
+                            fill=0.0 if args.no_shadows else 0.16,
+                            bounce=0.22)
 
     px = downsample_modal(shade_toon(mat, lam, size, ramps, dither=True),
                           size, args.factor)
