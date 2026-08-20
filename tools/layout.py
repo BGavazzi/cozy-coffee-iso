@@ -54,7 +54,22 @@ class Layout:
     rots: dict = field(default_factory=dict)
 
     def add(self, mesh: Mesh, at=(0.0, 0.0, 0.0), rot: float = 0.0,
-            name: str = "prop", track: bool = True) -> None:
+            name: str = "prop", track: bool = True, centre: bool = False) -> None:
+        """Place a mesh. `centre=True` rotates about the mesh's own XY centre.
+
+        Worth having because `transformed` rotates about the local origin, so a
+        prop placed at 200 degrees lands nowhere near the coordinates that were
+        written for it -- an armchair intended for (3.0, 7.5) actually occupied
+        x 2.19-3.21, y 6.35-7.37 and collided with a stool a metre away. With
+        the pivot at the centre, `at` means what it reads as, which is the only
+        way hand-written placements stay maintainable.
+        """
+        if centre:
+            xs = [v[0] for v in mesh.verts]
+            ys = [v[1] for v in mesh.verts]
+            if xs:
+                cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+                mesh = transformed(mesh, at=(-cx, -cy, 0.0))
         m = transformed(mesh, rot_z=rot, at=at)
         if not m.verts:
             return

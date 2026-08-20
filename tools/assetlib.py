@@ -30,6 +30,12 @@ WOOD, CERAMIC, PLANT, FABRIC, METAL = (
 GLASS = "sky+2"
 GLASS_EDGE = "sky"
 
+# The wall field, two steps down from plain cream. At full cream the far wall
+# measured 0.77-0.78 mean lightness -- the brightest thing in the frame by a
+# wide margin -- so the eye was pulled to the top edge and off everything the
+# room is actually about. A backdrop should be the quietest surface present.
+WALL_FIELD = "cream-2"
+
 
 def transformed(m: Mesh, rot_z: float = 0.0, at: tuple = (0.0, 0.0, 0.0),
                 scale: float = 1.0) -> Mesh:
@@ -143,10 +149,10 @@ def wall_run(start, along: str, length: int, height=1.6,
             continue
         if along == "x":
             m.add_box((x0 + i, y0, 0), (x0 + i + 1, y0 + t, 0.5), WOOD)      # wainscot
-            m.add_box((x0 + i, y0, 0.5), (x0 + i + 1, y0 + t, height), CERAMIC)
+            m.add_box((x0 + i, y0, 0.5), (x0 + i + 1, y0 + t, height), WALL_FIELD)
         else:
             m.add_box((x0, y0 + i, 0), (x0 + t, y0 + i + 1, 0.5), WOOD)
-            m.add_box((x0, y0 + i, 0.5), (x0 + t, y0 + i + 1, height), CERAMIC)
+            m.add_box((x0, y0 + i, 0.5), (x0 + t, y0 + i + 1, height), WALL_FIELD)
     return m
 
 
@@ -206,10 +212,10 @@ def pastry_case() -> Mesh:
     return m
 
 
-def table_round() -> Mesh:
+def table_round(top=WOOD) -> Mesh:
     m = Mesh()
     m.add_cylinder((0.5, 0.5, 0.0), 0.13, 0.58, WOOD, 12)       # thicker column
-    m.add_cylinder((0.5, 0.5, 0.58), 0.44, 0.11, WOOD, 20)      # thicker top
+    m.add_cylinder((0.5, 0.5, 0.58), 0.44, 0.11, top, 20)       # thicker top
     m.add_cylinder((0.5, 0.5, 0.0), 0.30, 0.06, WOOD, 14)       # base
     return m
 
@@ -218,28 +224,33 @@ def table_4top() -> Mesh:
     m = Mesh()
     m.add_box((0.05, 0.05, 0.58), (1.95, 0.95, 0.70), WOOD)
     for cx, cy in ((0.22, 0.18), (1.78, 0.18), (0.22, 0.82), (1.78, 0.82)):
-        m.add_box((cx - 0.085, cy - 0.085, 0), (cx + 0.085, cy + 0.085, 0.58), WOOD)
+        m.add_box((cx - 0.105, cy - 0.105, 0), (cx + 0.105, cy + 0.105, 0.58), WOOD)
     return m
 
 
-def chair(cushion=None) -> Mesh:
+def chair(cushion=None, frame=WOOD) -> Mesh:
     """Back at -y, so a chair at rot=0 has its back away from a table to its +y.
 
     The back is an open frame -- two stiles, a top rail, a mid slat -- rather
     than one filled panel. A solid back is 16 x 13 px of unbroken wood at room
     scale and reads as a partition wall, which is what review actually flagged.
     The gaps are what make the silhouette say "chair".
+
+    `frame` exists because 67% of the room measured as the wood ramp, and when
+    every object shares one ramp, furniture stops separating from furniture. A
+    painted chair costs nothing -- the ramps already exist -- and buys object
+    separation that no amount of extra geometry would.
     """
     m = Mesh()
     seat_z = 0.45                      # ~28% of character height; was 0.52
     for cx, cy in ((0.28, 0.28), (0.72, 0.28), (0.28, 0.72), (0.72, 0.72)):
-        m.add_box((cx - 0.078, cy - 0.078, 0), (cx + 0.078, cy + 0.078, seat_z - 0.07),
-                  WOOD)
-    m.add_box((0.18, 0.18, seat_z - 0.07), (0.82, 0.82, seat_z), WOOD)      # seat
+        m.add_box((cx - 0.090, cy - 0.090, 0), (cx + 0.090, cy + 0.090, seat_z - 0.07),
+                  frame)
+    m.add_box((0.18, 0.18, seat_z - 0.07), (0.82, 0.82, seat_z), frame)     # seat
     for sx in (0.20, 0.68):                                                 # stiles
-        m.add_box((sx, 0.20, seat_z), (sx + 0.12, 0.32, 1.02), WOOD)
-    m.add_box((0.20, 0.21, 0.88), (0.80, 0.31, 1.02), "wood+1")             # top rail
-    m.add_box((0.26, 0.22, 0.63), (0.74, 0.30, 0.73), "wood-1")             # mid slat
+        m.add_box((sx - 0.01, 0.19, seat_z), (sx + 0.15, 0.34, 1.02), frame)
+    m.add_box((0.19, 0.19, 0.86), (0.83, 0.34, 1.02), frame + "+1")         # top rail
+    m.add_box((0.24, 0.20, 0.60), (0.78, 0.33, 0.75), frame + "-1")         # mid slat
     if cushion:
         m.add_box((0.21, 0.21, seat_z), (0.79, 0.79, seat_z + 0.06), cushion)
     return m
@@ -248,7 +259,7 @@ def chair(cushion=None) -> Mesh:
 def stool() -> Mesh:
     m = Mesh()
     m.add_cylinder((0.5, 0.5, 0.62), 0.24, 0.08, FABRIC, 14)
-    m.add_cylinder((0.5, 0.5, 0.0), 0.07, 0.62, METAL, 10)
+    m.add_cylinder((0.5, 0.5, 0.0), 0.095, 0.62, METAL, 10)
     m.add_cylinder((0.5, 0.5, 0.0), 0.22, 0.03, METAL, 12)
     return m
 
@@ -312,23 +323,173 @@ def menu_board() -> Mesh:
 
 def table_clutter(kind: str = "cafe") -> Mesh:
     """Tables with one cup read as showroom furniture. Occupied tables need
-    stuff on them."""
+    stuff on them.
+
+    Sized up from a first pass where 23% of the cluster's mass fell under the
+    4 px member floor. Tabletop items are small by nature, but below about 4 px
+    they stop being a cup and start being a speck, and a table of specks reads
+    as dirt rather than as an occupied table.
+    """
     m = Mesh()
     if kind == "cafe":
         m.add_cylinder((0.42, 0.46, 0.0), 0.115, 0.02, CERAMIC, 12)   # saucer
         m.add_cylinder((0.42, 0.46, 0.02), 0.075, 0.115, CERAMIC, 12)  # cup
-        m.add_cylinder((0.62, 0.40, 0.0), 0.055, 0.09, CERAMIC, 10)    # second cup
-        m.add_box((0.30, 0.62, 0.0), (0.50, 0.76, 0.05), FABRIC)       # napkin
-        m.add_box((0.60, 0.62, 0.0), (0.70, 0.70, 0.10), WOOD)         # caddy
+        m.add_cylinder((0.64, 0.38, 0.0), 0.085, 0.12, CERAMIC, 10)    # second cup
+        m.add_box((0.28, 0.60, 0.0), (0.52, 0.78, 0.07), FABRIC)       # napkin
+        m.add_box((0.58, 0.60, 0.0), (0.74, 0.74, 0.13), WOOD)         # caddy
     elif kind == "work":
         m.add_box((0.26, 0.34, 0.0), (0.66, 0.62, 0.03), METAL)        # laptop base
         m.add_box((0.26, 0.60, 0.03), (0.66, 0.64, 0.30), GLASS)       # screen
-        m.add_cylinder((0.74, 0.42, 0.0), 0.07, 0.12, CERAMIC, 10)
+        m.add_cylinder((0.76, 0.40, 0.0), 0.095, 0.15, CERAMIC, 10)
     elif kind == "books":
         m.add_box((0.28, 0.36, 0.0), (0.62, 0.64, 0.06), FABRIC)
         m.add_box((0.30, 0.38, 0.06), (0.60, 0.62, 0.11), CERAMIC)
-        m.add_cylinder((0.72, 0.48, 0.0), 0.075, 0.12, CERAMIC, 10)
+        m.add_cylinder((0.74, 0.46, 0.0), 0.095, 0.15, CERAMIC, 10)
     elif kind == "counter":
-        for cx in (0.24, 0.44, 0.64):
-            m.add_cylinder((cx, 0.5, 0.0), 0.055, 0.09, CERAMIC, 8)
+        for cx in (0.22, 0.46, 0.70):
+            m.add_cylinder((cx, 0.5, 0.0), 0.085, 0.13, CERAMIC, 10)
+    return m
+
+
+# --- dressing ----------------------------------------------------------------
+#
+# Room occupancy measured 58% with an 8-tile bare rectangle, and the cause was
+# not placement -- it was that every mesh in the library was already on the
+# floor. A room reads as under-dressed long before it reads as under-lit, so
+# these exist to give layout something to spend.
+#
+# All members are kept at or above 0.15 units. At the room's 27 px/unit that is
+# a 4 px floor, below which a member stops reading as a shape and starts reading
+# as a stray line.
+
+def bench(length: float = 2.0, cushion=FABRIC) -> Mesh:
+    """Banquette seating: reads as one mass, which is what a wall run wants."""
+    m = Mesh()
+    m.add_box((0.08, 0.14, 0.0), (length - 0.08, 0.82, 0.38), WOOD)
+    m.add_box((0.08, 0.16, 0.38), (length - 0.08, 0.80, 0.46), cushion)
+    m.add_box((0.08, 0.14, 0.46), (length - 0.08, 0.30, 1.02), WOOD)      # back
+    m.add_box((0.12, 0.28, 0.50), (length - 0.12, 0.34, 0.94), cushion)
+    return m
+
+
+def armchair(cushion=FABRIC) -> Mesh:
+    m = Mesh()
+    m.add_box((0.10, 0.10, 0.0), (0.90, 0.90, 0.34), WOOD)
+    m.add_box((0.16, 0.16, 0.34), (0.84, 0.84, 0.48), cushion)            # seat
+    m.add_box((0.10, 0.10, 0.34), (0.90, 0.28, 0.92), WOOD)               # back
+    m.add_box((0.14, 0.26, 0.40), (0.86, 0.32, 0.86), cushion)
+    for ax in (0.10, 0.72):                                                # arms
+        m.add_box((ax, 0.28, 0.34), (ax + 0.18, 0.88, 0.60), WOOD)
+    return m
+
+
+def side_table() -> Mesh:
+    m = Mesh()
+    m.add_cylinder((0.5, 0.5, 0.0), 0.10, 0.44, WOOD, 10)
+    m.add_cylinder((0.5, 0.5, 0.44), 0.30, 0.09, WOOD, 16)
+    m.add_cylinder((0.5, 0.5, 0.0), 0.22, 0.05, WOOD, 12)
+    return m
+
+
+def coat_rack(coat=None) -> Mesh:
+    m = Mesh()
+    m.add_cylinder((0.5, 0.5, 0.0), 0.18, 0.07, WOOD, 12)                 # base
+    m.add_cylinder((0.5, 0.5, 0.07), 0.10, 1.42, WOOD, 8)
+    for dx, dy in ((0.26, 0.0), (-0.26, 0.0), (0.0, 0.26), (0.0, -0.26)):
+        m.add_box((0.5 + min(0, dx) - 0.085, 0.5 + min(0, dy) - 0.085, 1.28),
+                  (0.5 + max(0, dx) + 0.085, 0.5 + max(0, dy) + 0.085, 1.40), WOOD)
+    if coat:
+        m.add_box((0.24, 0.34, 0.62), (0.52, 0.66, 1.30), coat)
+    return m
+
+
+def sandwich_board() -> Mesh:
+    """A-frame chalkboard. The lean is the whole silhouette, so it is generous."""
+    m = Mesh()
+    # Solid panels, not quads. A zero-thickness plane is right for a floor
+    # overlay and wrong for anything standing up: seen near edge-on it collapses
+    # to a 1 px line, which is how this shipped at 3 px and read as a stray mark.
+    for y0, y1 in ((0.16, 0.30), (0.70, 0.84)):
+        m.add_box((0.12, y0, 0.0), (0.88, y1, 0.90), WOOD)
+    m.add_box((0.17, 0.28, 0.16), (0.83, 0.34, 0.78), "neutral-2")        # slate
+    m.add_box((0.17, 0.66, 0.16), (0.83, 0.72, 0.78), "neutral-2")
+    m.add_box((0.12, 0.28, 0.86), (0.88, 0.72, 0.94), WOOD)               # hinge
+    return m
+
+
+def wall_shelf(length: float = 2.0, along: str = "x", rows=(0.34,)) -> Mesh:
+    """Shelving on the far wall, where the eye lands behind the counter.
+
+    Rows are a parameter because the wall is only 1.6 tall and the counter top
+    is at 0.92, leaving 0.68 of usable wall. A two-row shelf overshot it by 0.07
+    and the jars floated above the wall line -- geometry that is fine in
+    isolation and wrong only against its host, which is the recurring shape of
+    every placement bug in this project.
+    """
+    m = Mesh()
+    for z in rows:
+        if along == "x":
+            m.add_box((0.06, 0.0, z), (length - 0.06, 0.30, z + 0.07), WOOD)
+            n = int((length - 0.3) / 0.34)
+            for i in range(n):
+                x = 0.22 + i * 0.34
+                m.add_cylinder((x, 0.15, z + 0.07), 0.10, 0.20,
+                               (CERAMIC, FABRIC, PLANT)[i % 3], 10)
+        else:
+            m.add_box((0.0, 0.06, z), (0.30, length - 0.06, z + 0.07), WOOD)
+            n = int((length - 0.3) / 0.34)
+            for i in range(n):
+                y = 0.22 + i * 0.34
+                m.add_cylinder((0.15, y, z + 0.07), 0.10, 0.20,
+                               (CERAMIC, FABRIC, PLANT)[i % 3], 10)
+    return m
+
+
+def wall_sign() -> Mesh:
+    """Mounted above the service counter. This is a focal device, not
+    decoration -- it is the one bright, high-contrast object over the
+    interaction zone, which is how the composition tells the player where to
+    look.
+
+    Wall-mounted rather than ceiling-hung: an isometric room draws no ceiling,
+    so a hanging sign's rods terminate in mid-air.
+    """
+    m = Mesh()
+    z0, z1 = 1.02, 1.46
+    m.add_box((0.06, 0.12, z0), (0.94, 0.20, z1), WOOD)                  # board
+    m.add_box((0.12, 0.20, z0 + 0.05), (0.88, 0.23, z1 - 0.05), "cream+2")
+    for sx in (0.10, 0.86):                                              # brackets
+        m.add_box((sx, 0.12, z1), (sx + 0.06, 0.20, z1 + 0.08), "wood-1")
+    return m
+
+
+def cake_stand() -> Mesh:
+    m = Mesh()
+    m.add_cylinder((0.5, 0.5, 0.0), 0.09, 0.14, CERAMIC, 10)
+    m.add_cylinder((0.5, 0.5, 0.14), 0.26, 0.05, CERAMIC, 14)
+    m.add_cylinder((0.5, 0.5, 0.19), 0.20, 0.16, FABRIC, 12)              # cake
+    m.add_cylinder((0.5, 0.5, 0.35), 0.21, 0.03, "cream+2", 14)           # icing
+    return m
+
+
+def basket(fill=FABRIC) -> Mesh:
+    m = Mesh()
+    m.add_cylinder((0.5, 0.5, 0.0), 0.28, 0.30, WOOD, 12)
+    m.add_cylinder((0.5, 0.5, 0.30), 0.24, 0.08, fill, 12)
+    return m
+
+
+def trash_bin() -> Mesh:
+    m = Mesh()
+    m.add_cylinder((0.5, 0.5, 0.0), 0.24, 0.56, "neutral-1", 12)
+    m.add_cylinder((0.5, 0.5, 0.56), 0.26, 0.06, METAL, 12)
+    return m
+
+
+def flower_vase() -> Mesh:
+    m = Mesh()
+    m.add_cylinder((0.5, 0.5, 0.0), 0.09, 0.22, CERAMIC, 10)
+    for dx, dy, dz, r in ((0.0, 0.0, 0.30, 0.10), (0.07, 0.04, 0.38, 0.08),
+                          (-0.06, 0.05, 0.36, 0.08)):
+        m.add_sphere((0.5 + dx, 0.5 + dy, dz), r, "rose+1", 8, 6)
     return m

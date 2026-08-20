@@ -296,3 +296,86 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+# --- mesh-level checks -------------------------------------------------------
+#
+# These run on geometry rather than on a finished sprite, so they catch a defect
+# before it is rendered 3023 times.
+
+ROOM_PX_PER_UNIT = 27.2       # the room framing; see render_room.frame()
+MIN_MEMBER_PX = 4             # below this a member reads as a stray line
+MAX_THIN_SHARE = 0.20         # how much of an asset may be thin before it wires
+
+
+def check_member_thickness(mesh, name="asset", ppu=ROOM_PX_PER_UNIT,
+                           floor_px=MIN_MEMBER_PX):
+    """Thinnest drawn member, measured rather than modelled.
+
+    Pixel-art convention is to exaggerate small members precisely because
+    realistic proportions vanish at low resolution. Rather than audit box
+    dimensions -- which says nothing about what the projection actually
+    produces -- this rasterizes the asset at the scale it is really seen and
+    takes the 10th-percentile horizontal run of solid pixels.
+
+    The metric is the SHARE of the asset that is thin, not its thinnest point.
+    A first version flagged the minimum and fired on a pendant lamp's cord, a
+    cup's handle and a sign's brackets -- all of which are meant to be thin, and
+    all of which are a rounding error of their asset's area. What actually reads
+    as wire is an object most of whose mass is thin. So: the fraction of solid
+    pixels lying in runs below the floor.
+
+    Two findings this produced: chair stiles measured 1 px, and a sandwich board
+    built from zero-thickness quads measured 3 px because a standing plane seen
+    near edge-on collapses to a line. Quads are right for floor overlays and
+    wrong for anything vertical.
+    """
+    from isorender import DimetricCamera
+    from mesh import rasterize
+    cam = DimetricCamera(45.0)
+    cam.span = 1.15
+    res = max(16, int(2 * cam.span * ppu))
+    mat, _, _ = rasterize(mesh, cam, res, target=(0.5, 0.5, 0.5))
+    runs = []
+    for y in range(res):
+        cur = 0
+        for x in range(res):
+            if mat[y * res + x] is not None:
+                cur += 1
+            elif cur:
+                runs.append(cur)
+                cur = 0
+        if cur:
+            runs.append(cur)
+    if not runs:
+        return [f"{name}: renders empty at room scale"]
+    total = sum(runs)
+    thin = sum(r for r in runs if r < floor_px)
+    share = thin / total
+    if share > MAX_THIN_SHARE:
+        return [f"{name}: {share:.0%} of its mass is in runs under {floor_px} px "
+                f"at room scale (limit {MAX_THIN_SHARE:.0%}) -- reads as wire"]
+    return []
+
+
+def review_library(floor_px=MIN_MEMBER_PX):
+    """Run the mesh checks across every asset the blockout library exposes."""
+    import inspect
+    import assetlib
+    out = []
+    for fn_name, fn in sorted(vars(assetlib).items()):
+        if not callable(fn) or fn_name.startswith("_"):
+            continue
+        if fn_name in ("merge", "transformed", "floor", "wall_run", "rug", "Mesh"):
+            continue
+        try:
+            sig = inspect.signature(fn)
+            if any(p.default is p.empty for p in sig.parameters.values()):
+                continue
+            mesh = fn()
+        except Exception:
+            continue
+        if not hasattr(mesh, "verts"):
+            continue
+        out += check_member_thickness(mesh, fn_name, floor_px=floor_px)
+    return out

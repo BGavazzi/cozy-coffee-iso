@@ -282,3 +282,81 @@ Per the ratchet, three review findings became automated checks:
 - Cast shadows are soft and read as smears at this light elevation.
 - Chair frames are thin enough at room scale to read as spindly.
 - Large empty floor in the lower right; the room is under-dressed, not under-lit.
+
+---
+
+# Third pass — dressing, focal hierarchy, and a fix that made things worse first
+
+## The library was the bottleneck, not the placement
+
+Occupancy measured **58%** of floor tiles with an 8-tile bare rectangle. The
+cause was not lazy layout: every mesh in the blockout library was already on the
+floor. Eleven assets added (bench, armchair, side table, coat rack, sandwich
+board, wall shelf, wall sign, cake stand, basket, trash bin, flower vase),
+occupancy **58% → 69%**, largest bare rectangle **8 → 6** tiles, placements
+**67 → 85**.
+
+## Dressing alone made the composition worse
+
+Worth recording plainly, because it is the sort of thing that looks like
+progress. Filling the dead zones raised occupancy and *lowered* legibility: props
+were added uniformly, which flattens hierarchy rather than building it.
+
+Edge density by ninth measured **19.1% – 25.9%, a 1.36x spread** — essentially
+flat. The counter ninth, the thing the player actually interacts with, measured
+*below* the middle of the room. A composition with no peak gives the eye nowhere
+to land, and adding evenly-spread detail makes that worse, not better.
+
+Two measured causes:
+
+**The backdrop was the brightest thing in the frame.** The far wall in plain
+cream measured **0.77–0.78** mean lightness, well clear of everything else, so
+the eye was pulled to the top edge. A backdrop should be the quietest surface
+present. Dropped to `cream-2`: top row **0.77/0.67/0.78 → 0.70/0.64/0.73**.
+
+**Uniform material.** 67% of the frame was the wood ramp, so furniture did not
+separate from furniture. Painted chair frames fixed this — but the first attempt
+used `-1` offsets, which measure **L=0.70 on the sky ramp: identical to wood step
+4**. The chairs differed only in hue, read as equal-weight pastel blocks, and
+pulled focus off the counter. Painted furniture has to sit *below* the wood in
+value: at `-3` it separates by hue and recedes by value, which is the point.
+
+Net: focal spread **1.36x → 1.48x**, wood **67.3% → 62.7%**, minority ramps
+**10.8% → 15.5%**.
+
+## Placement rotated about the wrong point
+
+`transformed` rotates about the local origin, so a prop placed at 200 degrees
+lands nowhere near the coordinates written for it — an armchair intended for
+(3.0, 7.5) actually occupied x 2.19–3.21, y 6.35–7.37 and collided with a stool
+a metre away. `Layout.add(centre=True)` pivots about the mesh's own XY centre, so
+`at` means what it reads as. Hand-written placements are only maintainable if the
+coordinates are honest.
+
+## New promoted check: member thickness
+
+`art_review.check_member_thickness` rasterizes an asset at the scale it is
+actually seen (27.2 px/unit) and measures runs of solid pixels, rather than
+auditing box dimensions — which say nothing about what the projection produces.
+
+The metric took two attempts, and the first was wrong in an instructive way. It
+flagged the *thinnest* member, and duly fired on a pendant lamp's cord, a cup's
+handle and a sign's brackets — all of which are meant to be thin and are a
+rounding error of their asset's area. What reads as wire is an object most of
+whose *mass* is thin. The metric is now the share of solid pixels in runs under
+4 px, capped at 20%.
+
+Findings it produced: chair stiles at 1 px; 4-top legs at 1 px; a sandwich board
+built from zero-thickness quads at 3 px, because a standing plane seen near
+edge-on collapses to a line — quads are right for floor overlays and wrong for
+anything vertical; and table clutter at 23% of mass under the floor, sized up
+because a table of specks reads as dirt rather than as an occupied table. All
+assets now clear it.
+
+## Still open
+
+- Focal spread is 1.48x. Better than flat, not yet a composition with a centre.
+  The counter needs to win on contrast, not just on prop count.
+- Cast shadows remain soft and read as smears at this light elevation.
+- The room is now legibly furnished but the near-right quadrant is still the
+  weakest area.

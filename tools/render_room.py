@@ -44,7 +44,7 @@ def light_rig():
     lands on the table below instead of on the lamp itself.
     """
     pools = [Pool((lx, ly, 1.24), 3.6, 0.62) for lx, ly in LAMPS]
-    pools.append(Pool((5.0, 1.30, 1.20), 4.2, 0.46))       # service counter
+    pools.append(Pool((4.9, 1.20, 1.26), 4.4, 0.58))       # service counter
     for i in WIN_X:                                        # daylight at the glass
         pools.append(Pool((i + 0.5, 0.30, 0.95), 3.0, 0.40))
     for i in WIN_Y:
@@ -67,7 +67,7 @@ def build_room():
 
     add(A.floor(ROOM_W, ROOM_D), name="floor", track=False)
     for rx, ry, rw, rd, rm in ((2.2, 4.1, 2.6, 2.6, "foliage"),
-                               (10.5, 6.9, 3.0, 2.8, "rose")):
+                               (10.4, 6.9, 2.8, 2.6, "foliage")):
         add(A.rug(rw, rd, rm), at=(rx, ry, 0), name="floor#rug", track=False)
     add(A.wall_run((0, 0), "x", ROOM_W, openings=WIN_X), name="wall", track=False)
     add(A.wall_run((0, 0), "y", ROOM_D, openings=WIN_Y), name="wall", track=False)
@@ -85,21 +85,30 @@ def build_room():
         add(A.menu_board(), at=(mx, 0.04, 0), name=f"decor#menu{mx}")
 
     # --- cafe tables, chairs on all four sides
-    tables = [(3.3, 5.3, "cafe"), (6.6, 7.7, "books"), (11.9, 8.2, "cafe")]
-    for n, (tx, ty, clutter) in enumerate(tables):
-        add(A.table_round(), at=(tx, ty, 0), name=f"table#{n}")
+    # Painted seating, cycling through the ramps that were starved of frame.
+    # Painted frames sit BELOW the wood in lightness, not beside it. At -1 the
+    # sky ramp measures L=0.70, identical to wood step 4, so the chairs differed
+    # only in hue and read as equal-weight pastel blocks that pulled focus off
+    # the counter. At -3 they are deep painted wood: they separate by hue but
+    # recede by value, which is the whole point. One in three, not one in two.
+    FRAMES = ("wood", "wood", "sky-3", "wood", "wood", "foliage-3")
+    tables = [(3.3, 5.3, "cafe", "cream"), (6.6, 7.7, "books", "wood"),
+              (11.9, 8.2, "cafe", "cream")]
+    for n, (tx, ty, clutter, ttop) in enumerate(tables):
+        add(A.table_round(ttop), at=(tx, ty, 0), name=f"table#{n}")
         add(A.table_clutter(clutter), at=(tx, ty, 0.69), name=f"clutter#{n}")
         for k, (dx, dy, rot) in enumerate((
                 (0.0, 1.15, 180), (0.0, -1.15, 0), (1.15, 0.0, 90), (-1.15, 0.0, 270))):
-            add(A.chair(cushion="rose" if (n + k) % 3 == 0 else None),
+            add(A.chair(cushion="rose" if (n + k) % 3 == 0 else None,
+                        frame=FRAMES[(n * 4 + k) % len(FRAMES)]),
                 at=(tx + dx, ty + dy, 0), rot=rot, name=f"chair#{n}_{k}")
 
     # --- 4-top with four chairs
     add(A.table_4top(), at=(9.5, 4.5, 0), name="table#4top")
     add(A.table_clutter("work"), at=(9.9, 4.5, 0.71), name="clutter#4top")
     for cx in (9.8, 11.0):
-        add(A.chair(), at=(cx, 3.35, 0), rot=0,   name=f"chair#4t_{cx}a")
-        add(A.chair(), at=(cx, 5.65, 0), rot=180, name=f"chair#4t_{cx}b")
+        add(A.chair(frame="sky-3"),     at=(cx, 3.35, 0), rot=0,   name=f"chair#4t_{cx}a")
+        add(A.chair(),                  at=(cx, 5.65, 0), rot=180, name=f"chair#4t_{cx}b")
 
     # --- window bar with stools along the far-left wall
     for i in range(3):
@@ -117,6 +126,38 @@ def build_room():
     for lx, ly in ((3.3, 5.3), (6.6, 7.6), (9.9, 4.5)):
         add(A.pendant_lamp(), at=(lx - 0.5, ly - 0.5, 0.60), name=f"decor#lamp{lx}",
             track=False)
+
+    # --- dressing the measured dead zones
+    #
+    # Occupancy mapped at 58% with an 8-tile bare rectangle at x12-13, y3-6 and
+    # smaller voids at x3-4/y7-9 and x8-9/y7-9. Each cluster below targets one
+    # of them; a room reads as under-dressed long before it reads as under-lit.
+    add(A.rug(3.0, 2.3, "wood"), at=(2.9, 7.1, 0), name="floor#rug3", track=False)
+    add(A.armchair(),   at=(3.6, 7.6, 0), rot=205, name="seat#arm1", centre=True)
+    add(A.armchair(),   at=(3.9, 9.0, 0), rot=25,  name="seat#arm2", centre=True)
+    add(A.side_table(), at=(3.0, 8.5, 0),          name="table#side1", centre=True)
+    add(A.flower_vase(), at=(3.0, 8.5, 0.53),      name="clutter#vase1", centre=True)
+
+    add(A.bench(2.0),   at=(12.6, 3.6, 0), rot=0,  name="seat#bench1", centre=True)
+    add(A.side_table(), at=(12.5, 4.8, 0),         name="table#side2", centre=True)
+    add(A.armchair(),   at=(12.5, 5.9, 0), rot=180, name="seat#arm3", centre=True)
+    add(A.basket("foliage"), at=(13.4, 4.7, 0),    name="decor#basket1", centre=True)
+
+    add(A.coat_rack("sky"), at=(8.5, 8.4, 0),      name="decor#coats", centre=True)
+    add(A.sandwich_board(), at=(6.4, 9.1, 0), rot=25, name="decor#aframe", centre=True)
+
+    # --- focal hierarchy at the service counter
+    #
+    # The interaction zone carried the same detail density and contrast as bare
+    # floor, so the composition had no centre. A lit sign above it and the
+    # densest cluster of small props under it is how the genre solves this.
+    add(A.wall_sign(), at=(5.55, 0.0, 0), name="decor#sign", track=False)
+    add(A.wall_shelf(1.8), at=(2.1, 0.10, 0.66), name="decor#shelf1", track=False)
+    add(A.wall_shelf(1.8), at=(6.9, 0.10, 0.66), name="decor#shelf2", track=False)
+    add(A.cake_stand(), at=(5.55, 0.95, 0.92), name="clutter#cake", centre=True)
+    add(A.cup_and_saucer(), at=(5.9, 0.75, 0.92), name="clutter#cup1")
+    add(A.cup_and_saucer(), at=(6.9, 1.10, 0.92), name="clutter#cup2")
+    add(A.flower_vase(),    at=(7.6, 0.95, 0.92), name="clutter#vase2", centre=True)
 
     # --- characters
     add(C.build(C.BARISTA), at=(4.9, 1.95, 0), rot=0, name="char#barista")
