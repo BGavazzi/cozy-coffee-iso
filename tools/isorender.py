@@ -199,7 +199,14 @@ def verify_projection(tol: float = 1e-6) -> float:
 # instantly visible across a direction set. Anchoring the light to the camera
 # basis is equivalent to rotating the object under a fixed light, which is what
 # the game actually does.
-LIGHT_CAM = (-0.50, 0.55, 0.67)      # (right, up, toward viewer) -> upper-left key
+LIGHT_CAM = (-0.700, 0.140, 0.700)  # (right, up, toward viewer) -> upper-left key
+# Elevation is deliberately lower than the obvious "light from above". With a
+# steeper key the floor's normal aligns with the light, so the ground becomes
+# the brightest surface in the room and every character's face -- a vertical
+# plane -- sits below it. Measured at the old (-0.50, 0.55, 0.67): floor at ramp
+# step 3.3, faces at 3.1. Inverted, and it is why the room read as a lit stage
+# rather than a lit interior. At this direction: floor 2.98, faces 4.30, with
+# top-to-side face separation still 1.42 steps.
 
 
 def camera_light(cam: DimetricCamera) -> Vec:

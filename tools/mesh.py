@@ -226,10 +226,66 @@ class ShadowMap:
         return z + bias >= self.depth[iy * self.res + ix]
 
 
+@dataclass
+class Pool:
+    """A local warm light -- a pendant lamp, a candle, a hearth."""
+    pos: Vec
+    radius: float
+    intensity: float
+
+
+class LightRig:
+    """Staged light on top of the global key/fill/bounce.
+
+    This is the piece that turns the palette into art direction rather than a
+    document. Every ramp was built warm-shifted at the top and cool-shifted at
+    the bottom -- that hue rotation is the defining Ghibli move -- but with a
+    single flat key the scene only ever occupied the middle of every ramp, so
+    the shift was present in the JSON and invisible on screen.
+
+    Local light supplies the range to spend. A pool pushes nearby surfaces UP
+    their own ramp, which is automatically warmer as well as brighter; the
+    corners the pools do not reach fall to the bottom, which is automatically
+    cooler. Warm pools against cool shadow, and not one extra palette entry, as
+    it is the same ramp read at different depths.
+
+    Pools only, no projected window shafts. That was tried and abandoned for a
+    structural reason worth recording: the key light is anchored to the camera
+    basis, so at azimuth 45 its world direction runs essentially along +x. The
+    only two walls an isometric room may draw are the far ones, and a shaft cast
+    through those lands either as a 0.15-tile sliver against the skirting or
+    outside the floor altogether -- both measured. Making shafts reach would
+    mean a sun direction that disagrees with the cast shadows. A window is
+    therefore lit as a bright pane plus a soft pool inside it, which is what a
+    backlit window actually looks like from indoors, and which stays correct
+    from every azimuth instead of only one.
+    """
+
+    def __init__(self, pools=()):
+        self.pools = list(pools)
+
+    def boost(self, p: Vec, n: Vec) -> float:
+        out = 0.0
+        for L in self.pools:
+            d = sub(L.pos, p)
+            dist = math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]) or 1e-9
+            if dist >= L.radius:
+                continue
+            t = 1.0 - dist / L.radius
+            # Falloff exponent 1.5, not 2. Inverse-square is correct physics and
+            # the wrong art: measured, a squared pool put 0.062 of boost on the
+            # floor under a lamp -- a fifth of a ramp step, invisible after
+            # quantization. A pool has to cross a step boundary to exist at all.
+            facing = 0.34 + 0.66 * max(0.0, dot(n, mul(d, 1.0 / dist)))
+            out += L.intensity * (t ** 1.5) * facing
+        return out
+
+
 def rasterize(mesh: Mesh, cam: DimetricCamera, size: int,
               target: Vec = (0.0, 0.0, 0.62), smooth: bool = False,
               shadows: "ShadowMap | None" = None, fill: float = 0.0,
-              bounce: float = 0.0):
+              bounce: float = 0.0, rig: "LightRig | None" = None,
+              ambient: float = 0.10, key_gain: float = 0.80):
     """Orthographic scanline z-buffer. Returns (material, lambert, normal).
 
     Three light terms, and the third is not decoration:
@@ -238,6 +294,12 @@ def rasterize(mesh: Mesh, cam: DimetricCamera, size: int,
     * **fill** -- a soft opposing wash so shadow sides do not go to a single flat
       value.
     * **bounce** -- a weak light along the view direction.
+    * **rig** -- optional staged light: lamp pools and daylight shafts.
+
+    `ambient` and `key_gain` set how much of each ramp the global light claims.
+    They drop when a rig is supplied, because staged light needs headroom: if
+    the key alone already fills the ramp there is nothing left for a pool to
+    brighten, and every pool washes out to the same top step.
 
     Bounce exists because a character's face is a vertical surface and the key
     comes from above, so without it every face sits permanently at the bottom of
@@ -247,7 +309,11 @@ def rasterize(mesh: Mesh, cam: DimetricCamera, size: int,
     from being the darkest thing on screen.
     """
     light = camera_light(cam)
-    fill_dir = norm((-light[0], -light[1], abs(light[2]) * 0.5 + 0.3))
+    # Interior bounce is horizontal: indoors, fill comes off the walls, not out
+    # of a sky. Aiming it upward gave up-facing surfaces a second helping of
+    # light on top of the key they already faced, which is the other half of why
+    # floors outshone faces.
+    fill_dir = norm((-light[0], -light[1], 0.15))
     view = cam.dir
     inv = size / (2.0 * cam.span)
 
@@ -312,15 +378,22 @@ def rasterize(mesh: Mesh, cam: DimetricCamera, size: int,
                 nrm[i] = n
 
                 key = max(0.0, dot(n, light))
-                if shadows is not None and key > 0.0:
+                world = None
+                if shadows is not None:
                     world = add(add(mul(a, w1), mul(b, w2)), mul(c, w0))
+                if shadows is not None and key > 0.0:
                     if not shadows.lit(world):
                         key *= 0.18          # in shadow: keep a little bounce
                 # A weak opposing fill lifts the fully-turned-away face off the
                 # bottom of the ramp, so mid steps get used instead of clamping.
                 amb = fill * max(0.0, dot(n, fill_dir))
                 bnc = bounce * max(0.0, dot(n, view))
-                lam[i] = min(1.0, 0.10 + 0.80 * key + amb + bnc)
+                stage = 0.0
+                if rig is not None:
+                    if shadows is None:
+                        world = add(add(mul(a, w1), mul(b, w2)), mul(c, w0))
+                    stage = rig.boost(world, n)
+                lam[i] = min(1.0, ambient + key_gain * key + amb + bnc + stage)
     return mat, lam, nrm
 
 

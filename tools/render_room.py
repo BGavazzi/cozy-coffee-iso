@@ -21,13 +21,35 @@ import assetlib as A  # noqa: E402
 import character as C  # noqa: E402
 from layout import Layout  # noqa: E402
 from isorender import DimetricCamera, camera_light, dot  # noqa: E402
-from mesh import ShadowMap, rasterize  # noqa: E402
+from mesh import LightRig, Pool, ShadowMap, rasterize  # noqa: E402
 from pixelize import (  # noqa: E402
     apply_outline, downsample_modal, load_palette, shade_toon,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
 ROOM_W, ROOM_D = 14, 10
+
+# Window apertures, shared by the geometry and the light rig so the two cannot
+# drift apart. Sill and head match wall_run's a/b.
+WIN_X = (4, 5, 10, 11)
+WIN_Y = (6, 7)
+SILL, HEAD = 0.38, 1.22
+LAMPS = ((3.3, 5.3), (6.6, 7.6), (9.9, 4.5))
+
+
+def light_rig():
+    """Lamp pools, a wash over the service counter, and glow inside each window.
+
+    Pools sit just under each shade rather than at it, so the brightest ring
+    lands on the table below instead of on the lamp itself.
+    """
+    pools = [Pool((lx, ly, 1.24), 3.6, 0.62) for lx, ly in LAMPS]
+    pools.append(Pool((5.0, 1.30, 1.20), 4.2, 0.46))       # service counter
+    for i in WIN_X:                                        # daylight at the glass
+        pools.append(Pool((i + 0.5, 0.30, 0.95), 3.0, 0.40))
+    for i in WIN_Y:
+        pools.append(Pool((0.30, i + 0.5, 0.95), 3.0, 0.40))
+    return LightRig(pools)
 
 
 def build_room():
@@ -47,8 +69,8 @@ def build_room():
     for rx, ry, rw, rd, rm in ((2.2, 4.1, 2.6, 2.6, "foliage"),
                                (10.5, 6.9, 3.0, 2.8, "rose")):
         add(A.rug(rw, rd, rm), at=(rx, ry, 0), name="floor#rug", track=False)
-    add(A.wall_run((0, 0), "x", ROOM_W, openings=(4, 5, 10, 11)), name="wall", track=False)
-    add(A.wall_run((0, 0), "y", ROOM_D, openings=(6, 7)), name="wall", track=False)
+    add(A.wall_run((0, 0), "x", ROOM_W, openings=WIN_X), name="wall", track=False)
+    add(A.wall_run((0, 0), "y", ROOM_D, openings=WIN_Y), name="wall", track=False)
 
     # --- service counter run against the far-right wall (modules tile flush)
     for i in range(6):
@@ -68,7 +90,7 @@ def build_room():
         add(A.table_round(), at=(tx, ty, 0), name=f"table#{n}")
         add(A.table_clutter(clutter), at=(tx, ty, 0.69), name=f"clutter#{n}")
         for k, (dx, dy, rot) in enumerate((
-                (0.0, 1.15, 180), (0.0, -1.15, 0), (1.15, 0.0, 270), (-1.15, 0.0, 90))):
+                (0.0, 1.15, 180), (0.0, -1.15, 0), (1.15, 0.0, 90), (-1.15, 0.0, 270))):
             add(A.chair(cushion="rose" if (n + k) % 3 == 0 else None),
                 at=(tx + dx, ty + dy, 0), rot=rot, name=f"chair#{n}_{k}")
 
@@ -137,6 +159,13 @@ def main() -> int:
             print(f"    {h}")
     else:
         print("  no collisions")
+    facing = L.seating_faces_tables()
+    if facing:
+        print(f"  SEATING FACING ({len(facing)}):")
+        for f in facing:
+            print(f"    {f}")
+    else:
+        print("  all seating faces its table")
     mesh = L.mesh()
     print(f"room mesh: {len(mesh.verts)} verts, {len(mesh.faces)} tris")
 
@@ -152,8 +181,9 @@ def main() -> int:
         print("building shadow map ...")
         sm = ShadowMap(mesh, camera_light(cam), res=768)
     mat, lam, _ = rasterize(mesh, cam, size, target=centre, shadows=sm,
-                            fill=0.0 if args.no_shadows else 0.16,
-                            bounce=0.22)
+                            fill=0.0 if args.no_shadows else 0.20,
+                            bounce=0.26, rig=light_rig(),
+                            ambient=0.05, key_gain=0.60)
 
     px = downsample_modal(shade_toon(mat, lam, size, ramps, dither=True),
                           size, args.factor)

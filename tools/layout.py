@@ -51,6 +51,7 @@ TUCK_OK = {
 @dataclass
 class Layout:
     items: list[Placed] = field(default_factory=list)
+    rots: dict = field(default_factory=dict)
 
     def add(self, mesh: Mesh, at=(0.0, 0.0, 0.0), rot: float = 0.0,
             name: str = "prop", track: bool = True) -> None:
@@ -60,12 +61,47 @@ class Layout:
         xs = [v[0] for v in m.verts]
         ys = [v[1] for v in m.verts]
         zs = [v[2] for v in m.verts]
+        self.rots[name] = rot
         self.items.append(Placed(name, m, min(xs), min(ys), max(xs), max(ys),
                                  min(zs), max(zs)) if track else
                           Placed("_untracked", m, 0, 0, 0, 0, 0, 0))
 
     def mesh(self) -> Mesh:
         return merge(*(p.mesh for p in self.items))
+
+    def seating_faces_tables(self, back_local=(0.0, -1.0),
+                             max_reach: float = 2.2) -> list[str]:
+        """A chair's back must point AWAY from the table it serves.
+
+        Promoted from review. Seat rotations are written by hand and two of the
+        four around each round table were 180 degrees out, so those chairs had
+        their backs to the table -- individually valid geometry, wrong only in
+        relation to a neighbour, which is precisely the class of error a
+        per-sprite check can never see.
+        """
+        import math
+        tables = [p for p in self.items if p.name.split("#")[0] in ("table", "counter")]
+        out = []
+        for p in self.items:
+            if p.name.split("#")[0] != "chair":
+                continue     # stools are radially symmetric: no back to point
+            cx, cy = (p.x0 + p.x1) / 2, (p.y0 + p.y1) / 2
+            near, best = None, max_reach
+            for t in tables:
+                tx, ty = (t.x0 + t.x1) / 2, (t.y0 + t.y1) / 2
+                d = math.hypot(tx - cx, ty - cy)
+                if d < best:
+                    near, best = (tx, ty), d
+            if near is None:
+                continue
+            r = math.radians(self.rots.get(p.name, 0.0))
+            bx = back_local[0] * math.cos(r) - back_local[1] * math.sin(r)
+            by = back_local[0] * math.sin(r) + back_local[1] * math.cos(r)
+            tvx, tvy = near[0] - cx, near[1] - cy
+            n = math.hypot(tvx, tvy) or 1e-9
+            if (bx * tvx + by * tvy) / n > 0.25:
+                out.append(f"{p.name}: back points toward the table it serves")
+        return out
 
     def collisions(self, share: float = 0.34) -> list[str]:
         """Overlaps exceeding `share` of the smaller footprint, at shared height."""

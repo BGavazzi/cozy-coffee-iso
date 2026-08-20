@@ -33,7 +33,8 @@ def render_one(mesh, azimuth, ramps, seated=False):
     size = TARGET * FACTOR
     centre = (0.0, 0.0, 0.70 if not seated else 0.42)
     sm = ShadowMap(mesh, camera_light(cam), res=256)
-    mat, lam, _ = rasterize(mesh, cam, size, target=centre, shadows=sm, fill=0.16, bounce=0.28)
+    mat, lam, _ = rasterize(mesh, cam, size, target=centre, shadows=sm, fill=0.20, bounce=0.26,
+                            ambient=0.05, key_gain=0.60)
     px = downsample_modal(shade_toon(mat, lam, size, ramps, dither=True), size, FACTOR)
     ids = {m: (hash(m) % 251, 0, 0) for m in set(mat) if m is not None}
     back = {v: k for k, v in ids.items()}

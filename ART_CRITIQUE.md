@@ -169,3 +169,116 @@ human critique loop exists to catch.
 Which is the expected division. The measurements just make it concrete: we built
 the half that automates well, and the half that needs art direction still needs
 art direction.
+
+---
+
+# Second pass — what the ranked fixes actually did
+
+The five ranked fixes above were implemented. Re-measuring the same frame, so
+the numbers are comparable rather than impressionistic.
+
+## Fix 1 — staged light (was: "the top of every ramp is dead")
+
+Implemented as `LightRig` in `tools/mesh.py`: warm pools under each pendant, a
+wash over the service counter, and glow inside each window.
+
+Projected window shafts were tried and abandoned, which is worth recording as a
+negative result. The key light is anchored to the camera basis, so at azimuth 45
+its world direction runs essentially along +x. An isometric room may only draw
+its two *far* walls, and a shaft cast through those lands either as a 0.15-tile
+sliver against the skirting or outside the floor entirely — both measured. Making
+shafts reach would require a sun direction that disagrees with the cast shadows.
+A backlit window is therefore lit as a bright pane plus an interior pool, which
+is what one actually looks like from indoors and stays correct from all eight
+azimuths rather than one.
+
+Wood ramp usage across the frame:
+
+| step | before | after |
+|---|---|---|
+| 0 | 3.0% | 10.4% |
+| 1 | 17.6% | 3.0% |
+| 2 | 8.4% | 16.2% |
+| 3 | 6.6% | 22.2% |
+| 4 | 1.0% | 10.2% |
+| 5 | **63.3%** | 3.9% |
+| 6 | **0.0%** | 1.3% |
+
+Peak single step **63.3% → 22.2%**. Dead steps (under 0.5%) **1 → 0**. The whole
+ramp is now in use, which means the warm-highlight / cool-shadow hue rotation the
+palette was built around is finally on screen rather than in the JSON.
+
+## The light direction was itself the bug
+
+Sweeping the rig against explicit targets surfaced something the first critique
+missed. With the original key at `(-0.50, 0.55, 0.67)`, the floor measured ramp
+step **3.3** and a character's face measured **3.1** — the ground was brighter
+than the faces. That is not a tuning error, it is geometric: a floor's normal
+aligns with a steep key, and a face is a vertical plane that misses it. It is why
+the room read as a lit stage rather than a lit interior.
+
+Lowering the key to `(-0.70, 0.14, 0.70)` gives floor **2.98**, faces **4.30**,
+with three-face separation still **1.42 / 1.57** steps — better balanced than the
+old 1.33 / 3.14. Interior fill was also turned horizontal, since indoors the
+bounce comes off walls rather than out of a sky.
+
+## Fix 2 — floor variation, and two ways to get it wrong
+
+Both traps were hit before the fix landed, and both are cheap to repeat:
+
+1. **Too much.** Half-tile boards with a two-step-dark seam turned the floor into
+   a barcode that pulled the eye off every prop.
+2. **Thin boxes have sides.** Planks laid as separate boxes leave a vertical face
+   at every joint. Those normals point sideways, so they shade to the *bottom* of
+   the ramp — a near-black grid across **15%** of the floor, produced by geometry
+   only ever meant to be a tone change. Making the overlays 0.0018 tall did not
+   help: subpixel side faces still win the depth test along the whole run, still
+   measuring **7.6%** at step 0.
+
+The floor is now one slab with **zero-thickness quad** overlays. A quad has no
+sides, so a seam can only ever be the one step it asks for.
+
+## Fix 3/4 — chromatic monotony
+
+| ramp | before | after |
+|---|---|---|
+| wood | 75.0% | 67.3% |
+| cream | 18.6% | 18.0% |
+| rose | 0.8% | 4.1% |
+| neutral | 3.0% | 3.8% |
+| sky | 1.0% | 3.6% |
+| foliage | 1.5% | 3.1% |
+
+The three minority ramps held **3.3%** of the frame between them; they now hold
+**10.8%**. Still 0.00% off-palette.
+
+## Dithering was applied everywhere it could be, not where it should be
+
+Not in the original list, and visible once the light had gradients to render.
+Ordered dither ran across the full 0..1 range between steps, putting a checker on
+every shaded surface — static, not pixel art. Hand artists lay a dither band at
+the step boundary and leave the flats flat. Restricting the Bayer threshold to a
+band around the boundary halved isolated-pixel speckle, **15.3% → 7.2%**.
+
+## New promoted checks
+
+Per the ratchet, three review findings became automated checks:
+
+- `character.check_contrast` — hair within 0.13 lightness of skin merges into the
+  face. `commuter` shipped at 0.004; both colours were individually legal, so no
+  per-pixel check could ever have seen it.
+- `character.check_direction_stability` — a pixel floor at game scale. Note the
+  first version of this check was *wrong*: it compared widest to narrowest
+  direction and failed anything over 15%, but a humanoid genuinely is about half
+  as wide from the side. Chasing that to zero would mean modelling a cylinder.
+- `layout.seating_faces_tables` — two of the four chairs at every round table had
+  their backs to the table. Individually valid geometry, wrong only in relation to
+  a neighbour, which is exactly the class a per-sprite critic cannot see.
+
+## Still open
+
+- No focal hierarchy. The counter is brighter than it was but does not yet own the
+  composition.
+- Cast shadows are soft and read as smears at this light elevation.
+- Chair frames are thin enough at room scale to read as spindly.
+- Large empty floor in the lower right; the room is under-dressed, not under-lit.

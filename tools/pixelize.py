@@ -38,6 +38,9 @@ ROOT = Path(__file__).resolve().parent.parent
 # Ordered 4x4 Bayer matrix, normalised to [0, 1).
 BAYER4 = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]
 
+# Dither only within this band around a step boundary; snap outside it.
+DITHER_LO, DITHER_HI = 0.36, 0.64
+
 # Which palette ramp each material shades along. This binding is the whole
 # mechanism -- it is what makes cross-ramp contamination impossible.
 MATERIAL_RAMPS = {
@@ -104,9 +107,16 @@ def shade_toon(mat, lam, size, ramps, dither=True):
             idx = int(pos // 1)
             frac = pos - idx
 
-            if dither and idx < n - 1:
-                # Ordered dither between *adjacent steps of this ramp only*.
-                if frac > BAYER4[y % 4][x % 4] / 16.0:
+            if dither and idx < n - 1 and DITHER_LO < frac < DITHER_HI:
+                # Ordered dither between *adjacent steps of this ramp only*, and
+                # only inside a band around the step boundary. Dithering the
+                # whole 0..1 range -- the obvious implementation -- puts a
+                # checker on every shaded surface in the frame, which reads as
+                # static rather than as pixel art. Hand artists lay a dither
+                # band at the transition and leave the flats flat; this is that,
+                # made mechanical.
+                t = (frac - DITHER_LO) / (DITHER_HI - DITHER_LO)
+                if t > BAYER4[y % 4][x % 4] / 16.0:
                     idx += 1
             elif frac > 0.5:
                 idx = min(idx + 1, n - 1)

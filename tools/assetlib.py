@@ -19,8 +19,16 @@ import math
 from mesh import Mesh
 
 # Semantic material names, mapped to palette ramps in pixelize.MATERIAL_RAMPS.
-WOOD, CERAMIC, PLANT, FABRIC, METAL, GLASS = (
-    "wood", "cream", "foliage", "rose", "neutral", "sky")
+WOOD, CERAMIC, PLANT, FABRIC, METAL = (
+    "wood", "cream", "foliage", "rose", "neutral")
+
+# Glass is the sky ramp read HIGH, not at its middle. Mid-lightness sky over a
+# whole pane is a saturated blue slab -- which is exactly what review called
+# "windows that do not look like glass". Real glass is nearly the value of what
+# is behind it, with the colour arriving only at the edges, so panes sit two
+# steps up (pale, barely tinted) and only the rims and mullions carry the hue.
+GLASS = "sky+2"
+GLASS_EDGE = "sky"
 
 
 def transformed(m: Mesh, rot_z: float = 0.0, at: tuple = (0.0, 0.0, 0.0),
@@ -75,12 +83,24 @@ def floor(w: int, d: int, tone_a=WOOD, tone_b=CERAMIC, checker=False) -> Mesh:
         return m
     m.add_box((0, 0, -0.06), (w, d, 0.0), tone_a)
     board, tones = 1.0, ("", "", "-1", "", "")
+
+    def flat(y0, y1, z, mat):
+        """Zero-thickness overlay, not a thin box.
+
+        A box 0.0018 tall still has four side faces, and their normals point
+        sideways, so they shade to the BOTTOM of the ramp. Subpixel or not, they
+        win the depth test along the entire run: measured, the seams put ramp
+        step 0 across 7.6% of open floor and drew a near-black grid. A quad has
+        no sides, so the seam can only ever be the one step it asks for.
+        """
+        m.add_quad((0, y0, z), (w, y0, z), (w, y1, z), (0, y1, z), mat)
+
     for i in range(int(d / board)):
         y0, y1 = i * board, min(d, (i + 1) * board)
         t = tones[i % len(tones)]
         if t:
-            m.add_box((0, y0, 0.0), (w, y1 - 0.03, 0.0012), tone_a + t)
-        m.add_box((0, y1 - 0.03, 0.0), (w, y1, 0.0018), tone_a + "-1")   # seam
+            flat(y0, y1 - 0.03, 0.0012, tone_a + t)
+        flat(y1 - 0.03, y1, 0.0018, tone_a + "-1")                       # seam
     return m
 
 
@@ -174,9 +194,15 @@ def pastry_case() -> Mesh:
     m.add_box((0.10, 0.15, 0.34), (1.90, 0.85, 0.40), CERAMIC)      # shelf
     for px in (0.45, 0.95, 1.45):                                    # pastries
         m.add_cylinder((px, 0.50, 0.40), 0.15, 0.11, FABRIC, 10)
-    m.add_box((0.10, 0.15, 0.66), (1.90, 0.85, 0.72), GLASS)        # glass rim only
+    m.add_box((0.10, 0.15, 0.66), (1.90, 0.85, 0.685), GLASS)       # top pane
+    for (ax, ay, bx, by) in ((0.10, 0.15, 1.90, 0.19), (0.10, 0.81, 1.90, 0.85),
+                             (0.10, 0.15, 0.14, 0.85), (1.86, 0.15, 1.90, 0.85)):
+        m.add_box((ax, ay, 0.685), (bx, by, 0.72), GLASS_EDGE)      # rim only
     m.add_box((0.10, 0.15, 0.40), (0.14, 0.85, 0.66), GLASS)
     m.add_box((1.86, 0.15, 0.40), (1.90, 0.85, 0.66), GLASS)
+    m.add_box((0.14, 0.15, 0.40), (1.86, 0.17, 0.66), GLASS)        # front pane
+    for mx in (0.68, 1.32):                                          # mullions
+        m.add_box((mx, 0.15, 0.40), (mx + 0.035, 0.18, 0.66), GLASS_EDGE)
     return m
 
 
@@ -258,6 +284,9 @@ def pendant_lamp(drop=0.55) -> Mesh:
     m = Mesh()
     m.add_cylinder((0.5, 0.5, 1.62 - drop), 0.015, drop, METAL, 6)
     m.add_cylinder((0.5, 0.5, 1.62 - drop - 0.22), 0.20, 0.22, CERAMIC, 14)
+    # The lit underside. A lamp that casts a pool but is not itself bright
+    # reads as a hole; this is the step of cream that says "this is the source".
+    m.add_cylinder((0.5, 0.5, 1.62 - drop - 0.25), 0.185, 0.03, "cream+3", 14)
     return m
 
 
