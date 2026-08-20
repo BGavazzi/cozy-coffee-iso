@@ -91,7 +91,12 @@ def build_room():
     # only in hue and read as equal-weight pastel blocks that pulled focus off
     # the counter. At -3 they are deep painted wood: they separate by hue but
     # recede by value, which is the whole point. One in three, not one in two.
-    FRAMES = ("wood", "wood", "sky-3", "wood", "wood", "foliage-3")
+    #
+    # And no `sky` on furniture. The cool ramp is reserved for glass, windows
+    # and daylight; spending it on chairs put six blue masses through a warm
+    # room and made the coldest thing in frame a piece of seating. Reserving a
+    # ramp for one job is what lets it mean something.
+    FRAMES = ("wood", "wood", "rose-2", "wood", "wood", "foliage-3")
     tables = [(3.3, 5.3, "cafe", "cream"), (6.6, 7.7, "books", "wood"),
               (11.9, 8.2, "cafe", "cream")]
     for n, (tx, ty, clutter, ttop) in enumerate(tables):
@@ -107,7 +112,7 @@ def build_room():
     add(A.table_4top(), at=(9.5, 4.5, 0), name="table#4top")
     add(A.table_clutter("work"), at=(9.9, 4.5, 0.71), name="clutter#4top")
     for cx in (9.8, 11.0):
-        add(A.chair(frame="sky-3"),     at=(cx, 3.35, 0), rot=0,   name=f"chair#4t_{cx}a")
+        add(A.chair(),                  at=(cx, 3.35, 0), rot=0,   name=f"chair#4t_{cx}a")
         add(A.chair(),                  at=(cx, 5.65, 0), rot=180, name=f"chair#4t_{cx}b")
 
     # --- window bar with stools along the far-left wall
@@ -164,7 +169,7 @@ def build_room():
     seated = [(3.3, 5.3 - 0.95, 0, 0), (3.3, 5.3 + 0.95, 180, 2),
               (6.6, 7.6 - 0.95, 0, 4), (9.8, 3.55, 0, 1), (11.0, 5.45, 180, 6)]
     for i, (cx, cy, rot, who) in enumerate(seated):
-        add(C.build(C.CUSTOMERS[who], seated=True), at=(cx, cy, 0.45), rot=rot,
+        add(C.build(C.CUSTOMERS[who], seated=True), at=(cx, cy, 0.0), rot=rot,
             name=f"char#seat{i}")
     add(C.build(C.CUSTOMERS[3]), at=(6.0, 2.6, 0), rot=200, name="char#queue0")
     add(C.build(C.CUSTOMERS[7]), at=(6.8, 3.3, 0), rot=200, name="char#queue1")
@@ -200,6 +205,13 @@ def main() -> int:
             print(f"    {h}")
     else:
         print("  no collisions")
+    floating = L.grounded()
+    if floating:
+        print(f"  FLOATING ({len(floating)}):")
+        for f in floating:
+            print(f"    {f}")
+    else:
+        print("  everything rests on a surface")
     facing = L.seating_faces_tables()
     if facing:
         print(f"  SEATING FACING ({len(facing)}):")

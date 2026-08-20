@@ -191,7 +191,11 @@ def counter(kick=True) -> Mesh:
     """Modular: the body spans the FULL tile so a run tiles seamlessly.
     Insetting it left a seam between every adjacent module."""
     m = Mesh()
-    m.add_box((0.0, 0.06, 0.10), (1.0, 0.94, 0.82), WOOD)       # carcass, full width
+    # Without a plinth the carcass must reach the floor itself. It did not, so
+    # every kick=False counter -- the whole window bar run -- hovered 0.10 above
+    # the ground. Invisible at a glance and caught by Layout.grounded().
+    base = 0.10 if kick else 0.0
+    m.add_box((0.0, 0.06, base), (1.0, 0.94, 0.82), WOOD)       # carcass, full width
     if kick:
         m.add_box((0.0, 0.12, 0.0), (1.0, 0.88, 0.10), "neutral")  # recessed plinth
     m.add_box((0.0, 0.0, 0.82), (1.0, 1.0, 0.92), CERAMIC)      # worktop, overhangs

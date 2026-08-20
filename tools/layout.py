@@ -37,6 +37,9 @@ class Placed:
 
 # Pairs allowed to interpenetrate: seating tucks under tables, props sit on
 # counters, clutter sits on tables.
+# Kinds that hang on a wall and legitimately have nothing beneath them.
+WALL_MOUNTED = {"menu", "sign", "shelf", "decor#menu", "picture"}
+
 TUCK_OK = {
     frozenset({"chair", "table"}), frozenset({"chair", "counter"}),
     frozenset({"stool", "counter"}), frozenset({"stool", "bar"}),
@@ -116,6 +119,45 @@ class Layout:
             n = math.hypot(tvx, tvy) or 1e-9
             if (bx * tvx + by * tvy) / n > 0.25:
                 out.append(f"{p.name}: back points toward the table it serves")
+        return out
+
+    def grounded(self, tol: float = 0.03) -> list[str]:
+        """Every object must rest on the floor or on something beneath it.
+
+        Floating and sunk props have been the most repeated defect in this
+        project -- seated characters standing on chairs, characters buried in
+        the floor, shelves hovering above a wall, a lamp pool with nothing under
+        it. Each was caught by eye, one at a time, after a full render. It is a
+        pure geometry question: an object is well founded if its underside meets
+        either the floor or the top of something whose footprint it overlaps.
+        """
+        out = []
+        for p in self.items:
+            if p.name == "_untracked":
+                continue
+            kind = p.name.split("#")[0]
+            tag = p.name.split("#")[-1]
+            if kind in WALL_MOUNTED or any(w in tag for w in WALL_MOUNTED):
+                continue                              # hangs on a wall
+            if abs(p.z0) <= tol:
+                continue                              # on the floor
+            best = None
+            for q in self.items:
+                if q is p or q.name == "_untracked":
+                    continue
+                ox = min(p.x1, q.x1) - max(p.x0, q.x0)
+                oy = min(p.y1, q.y1) - max(p.y0, q.y0)
+                if ox <= 0 or oy <= 0 or q.z1 > p.z0 + tol:
+                    continue
+                if best is None or q.z1 > best:
+                    best = q.z1
+            if best is None:
+                out.append(f"{p.name}: underside at z={p.z0:.2f} with nothing "
+                           f"beneath it - floats")
+            elif p.z0 - best > tol:
+                out.append(f"{p.name}: underside at z={p.z0:.2f} sits "
+                           f"{p.z0 - best:.2f} above the surface below "
+                           f"(z={best:.2f}) - floats")
         return out
 
     def collisions(self, share: float = 0.34) -> list[str]:

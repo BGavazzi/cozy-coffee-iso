@@ -59,6 +59,7 @@ HIP_Z, SHOULDER_Z = 0.46, 0.92     # limb pivots, for posing
 
 
 ANKLE_Z = 0.10
+SEAT_Z = 0.45          # chair seat height; assetlib.chair() must agree
 
 
 def leg(sx: float, mat: str) -> Mesh:
@@ -96,12 +97,15 @@ def legs(mat: str, spread: float = 0.105, seated: bool = False) -> Mesh:
     if seated:
         # Thighs forward (+y, the side the camera sees), shins down: a standing
         # figure parked at seat height reads as standing *on* the chair.
+        # Authored about the HIP at z=0, with the shins reaching down to
+        # -SEAT_Z so the feet land on the floor when a chair seat is at SEAT_Z.
         m = Mesh()
         for sx in (-spread, spread):
             m.add_box((sx - 0.098, -0.10, -0.10), (sx + 0.098, 0.34, 0.04), mat)
-            m.add_box((sx - 0.098, 0.16, -0.46), (sx + 0.098, 0.34, -0.10), mat)
-            m.add_box((sx - 0.105, 0.16, -0.52), (sx + 0.105, 0.40, -0.44),
-                      "neutral-1")
+            m.add_box((sx - 0.098, 0.16, -SEAT_Z + 0.06),
+                      (sx + 0.098, 0.34, -0.10), mat)
+            m.add_box((sx - 0.105, 0.16, -SEAT_Z),
+                      (sx + 0.105, 0.40, -SEAT_Z + 0.08), "neutral-1")
         return m
     return merge(leg(-spread, mat), leg(spread, mat))
 
@@ -291,7 +295,24 @@ def build(spec: CharacterSpec, seated: bool = False,
 
     limbs = [posed_arm(-x, p.arm_l, p.out_l), posed_arm(x, p.arm_r, p.out_r)]
     if seated:
-        return merge(legs(spec.trousers, seated=True), body, *limbs)
+        # Drop the upper body to the seated hip. The torso and arms are authored
+        # for a standing figure whose hips sit at HIP_Z, while the seated leg rig
+        # is authored about the hip at z=0. Merging them untranslated stacked a
+        # standing torso on top of folded legs and produced a seated figure
+        # 2.24 tall against a standing 1.72 -- taller sitting down than up.
+        drop = (0.0, 0.0, -HIP_Z)
+        out = merge(legs(spec.trousers, seated=True),
+                    transformed(body, at=drop),
+                    *(transformed(l, at=drop) for l in limbs))
+        # Ground-clamped like the standing rig. The seated parts are authored
+        # around the hips, so the mesh hung 0.52 below the origin and every
+        # sprite in the sheet had to be scaled down to accommodate it -- the
+        # standing frames lost 30% of their tile to empty space under a pose
+        # they never strike. Clamped, a seated figure is simply a person with
+        # their feet on the floor and their hips at seat height, which is both
+        # what it looks like and what makes the anchor consistent across clips.
+        low = min(v[2] for v in out.verts)
+        return transformed(out, at=(0.0, 0.0, p.bob - low))
     for sx, ang in ((-spread, p.leg_l), (spread, p.leg_r)):
         limbs.append(pivot_rot(leg(sx, spec.trousers), "x", -ang, (sx, 0.0, HIP_Z)))
         limbs.append(transformed(foot(sx), at=_ankle_offset(sx, ang)))
