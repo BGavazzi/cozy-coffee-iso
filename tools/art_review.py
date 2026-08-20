@@ -379,3 +379,86 @@ def review_library(floor_px=MIN_MEMBER_PX):
             continue
         out += check_member_thickness(mesh, fn_name, floor_px=floor_px)
     return out
+
+
+SYMMETRY_FOR = {1: "radial", 2: "4fold", 4: "2fold", 8: "none"}
+
+
+def measured_symmetry(mesh, res=48, factor=3, tol=0.005, ramps=None):
+    """How many of the 8 azimuths actually produce different SPRITES.
+
+    Symmetry is declared by hand in assets.yaml and drives the whole render
+    budget -- `radial` costs 1 render where `none` costs 8. A wrong claim is
+    expensive in one direction and broken in the other, and nothing was checking
+    it. Rendering the thing settles it.
+
+    Compare the quantized sprite, not the lambert buffer. A first version
+    compared raw lambert and declared steam eight-way asymmetric; the material
+    buffer was pixel-identical and only the shading differed, because coincident
+    facets on a symmetric mesh resolve to different triangles depending on
+    z-buffer tie-breaks. After quantization those sprites matched to 1 pixel in
+    2304. The question a budget cares about is whether a player would see a
+    difference, so `tol` is a share of pixels rather than zero.
+    """
+    from isorender import DimetricCamera
+    from mesh import rasterize
+    from pixelize import downsample_modal, load_palette, shade_toon
+    ramps = ramps or load_palette()
+    # Target the mesh's OWN centre. Assuming (0.5, 0.5) silently broke this for
+    # every asset bigger than one tile: a 2x2 ceiling fan centred at (1, 1) was
+    # rendered off-axis, so its four-fold symmetry vanished and the check
+    # reported eight distinct directions for a perfectly symmetric object.
+    xs = [v[0] for v in mesh.verts] or [0.0]
+    ys = [v[1] for v in mesh.verts] or [0.0]
+    zs = [v[2] for v in mesh.verts] or [0.0]
+    ctr = ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2,
+           (min(zs) + max(zs)) / 2)
+    span = max(max(xs) - min(xs), max(ys) - min(ys),
+               max(zs) - min(zs)) * 0.75 or 1.0
+    size = res * factor
+    sprites = []
+    for d in range(8):
+        cam = DimetricCamera(45.0 + d * 45.0)
+        cam.span = span
+        mat, lam, _ = rasterize(mesh, cam, size, target=ctr)
+        # Dither OFF. Ordered dithering is screen-space, so identical geometry
+        # at a different azimuth lands on different Bayer cells: a four-blade
+        # fan measured 1-2% pixel difference across a 90 degree rotation it is
+        # exactly symmetric under. That is dither phase, not asymmetry, and
+        # including it would force the tolerance so wide that real defects slip
+        # through.
+        sprites.append(tuple(downsample_modal(
+            shade_toon(mat, lam, size, ramps, dither=False), size, factor)))
+
+    n = len(sprites[0]) or 1
+
+    def same(a, b):
+        return sum(1 for p, q in zip(a, b) if p != q) / n <= tol
+
+    for period in (1, 2, 4, 8):
+        if all(same(sprites[i], sprites[i % period]) for i in range(8)):
+            return period
+    return 8
+
+
+def check_symmetry_claims(declared: dict, meshes: dict):
+    """Cross-check every declared symmetry class against measured geometry."""
+    from manifest import DISTINCT_AZIMUTHS
+    out = []
+    for aid, mesh in meshes.items():
+        if aid not in declared:
+            continue
+        claim = declared[aid]
+        want = DISTINCT_AZIMUTHS.get(claim)
+        got = measured_symmetry(mesh)
+        if want is None:
+            continue
+        if got > want:
+            out.append(f"{aid}: declared {claim!r} ({want} azimuths) but "
+                       f"{got} are visually distinct -- directions will be WRONG")
+        elif got < want:
+            saved = want - got
+            out.append(f"{aid}: declared {claim!r} ({want} azimuths) but only "
+                       f"{got} differ -- {saved} wasted renders per frame; "
+                       f"should be {SYMMETRY_FOR[got]!r}")
+    return out

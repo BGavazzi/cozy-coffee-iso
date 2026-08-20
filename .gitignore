@@ -6,3 +6,4 @@ batch_runs/
 __pycache__/
 .venv/
 venv/
+sprites/

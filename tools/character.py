@@ -34,7 +34,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from assetlib import merge, transformed
+from assetlib import merge, pivot_rot, transformed
 from mesh import Mesh
 
 # Total height in tile units, matching assets.yaml.
@@ -55,23 +55,55 @@ HEAD_TOP = H - 0.03
 
 # --- parts -------------------------------------------------------------------
 
-def legs(mat: str, spread: float = 0.105, seated: bool = False) -> Mesh:
+HIP_Z, SHOULDER_Z = 0.46, 0.92     # limb pivots, for posing
+
+
+ANKLE_Z = 0.10
+
+
+def leg(sx: float, mat: str) -> Mesh:
+    """Leg shaft only, hip to ankle. Built per side so a walk cycle can swing
+    them independently -- a single two-leg mesh can only ever stand still."""
     m = Mesh()
+    m.add_prism((sx, 0.0, ANKLE_Z), 0.100, 0.098, HIP_Z - ANKLE_Z, mat, segments=8)
+    return m
+
+
+def foot(sx: float) -> Mesh:
+    """Separate from the shaft, and posed by translation rather than rotation.
+
+    An ankle keeps the foot flat while the leg swings. Rotating the foot rigidly
+    with the leg drives its rear corner into the floor, and since the figure is
+    ground-clamped, that lifted the whole body -- INVERTING the walk bob, so
+    mid-stride rode higher than legs-together instead of lower. That is the most
+    visible thing a walk cycle can get wrong after contralateral swing.
+    """
+    m = Mesh()
+    m.add_box((sx - 0.108, -0.095, 0.0), (sx + 0.108, 0.145, ANKLE_Z), "neutral-1")
+    return m
+
+
+def _ankle_offset(sx: float, degrees: float):
+    """Where the ankle lands once the shaft has swung, as a translation."""
+    probe = Mesh()
+    probe.verts = [(sx, 0.0, ANKLE_Z)]
+    moved = pivot_rot(probe, "x", -degrees, (sx, 0.0, HIP_Z))
+    ax, ay, az = moved.verts[0]
+    return (0.0, ay, az - ANKLE_Z)
+
+
+def legs(mat: str, spread: float = 0.105, seated: bool = False) -> Mesh:
     if seated:
-        # Thighs forward, shins down: a standing figure parked at seat height
-        # reads as standing *on* the chair.
+        # Thighs forward (+y, the side the camera sees), shins down: a standing
+        # figure parked at seat height reads as standing *on* the chair.
+        m = Mesh()
         for sx in (-spread, spread):
             m.add_box((sx - 0.098, -0.10, -0.10), (sx + 0.098, 0.34, 0.04), mat)
             m.add_box((sx - 0.098, 0.16, -0.46), (sx + 0.098, 0.34, -0.10), mat)
             m.add_box((sx - 0.105, 0.16, -0.52), (sx + 0.105, 0.40, -0.44),
                       "neutral-1")
         return m
-    for sx in (-spread, spread):
-        m.add_prism((sx, 0.0, 0.0), 0.100, 0.098, 0.46, mat, segments=8)
-        # Shoe, a step darker so the leg does not run into the floor.
-        m.add_box((sx - 0.108, -0.145, 0.0), (sx + 0.108, 0.095, 0.10),
-                  "neutral-1")
-    return m
+    return merge(leg(-spread, mat), leg(spread, mat))
 
 
 def torso(mat: str, bulk: float = 1.0) -> Mesh:
@@ -87,24 +119,26 @@ def torso(mat: str, bulk: float = 1.0) -> Mesh:
     return m
 
 
-def arms(mat: str, skin: str = SKIN, bulk: float = 1.0) -> Mesh:
-    """Arms are toned one step down from the shirt so they separate from the
-    torso by value. Modelling them as a different shape would not survive the
+def arm(sx: float, mat: str, skin: str = SKIN) -> Mesh:
+    """One arm, toned a step down from the shirt so it separates from the torso
+    by value. Modelling it as a different shape would not survive the
     downsample; a value step does.
 
-    ARM_FORWARD: they also hang slightly forward of the torso rather than flat
-    at its sides. That is the natural idle stance, and it is also what fixes the
+    ARM_FORWARD: arms hang slightly forward of the torso rather than flat at its
+    sides. That is the natural idle stance, and it is also what fixes the
     silhouette: arms held straight out sideways add half the figure's width in x
-    and nothing in y, so the side views collapsed to a slab. Carried forward,
-    they contribute to both axes and the swing falls from 51% to single digits.
+    and nothing in y, so the side views collapsed to a slab.
     """
     m = Mesh()
-    x = TORSO_RX * bulk + 0.052
-    y = 0.052         # arms carried slightly forward -- see ARM_FORWARD note
-    for sx in (-x, x):
-        m.add_prism((sx, y, 0.60), 0.078, 0.082, 0.33, mat + "-1", segments=8)
-        m.add_prism((sx, y, 0.47), 0.072, 0.076, 0.14, skin, segments=8)  # hand
+    y = 0.052
+    m.add_prism((sx, y, 0.60), 0.078, 0.082, 0.33, mat + "-1", segments=8)
+    m.add_prism((sx, y, 0.47), 0.072, 0.076, 0.14, skin, segments=8)   # hand
     return m
+
+
+def arms(mat: str, skin: str = SKIN, bulk: float = 1.0) -> Mesh:
+    x = TORSO_RX * bulk + 0.052
+    return merge(arm(-x, mat, skin), arm(x, mat, skin))
 
 
 def head(skin: str = SKIN) -> Mesh:
@@ -206,18 +240,73 @@ class CharacterSpec:
     blush: bool = True
 
 
-def build(spec: CharacterSpec, seated: bool = False) -> Mesh:
-    parts = [
-        legs(spec.trousers, seated=seated),
+@dataclass
+class Pose:
+    """A character pose, as limb swings about their own pivots.
+
+    Deliberately tiny. Six numbers cover every clip this game needs, because at
+    46 px of figure a pose is read from limb *direction* and body height, not
+    from joint articulation -- an elbow is one pixel. Adding a spine chain would
+    cost render time and change nothing on screen.
+    """
+    leg_l: float = 0.0      # degrees, + swings the limb forward (+y)
+    leg_r: float = 0.0
+    arm_l: float = 0.0
+    arm_r: float = 0.0
+    bob: float = 0.0        # vertical offset of everything above the hips
+    lean: float = 0.0       # forward tilt of the upper body, degrees
+    out_l: float = 0.0      # arm abduction, + swings the limb away from the body
+    out_r: float = 0.0
+    turn: float = 0.0       # upper-body twist about the spine, degrees
+
+
+REST = Pose()
+
+
+def build(spec: CharacterSpec, seated: bool = False,
+          pose: Pose | None = None) -> Mesh:
+    p = pose or REST
+    spread = 0.105
+    x = TORSO_RX * spec.bulk + 0.052
+
+    upper = [
         torso(spec.shirt, spec.bulk),
-        arms(spec.shirt, spec.skin, spec.bulk),
         head(spec.skin),
         face(spec.skin, spec.blush),
         hair(spec.hair_style, spec.hair_mat),
     ]
     if spec.accessory_kind:
-        parts.append(accessory(spec.accessory_kind, spec.accessory_mat))
-    return merge(*parts)
+        upper.append(accessory(spec.accessory_kind, spec.accessory_mat))
+    body = merge(*upper)
+    if p.turn:
+        body = pivot_rot(body, "z", p.turn, (0.0, 0.0, HIP_Z))
+    if p.lean:
+        body = pivot_rot(body, "x", -p.lean, (0.0, 0.0, HIP_Z))
+
+    def posed_arm(sx, swing, out):
+        a = arm(sx, spec.shirt, spec.skin)
+        if out:
+            a = pivot_rot(a, "y", out if sx > 0 else -out, (sx, 0.0, SHOULDER_Z))
+        return pivot_rot(a, "x", -swing, (sx, 0.0, SHOULDER_Z))
+
+    limbs = [posed_arm(-x, p.arm_l, p.out_l), posed_arm(x, p.arm_r, p.out_r)]
+    if seated:
+        return merge(legs(spec.trousers, seated=True), body, *limbs)
+    for sx, ang in ((-spread, p.leg_l), (spread, p.leg_r)):
+        limbs.append(pivot_rot(leg(sx, spec.trousers), "x", -ang, (sx, 0.0, HIP_Z)))
+        limbs.append(transformed(foot(sx), at=_ankle_offset(sx, ang)))
+    out = merge(body, *limbs)
+    # Ground-clamp. Swinging a leg about its hip arcs the foot below z=0, so a
+    # posed figure sinks into the floor -- measured at -0.04 on a mid-stride
+    # frame. Lifting the whole figure until its lowest point rests on the floor
+    # fixes that, and it also *generates* the walk bob for nothing: the body
+    # rides high when the legs are together and drops when they are spread,
+    # which is exactly the vertical rhythm a hand-animated cycle is drawn with.
+    low = min(v[2] for v in out.verts)
+    dz = p.bob - low
+    if dz:
+        out = transformed(out, at=(0.0, 0.0, dz))
+    return out
 
 
 def place(spec: CharacterSpec, at, facing: float = 0.0, seated: bool = False) -> Mesh:
@@ -349,3 +438,140 @@ if __name__ == "__main__":
         print(f"  BLOCKER  {p}")
     print(f"{len(problems)} blocker(s)")
     raise SystemExit(1 if problems else 0)
+
+
+# --- clips -------------------------------------------------------------------
+#
+# Every clip is a function of phase in [0, 1). Frame counts come from
+# assets.yaml, so a clip's length is a manifest decision rather than a hardcoded
+# one, and the render budget stays honest.
+
+import math as _math
+
+
+def _s(phase, cycles=1.0, offset=0.0):
+    return _math.sin(2 * _math.pi * (phase * cycles + offset))
+
+
+def clip_idle(phase: float) -> Pose:
+    """Breathing, plus a slow arm settle. Amplitudes are small on purpose: at
+    sprite scale an idle that moves more than a pixel or two reads as fidgeting."""
+    return Pose(arm_l=2.5 * _s(phase), arm_r=-2.5 * _s(phase),
+                bob=0.012 * _s(phase, 1.0, 0.25))
+
+
+def clip_walk(phase: float) -> Pose:
+    """Contralateral swing: the arm opposite the forward leg leads. Getting this
+    backwards is the single most recognisable animation error there is."""
+    swing = _s(phase)
+    return Pose(leg_l=26.0 * swing, leg_r=-26.0 * swing,
+                arm_l=-19.0 * swing, arm_r=19.0 * swing,
+                lean=3.0)
+
+
+def clip_carry_walk(phase: float) -> Pose:
+    """Walking with a tray: legs cycle, arms held forward and still."""
+    swing = _s(phase)
+    return Pose(leg_l=22.0 * swing, leg_r=-22.0 * swing,
+                arm_l=-62.0, arm_r=-62.0, lean=5.0)
+
+
+def clip_wave(phase: float) -> Pose:
+    return Pose(arm_r=-115.0 + 16.0 * _s(phase, 2.0),
+                arm_l=4.0 * _s(phase), bob=0.008 * _s(phase, 2.0))
+
+
+def clip_serve(phase: float) -> Pose:
+    """Reach out and back once over the clip."""
+    reach = 0.5 - 0.5 * _math.cos(2 * _math.pi * phase)
+    return Pose(arm_r=-78.0 * reach, arm_l=-10.0 * reach, lean=7.0 * reach)
+
+
+def clip_sip(phase: float) -> Pose:
+    lift = 0.5 - 0.5 * _math.cos(2 * _math.pi * phase)
+    return Pose(arm_r=-96.0 * lift, lean=2.0 * lift)
+
+
+def clip_wipe(phase: float) -> Pose:
+    """Cloth sweeping across a counter. Lateral, so it needs abduction rather
+    than swing -- a purely fore-aft arm reads as reaching, not wiping."""
+    sweep = _s(phase)
+    return Pose(arm_r=-52.0, out_r=26.0 * sweep + 20.0,
+                turn=7.0 * sweep, lean=9.0)
+
+
+def clip_brew(phase: float) -> Pose:
+    """Both hands at the machine, weight settling."""
+    press = 0.5 - 0.5 * _math.cos(2 * _math.pi * phase)
+    return Pose(arm_l=-58.0 - 8.0 * press, arm_r=-64.0 - 12.0 * press,
+                out_l=8.0, out_r=8.0, lean=11.0, bob=-0.012 * press)
+
+
+def clip_pour(phase: float) -> Pose:
+    """Tilt in, hold, tilt back -- an ease rather than a loop, so the middle of
+    the clip is the held pose."""
+    t = _math.sin(_math.pi * phase) ** 0.6
+    return Pose(arm_r=-84.0 - 22.0 * t, out_r=14.0 + 10.0 * t,
+                arm_l=-24.0, lean=8.0 + 5.0 * t, turn=-6.0 * t)
+
+
+def clip_talk(phase: float) -> Pose:
+    return Pose(arm_r=-30.0 + 14.0 * _s(phase, 2.0), out_r=16.0,
+                arm_l=3.0 * _s(phase), turn=3.0 * _s(phase, 2.0, 0.25))
+
+
+def clip_sit_idle(phase: float) -> Pose:
+    """Seated. Legs are posed by the seated rig, so only the upper body moves."""
+    return Pose(arm_l=2.0 * _s(phase), arm_r=-2.0 * _s(phase),
+                lean=2.0 + 1.5 * _s(phase, 1.0, 0.25))
+
+
+def clip_wait_impatient(phase: float) -> Pose:
+    """Weight shifts side to side, arms folded. The shift is the whole read."""
+    shift = _s(phase)
+    return Pose(leg_l=5.0 * shift, leg_r=-5.0 * shift,
+                arm_l=-46.0, arm_r=-46.0, out_l=22.0, out_r=22.0,
+                turn=4.0 * shift, bob=0.006 * abs(shift))
+
+
+def clip_leave(phase: float) -> Pose:
+    """Same gait as walk, a touch faster and more forward-committed."""
+    swing = _s(phase)
+    return Pose(leg_l=30.0 * swing, leg_r=-30.0 * swing,
+                arm_l=-22.0 * swing, arm_r=22.0 * swing, lean=6.0)
+
+
+def clip_sit(phase: float) -> Pose:
+    """Standing to seated. The one clip that changes rig mid-way.
+
+    There is no knee in this rig -- deliberately, since an elbow or a knee is
+    one pixel at sprite scale -- so a continuous lowering cannot be posed. What
+    reads instead is the two-part shape every low-resolution game uses: lean and
+    drop on the standing rig, then cut to the seated rig and settle. At 12 fps
+    the cut is invisible and the intent is completely legible.
+    """
+    if phase < 0.5:
+        t = phase / 0.5
+        return Pose(lean=6.0 + 12.0 * t, bob=-0.16 * t,
+                    arm_l=-8.0 * t, arm_r=-8.0 * t)
+    t = (phase - 0.5) / 0.5
+    return Pose(lean=10.0 * (1.0 - t) + 2.0, bob=0.02 * (1.0 - t))
+
+
+def is_seated(clip: str, phase: float = 0.0) -> bool:
+    """Which rig a clip's frame is built on."""
+    if clip == "sit":
+        return phase >= 0.5
+    return clip in SEATED_CLIPS
+
+
+CLIPS = {
+    "idle": clip_idle, "walk": clip_walk, "carry_walk": clip_carry_walk,
+    "wave": clip_wave, "serve": clip_serve, "sip": clip_sip,
+    "wipe": clip_wipe, "brew": clip_brew, "pour": clip_pour, "talk": clip_talk,
+    "sit_idle": clip_sit_idle, "wait_impatient": clip_wait_impatient,
+    "leave": clip_leave, "sit": clip_sit,
+}
+
+# Clips that must be built on the seated rig rather than the standing one.
+SEATED_CLIPS = {"sit_idle", "sit"}

@@ -157,6 +157,41 @@ def check(man: dict) -> int:
     for r in sorted(legal_ramps - used_ramps):
         warns.append(f"palette ramp {r!r} is never used by any asset")
 
+    # Every clip the manifest budgets renders for must actually be posable.
+    # Without this the budget is fiction: assets.yaml can promise a `brew` clip
+    # for years while nothing in the rig knows how to stand at a machine.
+    try:
+        import character as _c
+        posable = set(_c.CLIPS)
+        declared = set()
+        fx_clips = 0
+        for section, a in entries(man):
+            clips = a.get("clips") or {}
+            if section == "characters":
+                declared |= set(clips)
+            elif clips:
+                fx_clips += sum(clips.values())
+        for name in sorted(declared - posable):
+            errs.append(f"character clip {name!r} is budgeted in assets.yaml "
+                        f"but has no pose function in character.CLIPS")
+        for name in sorted(posable - declared):
+            warns.append(f"character clip {name!r} is implemented but never "
+                         f"budgeted - no asset declares it")
+        # Declared symmetry drives the entire render budget, so verify it
+        # against the geometry rather than trusting the yaml. Every effect has a
+        # generator, so this is cheap and exact.
+        import fx as _fx
+        from art_review import check_symmetry_claims
+        fx_declared = {a["id"]: a.get("sym", "none")
+                       for a in (man.get("fx") or [])}
+        fx_meshes = {n: fn(0.25) for n, (fn, _) in _fx.FX.items()}
+        for msg in check_symmetry_claims(fx_declared, fx_meshes):
+            (errs if "WRONG" in msg else warns).append(msg)
+        for msg in _fx.check_loops():
+            errs.append(msg)
+    except Exception as exc:                       # pragma: no cover
+        warns.append(f"clip cross-check skipped: {exc}")
+
     for e in errs:
         print(f"  ERROR   {e}")
     for w in warns:

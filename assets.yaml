@@ -134,18 +134,18 @@ characters:
     sym: none
     prio: 1
     variants: 8
-    clips: {walk: 8, sit_idle: 4, sip: 4, wait_impatient: 4, talk: 4, leave: 8}
+    clips: {idle: 4, walk: 8, sit: 4, sit_idle: 4, sip: 4, wait_impatient: 4, talk: 4, wave: 4, leave: 8}
 
 # --- FX ---------------------------------------------------------------------
 # Rendered through the same camera path; loops must close exactly.
 fx:
   - {id: fx_steam_cup,     cat: fx, fp: [1,1], h: 0.4, mat: [cream, sky],  sym: radial, prio: 1, clips: {loop: 4}}
   - {id: fx_steam_machine, cat: fx, fp: [1,1], h: 0.5, mat: [cream, sky],  sym: none,   prio: 2, clips: {loop: 4}}
-  - {id: fx_pour_coffee,   cat: fx, fp: [1,1], h: 0.4, mat: [wood],        sym: none,   prio: 1, clips: {loop: 4}}
-  - {id: fx_pour_milk,     cat: fx, fp: [1,1], h: 0.4, mat: [cream],       sym: none,   prio: 2, clips: {loop: 4}}
-  - {id: fx_door_swing,    cat: fx, fp: [1,1], h: 1.5, mat: [wood, sky],   sym: none,   prio: 2, clips: {open: 4, close: 4}}
-  - {id: fx_ceiling_fan,   cat: fx, fp: [2,2], h: 0.2, mat: [wood],        sym: radial, prio: 3, clips: {loop: 4}}
-  - {id: fx_rain_window,   cat: fx, fp: [1,0], h: 1.5, mat: [sky],         sym: 2fold,  prio: 3, clips: {loop: 6}}
+  - {id: fx_pour_coffee,   cat: fx, fp: [1,1], h: 0.4, mat: [wood],        sym: radial,   prio: 1, clips: {loop: 4}}
+  - {id: fx_pour_milk,     cat: fx, fp: [1,1], h: 0.4, mat: [cream],       sym: radial,   prio: 2, clips: {loop: 4}}
+  - {id: fx_door_swing,    cat: fx, fp: [1,1], h: 1.5, mat: [wood, sky],   sym: 2fold,   prio: 2, clips: {open: 4, close: 4}}
+  - {id: fx_ceiling_fan,   cat: fx, fp: [2,2], h: 0.2, mat: [wood],        sym: 4fold, prio: 3, clips: {loop: 4}}
+  - {id: fx_rain_window,   cat: fx, fp: [1,0], h: 1.5, mat: [sky],         sym: none,  prio: 3, clips: {loop: 6}}
   - {id: fx_order_ready,   cat: fx, fp: [1,1], h: 0.5, mat: [gold_coin, cream, accent_read], sym: radial, prio: 1, clips: {loop: 4}}
   - {id: fx_coin_pickup,   cat: fx, fp: [1,1], h: 0.3, mat: [gold_coin],        sym: radial, prio: 2, clips: {once: 6}}
   - {id: fx_hearts,        cat: fx, fp: [1,1], h: 0.4, mat: [rose],        sym: radial, prio: 2, clips: {once: 6}}

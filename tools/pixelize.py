@@ -51,6 +51,11 @@ MATERIAL_RAMPS = {
     "rose": "rose",
     "sky": "sky",
     "neutral": "neutral",
+    # Spot accents. Each is a 1-step ramp, so it renders as itself at any
+    # lambert -- an emissive surface, not a shaded one.
+    "lamp_glow": "lamp_glow",
+    "accent_read": "accent_read",
+    "gold_coin": "gold_coin",
 }
 
 
@@ -79,11 +84,26 @@ _TONE_RE = re.compile(r"[+-]\d+")
 
 
 def load_palette(path: Path | None = None) -> dict[str, list[tuple[int, int, int]]]:
+    """Ramps by name, with each spot colour promoted to its own 1-step ramp.
+
+    Spot colours are not lightness ramps -- they are single accents, and the
+    palette file groups all three under `ramp: "spot"`. Left that way they are
+    unaddressable: no material can name `lamp_glow`, which is precisely why the
+    critique found it used on 0 pixels while the scene had pendant lamps in it.
+
+    A 1-step ramp is exactly the right shape for an accent. The toon shader
+    indexes `lam * (n - 1)`, which is 0 for every lambert when n is 1, so a spot
+    colour emits itself regardless of lighting -- which is what "this thing is a
+    light source" should mean.
+    """
     path = path or ROOT / "palette" / "palette.json"
     entries = json.loads(path.read_text(encoding="utf-8"))
     ramps: dict[str, list] = {}
     for e in sorted(entries, key=lambda e: (e["ramp"], e["index"])):
-        ramps.setdefault(e["ramp"], []).append(tuple(e["rgb"]))
+        if e["ramp"] == "spot":
+            ramps[e["name"]] = [tuple(e["rgb"])]
+        else:
+            ramps.setdefault(e["ramp"], []).append(tuple(e["rgb"]))
     return ramps
 
 

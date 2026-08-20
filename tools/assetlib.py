@@ -50,6 +50,35 @@ def transformed(m: Mesh, rot_z: float = 0.0, at: tuple = (0.0, 0.0, 0.0),
     return out
 
 
+def pivot_rot(m: Mesh, axis: str, degrees: float, pivot: tuple) -> Mesh:
+    """Rotate a mesh about an arbitrary pivot -- the primitive posing needs.
+
+    `transformed` rotates about the world origin, which is fine for placing a
+    prop and useless for swinging a limb: a leg has to turn about its hip, not
+    about the floor.
+    """
+    if not degrees:
+        return m
+    a = math.radians(degrees)
+    c, s_ = math.cos(a), math.sin(a)
+    px, py, pz = pivot
+    out = Mesh()
+    out.normals = list(m.normals)
+    out.faces = list(m.faces)
+    verts = []
+    for x, y, z in m.verts:
+        x, y, z = x - px, y - py, z - pz
+        if axis == "x":
+            y, z = y * c - z * s_, y * s_ + z * c
+        elif axis == "y":
+            x, z = x * c + z * s_, -x * s_ + z * c
+        else:
+            x, y = x * c - y * s_, x * s_ + y * c
+        verts.append((x + px, y + py, z + pz))
+    out.verts = verts
+    return out
+
+
 def merge(*meshes: Mesh) -> Mesh:
     out = Mesh()
     for m in meshes:

@@ -141,16 +141,44 @@ foliage, fabric and skin — most of the material range a 2D game needs.
 
 | Stage | State |
 |---|---|
-| 1–4 (concept, mesh, rig, motion) | specified, tooling verified available, not built |
+| 1–3 (concept, mesh, rig) | specified, tooling verified available, not built |
+| 4 (motion) | working as a **procedural rig** — `character.py` poses, `animate.py` clips. Stands in for HY-Motion the way the rasterizer stands in for Blender |
 | 5 (render) | working — exact 2:1, 8 azimuths, camera-space key. **Consumes OBJ meshes** via `mesh.py`, or analytic primitives as a fixture |
 | 6 (pixelize) | working — `pixelize.py`, ramp-quantized, zero contamination |
-| 7 (metadata) | partial — pivot/footprint from silhouette; needs mesh bbox |
+| 7 (metadata) | working — `animate.py` emits `atlas.json`: frame rects, per-clip anchors, fps, direction order |
 | 8 (auto-review) | working — `art_review.py`, 7 checks + direction-set |
 | 9 (human critique) | working — `review_queue.py`, contact sheet + ratchet |
 
 `isorender.py` is a software raytracer and `mesh.py` an orthographic rasterizer,
 both standing in for Blender so the deterministic half runs with no GPU or DCC
-dependency. Stages 5-9 are complete end to end.
+dependency. Stages 4-9 are complete end to end.
+
+## Stage 4: motion, and why the rig is six numbers
+
+`character.Pose` carries six limb angles, a vertical offset and a twist. That is
+the entire rig, and the smallness is the design rather than a shortcut: at 46 px
+of figure a pose is read from limb *direction* and body height, not from joint
+articulation. An elbow is one pixel. A spine chain would cost render time across
+3023 frames and change nothing on screen.
+
+Two things fall out of that constraint rather than being animated by hand:
+
+**The walk bob is derived, not keyed.** Posed figures are ground-clamped so the
+lowest vertex rests on the floor. Because swinging a leg about its hip shortens
+its vertical reach, the body drops when the legs are spread and rides high when
+they are together — the exact vertical rhythm a hand-animated cycle is drawn
+with, for free. Measured amplitude 0.036 units, 1.0 px at room scale.
+
+**The foot does not rotate with the leg.** An ankle keeps it flat. Rotating it
+rigidly drove its rear corner into the floor, and since the figure is
+ground-clamped that lifted the whole body and *inverted* the bob — mid-stride
+rode higher than legs-together. After contralateral swing, that is the most
+visible thing a walk cycle can get wrong.
+
+The one clip that changes rig mid-way is `sit`. With no knee to bend, a
+continuous lowering cannot be posed, so it uses the two-part shape every
+low-resolution game uses: lean and drop on the standing rig, then cut to the
+seated rig and settle. At 12 fps the cut is invisible.
 
 **The mesh seam is open.** `render_batch.py --mesh asset.obj` runs the full chain
 from arbitrary geometry, so stages 1-4 now have somewhere to deliver.
