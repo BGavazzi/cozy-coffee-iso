@@ -31,7 +31,7 @@ which is the point.
     python tools/review_queue.py stats            # what to automate next
 
     # the gates
-    python tools/manifest.py --check     # runs all eleven checks
+    python tools/manifest.py --check     # runs all twelve checks
     python tools/character.py            # hair contrast, palette spread, silhouette floor
     python tools/fx.py                   # loop seams
 
@@ -41,15 +41,25 @@ Every human rejection carries a reason. Reasons that recur get promoted into the
 automated tier, so **human review volume falls as the factory matures**. `stats`
 names the next check to write rather than leaving it to guesswork.
 
-Eleven checks have been promoted so far: camera-space key light, hair/skin
+Twelve checks have been promoted so far: camera-space key light, hair/skin
 contrast, per-character palette spread, silhouette pixel floor, seating
 orientation, member thickness, grounding, declared-symmetry verification,
-screen-space occlusion, buried detail, and derived direction labels. Most found
-a bug the moment they were written — floating counters, back-to-front chairs,
-five wrong symmetry claims costing 31% of the effects budget, a queue of
-customers stacked into a single smear, an espresso machine whose entire
-mechanism was modelled inside its own carcass, and eight sprite sheets filed one
-facing off from the direction they actually depict.
+screen-space occlusion, buried detail, derived direction labels, and generator
+range. Most found a bug the moment they were written — floating counters,
+back-to-front chairs, five wrong symmetry claims costing 31% of the effects
+budget, a queue of customers stacked into a single smear, an espresso machine
+whose entire mechanism was modelled inside its own carcass, and eight sprite
+sheets filed one facing off from the direction they actually depict.
+
+The newest one measures something the others cannot see. A generator can rot
+without breaking anything: a base style left out of the style table, a seed
+accepted and then ignored, a random stream weak enough that one branch of four
+is reached a third as often as the rest. Every one of those still renders a
+room full of furniture — four chairs of the wrong four are still four chairs —
+so `check_generator_range` asks whether consecutive seeds actually produce
+different silhouettes. Its first version counted *distinct* silhouettes and
+scored a perfect 8 of 8 for generators the eye read as a single object, because
+distinctness is a threshold at one pixel. It measures distance now.
 
 This has already happened once. The first batch rotated the camera with a
 world-fixed light, so the lit face drifted around the object between directions.

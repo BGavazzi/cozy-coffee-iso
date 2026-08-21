@@ -358,6 +358,97 @@ def check_member_thickness(mesh, name="asset", ppu=ROOM_PX_PER_UNIT,
     return []
 
 
+# What each seeded generator is, and the world span to judge it across. The
+# span is SHARED between a generator's seeds on purpose: normalising each mesh
+# to fill the frame would hide size variation, which is a real part of a
+# generator's range and the cheapest part to get wrong.
+GENERATORS = (
+    ("table_round", lambda A, s: A.table_round(seed=s), 1.7),
+    ("table_4top", lambda A, s: A.table_4top(seed=s), 2.6),
+    ("chair", lambda A, s: A.chair(seed=s), 1.4),
+    ("plant_large", lambda A, s: A.plant_large(seed=s), 1.7),
+    ("plant_small", lambda A, s: A.plant_small(seed=s), 1.1),
+)
+
+# Below this a row of seeds reads as one object. It is set under the furniture
+# generators' measured 17% rather than at it, because the number this check
+# exists to catch is a generator that has quietly become a fixed mesh -- a
+# seed argument that is accepted and ignored, or a style table that stopped
+# being reached. Tightening it toward the plants' 41% would be asserting that
+# cafe chairs ought to vary as much as houseplants, which is a taste call
+# nobody has made.
+MIN_SILHOUETTE_SPREAD = 0.12
+
+
+def silhouette(mesh, azimuth: float, span: float, res: int = 64) -> frozenset:
+    """The set of pixels a mesh covers, in a framing shared with its siblings."""
+    from isorender import DimetricCamera, dot
+    import math
+    cam = DimetricCamera(azimuth)
+    vs = mesh.verts
+    cu = (max(dot(v, cam.right) for v in vs)
+          + min(dot(v, cam.right) for v in vs)) * 0.5
+    cv = (max(dot(v, cam.up) for v in vs)
+          + min(dot(v, cam.up) for v in vs)) * 0.5
+    inv = res / (2.0 * (span * 0.5))
+    hit = set()
+    for tri, _n, _m in mesh.faces:
+        pts = [((dot(vs[i], cam.right) - cu) * inv + res * 0.5,
+                res * 0.5 - (dot(vs[i], cam.up) - cv) * inv) for i in tri]
+        (ax, ay), (bx, by), (cx, cy) = pts
+        area = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+        if abs(area) < 1e-12:
+            continue
+        for py in range(max(0, int(min(ay, by, cy))),
+                        min(res - 1, int(math.ceil(max(ay, by, cy)))) + 1):
+            fy = py + 0.5
+            for px in range(max(0, int(min(ax, bx, cx))),
+                            min(res - 1, int(math.ceil(max(ax, bx, cx)))) + 1):
+                fx = px + 0.5
+                w0 = ((bx - ax) * (fy - ay) - (by - ay) * (fx - ax)) / area
+                w1 = ((cx - bx) * (fy - by) - (cy - by) * (fx - bx)) / area
+                if w0 >= -1e-9 and w1 >= -1e-9 and 1.0 - w0 - w1 >= -1e-9:
+                    hit.add(py * res + px)
+    return frozenset(hit)
+
+
+def check_generator_range(seeds: int = 8, azimuth: float = 45.0,
+                          floor: float = MIN_SILHOUETTE_SPREAD) -> list[str]:
+    """Do the seeded generators actually generate different shapes?
+
+    A generator can rot in a way nothing else here notices. Add a base style
+    and forget to put it in the style table; take a seed and drop it on a code
+    path that ignores it; weaken the random stream so one branch of four is
+    reached a third as often as the rest. Every one of those still renders a
+    room full of furniture, and the room render looks fine, because four
+    chairs of the wrong four are still four chairs.
+
+    The measure is mean pairwise Jaccard distance between the silhouettes of
+    consecutive seeds. It has to be a distance and not a count: counting
+    *distinct* silhouettes is a threshold at one pixel, which reported 8 of 8
+    for every generator in the library including the ones the eye read as a
+    single object. That was `check_buried_detail`'s first metric exactly --
+    a measure of whether anything moved, standing in for how much.
+    """
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent))
+    import assetlib as A
+
+    out = []
+    for name, factory, span in GENERATORS:
+        shapes = [silhouette(factory(A, s + 1), azimuth, span)
+                  for s in range(seeds)]
+        pairs = [(a, b) for i, a in enumerate(shapes) for b in shapes[i + 1:]]
+        spread = sum(1.0 - len(a & b) / (len(a | b) or 1)
+                     for a, b in pairs) / (len(pairs) or 1)
+        if spread < floor:
+            out.append(f"{name}: silhouette spread {spread:.0%} over {seeds} "
+                       f"seeds (floor {floor:.0%}) -- the seed is barely "
+                       f"changing the shape")
+    return out
+
+
 def review_library(floor_px=MIN_MEMBER_PX):
     """Run the mesh checks across every asset the blockout library exposes."""
     import inspect

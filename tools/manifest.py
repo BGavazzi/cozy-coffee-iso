@@ -203,8 +203,13 @@ def check(man: dict) -> int:
         room = build_room()
         for msg in room.screen_occlusion():
             warns.append(f"reference room: {msg}")
-        from art_review import review_library
+        from art_review import check_generator_range, review_library
         for msg in review_library():
+            warns.append(msg)
+        # A generator that has quietly become a fixed mesh renders a room that
+        # looks entirely fine, which is why this needs to be a check and not an
+        # eye on a contact sheet.
+        for msg in check_generator_range():
             warns.append(msg)
     except Exception as exc:                       # pragma: no cover
         warns.append(f"clip cross-check skipped: {exc}")

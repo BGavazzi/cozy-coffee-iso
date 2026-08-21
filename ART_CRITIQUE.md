@@ -921,6 +921,17 @@ The furniture generators produce meaningfully but modestly different shapes;
 the plants are genuinely different objects each time. That gap is real and
 the old metric hid it behind a row of 8/8.
 
+The measurement then became the twelfth check. A contact sheet needs someone to
+look at it, and the failure this catches is invisible in the thing anyone
+actually looks at: a room full of furniture renders perfectly whether or not
+the furniture came from a working generator. `check_generator_range` fires at
+0% spread on a seed that is accepted and ignored, and at 0% on a style table
+one branch wide, which are the two ways this rots. The floor is set at 12%,
+under the furniture's measured 17% rather than at it -- the check is there to
+catch a dead generator, and tightening it toward the plants' 41% would be
+asserting that cafe chairs ought to vary as much as houseplants, which is a
+taste call nobody has made.
+
 ## Where the numbers landed
 
 | | fifth pass | sixth pass |
@@ -928,8 +939,8 @@ the old metric hid it behind a row of 8/8.
 | bases the tables can be built on | 2 fixed meshes | **4 styles × top shape, thickness, overhang** |
 | floor texture | one amplitude everywhere | **derived from where the seats and tills are** |
 | high-key share of frame | 63.8% | **66.7%** |
-| generator range | unmeasured | **measured, per generator** |
-| automated checks in the ratchet | 11 | 11 |
+| generator range | unmeasured | **measured, and a check** |
+| automated checks in the ratchet | 11 | **12** |
 
 Median L, chroma and the extremes are unmoved, the checks stay clean, and the
 render is still byte-identical across processes.
