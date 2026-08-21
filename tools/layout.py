@@ -281,6 +281,16 @@ class Layout:
                 kind_a, kind_b = a.name.split("#")[0], b.name.split("#")[0]
                 if frozenset({kind_a, kind_b}) in TUCK_OK:
                     continue
+                # Members of one furniture group. Four chairs around a round
+                # table are placed as a unit at fixed offsets, so how much they
+                # overlap on screen is a property of the group's geometry, not
+                # of anyone's placement -- give one of them a tall back and the
+                # near chair covers 45% of the far one, which is what a tall
+                # chair does. Two chairs from *different* tables landing on each
+                # other is still a defect and still fires.
+                if (a.name.rsplit("_", 1)[0] == b.name.rsplit("_", 1)[0]
+                        and "_" in a.name and "_" in b.name):
+                    continue
                 bu0, bu1, bv0, bv1, bd = boxes[b.name]
                 if abs(ad - bd) < depth:
                     continue

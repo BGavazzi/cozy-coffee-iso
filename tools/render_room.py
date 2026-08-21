@@ -134,15 +134,16 @@ def build_room():
         for k, (dx, dy, rot) in enumerate((
                 (0.0, 1.15, 180), (0.0, -1.15, 0), (1.15, 0.0, 90), (-1.15, 0.0, 270))):
             add(A.chair(cushion="rose" if (n + k) % 3 == 0 else None,
-                        frame=FRAMES[(n * 4 + k) % len(FRAMES)]),
+                        frame=FRAMES[(n * 4 + k) % len(FRAMES)],
+                        seed=51 + n * 4 + k),
                 at=(tx + dx, ty + dy, 0), rot=rot, name=f"chair#{n}_{k}")
 
     # --- 4-top with four chairs
     add(A.table_4top(), at=(9.5, 4.5, 0), name="table#4top")
     add(A.table_clutter("work"), at=(9.9, 4.5, 0.71), name="clutter#4top")
     for cx in (9.8, 11.0):
-        add(A.chair(),                  at=(cx, 3.35, 0), rot=0,   name=f"chair#4t_{cx}a")
-        add(A.chair(),                  at=(cx, 5.65, 0), rot=180, name=f"chair#4t_{cx}b")
+        add(A.chair(seed=int(cx * 10)),  at=(cx, 3.35, 0), rot=0,   name=f"chair#4t_{cx}a")
+        add(A.chair(seed=int(cx * 10) + 7), at=(cx, 5.65, 0), rot=180, name=f"chair#4t_{cx}b")
 
     # --- window bar with stools along the far-left wall
     for i in range(3):
@@ -201,7 +202,7 @@ def build_room():
     add(A.wall_shelf(1.8), at=(2.1, 0.10, 0.66), name="decor#shelf1", track=False)
     add(A.wall_shelf(1.8), at=(6.9, 0.10, 0.66), name="decor#shelf2", track=False)
     add(A.cake_stand(), at=(5.55, 0.95, 0.92), name="clutter#cake", centre=True)
-    add(A.cup_and_saucer(), at=(6.35, 0.72, 0.92), name="clutter#cup1")
+    add(A.cup_and_saucer(), at=(5.6, 0.72, 0.92), name="clutter#cup1")
     add(A.cup_and_saucer(), at=(5.05, 1.15, 0.92), name="clutter#cup2")
     add(A.flower_vase(),    at=(7.6, 0.95, 0.92), name="clutter#vase2", centre=True)
 

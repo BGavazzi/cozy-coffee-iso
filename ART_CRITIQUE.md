@@ -721,6 +721,30 @@ Now slatted, with the slats drawn as value a thousandth of a unit proud of each
 face — and only on the three faces this camera can see, because
 `check_buried_detail` would report the rest as buried and would be right.
 
+## Chairs, and what does not survive downsampling
+
+Fourteen chairs in the reference room, all one mesh. The first generator varied
+the back *infill* -- slat, ladder, spindle, cross -- which was four styles'
+worth of code that produced eight chairs identical apart from colour. At the
+room's 27 px per world unit the gap between the two stiles is about six pixels
+and every infill inside it resolved to the same two-pixel smudge.
+
+This is the rig's lesson at a different scale. There, a pose reads from limb
+*direction* and not from articulation, because at 46 px there is no room for
+articulation. Here, a chair reads from its *outline* and not from its joinery.
+So the styles vary silhouette instead -- low bentwood, tall and open, a top rail
+overhanging into a T, a filled panel to two-thirds height -- and each draws its
+own stiles, because height and overhang are most of the difference. Outline
+survives downsampling; interior detail does not.
+
+That immediately produced a legitimate occlusion report: a tall back covers 45%
+of the chair opposite it at the same round table. Four chairs around one table
+are placed as a unit at fixed offsets, so how much they overlap on screen is a
+property of the group's geometry rather than of anyone's placement -- give one a
+tall back and this is simply what happens. Members of the same group are now
+exempt from `screen_occlusion`; two chairs from *different* tables landing on
+each other is still a defect and still fires.
+
 ## Where the numbers landed
 
 | | fourth pass | fifth pass |
@@ -734,8 +758,10 @@ face — and only on the three faces this camera can see, because
 
 ## Still open
 
-- `assetlib.py` is still 131 hand-written primitive calls. `leafy_plant` shows
-  what the replacement looks like; furniture has not had the same treatment.
+- `assetlib.py` is still mostly hand-written primitive calls. `leafy_plant` and
+  `chair` show what the replacement looks like -- one generator, a seed, and
+  variation that costs nothing per instance -- but tables, counters, benches and
+  the espresso machine are all still single fixed meshes.
 - Stages 1–3 remain unbuilt. Everything here is still the deterministic render
   half — but the scatter solver is the first piece that *generates* rather than
   verifies, and it runs on the checks the earlier passes built.

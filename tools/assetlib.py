@@ -403,29 +403,95 @@ def table_4top() -> Mesh:
     return m
 
 
-def chair(cushion=None, frame=WOOD) -> Mesh:
+# Chair back styles.
+#
+# The first version of these varied the *infill* -- slat, ladder, spindle,
+# cross. Rendered at the room's 27 px per world unit, the gap between the two
+# stiles is about six pixels wide and every infill inside it came out as the
+# same two-pixel smudge: eight chairs that were identical apart from colour, for
+# four styles' worth of code. This is the same lesson the rig learned at 46 px,
+# where a pose reads from limb direction and not from articulation.
+#
+# So the styles vary the SILHOUETTE instead, and each one draws its own stiles
+# because height and overhang are most of the difference. Outline survives
+# downsampling; interior detail does not.
+def _back_low(m, f, sz, x0, x1, y0, y1):
+    """Short square back, cafe-bentwood height."""
+    top = sz + 0.34
+    for sx in (x0, x1 - 0.15):
+        m.add_box((sx, y0, sz), (sx + 0.15, y1, top), f)
+    m.add_box((x0, y0 + 0.005, top - 0.13), (x1, y1, top), f + "+1")
+
+
+def _back_tall(m, f, sz, x0, x1, y0, y1):
+    """Tall and open -- two stiles and one rail, with air between them."""
+    top = sz + 0.68
+    for sx in (x0 + 0.02, x1 - 0.17):
+        m.add_box((sx, y0, sz), (sx + 0.15, y1, top), f)
+    m.add_box((x0, y0 + 0.005, top - 0.12), (x1, y1, top), f + "+1")
+    m.add_box((x0 + 0.06, y0 + 0.02, sz + 0.16), (x1 - 0.06, y1 - 0.02, sz + 0.26),
+              f + "-1")
+
+
+def _back_shoulder(m, f, sz, x0, x1, y0, y1):
+    """Top rail overhangs the stiles, so the outline reads as a T."""
+    top = sz + 0.55
+    for sx in (x0 + 0.07, x1 - 0.22):
+        m.add_box((sx, y0, sz), (sx + 0.15, y1, top - 0.11), f)
+    m.add_box((x0 - 0.04, y0 + 0.005, top - 0.15), (x1 + 0.04, y1, top), f + "+1")
+
+
+def _back_solid(m, f, sz, x0, x1, y0, y1):
+    """Filled panel, but only to two-thirds height so it is not a wall."""
+    top = sz + 0.44
+    m.add_box((x0, y0, sz), (x1, y1 - 0.02, top - 0.10), f + "-1")
+    m.add_box((x0, y0 + 0.005, top - 0.12), (x1, y1, top), f + "+1")
+
+
+BACK_STYLES = (_back_low, _back_tall, _back_shoulder, _back_solid)
+
+
+def chair(cushion=None, frame=WOOD, seed: int | None = None) -> Mesh:
     """Back at -y, so a chair at rot=0 has its back away from a table to its +y.
 
-    The back is an open frame -- two stiles, a top rail, a mid slat -- rather
-    than one filled panel. A solid back is 16 x 13 px of unbroken wood at room
-    scale and reads as a partition wall, which is what review actually flagged.
-    The gaps are what make the silhouette say "chair".
+    The back is an open frame rather than one filled panel. A solid full-height
+    back is 16 x 13 px of unbroken wood at room scale and reads as a partition
+    wall, which is what review actually flagged. The gaps are what make the
+    silhouette say "chair".
 
     `frame` exists because 67% of the room measured as the wood ramp, and when
     every object shares one ramp, furniture stops separating from furniture. A
     painted chair costs nothing -- the ramps already exist -- and buys object
     separation that no amount of extra geometry would.
+
+    `seed` picks a back silhouette and jitters leg thickness. Without it every
+    one of the fourteen chairs in the reference room is the same mesh, and a cafe
+    furnished from a single catalogue entry is the tell that nothing here grew.
+    The styles are a dozen lines each and compose with every frame and cushion
+    option rather than multiplying against them.
+
+    `seed=None` keeps a fixed chair, so callers that have not opted in are
+    unaffected and existing sprite sheets stay stable.
     """
+    st = None if seed is None else (seed * 2654435761 + 1013904223) & 0x7FFFFFFF
+
+    def rnd():
+        nonlocal st
+        if st is None:
+            return 0.5
+        st = (st * 1103515245 + 12345) & 0x7FFFFFFF
+        return (st >> 8) / (0x7FFFFFFF >> 8)
+
     m = Mesh()
     seat_z = 0.45                      # ~28% of character height; was 0.52
+    leg_r = 0.090 + ((rnd() - 0.5) * 0.020 if seed is not None else 0.0)
     for cx, cy in ((0.28, 0.28), (0.72, 0.28), (0.28, 0.72), (0.72, 0.72)):
-        m.add_box((cx - 0.090, cy - 0.090, 0), (cx + 0.090, cy + 0.090, seat_z - 0.07),
-                  frame)
+        m.add_box((cx - leg_r, cy - leg_r, 0),
+                  (cx + leg_r, cy + leg_r, seat_z - 0.07), frame)
     m.add_box((0.18, 0.18, seat_z - 0.07), (0.82, 0.82, seat_z), frame)     # seat
-    for sx in (0.20, 0.68):                                                 # stiles
-        m.add_box((sx - 0.01, 0.19, seat_z), (sx + 0.15, 0.34, 1.02), frame)
-    m.add_box((0.19, 0.19, 0.86), (0.83, 0.34, 1.02), frame + "+1")         # top rail
-    m.add_box((0.24, 0.20, 0.60), (0.78, 0.33, 0.75), frame + "-1")         # mid slat
+    style = (_back_low if seed is None
+             else BACK_STYLES[int(rnd() * len(BACK_STYLES)) % len(BACK_STYLES)])
+    style(m, frame, seat_z, 0.19, 0.83, 0.19, 0.34)
     if cushion:
         m.add_box((0.21, 0.21, seat_z), (0.79, 0.79, seat_z + 0.06), cushion)
     return m
