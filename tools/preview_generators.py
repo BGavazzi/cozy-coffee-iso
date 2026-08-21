@@ -25,7 +25,9 @@ from PIL import Image, ImageDraw
 sys.path.insert(0, str(Path(__file__).parent))
 import assetlib as A  # noqa: E402
 from animate import render_frame  # noqa: E402
-from art_review import _screen_spread, screen_materials  # noqa: E402
+from art_review import (  # noqa: E402
+    DEFAULT_SPREAD_FLOOR, GENERATORS, _screen_spread, screen_materials,
+)
 from pixelize import load_palette  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -33,21 +35,24 @@ BG = (30, 27, 36)
 LABEL = (214, 208, 218)
 DIM = (140, 136, 148)
 
-# name -> (factory taking a seed, world span to frame it in)
+# The rows come from `art_review.GENERATORS`, which is also what the check
+# gates on. Keeping a second list here is how a sheet and a check end up
+# reporting different numbers for the same generator, and when that happens
+# one of them is wrong and nobody can tell which.
 #
 # The span is per-generator because these differ in size by 3x, and a shared
 # span would render the plants at eight pixels tall to leave room for a
 # two-tile table. Framing is a property of the subject.
-ROWS = (
-    ("table_round", lambda s: A.table_round(seed=s), 1.7),
-    ("table_4top", lambda s: A.table_4top(seed=s), 2.6),
-    ("chair", lambda s: A.chair(seed=s), 1.4),
-    ("chair, cushioned", lambda s: A.chair(cushion="rose", frame="foliage-3",
-                                           seed=s), 1.4),
-    ("plant_large", lambda s: A.plant_large(seed=s), 1.7),
-    ("plant_small", lambda s: A.plant_small(seed=s), 1.1),
-    ("bookshelf", lambda s: A.bookshelf(seed=s), 1.9),
-)
+ROWS = tuple((name, (lambda f: lambda s: f(A, s))(factory), span, own)
+             for name, factory, span, own, _why in GENERATORS)
+
+# Extra rows the check does not gate on. A painted chair exercises the same
+# generator through a different material path, which is worth looking at and
+# not worth failing a build over.
+ROWS += (("chair, cushioned",
+          lambda s: A.chair(cushion="rose", frame="foliage-3", seed=s),
+          1.4, None),)
+
 
 
 def main() -> int:
@@ -67,7 +72,7 @@ def main() -> int:
                               len(ROWS) * (cell + pad) + pad), (18, 16, 22))
     d = ImageDraw.Draw(sheet)
 
-    for r, (name, factory, span) in enumerate(ROWS):
+    for r, (name, factory, span, own) in enumerate(ROWS):
         y = pad + r * (cell + pad)
         d.text((6, y + cell // 2 - 10), name, fill=LABEL)
         frames = []
@@ -93,10 +98,12 @@ def main() -> int:
             # nobody can tell which.
             frames.append(screen_materials(mesh, args.azimuth, span))
         spread = _screen_spread(frames)
+        bar = DEFAULT_SPREAD_FLOOR if own is None else own
+        under = spread < bar
         d.text((6, y + cell // 2 + 4), f"spread {spread:.0%}",
-               fill=LABEL if spread >= 0.15 else (206, 122, 122))
-        print(f"  {name:18s} screen spread {spread:5.1%}"
-              f"{'   <-- barely varies' if spread < 0.15 else ''}")
+               fill=(206, 122, 122) if under else LABEL)
+        print(f"  {name:18s} screen spread {spread:5.1%}  (floor {bar:.0%})"
+              f"{'   <-- barely varies' if under else ''}")
 
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     sheet.save(args.out)

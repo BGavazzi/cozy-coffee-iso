@@ -61,6 +61,13 @@ different silhouettes. Its first version counted *distinct* silhouettes and
 scored a perfect 8 of 8 for generators the eye read as a single object, because
 distinctness is a threshold at one pixel. It measures distance now.
 
+Its floor is per-generator, and every relaxed one carries the reason it is
+relaxed. A single number is the wrong shape here: the default catches a
+generator that has died, but a counter module that varied as much as a
+houseplant would be a defect rather than a success, since a run of six fitted
+cabinets showing four different fronts reads as a showroom. An unexplained
+loosened threshold is how a ratchet turns back into decoration.
+
 This has already happened once. The first batch rotated the camera with a
 world-fixed light, so the lit face drifted around the object between directions.
 Every frame was individually valid — no per-sprite check could catch it — but it

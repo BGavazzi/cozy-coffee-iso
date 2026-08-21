@@ -358,27 +358,36 @@ def check_member_thickness(mesh, name="asset", ppu=ROOM_PX_PER_UNIT,
     return []
 
 
-# What each seeded generator is, and the world span to judge it across. The
-# span is SHARED between a generator's seeds on purpose: normalising each mesh
-# to fill the frame would hide size variation, which is a real part of a
+# What each seeded generator is, the world span to judge it across, and the
+# spread its output is expected to clear.
+#
+# The span is SHARED between a generator's seeds on purpose: normalising each
+# mesh to fill the frame would hide size variation, which is a real part of a
 # generator's range and the cheapest part to get wrong.
-GENERATORS = (
-    ("table_round", lambda A, s: A.table_round(seed=s), 1.7),
-    ("table_4top", lambda A, s: A.table_4top(seed=s), 2.6),
-    ("chair", lambda A, s: A.chair(seed=s), 1.4),
-    ("plant_large", lambda A, s: A.plant_large(seed=s), 1.7),
-    ("plant_small", lambda A, s: A.plant_small(seed=s), 1.1),
-    ("bookshelf", lambda A, s: A.bookshelf(seed=s), 1.9),
-)
+#
+# The floor is per-generator because a single number is the wrong shape for
+# this. The default catches a generator that has died; a counter module that
+# varied as much as a houseplant would be a defect, not a success, since a run
+# of six fitted cabinets showing four different fronts reads as a showroom.
+# Every relaxed floor carries the reason it is relaxed, the same role
+# `ACCEPTED_BURIAL` plays for occlusion -- an unexplained loosened threshold is
+# how a ratchet turns back into decoration.
+DEFAULT_SPREAD_FLOOR = 0.12
 
-# Below this a row of seeds reads as one object. It is set under the furniture
-# generators' measured 17% rather than at it, because the number this check
-# exists to catch is a generator that has quietly become a fixed mesh -- a
-# seed argument that is accepted and ignored, or a style table that stopped
-# being reached. Tightening it toward the plants' 41% would be asserting that
-# cafe chairs ought to vary as much as houseplants, which is a taste call
-# nobody has made.
-MIN_SILHOUETTE_SPREAD = 0.12
+GENERATORS = (
+    ("table_round", lambda A, s: A.table_round(seed=s), 1.7, None, ""),
+    ("table_4top", lambda A, s: A.table_4top(seed=s), 2.6, None, ""),
+    ("chair", lambda A, s: A.chair(seed=s), 1.4, None, ""),
+    ("plant_large", lambda A, s: A.plant_large(seed=s), 1.7, None, ""),
+    ("plant_small", lambda A, s: A.plant_small(seed=s), 1.1, None, ""),
+    ("bookshelf", lambda A, s: A.bookshelf(seed=s), 1.9, None, ""),
+    ("counter", lambda A, s: A.counter(seed=s), 1.5, 0.04,
+     "a fitted module, whose front is one of three faces this camera sees and "
+     "whose style table is deliberately weighted toward plain; the seed has to "
+     "do something, not a lot. Calibrated under a measured 7%, the same way "
+     "the occlusion thresholds were -- a floor set looser than the scan that "
+     "found the defect is a floor that is blind"),
+)
 
 
 def screen_materials(mesh, azimuth: float, span: float, res: int = 64) -> list:
@@ -454,7 +463,7 @@ def _screen_spread(frames: list) -> float:
 
 
 def check_generator_range(seeds: int = 8, azimuth: float = 45.0,
-                          floor: float = MIN_SILHOUETTE_SPREAD) -> list[str]:
+                          floor: float = DEFAULT_SPREAD_FLOOR) -> list[str]:
     """Do the seeded generators actually generate different shapes?
 
     A generator can rot in a way nothing else here notices. Add a base style
@@ -464,12 +473,12 @@ def check_generator_range(seeds: int = 8, azimuth: float = 45.0,
     room full of furniture, and the room render looks fine, because four
     chairs of the wrong four are still four chairs.
 
-    The measure is mean pairwise Jaccard distance between the silhouettes of
-    consecutive seeds. It has to be a distance and not a count: counting
-    *distinct* silhouettes is a threshold at one pixel, which reported 8 of 8
-    for every generator in the library including the ones the eye read as a
-    single object. That was `check_buried_detail`'s first metric exactly --
-    a measure of whether anything moved, standing in for how much.
+    The measure is mean pairwise disagreement between the resolved screen
+    materials of consecutive seeds. It has to be a distance and not a count:
+    counting *distinct* silhouettes is a threshold at one pixel, and it
+    reported 8 of 8 for every generator in the library including the ones the
+    eye read as a single object. That was `check_buried_detail`'s first metric
+    exactly -- a measure of whether anything moved, standing in for how much.
     """
     import sys
     from pathlib import Path
@@ -477,13 +486,14 @@ def check_generator_range(seeds: int = 8, azimuth: float = 45.0,
     import assetlib as A
 
     out = []
-    for name, factory, span in GENERATORS:
+    for name, factory, span, own, why in GENERATORS:
+        bar = floor if own is None else own
         spread = _screen_spread([screen_materials(factory(A, s + 1), azimuth,
                                                   span) for s in range(seeds)])
-        if spread < floor:
-            out.append(f"{name}: screen spread {spread:.0%} over {seeds} "
-                       f"seeds (floor {floor:.0%}) -- the seed is barely "
-                       f"changing the shape")
+        if spread < bar:
+            out.append(f"{name}: screen spread {spread:.0%} over {seeds} seeds "
+                       f"(floor {bar:.0%}{'; ' + why if why else ''}) -- the "
+                       f"seed is barely changing the shape")
     return out
 
 

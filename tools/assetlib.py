@@ -291,9 +291,67 @@ def wall_run(start, along: str, length: int, height=2.45,
 
 # --- props -------------------------------------------------------------------
 
-def counter(kick=True) -> Mesh:
+# Counter front treatments.
+#
+# Each takes `put(u0, u1, v0, v1, material)`, where u runs along the face and v
+# up it. They do not know which face they are drawing on, because the service
+# run tiles along x and the window bar tiles along y -- so the bar's front is
+# its +x face, and detail put on +y would be sandwiched between two modules and
+# never seen. `counter` supplies the mapping.
+def _front_plain(put, rnd):
+    """A framed panel. The default, and the one a run can carry six of."""
+    put(0.0, 1.0, 0.0, 1.0, "wood-2")
+
+
+def _front_drawers(put, rnd):
+    """Two drawer fronts with a reveal between them."""
+    mid = 0.42 + rnd() * 0.14
+    for a, b in ((0.0, mid - 0.02), (mid + 0.02, 1.0)):
+        put(0.0, 1.0, a, b, "wood-2")
+        # A pull, drawn as one lighter band. At 27 px a knob is a pixel and a
+        # handle is a line, so it may as well be the line.
+        h = (a + b) / 2
+        put(0.34, 0.66, h - 0.035, h + 0.035, "wood+1")
+
+
+def _front_shelf(put, rnd):
+    """An open recess: the darkest module, and the one that breaks a long run."""
+    put(0.0, 1.0, 0.0, 1.0, "wood-2")
+    put(0.10, 0.90, 0.13, 0.88, "wood-4")
+    put(0.10, 0.90, 0.50, 0.55, "wood")
+
+
+def _front_beaded(put, rnd):
+    """Vertical beadboard. Five strips, so each clears two pixels at room scale."""
+    put(0.0, 1.0, 0.0, 1.0, "wood-1")
+    for k in (0, 2, 4):
+        put(k / 5.0, (k + 1) / 5.0 - 0.014, 0.0, 1.0, "wood-3")
+
+
+FRONT_STYLES = (_front_plain, _front_drawers, _front_shelf, _front_beaded,
+                _front_drawers, _front_plain)
+
+
+def counter(kick=True, seed: int | None = None, front: str = "y") -> Mesh:
     """Modular: the body spans the FULL tile so a run tiles seamlessly.
-    Insetting it left a seam between every adjacent module."""
+    Insetting it left a seam between every adjacent module.
+
+    The room's service run is six of these and the window bar three more, so
+    nine identical boxes make the single largest mass in frame -- and the front
+    was one flat face at one ramp step, which is the most blockout-looking thing
+    the room can show at that size.
+
+    `seed` picks a front treatment. All of them are drawn as value, never as
+    geometry: the modules have to keep tiling flush, and anything modelled proud
+    of the front would be the first thing a customer walks into. `FRONT_STYLES`
+    lists plain twice, because a run with four distinct fronts in six modules
+    reads as a showroom rather than as a fitted counter.
+
+    `front` is which face the customer sees, and it is not always +y. The
+    service run tiles along x so its front is +y; the window bar tiles along y,
+    so its +y face is a joint between two modules and its front is +x. Detail on
+    the wrong one is sealed inside the run.
+    """
     m = Mesh()
     # Without a plinth the carcass must reach the floor itself. It did not, so
     # every kick=False counter -- the whole window bar run -- hovered 0.10 above
@@ -303,6 +361,33 @@ def counter(kick=True) -> Mesh:
     if kick:
         m.add_box((0.0, 0.12, 0.0), (1.0, 0.88, 0.10), "neutral")  # recessed plinth
     m.add_box((0.0, 0.0, 0.82), (1.0, 1.0, 0.92), CERAMIC)      # worktop, overhangs
+    if seed is None:
+        return m
+
+    st = _mix(seed)
+
+    def rnd():
+        nonlocal st
+        st = _mix(st)
+        return st / 0x7FFFFFFF
+
+    # Inset from the module edges so two neighbours never share a reveal, which
+    # would read as one four-tile cabinet rather than as two.
+    lo, hi = 0.035, 0.965
+    z0, z1 = base + 0.03, 0.79
+    face, n = (0.9412, (0.0, 1.0, 0.0)) if front == "y" else (0.9412, (1.0, 0.0, 0.0))
+
+    def put(u0, u1, v0, v1, mat):
+        a, b = lo + (hi - lo) * u0, lo + (hi - lo) * u1
+        c, d = z0 + (z1 - z0) * v0, z0 + (z1 - z0) * v1
+        if front == "y":
+            m.add_quad((a, face, c), (b, face, c), (b, face, d), (a, face, d),
+                       mat, facing=n)
+        else:
+            m.add_quad((face, a, c), (face, b, c), (face, b, d), (face, a, d),
+                       mat, facing=n)
+
+    FRONT_STYLES[int(rnd() * len(FRONT_STYLES)) % len(FRONT_STYLES)](put, rnd)
     return m
 
 

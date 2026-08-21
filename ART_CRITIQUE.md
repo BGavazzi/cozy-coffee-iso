@@ -985,11 +985,62 @@ One argument, and the mistake stops being writable. The boxes, prisms and
 cylinders do not pass it, because their winding was fixed and verified at the
 point they were written.
 
+## The counter run, and which face is the front
+
+Nine identical boxes -- six service modules and three window-bar modules --
+make the single largest mass in frame, and the front of each was one flat face
+at one ramp step. That is the most blockout-looking thing an interior can put
+on screen at that size.
+
+The treatments are drawn as value, never as geometry, for two reasons beyond
+the usual one: the modules have to keep tiling flush, and anything modelled
+proud of the front is the first thing a customer walks into.
+
+What the counter turned up that the bookshelf did not is that **the front is
+not always +y**. The service run tiles along x, so its front is the +y face.
+The window bar tiles along *y*, so its +y face is the joint between two
+modules, and detail put there is sealed inside the run -- present in the mesh,
+paid for in triangles, and never once rendered. The camera sees +x and +y, but
+which of those a given object presents depends on how its neighbours are laid
+out, and only the room knows that. So `front` is a parameter.
+
+The style table lists plain twice out of six. A run with four distinct fronts
+in six modules reads as a showroom rather than as a fitted counter, and the
+failure mode of a generator is not always too little variety.
+
+Choosing where the run *starts* stayed the room's job. At seed base 4 the six
+modules come out drawers / shelf / plain / plain / beaded / plain; most bases
+give four plains in six, and a few give three different fronts in a row. The
+generator is equally correct either way -- what a run opens on is composition,
+and composition is placement.
+
+The first version drew all of it one ramp step down from the carcass, and the
+generator sheet showed eight modules that were, to the eye, identical. One step
+is enough to break a flat field -- that is what grain is calibrated to -- and
+not enough to say "this is a drawer and that is a shelf" at 27 px per unit.
+Panels went to two steps and the recess to four, and the measured spread went
+from 2.6% to 7%. The point is that the sheet caught this and the room render
+had not: a counter partly hidden behind three customers can look busy while
+carrying no information at all.
+
+And it forced the check to grow a per-generator floor. A counter module
+measures 3% spread, which is not a bug: the front is one of three faces this
+camera sees, and the style table is weighted toward plain on purpose. A single
+threshold cannot express both "a plant that stopped varying is broken" and "a
+cabinet that varies like a plant is broken". Every relaxed floor now carries
+the reason it is relaxed, the same role `ACCEPTED_BURIAL` plays for occlusion,
+and the relaxed one still bites -- point `counter` at an unseeded mesh and it
+fires at 0% against its own floor. That floor is set at 4%, under the measured
+7% rather than at it -- the same calibration discipline the occlusion
+thresholds needed, where defaults chosen looser than the scan that found the
+defect left the check blind.
+
 ## Where the numbers landed
 
 | | fifth pass | sixth pass |
 |---|---|---|
 | bases the tables can be built on | 2 fixed meshes | **4 styles × top shape, thickness, overhang** |
+| seeded generators in the library | 3 | **7** |
 | floor texture | one amplitude everywhere | **derived from where the seats and tills are** |
 | high-key share of frame | 63.8% | **66.7%** |
 | generator range | unmeasured | **measured, and a check** |
@@ -1000,8 +1051,9 @@ render is still byte-identical across processes.
 
 ## Still open
 
-- The espresso machine, counter and bench are still fixed meshes. Tables,
-  chairs and the bookshelf show the shape of the replacement.
+- The espresso machine, bench, armchair and pastry case are still fixed
+  meshes. Tables, chairs, the bookshelf and the counter show the shape of the
+  replacement.
 - Stages 1–3 (SDXL concept → TRELLIS 2 mesh → UniRig rig) remain unbuilt.
   Everything here is still the deterministic render half.
 - Furniture screen spread sits at 19–34% against the plants' 47–53%. That is

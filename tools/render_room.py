@@ -94,7 +94,13 @@ def build_room():
 
     # --- service counter run against the far-right wall (modules tile flush)
     for i in range(6):
-        add(A.counter(), at=(2.0 + i, 0.85, 0), name=f"counter#{i}")
+        # Seed base chosen for the RUN, not the module: at 4 the six
+        # modules come out drawers/shelf/plain/plain/beaded/plain,
+        # which is a fitted counter. Most bases give four plains in
+        # six, and a couple give three distinct fronts in a row,
+        # which reads as a showroom. The generator is right either
+        # way; choosing where a run starts is the room's job.
+        add(A.counter(seed=4 + i), at=(2.0 + i, 0.85, 0), name=f"counter#{i}")
     add(A.espresso_machine(), at=(2.3, 0.95, 0.92), name="prop#espresso")
     add(A.grinder(),          at=(4.4, 0.95, 0.92), name="prop#grinder")
     add(A.register(),         at=(6.3, 0.95, 0.92), name="prop#register")
@@ -149,7 +155,8 @@ def build_room():
 
     # --- window bar with stools along the far-left wall
     for i in range(3):
-        add(A.counter(kick=False), at=(0.45, 5.3 + i * 1.5, 0), name=f"bar#{i}")
+        add(A.counter(kick=False, seed=1 + i, front="x"),
+            at=(0.45, 5.3 + i * 1.5, 0), name=f"bar#{i}")
         add(A.stool(), at=(1.70, 5.3 + i * 1.5, 0), name=f"stool#{i}")
 
     # --- dressing
