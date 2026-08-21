@@ -387,20 +387,171 @@ def pastry_case() -> Mesh:
     return m
 
 
-def table_round(top=WOOD) -> Mesh:
+def _mix(seed: int) -> int:
+    """Scramble a small integer into a usable LCG state.
+
+    Seeding an LCG with `seed * k + c` and reading its top bits leaves nearby
+    seeds correlated: the table generator gave seeds 1, 3 and 5 the same base
+    style and 2 and 4 another, because the seeds in a room are consecutive
+    integers and a single multiply does not separate them. This is an
+    avalanche step, so one bit of seed changes about half the bits of state.
+    """
+    h = (seed * 2654435761 + 1013904223) & 0xFFFFFFFF
+    h ^= h >> 16
+    h = (h * 2246822519) & 0xFFFFFFFF
+    h ^= h >> 13
+    h = (h * 3266489917) & 0xFFFFFFFF
+    return (h ^ (h >> 16)) & 0x7FFFFFFF
+
+
+def strut(m: Mesh, a: tuple, b: tuple, r: float, mat: str) -> None:
+    """A square-section beam between two points.
+
+    `add_box` is axis-aligned, which is why every leg in this library has so far
+    been vertical. A splayed or raked member is most of what separates one
+    furniture silhouette from another, and silhouette is the only thing that
+    survives the downsample -- the same finding the chair backs turned up.
+
+    The cross-section stays axis-aligned in x/y even when the member leans. That
+    is deliberate: a rotated square section lands on the pixel grid at an angle
+    and shimmers between the eight azimuths, and at 27 px per unit a leg is two
+    pixels wide, so there is no cross-section detail to lose anyway.
+    """
+    lo = [(a[0] + dx * r, a[1] + dy * r, a[2])
+          for dx, dy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+    hi = [(b[0] + dx * r, b[1] + dy * r, b[2])
+          for dx, dy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+    for i in range(4):
+        j = (i + 1) % 4
+        m.add_quad(lo[i], lo[j], hi[j], hi[i], mat)
+    m.add_quad(lo[3], lo[2], lo[1], lo[0], mat)
+    m.add_quad(hi[0], hi[1], hi[2], hi[3], mat)
+
+
+# Table base styles, on the same argument as the chair backs: vary the
+# silhouette, because at room scale that is the whole of what a viewer reads.
+# Each takes the footprint the top occupies and the height to reach.
+def _base_posts(m, f, x0, x1, y0, y1, h, r):
+    """Four square legs, inset from the top's edge. The plain one."""
+    for cx in (x0 + r * 2.2, x1 - r * 2.2):
+        for cy in (y0 + r * 2.2, y1 - r * 2.2):
+            m.add_box((cx - r, cy - r, 0.0), (cx + r, cy + r, h), f)
+
+
+def _base_splay(m, f, x0, x1, y0, y1, h, r):
+    """Four legs raked outward. Reads instantly and cannot be mistaken for a box."""
+    mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            strut(m, (mx + sx * (x1 - x0) * 0.44, my + sy * (y1 - y0) * 0.44, 0.0),
+                  (mx + sx * (x1 - x0) * 0.28, my + sy * (y1 - y0) * 0.28, h),
+                  r * 1.35, f)
+
+
+def _base_pedestal(m, f, x0, x1, y0, y1, h, r):
+    """Column on a splayed foot. The cafe two-top."""
+    mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+    m.add_cylinder((mx, my, 0.0), r * 1.7, h, f, 12)
+    m.add_cylinder((mx, my, 0.0), min(x1 - x0, y1 - y0) * 0.30, 0.055, f, 14)
+
+
+def _base_trestle(m, f, x0, x1, y0, y1, h, r):
+    """Two end frames joined by a spine. The long communal table."""
+    r *= 1.25
+    for cx in (x0 + r * 2.6, x1 - r * 2.6):
+        for cy in (y0 + r * 2.2, y1 - r * 2.2):
+            m.add_box((cx - r, cy - r, 0.0), (cx + r, cy + r, h), f)
+        # The foot, which is the whole reason a trestle looks like a trestle.
+        m.add_box((cx - r * 1.3, y0 + r, 0.0), (cx + r * 1.3, y1 - r, r * 1.1), f)
+    # The stretcher runs down the long axis at shin height, where it is visible
+    # under the top rather than hidden behind an apron.
+    my = (y0 + y1) / 2
+    m.add_box((x0 + r * 2.6, my - r * 0.8, h * 0.42),
+              (x1 - r * 2.6, my + r * 0.8, h * 0.42 + r * 1.4), f)
+
+
+BASE_STYLES = (_base_posts, _base_splay, _base_pedestal, _base_trestle)
+
+
+def table(w: float = 1.0, d: float = 1.0, h: float = 0.58, top=WOOD,
+          frame=WOOD, round_top: bool | None = None,
+          seed: int | None = None) -> Mesh:
+    """A table grown from a base style and a top, rather than a fixed mesh.
+
+    The room seats fourteen people at three tables and every one of them was one
+    of two meshes. `leafy_plant` and `chair` had already made the argument; the
+    tables are the largest pieces of furniture in frame and were still coming out
+    of a catalogue of two.
+
+    What varies is the base -- posts, splayed, pedestal, trestle -- plus top
+    shape, thickness and overhang. What does NOT vary is anything inside the
+    outline, for the reason the chair backs record: interior detail is gone by
+    the time the frame is downsampled, and the silhouette is not.
+
+    `seed=None` keeps a fixed table, so callers that have not opted in and every
+    sprite sheet already rendered stay exactly as they were.
+    """
+    st = None if seed is None else _mix(seed)
+
+    def rnd():
+        nonlocal st
+        if st is None:
+            return 0.5
+        # `_mix` per draw, not an LCG step. Mixing only the seed left the
+        # *stream* weak: the chair's second draw picks the back style, and over
+        # forty consecutive seeds one of four styles came up 3 times against an
+        # expected 10. A generator whose variety is this lopsided is barely a
+        # generator.
+        st = _mix(st)
+        return st / 0x7FFFFFFF
+
     m = Mesh()
-    m.add_cylinder((0.5, 0.5, 0.0), 0.13, 0.58, WOOD, 12)       # thicker column
-    m.add_cylinder((0.5, 0.5, 0.58), 0.44, 0.11, top, 20)       # thicker top
-    m.add_cylinder((0.5, 0.5, 0.0), 0.30, 0.06, WOOD, 14)       # base
+    thick = 0.085 + rnd() * 0.045
+    over = 0.03 + rnd() * 0.05                 # how far the top oversails the base
+    if round_top is None:
+        # A round top belongs on a small square footprint; a long table is not
+        # round in any cafe. Derived, so the two never disagree.
+        round_top = abs(w - d) < 0.25 * max(w, d) and max(w, d) < 1.4
+    style = (_base_pedestal if round_top and seed is None else
+             _base_posts if seed is None else
+             BASE_STYLES[int(rnd() * len(BASE_STYLES)) % len(BASE_STYLES)])
+    if round_top and style is _base_trestle:
+        # A trestle under a disc is a chair with two left legs.
+        style = _base_pedestal
+    # 0.085 read as tree trunks under a disc; 0.052 read as wire. Each base
+    # style scales this itself, because a lone raked leg carries more load --
+    # and looks like it should -- than one of four posts.
+    leg_r = 0.066 + rnd() * 0.022
+    # The base's footprint comes from the TOP's outline, not from the table's
+    # bounding box. Under a round top the two are not the same: a base laid out
+    # on the box put the splayed feet at 0.57 from the centre of a disc of
+    # radius 0.50, so they stuck out past the edge they were meant to hold up.
+    if round_top:
+        # The largest square that fits inside the disc, less the overhang.
+        half = (min(w, d) / 2 - over) * 0.7071
+        bx0, bx1 = w / 2 - half, w / 2 + half
+        by0, by1 = d / 2 - half, d / 2 + half
+    else:
+        bx0, bx1, by0, by1 = over, w - over, over, d - over
+    style(m, frame, bx0, bx1, by0, by1, h, leg_r)
+    if round_top:
+        m.add_cylinder((w / 2, d / 2, h), min(w, d) / 2, thick, top, 20)
+    else:
+        m.add_box((0.0, 0.0, h), (w, d, h + thick), top)
+    # Callers put cups on this. Varying the top thickness without telling anyone
+    # where the top ended up would leave every piece of clutter in the room
+    # floating or sunk by up to 4 cm, which `grounded` would then report as a
+    # placement bug rather than as the generator's.
+    m.top_z = h + thick
     return m
 
 
-def table_4top() -> Mesh:
-    m = Mesh()
-    m.add_box((0.05, 0.05, 0.58), (1.95, 0.95, 0.70), WOOD)
-    for cx, cy in ((0.22, 0.18), (1.78, 0.18), (0.22, 0.82), (1.78, 0.82)):
-        m.add_box((cx - 0.105, cy - 0.105, 0), (cx + 0.105, cy + 0.105, 0.58), WOOD)
-    return m
+def table_round(top=WOOD, seed: int | None = None) -> Mesh:
+    return table(1.0, 1.0, 0.58, top=top, round_top=True, seed=seed)
+
+
+def table_4top(seed: int | None = None) -> Mesh:
+    return table(2.0, 1.0, 0.58, round_top=False, seed=seed)
 
 
 # Chair back styles.
@@ -473,14 +624,19 @@ def chair(cushion=None, frame=WOOD, seed: int | None = None) -> Mesh:
     `seed=None` keeps a fixed chair, so callers that have not opted in are
     unaffected and existing sprite sheets stay stable.
     """
-    st = None if seed is None else (seed * 2654435761 + 1013904223) & 0x7FFFFFFF
+    st = None if seed is None else _mix(seed)
 
     def rnd():
         nonlocal st
         if st is None:
             return 0.5
-        st = (st * 1103515245 + 12345) & 0x7FFFFFFF
-        return (st >> 8) / (0x7FFFFFFF >> 8)
+        # `_mix` per draw, not an LCG step. Mixing only the seed left the
+        # *stream* weak: the chair's second draw picks the back style, and over
+        # forty consecutive seeds one of four styles came up 3 times against an
+        # expected 10. A generator whose variety is this lopsided is barely a
+        # generator.
+        st = _mix(st)
+        return st / 0x7FFFFFFF
 
     m = Mesh()
     seat_z = 0.45                      # ~28% of character height; was 0.52

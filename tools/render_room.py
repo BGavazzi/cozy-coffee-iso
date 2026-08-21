@@ -129,8 +129,9 @@ def build_room():
     tables = [(4.6, 5.0, "cafe", "cream"), (6.6, 7.7, "books", "wood"),
               (11.9, 8.2, "cafe", "cream")]
     for n, (tx, ty, clutter, ttop) in enumerate(tables):
-        add(A.table_round(ttop), at=(tx, ty, 0), name=f"table#{n}")
-        add(A.table_clutter(clutter), at=(tx, ty, 0.69), name=f"clutter#{n}")
+        top = A.table_round(ttop, seed=17 + n * 5)
+        add(top, at=(tx, ty, 0), name=f"table#{n}")
+        add(A.table_clutter(clutter), at=(tx, ty, top.top_z), name=f"clutter#{n}")
         for k, (dx, dy, rot) in enumerate((
                 (0.0, 1.15, 180), (0.0, -1.15, 0), (1.15, 0.0, 90), (-1.15, 0.0, 270))):
             add(A.chair(cushion="rose" if (n + k) % 3 == 0 else None,
@@ -139,8 +140,9 @@ def build_room():
                 at=(tx + dx, ty + dy, 0), rot=rot, name=f"chair#{n}_{k}")
 
     # --- 4-top with four chairs
-    add(A.table_4top(), at=(9.5, 4.5, 0), name="table#4top")
-    add(A.table_clutter("work"), at=(9.9, 4.5, 0.71), name="clutter#4top")
+    big = A.table_4top(seed=6)
+    add(big, at=(9.5, 4.5, 0), name="table#4top")
+    add(A.table_clutter("work"), at=(9.9, 4.5, big.top_z), name="clutter#4top")
     for cx in (9.8, 11.0):
         add(A.chair(seed=int(cx * 10)),  at=(cx, 3.35, 0), rot=0,   name=f"chair#4t_{cx}a")
         add(A.chair(seed=int(cx * 10) + 7), at=(cx, 5.65, 0), rot=180, name=f"chair#4t_{cx}b")

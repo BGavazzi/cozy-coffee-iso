@@ -767,3 +767,180 @@ each other is still a defect and still fires.
   verifies, and it runs on the checks the earlier passes built.
 - Grain is a single global amplitude per material. Wear should concentrate where
   hands and feet go, not spread evenly.
+
+---
+
+# Sixth pass — wear, tables, and a metric that was lying
+
+The fifth pass closed with three open items. Two of them were the same item
+seen from different sides: `assetlib.py` is still mostly fixed meshes, and
+grain spreads evenly when wear should concentrate. Both say the room is
+described rather than grown.
+
+## Wear is derived, not authored
+
+Grain gave every wooden surface the same texture everywhere. That is what a
+factory finish looks like; a floor looks nothing like it. Real wear is
+concentrated — pale scuffed tracks in front of a counter and around every
+chair, untouched boards under the furniture and in the corners.
+
+The whole argument for tracking placements is that the room already knows
+where people stand, because it knows where the chairs are. `rots` even
+records which way each seat faces, so "in front of" is exact rather than
+estimated. Hand-placing wear would be the same mistake as hand-placing the
+dressing, one pass after the scatter solver made that argument.
+
+`Layout.wear_field()` returns pools for the seats, the service run, and the
+route from each till to each seat. Getting the routes right took three tries,
+and the failures are the interesting part.
+
+**The tills' centroid as one origin** put the fan's apex a couple of tiles
+clear of the counter and left a bare stripe between the queue band and the
+routes — across the one stretch of floor that is certainly walked on.
+
+**One origin per placement** gave nine, because a six-module counter is six
+placements and one counter. That is 207 routes, and the room came out
+uniformly worn: the exact failure the field exists to fix, arrived at from
+the opposite direction.
+
+**Thinning the origins onto a 1.8-unit grid** gives the two service runs
+there actually are.
+
+There was a fourth attempt before any of those, which picked a single walkway
+as the emptiest lane across the room. It is worth recording because it looked
+principled and was not. The lane scores came out 4.6 against 6.9 over 23
+candidates — a shallow minimum over what is essentially noise, so the walkway
+would have relocated on any change to the dressing. Two real endpoints beat
+one argmin.
+
+Two implementation notes that were both defects first:
+
+`at` takes the max over pools, so a stretch crossed by nine routes wore
+exactly as much as one crossed by a single route, and half the room came out
+uniformly faint. Cells now carry a traffic count and reinforce, which makes
+the trunk darker than the fringe for the reason it should be.
+
+The lift is denominated in **ramp steps**, not in grain amplitude. Tied to
+grain it maxed at 0.086 against a step of 0.20, so the quantizer rounded
+nearly all of it away and the entire field moved 2.5% of pixels. This is the
+recurring shape of every bug in a quantized pipeline: an effect that is
+perfectly correct in the continuous domain and invisible after rounding. On
+steps it moves 5.2%, and the floor now has a value story — pale routes
+through the middle, dark unworn boards at the corners and the near edge.
+
+`WearField` bakes its plan view to a 0.12-unit grid on first query: 0.38 µs
+against 27 µs exact. A few hundred hypots per lit pixel is a render's worth
+of work spent re-deriving a field that does not change during the render.
+
+## Tables became a generator
+
+The room seats fourteen people at four tables, and every one of them was one
+of two fixed meshes. Tables are the largest pieces of furniture in frame and
+were still coming out of a catalogue of two.
+
+`table()` varies the base — posts, splayed, pedestal, trestle — plus top
+shape, thickness and overhang. What does *not* vary is anything inside the
+outline, for the reason the chair backs recorded a pass earlier: interior
+detail is gone by the time the frame is downsampled, and the silhouette is
+not.
+
+Raked legs needed a primitive the library did not have. `add_box` is
+axis-aligned, which is why every leg so far had been vertical, and a splayed
+member is most of what separates one furniture silhouette from another.
+`strut()` draws a square-section beam between two points, keeping the
+cross-section axis-aligned in x/y even when the member leans — a rotated
+square section lands on the pixel grid at an angle and shimmers between the
+eight azimuths, and at 27 px per unit a leg is two pixels wide, so there is
+no cross-section detail to lose.
+
+Three things the tables got wrong on the way:
+
+**The base was laid out on the table's bounding box**, which under a round
+top is not the top's outline. The splayed feet landed 0.57 from the centre of
+a disc of radius 0.50 and stuck out past the edge they were holding up. The
+base footprint is now derived from the top's shape.
+
+**Leg thickness went from tree trunks to wire in one step.** 0.085 read as
+trunks under a disc; the correction to 0.052 read as spider legs. Each base
+style now scales the radius itself, because a lone raked leg carries more
+load — and should look like it does — than one of four posts.
+
+**Clutter sat at a hardcoded z.** Varying the top thickness without telling
+anyone where the top ended up would leave every cup in the room floating or
+sunk by up to 4 cm, and `grounded` would then have reported it as a placement
+bug rather than as the generator's. `table()` returns its `top_z`.
+
+## Two random-number bugs, in a pipeline whose whole value is reproducibility
+
+The table generator gave seeds 1, 3 and 5 the same base style and 2 and 4
+another. Seeding an LCG with `seed * k + c` and reading its top bits leaves
+nearby seeds correlated, and the seeds in a room are consecutive integers.
+`_mix()` is an avalanche step, so one bit of seed changes about half the bits
+of state.
+
+Mixing the seed fixed the *seeds* and left the *stream* weak: the chair's
+second draw picks its back style, and over forty consecutive seeds one of
+four styles came up 3 times against an expected 10. A generator whose variety
+is that lopsided is barely a generator. `rnd()` now mixes per draw rather than
+taking an LCG step, and the four table bases land at 24/21/18/17 over eighty
+seeds.
+
+Both of these were invisible in the room render. Four chairs of the wrong
+four are still four chairs.
+
+## The generator sheet, and a metric that was lying
+
+`proof/generators.png` existed but nothing generated it — it had been made
+ad hoc. That is a problem for a pipeline whose premise is that humans direct
+and critique what the machine generates, because a generator is not
+reviewable through one sample. The question about a generator is whether its
+*range* is any good, and that needs a row.
+
+`preview_generators.py` renders one row per generator and one column per
+seed, through the shipping path. Where a row comes out as the same shape
+eight times, the sheet says so directly instead of leaving it to be noticed
+in a room render three passes later.
+
+Its first metric was **distinct silhouettes**, and it reported 8/8 for every
+row — including rows where the eye plainly saw one object. This is
+`check_buried_detail`'s first metric all over again: distinctness is a
+threshold at one pixel, so it measures whether anything moved rather than how
+much. Jaccard distance between silhouettes measures magnitude, and it
+separates the rows honestly:
+
+| generator | silhouette spread |
+|---|---|
+| `table_round` | 17% |
+| `chair, cushioned` | 18% |
+| `table_4top` | 19% |
+| `chair` | 19% |
+| `plant_large` | 41% |
+| `plant_small` | 47% |
+
+The furniture generators produce meaningfully but modestly different shapes;
+the plants are genuinely different objects each time. That gap is real and
+the old metric hid it behind a row of 8/8.
+
+## Where the numbers landed
+
+| | fifth pass | sixth pass |
+|---|---|---|
+| bases the tables can be built on | 2 fixed meshes | **4 styles × top shape, thickness, overhang** |
+| floor texture | one amplitude everywhere | **derived from where the seats and tills are** |
+| high-key share of frame | 63.8% | **66.7%** |
+| generator range | unmeasured | **measured, per generator** |
+| automated checks in the ratchet | 11 | 11 |
+
+Median L, chroma and the extremes are unmoved, the checks stay clean, and the
+render is still byte-identical across processes.
+
+## Still open
+
+- The espresso machine, counter, bookshelf and bench are still fixed meshes.
+  Tables and chairs show the shape of the replacement.
+- Stages 1–3 (SDXL concept → TRELLIS 2 mesh → UniRig rig) remain unbuilt.
+  Everything here is still the deterministic render half.
+- Furniture silhouette spread sits at 17–19% against the plants' 41–47%. That
+  is not obviously wrong — a cafe buys chairs from a catalogue and a
+  greenhouse does not — but nobody has decided what the target is, and an
+  unowned number drifts.
