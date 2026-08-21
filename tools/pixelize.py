@@ -25,6 +25,7 @@ Both paths are implemented so the difference can be measured rather than argued.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -37,25 +38,78 @@ ROOT = Path(__file__).resolve().parent.parent
 # Ordered 4x4 Bayer matrix, normalised to [0, 1).
 BAYER4 = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]
 
+# Dither only within this band around a step boundary; snap outside it.
+DITHER_LO, DITHER_HI = 0.36, 0.64
+
 # Which palette ramp each material shades along. This binding is the whole
 # mechanism -- it is what makes cross-ramp contamination impossible.
 MATERIAL_RAMPS = {
     "ground": "wood",
     "wood": "wood",
+    # Skin reads off the wood ramp -- the warm mid-browns are exactly right for
+    # it -- but it must be addressable separately from timber, because they want
+    # opposite treatment everywhere except colour. Surface grain is the case
+    # that forced this: at 0.85 of a step it reads as plank on a floor and as
+    # stubble on a face.
+    "skin": "wood",
     "cream": "cream",
     "foliage": "foliage",
     "rose": "rose",
     "sky": "sky",
     "neutral": "neutral",
+    # Spot accents. Each is a 1-step ramp, so it renders as itself at any
+    # lambert -- an emissive surface, not a shaded one.
+    "lamp_glow": "lamp_glow",
+    "accent_read": "accent_read",
+    "gold_coin": "gold_coin",
 }
 
 
+def material(m: str) -> tuple[str, int]:
+    """Split a material token into (ramp, tone offset).
+
+    A trailing signed integer shifts the shaded result along the material's own
+    ramp: `"wood-3"` is wood, three steps darker. This is the pixel-art idiom of
+    drawing detail with value rather than with geometry -- eyes, panel seams and
+    fabric folds are a darker step of the surface they sit on, not a new colour.
+    Crucially it stays palette-exact, because the result is still a step of the
+    same ramp, so cross-ramp contamination remains structurally impossible.
+
+    Offsets compose by summing, so `"neutral-2+1"` is neutral one step down.
+    That matters for modular assembly: a part may brighten whatever material it
+    is handed (a hair bun is `mat + "+1"`) without needing to know that the spec
+    already darkened it.
+    """
+    parts = _TONE_RE.findall(m)
+    base = _TONE_RE.sub("", m)
+    return MATERIAL_RAMPS[base], sum(int(p) for p in parts)
+
+
+_TONE_RE = re.compile(r"[+-]\d+")
+
+
+
 def load_palette(path: Path | None = None) -> dict[str, list[tuple[int, int, int]]]:
+    """Ramps by name, with each spot colour promoted to its own 1-step ramp.
+
+    Spot colours are not lightness ramps -- they are single accents, and the
+    palette file groups all three under `ramp: "spot"`. Left that way they are
+    unaddressable: no material can name `lamp_glow`, which is precisely why the
+    critique found it used on 0 pixels while the scene had pendant lamps in it.
+
+    A 1-step ramp is exactly the right shape for an accent. The toon shader
+    indexes `lam * (n - 1)`, which is 0 for every lambert when n is 1, so a spot
+    colour emits itself regardless of lighting -- which is what "this thing is a
+    light source" should mean.
+    """
     path = path or ROOT / "palette" / "palette.json"
     entries = json.loads(path.read_text(encoding="utf-8"))
     ramps: dict[str, list] = {}
     for e in sorted(entries, key=lambda e: (e["ramp"], e["index"])):
-        ramps.setdefault(e["ramp"], []).append(tuple(e["rgb"]))
+        if e["ramp"] == "spot":
+            ramps[e["name"]] = [tuple(e["rgb"])]
+        else:
+            ramps.setdefault(e["ramp"], []).append(tuple(e["rgb"]))
     return ramps
 
 
@@ -70,17 +124,25 @@ def shade_toon(mat, lam, size, ramps, dither=True):
             m = mat[i]
             if m is None:
                 continue
-            ramp = ramps[MATERIAL_RAMPS[m]]
+            rname, tone = material(m)
+            ramp = ramps[rname]
             n = len(ramp)
 
             # Continuous position along the ramp, then split into index + fraction.
-            pos = lam[i] * (n - 1)
-            idx = int(pos)
+            pos = lam[i] * (n - 1) + tone
+            idx = int(pos // 1)
             frac = pos - idx
 
-            if dither and idx < n - 1:
-                # Ordered dither between *adjacent steps of this ramp only*.
-                if frac > BAYER4[y % 4][x % 4] / 16.0:
+            if dither and idx < n - 1 and DITHER_LO < frac < DITHER_HI:
+                # Ordered dither between *adjacent steps of this ramp only*, and
+                # only inside a band around the step boundary. Dithering the
+                # whole 0..1 range -- the obvious implementation -- puts a
+                # checker on every shaded surface in the frame, which reads as
+                # static rather than as pixel art. Hand artists lay a dither
+                # band at the transition and leave the flats flat; this is that,
+                # made mechanical.
+                t = (frac - DITHER_LO) / (DITHER_HI - DITHER_LO)
+                if t > BAYER4[y % 4][x % 4] / 16.0:
                     idx += 1
             elif frac > 0.5:
                 idx = min(idx + 1, n - 1)
@@ -95,8 +157,9 @@ def shade_smooth(mat, lam, size, ramps):
     for i, m in enumerate(mat):
         if m is None:
             continue
-        ramp = ramps[MATERIAL_RAMPS[m]]
-        base = ramp[len(ramp) // 2]
+        rname, tone = material(m)
+        ramp = ramps[rname]
+        base = ramp[max(0, min(len(ramp) - 1, len(ramp) // 2 + tone))]
         s = 0.35 + 0.95 * lam[i]
         out[i] = tuple(max(0, min(255, int(c * s))) for c in base)
     return out
@@ -175,7 +238,7 @@ def apply_outline(px, mat_small, size, ramps, selective=True):
                         edge = True
                         break
             if edge and m is not None:
-                out[i] = ramps[MATERIAL_RAMPS[m]][0]
+                out[i] = ramps[material(m)[0]][0]
     return out
 
 

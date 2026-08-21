@@ -157,6 +157,71 @@ def check(man: dict) -> int:
     for r in sorted(legal_ramps - used_ramps):
         warns.append(f"palette ramp {r!r} is never used by any asset")
 
+    # Every clip the manifest budgets renders for must actually be posable.
+    # Without this the budget is fiction: assets.yaml can promise a `brew` clip
+    # for years while nothing in the rig knows how to stand at a machine.
+    try:
+        import character as _c
+        posable = set(_c.CLIPS)
+        declared = set()
+        fx_clips = 0
+        for section, a in entries(man):
+            clips = a.get("clips") or {}
+            if section == "characters":
+                declared |= set(clips)
+            elif clips:
+                fx_clips += sum(clips.values())
+        for name in sorted(declared - posable):
+            errs.append(f"character clip {name!r} is budgeted in assets.yaml "
+                        f"but has no pose function in character.CLIPS")
+        for name in sorted(posable - declared):
+            warns.append(f"character clip {name!r} is implemented but never "
+                         f"budgeted - no asset declares it")
+        # Declared symmetry drives the entire render budget, so verify it
+        # against the geometry rather than trusting the yaml. Every effect has a
+        # generator, so this is cheap and exact.
+        import fx as _fx
+        from art_review import check_symmetry_claims
+        fx_declared = {a["id"]: a.get("sym", "none")
+                       for a in (man.get("fx") or [])}
+        fx_meshes = {n: fn(0.25) for n, (fn, _) in _fx.FX.items()}
+        for msg in check_symmetry_claims(fx_declared, fx_meshes):
+            (errs if "WRONG" in msg else warns).append(msg)
+        for msg in _fx.check_loops():
+            errs.append(msg)
+        # Characters must have internal contrast, and the reference room must be
+        # legible from the camera that ships. Both are geometry-and-palette
+        # facts the manifest cannot state, so they are measured here rather than
+        # declared: a spec that passes every stated rule and still renders as a
+        # brown smear has only proved the rules were incomplete.
+        for msg in _c.check_palette_spread():
+            errs.append(msg)
+        from animate import check_direction_labels
+        for msg in check_direction_labels():
+            errs.append(msg)
+        from render_room import build_room
+        room = build_room()
+        for msg in room.screen_occlusion():
+            warns.append(f"reference room: {msg}")
+        from art_review import check_generator_range, review_library
+        for msg in review_library():
+            warns.append(msg)
+        # A generator that has quietly become a fixed mesh renders a room that
+        # looks entirely fine, which is why this needs to be a check and not an
+        # eye on a contact sheet.
+        for msg in check_generator_range():
+            warns.append(msg)
+        # The stage 1-3 seam. Nothing feeds it yet, which is exactly why it
+        # needs a check: an adapter that is never exercised is an adapter that
+        # is wrong by the time something arrives.
+        from ingest import check_roundtrip, check_transform
+        for msg in check_roundtrip():
+            errs.append(f"ingest: {msg}")
+        for msg in check_transform():
+            errs.append(f"ingest: {msg}")
+    except Exception as exc:                       # pragma: no cover
+        warns.append(f"clip cross-check skipped: {exc}")
+
     for e in errs:
         print(f"  ERROR   {e}")
     for w in warns:

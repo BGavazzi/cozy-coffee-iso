@@ -19,16 +19,62 @@ which is the point.
 
     pip install -r tools/requirements.txt
 
-    python tools/render_batch.py                        # generate a direction set
-    python tools/review_queue.py build "sprites/*.png"   # auto-review + contact sheet
+    python tools/palette_forge.py        # compute + validate the 40-colour palette
+    python tools/animate.py --fx         # the deliverable: sheets + atlas.json
+    python tools/render_room.py          # whole-shop composite (integration test)
+
+    # review surfaces -- what a human actually looks at
+    python tools/preview_clips.py --who barista   # clip strips + looping GIFs
+    python tools/preview_characters.py            # roster + 8 directions
+    python tools/review_queue.py build "sprites/*.png"
     # fill verdict + reason in review/verdicts.jsonl
-    python tools/review_queue.py stats                   # what to automate next
+    python tools/review_queue.py stats            # what to automate next
+
+    # the gates
+    python tools/manifest.py --check     # runs all fourteen checks
+    python tools/character.py            # hair contrast, palette spread, silhouette floor
+    python tools/fx.py                   # loop seams
 
 ## The loop is a ratchet
 
 Every human rejection carries a reason. Reasons that recur get promoted into the
 automated tier, so **human review volume falls as the factory matures**. `stats`
 names the next check to write rather than leaving it to guesswork.
+
+Fourteen checks have been promoted so far: camera-space key light, hair/skin
+contrast, per-character palette spread, silhouette pixel floor, seating
+orientation, member thickness, grounding, declared-symmetry verification,
+screen-space occlusion, buried detail, derived direction labels, generator
+range, palette-binding round trip, and ingest transform. Most found a bug the moment they were written — floating counters,
+back-to-front chairs, five wrong symmetry claims costing 31% of the effects
+budget, a queue of customers stacked into a single smear, an espresso machine
+whose entire mechanism was modelled inside its own carcass, and eight sprite
+sheets filed one facing off from the direction they actually depict.
+
+The newest one measures something the others cannot see. A generator can rot
+without breaking anything: a base style left out of the style table, a seed
+accepted and then ignored, a random stream weak enough that one branch of four
+is reached a third as often as the rest. Every one of those still renders a
+room full of furniture — four chairs of the wrong four are still four chairs —
+so `check_generator_range` asks whether consecutive seeds actually produce
+different silhouettes. Its first version counted *distinct* silhouettes and
+scored a perfect 8 of 8 for generators the eye read as a single object, because
+distinctness is a threshold at one pixel. It measures distance now.
+
+The last two guard the seam where stages 1–3 will attach — `ingest.py`, which
+binds an arbitrary mesh to the palette and the tile grid. Nothing feeds it yet,
+which is precisely why it needs checks: an adapter that is never exercised is an
+adapter that is wrong by the time something arrives. Both were verified to fail
+before being trusted, and one of them needed an instrument the other four
+assertions could not provide, because a mirrored mesh has the same bounds, the
+same height and the same materials as the original.
+
+Its floor is per-generator, and every relaxed one carries the reason it is
+relaxed. A single number is the wrong shape here: the default catches a
+generator that has died, but a counter module that varied as much as a
+houseplant would be a defect rather than a success, since a run of six fitted
+cabinets showing four different fronts reads as a showroom. An unexplained
+loosened threshold is how a ratchet turns back into decoration.
 
 This has already happened once. The first batch rotated the camera with a
 world-fixed light, so the lit face drifted around the object between directions.
@@ -37,6 +83,22 @@ was obvious to a person scanning the contact sheet. The fix was conceptual: in a
 isometric game the camera is fixed and the *object* rotates, so the key light
 belongs in the camera basis. That finding is now an automated check and will
 never need a human again.
+
+## The checks are also the generator
+
+`collisions`, `grounded` and `screen_occlusion` began as validators: they graded
+hand-typed coordinates and reported which were wrong. Run *before* a placement
+rather than after, the same predicates are a constraint solver — propose a
+position, test it, keep or discard.
+
+    made = L.scatter(lambda i: A.plant_small(seed=40 + i),
+                     region=(0.5, 0.45, 13.4, 1.55), count=6, name="decor#plant")
+
+Density stops being authoring work and becomes a number. A saturated region
+returning fewer props than asked is the solver working, not failing. This is the
+first part of the pipeline that *generates* rather than verifies, and it is built
+entirely out of the checks the earlier passes accumulated — which is the argument
+for accumulating them.
 
 ## Why generation goes through 3D
 
@@ -56,7 +118,30 @@ Projection is verified, not assumed: a ground-plane unit square measures
 - **[ASSET_SPEC.md](ASSET_SPEC.md)** — the rubric: projection, palette, per-asset contract
 - **[style_bible.yaml](style_bible.yaml)** — the art direction, as an **input**.
   Swap it to retarget the factory at a different game.
-- **`tools/`** — renderer, pixelizer, palette forge, reviewer, review queue
+- **`tools/`** — renderer, pixelizer, palette forge, rig, effects, reviewers
+
+### Output
+
+`animate.py` writes `sprites/`: one sheet per character (rows are directions,
+clips stacked in row-blocks) plus `atlas.json` with frame rects, fps and
+**per-clip anchors**. Anchors are per clip because a seated clip's contact point
+is the seat and a standing clip's is the floor — one anchor for both plants every
+sitting customer either in the chair or above it.
+
+## The rig is six numbers
+
+`character.Pose` is six limb angles, a vertical offset and a twist. That is the
+whole rig, and the smallness is the design: at 46 px of figure a pose reads from
+limb *direction* and body height, not from articulation — an elbow is one pixel.
+
+Two behaviours fall out of constraints rather than being animated:
+
+- **The walk bob is derived.** Posed figures are ground-clamped, and swinging a
+  leg about its hip shortens its vertical reach, so the body drops when the legs
+  spread and rides high when they close. Measured 1.0 px at room scale.
+- **The foot does not rotate with the leg.** An ankle keeps it flat. Rotating it
+  rigidly drove its corner into the floor, and since the figure is
+  ground-clamped that lifted the body and *inverted* the bob.
 
 ## Art direction (case study one)
 

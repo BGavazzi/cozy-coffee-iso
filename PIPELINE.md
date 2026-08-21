@@ -123,6 +123,27 @@ isometric game the camera is fixed and the *object* rotates, so the key light
 belongs in the camera basis. That finding is now `check_direction_set`, and it
 will never need a human again.
 
+**And it keeps happening.** The checks promoted since fall into two kinds, and
+the second kind is the one worth naming:
+
+*Checks that encode a rule.* Hair must clear skin in lightness; a member under
+4 px reads as wire; seating faces its table; nothing floats.
+
+*Checks that encode a **projection**.* These have no analogue in a 2D pipeline
+and they are where the 3D-intermediate approach earns its cost, because the
+defect only exists once geometry meets a specific camera:
+
+| check | what it catches |
+|---|---|
+| `Layout.screen_occlusion` | two props several tiles apart in plan view that land on the same pixels, so the near one erases the far one |
+| `check_buried_detail` | geometry that faces the camera and still never wins a pixel — detail modelled where it cannot be seen |
+| `check_direction_labels` | sprite facings derived from the camera basis rather than declared, so the atlas cannot be off by a rotation |
+| `measured_symmetry` | how many azimuths actually produce different sprites, which sets the render budget |
+
+Each of these was written after a human said some version of "that area is
+mush", which is not actionable, and each turned that into a specific pair of
+object names and a percentage, which is.
+
 That is the whole thesis of the factory in one example.
 
 ---
@@ -141,16 +162,86 @@ foliage, fabric and skin — most of the material range a 2D game needs.
 
 | Stage | State |
 |---|---|
-| 1–4 (concept, mesh, rig, motion) | specified, tooling verified available, not built |
+| 1–3 (concept, mesh, rig) | specified, tooling verified available, not built — but **the seam they attach to is built and checked**: `ingest.py` binds an arbitrary mesh to the palette and the tile grid |
+| 4 (motion) | working as a **procedural rig** — `character.py` poses, `animate.py` clips. Stands in for HY-Motion the way the rasterizer stands in for Blender |
 | 5 (render) | working — exact 2:1, 8 azimuths, camera-space key. **Consumes OBJ meshes** via `mesh.py`, or analytic primitives as a fixture |
 | 6 (pixelize) | working — `pixelize.py`, ramp-quantized, zero contamination |
-| 7 (metadata) | partial — pivot/footprint from silhouette; needs mesh bbox |
-| 8 (auto-review) | working — `art_review.py`, 7 checks + direction-set |
+| 7 (metadata) | working — `animate.py` emits `atlas.json`: frame rects, per-clip anchors, fps, direction order |
+| 8 (auto-review) | working — `art_review.py` and friends, **14 checks**, all run by `manifest.py --check` |
 | 9 (human critique) | working — `review_queue.py`, contact sheet + ratchet |
 
 `isorender.py` is a software raytracer and `mesh.py` an orthographic rasterizer,
 both standing in for Blender so the deterministic half runs with no GPU or DCC
-dependency. Stages 5-9 are complete end to end.
+dependency. Stages 4-9 are complete end to end.
+
+## The seam where stages 1-3 attach
+
+Stage 5 has always been described as consuming OBJ meshes, and that was true of
+meshes this repo wrote itself, whose `usemtl` tokens are already palette
+materials like `wood-2`. It was never true of anything a generator produces. A
+mesh out of TRELLIS arrives with vertex colours or an MTL full of arbitrary RGB,
+Y-up because almost everything upstream of a game engine is, and an arbitrary
+scale and origin. Each of those is a hard stop, and none of them needs a GPU to
+solve — so `ingest.py` is built and under check now, and stages 1-3 stop being
+hypothetical.
+
+**Binding is the interesting half, and it is not nearest-colour.** Everything
+downstream is built on one material meaning one ramp: grain resolves by ramp,
+tone offsets compose within a ramp, `check_palette_spread` counts ramps per
+character. So a ramp is chosen as an *identity* — by distance to the ramp
+treated as a curve through OKLab — and only then is the step chosen by
+lightness. A binder free to trade lightness against hue would scatter one
+object across several ramps wherever a shadow fell near a step of something
+else, and hand all of the above a mesh it cannot reason about.
+
+Three versions were wrong before that one was right, and each failed on a case
+the previous one fixed:
+
+| approach | failure |
+|---|---|
+| hue angle, with a chroma threshold forcing greys to `neutral` | `neutral` here is *not* achromatic — it is a cool violet-grey at chroma 0.016–0.022, so a threshold near its own chroma swallows every quiet colour. A warm off-white bound to `neutral+2` at dE 0.124 with `cream` two steps away. |
+| each ramp's chroma-weighted mean (a, b) | chroma is a function of lightness. A dark brown carries a third the chroma of a mid brown, so it scored nearer pale `cream` than `wood`. |
+| (a, b) at each ramp's nearest step in lightness | `cream` has no dark end, so its "nearest" step was 0.41 away in L — a ramp that cannot reach the source's lightness was competing as though it could. |
+
+Both halves are checked, and both checks were verified to fail before being
+trusted. `check_roundtrip` is exhaustive rather than sampled: every step of
+every bindable ramp is a colour the palette definitely contains, so each has
+exactly one right answer, and a stub binder that answers `neutral` for
+everything reports 36 of 37. `check_transform` runs a library chair out to a
+real OBJ and MTL — Y-up, scaled 37x, shifted off the origin, every material
+renamed — and asserts it comes back grounded, centred, at the height asked for,
+with its materials intact, and **not mirrored**. That last one needs its own
+instrument: a reflection has the same bounds, the same height and the same
+materials, so the first four assertions all pass on one. Signed volume is what
+catches it, and a mirrored asset renders perfectly right up until it is a
+character with a bag on the wrong shoulder in half of its directions.
+
+## Stage 4: motion, and why the rig is six numbers
+
+`character.Pose` carries six limb angles, a vertical offset and a twist. That is
+the entire rig, and the smallness is the design rather than a shortcut: at 46 px
+of figure a pose is read from limb *direction* and body height, not from joint
+articulation. An elbow is one pixel. A spine chain would cost render time across
+3023 frames and change nothing on screen.
+
+Two things fall out of that constraint rather than being animated by hand:
+
+**The walk bob is derived, not keyed.** Posed figures are ground-clamped so the
+lowest vertex rests on the floor. Because swinging a leg about its hip shortens
+its vertical reach, the body drops when the legs are spread and rides high when
+they are together — the exact vertical rhythm a hand-animated cycle is drawn
+with, for free. Measured amplitude 0.036 units, 1.0 px at room scale.
+
+**The foot does not rotate with the leg.** An ankle keeps it flat. Rotating it
+rigidly drove its rear corner into the floor, and since the figure is
+ground-clamped that lifted the whole body and *inverted* the bob — mid-stride
+rode higher than legs-together. After contralateral swing, that is the most
+visible thing a walk cycle can get wrong.
+
+The one clip that changes rig mid-way is `sit`. With no knee to bend, a
+continuous lowering cannot be posed, so it uses the two-part shape every
+low-resolution game uses: lean and drop on the standing rig, then cut to the
+seated rig and settle. At 12 fps the cut is invisible.
 
 **The mesh seam is open.** `render_batch.py --mesh asset.obj` runs the full chain
 from arbitrary geometry, so stages 1-4 now have somewhere to deliver.
