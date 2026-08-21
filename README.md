@@ -31,7 +31,7 @@ which is the point.
     python tools/review_queue.py stats            # what to automate next
 
     # the gates
-    python tools/manifest.py --check     # runs all sixteen checks
+    python tools/manifest.py --check     # runs all seventeen checks
     python tools/character.py            # hair contrast, palette spread, silhouette floor
     python tools/fx.py                   # loop seams
 
@@ -41,12 +41,12 @@ Every human rejection carries a reason. Reasons that recur get promoted into the
 automated tier, so **human review volume falls as the factory matures**. `stats`
 names the next check to write rather than leaving it to guesswork.
 
-Sixteen checks have been promoted so far: camera-space key light, hair/skin
+Seventeen checks have been promoted so far: camera-space key light, hair/skin
 contrast, per-character palette spread, waistline separation, silhouette pixel
 floor, seating orientation, member thickness, grounding, declared-symmetry
 verification, screen-space occlusion, buried detail, derived direction labels,
-generator range, generated-spec conformance, palette-binding round trip, and
-ingest transform. Most found a bug the moment they were written — floating counters,
+generator range, generated-spec conformance, roster variety, palette-binding
+round trip, and ingest transform. Most found a bug the moment they were written — floating counters,
 back-to-front chairs, five wrong symmetry claims costing 31% of the effects
 budget, a queue of customers stacked into a single smear, an espresso machine
 whose entire mechanism was modelled inside its own carcass, and eight sprite
@@ -79,6 +79,29 @@ the same value, so the figure had no waist. `check_palette_spread` counts
 *ramps* and cannot see that; `check_waistline` was written, and it immediately
 failed two of the nine hand-written archetypes. `elder` had shipped with a wood
 shirt 0.004 in value from neutral trousers.
+
+Then the same argument one level up. Those three checks are all predicates on
+*one* spec, and a generator satisfying all three forty times can still return
+forty variations of one person — each individually legal, collectively a crowd
+with one extra in it. `check_roster_variety` measures the **minimum** pairwise
+distance, not the mean, because the mean is dominated by the pairs that are
+already fine and a player notices the two that collide. Its floor was guessed
+at 20% and would never have fired; measured, the hand roster's closest pair is
+45% and twenty generated extras' is 48%, so it sits at 38% — under the evidence
+rather than at it. The generated cast turned out to be *more* varied at its
+closest pair than the one a person wrote.
+
+The sprite factory takes them directly:
+
+    python tools/animate.py --extras 40
+
+Forty extras cost exactly as much thought as zero and forty times the render —
+12,800 additional frames, none of them written down anywhere. That sentence is
+the entire claim this repo makes, and it is now a flag rather than a plan.
+
+`sprites/` is generated output and is not in the repo — run `animate.py` to
+build it. The default is the nine-character roster the reference room uses;
+`--extras` is additive on top.
 
 Its floor is per-generator, and every relaxed one carries the reason it is
 relaxed. A single number is the wrong shape here: the default catches a

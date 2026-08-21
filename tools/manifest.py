@@ -214,6 +214,13 @@ def check(man: dict) -> int:
                     + _c.check_palette_spread(_extras)
                     + _c.check_waistline(_ramps, _extras)):
             errs.append(f"generated: {msg}")
+        # And no two members of a cast may be the same person. The three checks
+        # above are predicates on ONE spec; a generator can satisfy all three
+        # forty times and return forty variations of one person, each
+        # individually legal and collectively a crowd with one extra in it.
+        for msg in _c.check_roster_variety() + [
+                f"generated: {m}" for m in _c.check_roster_variety(_extras)]:
+            errs.append(msg)
         from animate import check_direction_labels
         for msg in check_direction_labels():
             errs.append(msg)

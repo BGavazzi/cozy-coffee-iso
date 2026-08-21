@@ -22,7 +22,7 @@ from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).parent))
 import character as C  # noqa: E402
-from isorender import DimetricCamera, camera_light, dot  # noqa: E402
+from isorender import DimetricCamera, camera_light  # noqa: E402
 from mesh import ShadowMap, rasterize  # noqa: E402
 from pixelize import (  # noqa: E402
     apply_outline, downsample_modal, load_palette, shade_toon,

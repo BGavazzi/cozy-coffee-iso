@@ -26,7 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from mesh import Mesh, load_obj, save_obj  # noqa: E402
-from oklab import lab_to_lch, srgb_to_oklab  # noqa: E402
+from oklab import srgb_to_oklab  # noqa: E402
 from pixelize import load_palette, material as split_material  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -40,10 +40,6 @@ MAX_BIND_DE = 0.16
 # they are 1-step emissive ramps meaning "this thing is a light source", and
 # nothing should acquire that by being coincidentally the right yellow.
 BINDABLE = ("wood", "cream", "foliage", "rose", "sky", "neutral")
-
-
-def _lch(rgb) -> tuple[float, float, float]:
-    return lab_to_lch(*srgb_to_oklab(tuple(int(c) for c in rgb)))
 
 
 def _to_segment(p, a, b) -> float:

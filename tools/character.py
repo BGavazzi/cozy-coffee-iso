@@ -518,6 +518,60 @@ def check_contrast(ramps, roster=None) -> list[str]:
 MIN_WAIST_GAP = 0.085
 
 
+# Two characters closer than this on screen are the same person twice.
+#
+# Calibrated, not guessed. The first number here was 0.20, which would never
+# have fired: the nine hand-written archetypes have a closest pair at 45%
+# (reader/friend) and twenty generated extras at 48%, with both medians at 80%.
+# A threshold at less than half the observed minimum is a check that cannot
+# fail, which is the mistake the occlusion thresholds made two passes ago --
+# defaults set looser than the scan that found the defect left the check blind.
+# 0.38 sits under the evidence rather than at it, and still catches a collision
+# the eye would.
+#
+# Worth recording that the generated cast came out *more* varied at its closest
+# pair than the hand-written one. Nine archetypes written by a person include
+# two that are nearly the same person, and nobody noticed across five passes.
+MIN_PAIR_SPREAD = 0.38
+
+
+def check_roster_variety(roster=None, azimuth: float = 45.0,
+                         floor: float = MIN_PAIR_SPREAD) -> list[str]:
+    """Are any two characters in this cast the same person?
+
+    `check_contrast`, `check_palette_spread` and `check_waistline` are all
+    predicates on ONE spec, and a generator that satisfies all three forty times
+    can still return forty variations of one person -- each individually legal,
+    and collectively a crowd the player reads as a single repeated extra. That
+    is the character version of the failure `check_generator_range` catches in
+    the furniture, and it needs the same instrument: a distance, applied
+    pairwise.
+
+    The MINIMUM pair, not the mean. A mean is dominated by the pairs that are
+    already fine and says nothing about the two that collide, and it is exactly
+    those two that a player notices -- forty extras of whom two are twins reads
+    as a bug, whatever the average says.
+    """
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent))
+    from art_review import _screen_spread, screen_materials
+
+    specs = list(roster or ROSTER)
+    if len(specs) < 2:
+        return []
+    frames = [screen_materials(build(s), azimuth, 2.0) for s in specs]
+    out = []
+    for i, a in enumerate(frames):
+        for j in range(i + 1, len(frames)):
+            d = _screen_spread([a, frames[j]])
+            if d < floor:
+                out.append(f"{specs[i].name} and {specs[j].name} are "
+                           f"{d:.0%} apart on screen (floor {floor:.0%}) -- "
+                           f"the same person twice")
+    return out
+
+
 def check_waistline(ramps, roster=None) -> list[str]:
     """A shirt and trousers that resolve to the same value have no edge between them.
 

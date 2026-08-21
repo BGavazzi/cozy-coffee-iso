@@ -770,12 +770,27 @@ each other is still a defect and still fires.
 
 ---
 
-# Sixth pass — wear, tables, and a metric that was lying
+# Sixth pass — everything stops being typed
 
 The fifth pass closed with three open items. Two of them were the same item
 seen from different sides: `assetlib.py` is still mostly fixed meshes, and
 grain spreads evenly when wear should concentrate. Both say the room is
 described rather than grown.
+
+Working through them turned out to be one job, not several. The floor's wear,
+eight props, and finally the cast are all the same move — take something that
+was written down and derive it instead — and every one of them turned up a
+defect in the thing it replaced. Three of the metrics written to judge the
+results were themselves wrong, in three different ways, and are worth as much
+of this document as the work they were measuring.
+
+The third open item, stages 1–3, needs a GPU and model weights and stays
+unbuilt. But the *seam* they attach to did not need either, so it exists now:
+`ingest.py` binds an arbitrary mesh to the palette and the tile grid. That is a
+pipeline matter rather than an art one and it is written up in `PIPELINE.md`,
+except for one finding that belongs here — three plausible ways to bind an
+arbitrary colour to a palette ramp are wrong, and each is wrong on exactly the
+case the previous one fixed.
 
 ## Wear is derived, not authored
 
@@ -1035,6 +1050,49 @@ fires at 0% against its own floor. That floor is set at 4%, under the measured
 thresholds needed, where defaults chosen looser than the scan that found the
 defect left the check blind.
 
+## Three ways to bind a colour, all wrong
+
+`ingest.py` is pipeline plumbing and lives in `PIPELINE.md`, but one part of it
+is a colour problem and belongs here. Given an arbitrary RGB from a generated
+mesh, which palette material is it?
+
+The obvious answer — nearest colour — is the one answer that must not be
+used. Everything downstream is built on one material meaning one ramp: grain
+resolves by ramp, tone offsets compose within a ramp, `check_palette_spread`
+counts ramps per character. A binder free to trade lightness against hue would
+scatter a single object across three ramps wherever a shadow fell near a step
+of something else, and hand all of that a mesh it cannot reason about. So the
+ramp has to be chosen as an *identity* and the step as a shade of it.
+
+Three attempts at "identity", each broken by the case the last one fixed:
+
+**Hue angle, with a chroma threshold forcing greys to `neutral`.** Wrong
+because `neutral` in this palette is not achromatic — it is a cool violet-grey
+at chroma 0.016–0.022, so a threshold anywhere near its own chroma swallows
+every quiet colour in the palette. A warm off-white bound to `neutral+2` at dE
+0.124 with `cream` sitting two steps away. Worth noting how invisible this
+would have been in a render: `neutral+2` is a perfectly reasonable colour for
+an off-white object.
+
+**Each ramp's chroma-weighted mean (a, b).** Fixed the off-white and broke dark
+colours, because chroma is a function of lightness. A dark brown carries about
+a third the chroma of a mid brown, so comparing it against `wood`'s overall
+signature put it nearer pale `cream`, and (60, 45, 35) bound to `cream-2` at dE
+0.408.
+
+**(a, b) at each ramp's step nearest in lightness.** Still bound that brown to
+`cream-2`, because `cream` has no dark end: its "nearest" step was 0.41 away in
+L, and the chromaticity comparison was being made between two colours nowhere
+near each other in value. A ramp that cannot reach the source's lightness was
+competing as though it could.
+
+What works is treating a ramp as a **curve** rather than a set of colours, and
+measuring distance to the polyline. The nearest point on a curve that stops
+short *is* its endpoint, so a ramp is charged for the lightness it cannot
+reach, and no threshold is needed anywhere — a grey lands on `neutral` because
+`neutral` is the nearest chromaticity, which is the honest reason rather than a
+special case.
+
 ## Seven more generators, and a thing that is not a silhouette
 
 `table`, `chair`, `bookshelf` and `counter` covered the furniture a person
@@ -1130,6 +1188,25 @@ defects in what the people had made. At 46 px of figure the waist is one edge,
 and losing it costs more than any of the detail this pipeline spends triangles
 on.
 
+The seventeenth is the same argument one level up. Those three checks are all
+predicates on *one* spec, so a generator can satisfy all of them forty times
+and hand back forty variations of one person. `check_roster_variety` measures
+the **minimum** pairwise distance on screen rather than the mean, because a
+mean is dominated by the pairs that are already fine and says nothing about the
+two that collide — and it is those two a player notices.
+
+Its floor was guessed at 20% and would never have fired. Measured, the nine
+hand-written archetypes have a closest pair at 45% and twenty generated extras
+at 48%, both with medians around 80%, so it sits at 38%: under the evidence
+rather than at it, which is the discipline the occlusion thresholds needed two
+passes ago. Two specs differing only by one step of shirt colour measure
+exactly 38% and are rejected, which is the right place for the line.
+
+The measurement also says something worth recording. The generated cast came
+out *more* varied at its closest pair than the hand-written one — nine
+archetypes written by a person include two that are nearly the same person, and
+nobody noticed across five passes of critique.
+
 The sixteenth check is the other half of that: the generated extras have to
 pass everything the hand-written roster does. They are proposed against exactly
 those predicates, so a failure there means the solver has stopped consulting
@@ -1142,11 +1219,13 @@ downstream.
 | | fifth pass | sixth pass |
 |---|---|---|
 | bases the tables can be built on | 2 fixed meshes | **4 styles × top shape, thickness, overhang** |
-| seeded generators in the library | 3 | **11**, plus the character roster |
+| seeded generators in the library | 3 | **11** |
+| hand-written character specs | 9, and no way to make a tenth | **9, plus a solver that makes as many as asked** |
 | floor texture | one amplitude everywhere | **derived from where the seats and tills are** |
 | high-key share of frame | 63.8% | **66.7%** |
-| generator range | unmeasured | **measured, and a check** |
-| automated checks in the ratchet | 11 | **16** |
+| generator range | unmeasured | **measured, per generator, with a floor each** |
+| the seam stages 1–3 attach to | described | **built, and checked from both ends** |
+| automated checks in the ratchet | 11 | **17** |
 
 Median L, chroma and the extremes are unmoved, the checks stay clean, and the
 render is still byte-identical across processes.
@@ -1154,7 +1233,14 @@ render is still byte-identical across processes.
 ## Still open
 
 - The espresso machine, bench, armchair and pastry case are still fixed
-  meshes. Eleven others show the shape of the replacement.
+  meshes. Eleven others show the shape of the replacement, and these four are
+  the props the room holds exactly one of — which is why they are last, not
+  why they are fine.
+- The extras are now checked against each other as well as individually, but
+  only in one direction. Nothing measures whether a generated cast is varied in
+  the ways that *matter* rather than merely different — twenty extras could
+  differ only in shirt colour and clear the pairwise floor comfortably while
+  reading as one silhouette repeated twenty times.
 - `ingest.py` binds an arbitrary mesh to the palette and the tile grid, so the
   seam stages 1–3 attach to now exists and is checked. Nothing feeds it yet,
   which is exactly why it needed checks: an adapter that is never exercised is
