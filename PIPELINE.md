@@ -123,6 +123,27 @@ isometric game the camera is fixed and the *object* rotates, so the key light
 belongs in the camera basis. That finding is now `check_direction_set`, and it
 will never need a human again.
 
+**And it keeps happening.** The checks promoted since fall into two kinds, and
+the second kind is the one worth naming:
+
+*Checks that encode a rule.* Hair must clear skin in lightness; a member under
+4 px reads as wire; seating faces its table; nothing floats.
+
+*Checks that encode a **projection**.* These have no analogue in a 2D pipeline
+and they are where the 3D-intermediate approach earns its cost, because the
+defect only exists once geometry meets a specific camera:
+
+| check | what it catches |
+|---|---|
+| `Layout.screen_occlusion` | two props several tiles apart in plan view that land on the same pixels, so the near one erases the far one |
+| `check_buried_detail` | geometry that faces the camera and still never wins a pixel — detail modelled where it cannot be seen |
+| `check_direction_labels` | sprite facings derived from the camera basis rather than declared, so the atlas cannot be off by a rotation |
+| `measured_symmetry` | how many azimuths actually produce different sprites, which sets the render budget |
+
+Each of these was written after a human said some version of "that area is
+mush", which is not actionable, and each turned that into a specific pair of
+object names and a percentage, which is.
+
 That is the whole thesis of the factory in one example.
 
 ---

@@ -40,6 +40,9 @@ class Placed:
 # Kinds that hang on a wall and legitimately have nothing beneath them.
 WALL_MOUNTED = {"menu", "sign", "shelf", "decor#menu", "picture"}
 
+# How much two stacked objects may share in z before it counts as overlap.
+Z_TOUCH = 0.05
+
 TUCK_OK = {
     frozenset({"chair", "table"}), frozenset({"chair", "counter"}),
     frozenset({"stool", "counter"}), frozenset({"stool", "bar"}),
@@ -55,9 +58,14 @@ TUCK_OK = {
 class Layout:
     items: list[Placed] = field(default_factory=list)
     rots: dict = field(default_factory=dict)
+    # Applied to every placement that does not override it. Set after the floor
+    # and walls go in, so the room's shell stays true and only its contents
+    # acquire the wear.
+    warp_default: float = 0.0
 
     def add(self, mesh: Mesh, at=(0.0, 0.0, 0.0), rot: float = 0.0,
-            name: str = "prop", track: bool = True, centre: bool = False) -> None:
+            name: str = "prop", track: bool = True, centre: bool = False,
+            warp: float | None = None) -> None:
         """Place a mesh. `centre=True` rotates about the mesh's own XY centre.
 
         Worth having because `transformed` rotates about the local origin, so a
@@ -74,6 +82,14 @@ class Layout:
                 cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
                 mesh = transformed(mesh, at=(-cx, -cy, 0.0))
         m = transformed(mesh, rot_z=rot, at=at)
+        warp = self.warp_default if warp is None else warp
+        if warp > 0.0:
+            # After placement, so the displacement field is sampled in room
+            # coordinates and two copies of the same prop in different places
+            # warp differently. Warping before placement would give every chair
+            # the identical dent.
+            from assetlib import warp as _warp
+            m = _warp(m, amount=warp)
         if not m.verts:
             return
         xs = [v[0] for v in m.verts]
@@ -172,8 +188,15 @@ class Layout:
                 kind_a, kind_b = a.name.split("#")[0], b.name.split("#")[0]
                 if frozenset({kind_a, kind_b}) in TUCK_OK:
                     continue
-                # Objects at different heights cannot collide (a cup on a counter).
-                if a.z1 <= b.z0 + 1e-6 or b.z1 <= a.z0 + 1e-6:
+                # Objects at different heights cannot collide (a cup on a
+                # counter). The tolerance is not cosmetic: stacked props touch at
+                # exactly one z, and an exact test fails the moment anything
+                # perturbs a vertex. `warp` did exactly that -- a crate stack
+                # that had been correct for four passes started reporting a 100%
+                # collision because the lower crate's lid rose 0.015 into the
+                # upper crate's floor. Real interpenetration is measured in
+                # tenths of a tile, so a 5 cm skin costs nothing.
+                if a.z1 <= b.z0 + Z_TOUCH or b.z1 <= a.z0 + Z_TOUCH:
                     continue
                 ox = min(a.x1, b.x1) - max(a.x0, b.x0)
                 oy = min(a.y1, b.y1) - max(a.y0, b.y0)
@@ -187,3 +210,205 @@ class Layout:
                                f"{frac:.0%} of the smaller footprint "
                                f"({ox:.2f} x {oy:.2f} tiles)")
         return out
+
+    def screen_occlusion(self, azimuth: float = 45.0, share: float = 0.35,
+                         depth: float = 0.8) -> list[str]:
+        """Props that hide each other on screen despite not touching in world space.
+
+        World-space collision is necessary and not sufficient. In a dimetric view
+        two objects several tiles apart project to the same pixels, and the near
+        one erases the far one: the composite shows a silhouette nobody modelled,
+        which is what "that corner is mush" means when a human says it. Nothing in
+        `collisions()` can see this, because in plan view those objects are nowhere
+        near each other.
+
+        Fires when a pair's screen boxes overlap by more than `share` of the
+        smaller AND they are at least `depth` apart along the view axis -- the
+        depth gate is what separates a genuine occlusion from a chair legibly
+        tucked at a table, which overlaps on screen precisely because it is meant
+        to. Depth is in camera units, not tiles: `cam.dir` is normalised and
+        tilted, so 1.5 tiles of ground separation is only 0.92 of depth.
+
+        Both thresholds are calibrated against measured cases rather than
+        guessed:
+
+            two customers queued along the view axis   56%   1.0 apart  BAD
+            a coat rack standing in front of a chair   33%   2.4 apart  BAD
+            the same queue at corrected spacing         9%   1.3 apart  ok
+            a chair tucked at its own table            16%   0.6 apart  ok
+            two chairs across a round table            30%   1.4 apart  ok
+
+        `share` sits at 0.35, above the 30% that four correctly-placed chairs
+        around one table produce and below the 43% and 65% cases in the live
+        room. That leaves the 33% coat-rack case just under the line: bounding
+        boxes cannot separate it from a correct four-top, so it is honestly out
+        of reach here and was caught by eye instead. Do not tighten the
+        threshold to capture it without new measurements -- it would fire on
+        every round table in the room.
+
+        This is a screen bounding-box test, and its limits are worth stating: a
+        menu board hidden behind an espresso machine measures 11% here, no
+        different from a correct tuck, because the two boxes overlap in a narrow
+        vertical band. Boxes cannot see that. It catches gross occlusion, not
+        every occlusion.
+        """
+        # Use the camera that ships. The first version re-derived the screen
+        # basis by hand from sin/cos of the azimuth and got three things wrong:
+        # u came out sign-flipped, v was off by up to a third of a tile on tall
+        # objects, and depth ignored z entirely -- so the depth gate, the whole
+        # point of the check, was measuring the wrong axis. A check that
+        # disagrees with the renderer is not a check.
+        from isorender import DimetricCamera, dot
+        cam = DimetricCamera(azimuth)
+
+        def box(p):
+            us, vs, ds = [], [], []
+            for x in (p.x0, p.x1):
+                for y in (p.y0, p.y1):
+                    for z in (p.z0, p.z1):
+                        w = (x, y, z)
+                        us.append(dot(w, cam.right))
+                        vs.append(dot(w, cam.up))
+                        ds.append(dot(w, cam.dir))
+            return (min(us), max(us), min(vs), max(vs), sum(ds) / len(ds))
+
+        boxes = {p.name: box(p) for p in self.items if p.name != "_untracked"}
+        items = [p for p in self.items if p.name != "_untracked"]
+        out = []
+        for i, a in enumerate(items):
+            au0, au1, av0, av1, ad = boxes[a.name]
+            for b in items[i + 1:]:
+                kind_a, kind_b = a.name.split("#")[0], b.name.split("#")[0]
+                if frozenset({kind_a, kind_b}) in TUCK_OK:
+                    continue
+                bu0, bu1, bv0, bv1, bd = boxes[b.name]
+                if abs(ad - bd) < depth:
+                    continue
+                ou = min(au1, bu1) - max(au0, bu0)
+                ov = min(av1, bv1) - max(av0, bv0)
+                if ou <= 0 or ov <= 0:
+                    continue
+                # Share of the FAR object that is lost, not of the smaller box.
+                # Those differ exactly when the occluder is the smaller of the
+                # two -- a thin coat rack in front of a wide chair -- which is
+                # the case this check exists for, and the message said "hides
+                # 33% of the chair" while reporting 33% of the coat rack.
+                near, far = (a, b) if ad > bd else (b, a)
+                fu0, fu1, fv0, fv1, _ = boxes[far.name]
+                far_area = (fu1 - fu0) * (fv1 - fv0) or 1e-9
+                frac = (ou * ov) / far_area
+                if frac > share:
+                    out.append(f"{near.name} hides {frac:.0%} of {far.name} "
+                               f"({abs(ad - bd):.1f} apart in depth)")
+        return out
+
+    # --- generation ----------------------------------------------------------
+
+    def _conflicts(self, cand: Placed, azimuth: float, occlude: float) -> bool:
+        """Would placing `cand` break any rule already being enforced?"""
+        kind_c = cand.name.split("#")[0]
+        for a in self.items:
+            if a.name == "_untracked":
+                continue
+            kind_a = a.name.split("#")[0]
+            if frozenset({kind_a, kind_c}) in TUCK_OK:
+                continue
+            if a.z1 <= cand.z0 + Z_TOUCH or cand.z1 <= a.z0 + Z_TOUCH:
+                continue
+            ox = min(a.x1, cand.x1) - max(a.x0, cand.x0)
+            oy = min(a.y1, cand.y1) - max(a.y0, cand.y0)
+            if ox > 0 and oy > 0:
+                if (ox * oy) / (min(a.area, cand.area) or 1e-9) > 0.10:
+                    return True
+        # Support. A proposal lifted onto a surface -- a cup at counter height,
+        # a vase on the bar -- has to actually land on one. The first generated
+        # pass put a vase 0.82 up in clear air just past the end of the bar run,
+        # and `grounded` caught it after the fact; a solver that can check a rule
+        # afterwards can check it before, and then the rule never has to fire.
+        if cand.z0 > 0.03:
+            for a in self.items:
+                if abs(a.z1 - cand.z0) > 0.06:
+                    continue
+                if (min(a.x1, cand.x1) - max(a.x0, cand.x0) > 0.04
+                        and min(a.y1, cand.y1) - max(a.y0, cand.y0) > 0.04):
+                    break
+            else:
+                return True
+        if occlude > 0.0:
+            self.items.append(cand)
+            try:
+                for msg in self.screen_occlusion(azimuth, share=occlude):
+                    if cand.name in msg:
+                        return True
+            finally:
+                self.items.pop()
+        return False
+
+    def scatter(self, factory, region, count: int, name: str,
+                z: float = 0.0, rot_choices=(0, 90, 180, 270), seed: int = 1,
+                azimuth: float = 45.0, occlude: float = 0.35,
+                tries_per: int = 40) -> int:
+        """Place up to `count` props inside `region`, rejecting bad placements.
+
+        This is the point of having written the checks. For four passes
+        `collisions`, `grounded` and `screen_occlusion` were *validators* -- they
+        graded 85 coordinates typed by hand and said which were wrong. The same
+        predicates, run before a placement instead of after, are a constraint
+        solver: propose, test, keep or discard. Density stops being authoring
+        work and becomes a number.
+
+        That matters because a room reads as under-dressed long before it reads
+        as under-lit, and hand-placing the two hundred small objects a lived-in
+        interior needs is not work anyone will do twice. It is also the honest
+        answer to a library of 135 hand-written primitive calls: the fix is not
+        to write more of them, it is to generate the placements.
+
+        `factory` is called as `factory(i)` with the instance index, so
+        generators can differ per copy.
+
+        `region` is (x0, y0, x1, y1). Sampling is a fixed LCG, so a room built
+        twice is identical -- the same requirement the floor's butt joints have,
+        for the same reason.
+
+        Returns the number actually placed, which is usually fewer than `count`.
+        A saturated region rejecting proposals is the check working, not failing.
+        """
+        x0, y0, x1, y1 = region
+        state = seed * 2654435761 + 12345
+
+        def rnd():
+            nonlocal state
+            state = (state * 1103515245 + 12345) & 0x7FFFFFFF
+            return (state >> 7) / (0x7FFFFFFF >> 7)
+
+        placed = 0
+        for i in range(count):
+            for _ in range(tries_per):
+                px = x0 + (x1 - x0) * rnd()
+                py = y0 + (y1 - y0) * rnd()
+                rot = rot_choices[int(rnd() * len(rot_choices)) % len(rot_choices)]
+                # The factory is handed the instance index, so a generator can
+                # vary each copy. Ten scattered plants calling a zero-argument
+                # factory would be ten identical plants, which defeats the point
+                # of having made the plant procedural at all.
+                mesh = factory(i)
+                xs = [v[0] for v in mesh.verts]
+                ys = [v[1] for v in mesh.verts]
+                cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+                m = transformed(transformed(mesh, at=(-cx, -cy, 0.0)),
+                                rot_z=rot, at=(px, py, z))
+                if self.warp_default > 0.0:
+                    from assetlib import warp as _warp
+                    m = _warp(m, amount=self.warp_default)
+                vx = [v[0] for v in m.verts]
+                vy = [v[1] for v in m.verts]
+                vz = [v[2] for v in m.verts]
+                cand = Placed(f"{name}#{i}", m, min(vx), min(vy), max(vx),
+                              max(vy), min(vz), max(vz))
+                if self._conflicts(cand, azimuth, occlude):
+                    continue
+                self.items.append(cand)
+                self.rots[cand.name] = rot
+                placed += 1
+                break
+        return placed

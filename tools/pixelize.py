@@ -46,6 +46,12 @@ DITHER_LO, DITHER_HI = 0.36, 0.64
 MATERIAL_RAMPS = {
     "ground": "wood",
     "wood": "wood",
+    # Skin reads off the wood ramp -- the warm mid-browns are exactly right for
+    # it -- but it must be addressable separately from timber, because they want
+    # opposite treatment everywhere except colour. Surface grain is the case
+    # that forced this: at 0.85 of a step it reads as plank on a floor and as
+    # stubble on a face.
+    "skin": "wood",
     "cream": "cream",
     "foliage": "foliage",
     "rose": "rose",

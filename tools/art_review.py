@@ -362,7 +362,7 @@ def review_library(floor_px=MIN_MEMBER_PX):
     """Run the mesh checks across every asset the blockout library exposes."""
     import inspect
     import assetlib
-    out = []
+    out, assets = [], {}
     for fn_name, fn in sorted(vars(assetlib).items()):
         if not callable(fn) or fn_name.startswith("_"):
             continue
@@ -377,7 +377,9 @@ def review_library(floor_px=MIN_MEMBER_PX):
             continue
         if not hasattr(mesh, "verts"):
             continue
+        assets[fn_name] = mesh
         out += check_member_thickness(mesh, fn_name, floor_px=floor_px)
+    out += check_buried_detail(assets)
     return out
 
 
@@ -461,4 +463,163 @@ def check_symmetry_claims(declared: dict, meshes: dict):
             out.append(f"{aid}: declared {claim!r} ({want} azimuths) but only "
                        f"{got} differ -- {saved} wasted renders per frame; "
                        f"should be {SYMMETRY_FOR[got]!r}")
+    return out
+
+
+# --- buried detail ------------------------------------------------------------
+#
+# A fixed dimetric camera sees exactly two faces of any axis-aligned box, and a
+# sprite pipeline sees at most eight orientations of one. Anything modelled on
+# the other faces -- or inside the volume -- costs vertices, costs render time,
+# and contributes no pixels in any frame that ships. This is not a style note.
+# It is dead weight, and it hides as *effort*: the espresso machine carried two
+# group heads and two portafilters buried inside its own carcass, which read on
+# the counter as a blank grey slab while the mesh insisted it was detailed.
+
+def visible_faces(mesh, azimuth: float, res: int = 96) -> set:
+    """Indices of triangles that win at least one pixel at this azimuth."""
+    from isorender import DimetricCamera, cross, dot, norm, sub
+    cam = DimetricCamera(azimuth)
+    vs = mesh.verts
+    lo_u = min(dot(v, cam.right) for v in vs)
+    hi_u = max(dot(v, cam.right) for v in vs)
+    lo_v = min(dot(v, cam.up) for v in vs)
+    hi_v = max(dot(v, cam.up) for v in vs)
+    span = max(hi_u - lo_u, hi_v - lo_v) * 0.5 * 1.04 or 1e-6
+    cu, cv = (hi_u + lo_u) * 0.5, (hi_v + lo_v) * 0.5
+    inv = res / (2.0 * span)
+
+    def project(v):
+        return ((dot(v, cam.right) - cu) * inv + res * 0.5 - 0.5,
+                res * 0.5 - 0.5 - (dot(v, cam.up) - cv) * inv,
+                dot(v, cam.dir))
+
+    zbuf = [-1e30] * (res * res)
+    owner = [-1] * (res * res)
+    for fi, (tri, _n, _m) in enumerate(mesh.faces):
+        a, b, c = (vs[i] for i in tri)
+        # Backfaces cannot be seen and must not claim pixels, or a box's far
+        # side would count as visible whenever it happened to project first.
+        if dot(norm(cross(sub(b, a), sub(c, a))), cam.dir) <= 0.0:
+            continue
+        pa, pb, pc = project(a), project(b), project(c)
+        area = ((pb[0] - pa[0]) * (pc[1] - pa[1]) -
+                (pb[1] - pa[1]) * (pc[0] - pa[0]))
+        if abs(area) < 1e-12:
+            continue
+        import math
+        x0 = max(0, int(math.floor(min(pa[0], pb[0], pc[0]))))
+        x1 = min(res - 1, int(math.ceil(max(pa[0], pb[0], pc[0]))))
+        y0 = max(0, int(math.floor(min(pa[1], pb[1], pc[1]))))
+        y1 = min(res - 1, int(math.ceil(max(pa[1], pb[1], pc[1]))))
+        for py in range(y0, y1 + 1):
+            fy = py + 0.5
+            for px in range(x0, x1 + 1):
+                fx = px + 0.5
+                w0 = ((pb[0] - pa[0]) * (fy - pa[1])
+                      - (pb[1] - pa[1]) * (fx - pa[0])) / area
+                w1 = ((pc[0] - pb[0]) * (fy - pb[1])
+                      - (pc[1] - pb[1]) * (fx - pb[0])) / area
+                w2 = 1.0 - w0 - w1
+                if w0 < -1e-9 or w1 < -1e-9 or w2 < -1e-9:
+                    continue
+                z = w1 * pa[2] + w2 * pb[2] + w0 * pc[2]
+                i = py * res + px
+                if z > zbuf[i]:
+                    zbuf[i] = z
+                    owner[i] = fi
+    return {o for o in owner if o >= 0}
+
+
+def front_facing(mesh, azimuth: float, res: int = 160):
+    """(camera-facing triangles big enough to matter, of those the visible ones).
+
+    A triangle is a candidate only if it faces the camera AND projects to at
+    least a pixel of area. Both halves are load-bearing: without the first the
+    far side of every box counts as buried, and without the second every
+    hairline trim in the library does.
+    """
+    import math
+
+    from isorender import DimetricCamera, cross, dot, norm, sub
+    cam = DimetricCamera(azimuth)
+    vs = mesh.verts
+    lo_u = min(dot(v, cam.right) for v in vs)
+    hi_u = max(dot(v, cam.right) for v in vs)
+    lo_v = min(dot(v, cam.up) for v in vs)
+    hi_v = max(dot(v, cam.up) for v in vs)
+    span = max(hi_u - lo_u, hi_v - lo_v) * 0.5 * 1.04 or 1e-6
+    cu, cv = (hi_u + lo_u) * 0.5, (hi_v + lo_v) * 0.5
+    inv = res / (2.0 * span)
+
+    front = set()
+    for fi, (tri, _n, _m) in enumerate(mesh.faces):
+        a, b, c = (vs[i] for i in tri)
+        if dot(norm(cross(sub(b, a), sub(c, a))), cam.dir) <= 0.0:
+            continue
+        pts = [((dot(v, cam.right) - cu) * inv, (dot(v, cam.up) - cv) * inv)
+               for v in (a, b, c)]
+        area = abs((pts[1][0] - pts[0][0]) * (pts[2][1] - pts[0][1])
+                   - (pts[1][1] - pts[0][1]) * (pts[2][0] - pts[0][0])) * 0.5
+        if area >= 1.0:
+            front.add(fi)
+    return front, visible_faces(mesh, azimuth, res)
+
+
+# Assets whose occlusion is a property of the object, not a modelling mistake.
+# The same role TUCK_OK plays for collisions: an allowlist is what lets the
+# threshold stay tight enough to catch the real thing. Each entry needs a reason
+# that would still be true if the asset were re-modelled from scratch.
+ACCEPTED_BURIAL = {
+    "table_4top": "the far pair of legs sits behind the tabletop's own near edge",
+    "pastry_case": "a lidded display case has an interior its top pane covers",
+    "counter": "modules tile flush, so each one's end panels abut its neighbour",
+    "leafy_plant": "foliage self-occludes; leaves overlap because that is what a "
+                   "canopy is",
+    "plant_large": "as leafy_plant, which generates it",
+    "plant_small": "as leafy_plant, which generates it",
+}
+
+# The plants were exempted only after acting on what the check said. It reported
+# 55% of a 420-triangle canopy hidden behind its own leaves, and the exemption
+# answers the "hidden" half -- overlapping leaves are what foliage is -- while
+# the leaf prisms dropped from 8 sides to 6 to answer the "420 triangles" half.
+# An allowlist entry that suppresses a warning without first asking whether the
+# warning had a point is how a ratchet quietly turns back into decoration.
+
+
+def check_buried_detail(assets: dict, azimuths=(45.0,), res: int = 160,
+                        max_share: float = 0.30) -> list[str]:
+    """Front-facing geometry that is nonetheless completely hidden.
+
+    The obvious metric -- share of all triangles that never win a pixel -- is
+    useless, and measuring it proves why: a closed box shows at most three of
+    its six faces, so *every* solid asset scores about 67% "buried" and the
+    check fires on all eighteen props in the library. That is not a defect, it
+    is what solid geometry costs.
+
+    What actually matters is a triangle that faces the camera and still reaches
+    no pixel, because something else is in front of it. That is either detail
+    modelled inside a volume, or detail on a face another part covers. Faces too
+    small to claim a pixel are excluded: sub-pixel members are a real defect but
+    they are `check_member_thickness`'s to report, and double-counting them here
+    would bury the signal this check exists for.
+
+    `azimuths` defaults to the single view the room composite uses. Pass all
+    eight for anything that ships as a rotating sprite.
+    """
+    out = []
+    for name, mesh in sorted(assets.items()):
+        cand, hidden = 0, 0
+        for az in azimuths:
+            front, seen = front_facing(mesh, az, res)
+            cand += len(front)
+            hidden += len(front - seen)
+        if cand < 12 or name in ACCEPTED_BURIAL:
+            continue
+        share = hidden / cand
+        if share > max_share:
+            out.append(f"{name}: {share:.0%} of its camera-facing tris are "
+                       f"fully occluded ({hidden}/{cand}) -- detail modelled "
+                       f"where the camera cannot reach it")
     return out

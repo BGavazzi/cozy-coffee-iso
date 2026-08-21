@@ -40,7 +40,7 @@ from mesh import Mesh
 # Total height in tile units, matching assets.yaml.
 H = 1.59
 
-SKIN = "wood"          # wood_3..6 are the flesh tones; see style_bible.yaml
+SKIN = "skin"          # wood_3..6 are the flesh tones; see style_bible.yaml
 
 # Cross-section radii. Depth is kept near width -- the whole point of the prism
 # rewrite -- rather than the 0.265 x 0.175 slab that broke the diagonals.
@@ -349,8 +349,13 @@ CUSTOMERS = [
                   hair_mat="wood-3",  accessory_kind="bag",    accessory_mat="wood"),
     CharacterSpec("regular",  shirt="rose",    trousers="wood",    hair_style="long",
                   hair_mat="wood-3",  accessory_kind="cup",    accessory_mat="cream"),
-    CharacterSpec("commuter", shirt="neutral", trousers="neutral", hair_style="cap",
-                  hair_mat="neutral-3", accessory_kind="bag",  accessory_mat="neutral",
+    # Every part of this one used to come off the neutral ramp -- shirt,
+    # trousers, hair and bag. Four neutrals stacked read as one dark silhouette
+    # with no internal edges, which in the room composite made the customer at
+    # the till a hole in the frame rather than a person. `check_palette_spread`
+    # now refuses any spec that spends more than half its parts on one ramp.
+    CharacterSpec("commuter", shirt="neutral+1", trousers="wood-2", hair_style="cap",
+                  hair_mat="neutral-3", accessory_kind="bag",  accessory_mat="rose-1",
                   bulk=1.12),
     CharacterSpec("artist",   shirt="cream",   trousers="sky",     hair_style="curly",
                   hair_mat="neutral-2", accessory_kind="scarf", accessory_mat="foliage"),
@@ -396,6 +401,35 @@ def check_contrast(ramps, roster=None) -> list[str]:
         if gap < MIN_HAIR_SKIN_GAP:
             out.append(f"{s.name}: hair '{s.hair_mat}' is {gap:.3f} from skin "
                        f"(need {MIN_HAIR_SKIN_GAP}) -- head reads as one lump")
+    return out
+
+
+def check_palette_spread(roster=None, max_share: float = 0.5) -> list[str]:
+    """No character may spend more than `max_share` of its parts on one ramp.
+
+    Sibling check to `check_contrast`, and a strictly different failure. That one
+    catches hair disappearing into a face; this catches a whole figure built from
+    a single ramp, where every part is individually a legal, well-separated tone
+    and the character still reads as one dark mass because there is no hue change
+    anywhere on it to give the eye an edge.
+
+    `commuter` shipped that way -- neutral shirt, neutral trousers, neutral hair,
+    neutral bag -- and at the till it was a silhouette-shaped hole in the room.
+    Tone offsets are stripped before counting: "neutral" and "neutral-3" are the
+    same ramp and the same problem.
+    """
+    from pixelize import material
+    out = []
+    for s in roster or ROSTER:
+        parts = [s.shirt, s.trousers, s.hair_mat, s.accessory_mat]
+        ramps_used = [material(p)[0] for p in parts if p]
+        if not ramps_used:
+            continue
+        top = max(set(ramps_used), key=ramps_used.count)
+        share = ramps_used.count(top) / len(ramps_used)
+        if share > max_share:
+            out.append(f"{s.name}: {ramps_used.count(top)}/{len(ramps_used)} parts "
+                       f"on the '{top}' ramp ({share:.0%}) -- reads as one mass")
     return out
 
 
@@ -454,7 +488,8 @@ def report_widths(spec=None) -> None:
 if __name__ == "__main__":
     from pixelize import load_palette
     ramps = load_palette()
-    problems = check_contrast(ramps) + check_direction_stability()
+    problems = (check_contrast(ramps) + check_palette_spread()
+                + check_direction_stability())
     for p in problems:
         print(f"  BLOCKER  {p}")
     print(f"{len(problems)} blocker(s)")

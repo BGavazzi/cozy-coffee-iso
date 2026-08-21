@@ -189,6 +189,23 @@ def check(man: dict) -> int:
             (errs if "WRONG" in msg else warns).append(msg)
         for msg in _fx.check_loops():
             errs.append(msg)
+        # Characters must have internal contrast, and the reference room must be
+        # legible from the camera that ships. Both are geometry-and-palette
+        # facts the manifest cannot state, so they are measured here rather than
+        # declared: a spec that passes every stated rule and still renders as a
+        # brown smear has only proved the rules were incomplete.
+        for msg in _c.check_palette_spread():
+            errs.append(msg)
+        from animate import check_direction_labels
+        for msg in check_direction_labels():
+            errs.append(msg)
+        from render_room import build_room
+        room = build_room()
+        for msg in room.screen_occlusion():
+            warns.append(f"reference room: {msg}")
+        from art_review import review_library
+        for msg in review_library():
+            warns.append(msg)
     except Exception as exc:                       # pragma: no cover
         warns.append(f"clip cross-check skipped: {exc}")
 

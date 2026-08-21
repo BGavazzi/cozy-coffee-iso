@@ -36,6 +36,14 @@ GLASS_EDGE = "sky"
 # room is actually about. A backdrop should be the quietest surface present.
 WALL_FIELD = "cream-2"
 
+# The floor field, one step down from bare wood. Not a colour choice -- a value
+# choice. With the floor at plain wood, the whole interior lived in one narrow
+# band (floor, walls, and nearly every prop between L 0.55 and 0.75), so props
+# had nothing to sit against and the service counter could only lead the frame
+# by +0.09 local contrast. Dropping the ground one step gives the composition a
+# floor in the literal sense: a value everything else is measured up from.
+FLOOR_FIELD = "wood-1"
+
 
 def transformed(m: Mesh, rot_z: float = 0.0, at: tuple = (0.0, 0.0, 0.0),
                 scale: float = 1.0) -> Mesh:
@@ -91,7 +99,7 @@ def merge(*meshes: Mesh) -> Mesh:
 
 # --- structure ---------------------------------------------------------------
 
-def floor(w: int, d: int, tone_a=WOOD, tone_b=CERAMIC, checker=False) -> Mesh:
+def floor(w: int, d: int, tone_a=FLOOR_FIELD, tone_b=CERAMIC, checker=False) -> Mesh:
     """Board flooring: one slab, with flat tone overlays for planks and seams.
 
     A single unbroken quad was 63% of the frame at one ramp step, the clearest
@@ -117,9 +125,16 @@ def floor(w: int, d: int, tone_a=WOOD, tone_b=CERAMIC, checker=False) -> Mesh:
                           tone_a if (x + y) % 2 == 0 else tone_b)
         return m
     m.add_box((0, 0, -0.06), (w, d, 0.0), tone_a)
-    board, tones = 1.0, ("", "", "-1", "", "")
+    # Tone varies per BOARD, not per course. Both earlier versions assigned the
+    # tone to a whole course, so every change was a stripe one unit deep and the
+    # full width of the room -- five ruled lines that cut the composite into
+    # bands stronger than any prop in it. Darker stripes were worse than lighter
+    # ones, but the defect was never the direction of the offset; it was that
+    # the unit of variation was the wrong shape. Real board flooring varies
+    # board to board, which scatters the tone instead of banding it.
+    board = 1.0
 
-    def flat(y0, y1, z, mat):
+    def flat(x0, y0, x1, y1, z, mat):
         """Zero-thickness overlay, not a thin box.
 
         A box 0.0018 tall still has four side faces, and their normals point
@@ -128,14 +143,31 @@ def floor(w: int, d: int, tone_a=WOOD, tone_b=CERAMIC, checker=False) -> Mesh:
         step 0 across 7.6% of open floor and drew a near-black grid. A quad has
         no sides, so the seam can only ever be the one step it asks for.
         """
-        m.add_quad((0, y0, z), (w, y0, z), (w, y1, z), (0, y1, z), mat)
+        m.add_quad((x0, y0, z), (x1, y0, z), (x1, y1, z), (x0, y1, z), mat)
+
+    # Offsets come from a fixed LCG, not `random`, so the floor is byte-identical
+    # on every run: a floor that reshuffles between renders makes every
+    # before/after comparison in ART_CRITIQUE.md meaningless.
+    seed = 12345
+
+    def nxt():
+        nonlocal seed
+        seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF
+        return seed / 0x7FFFFFFF
 
     for i in range(int(d / board)):
         y0, y1 = i * board, min(d, (i + 1) * board)
-        t = tones[i % len(tones)]
-        if t:
-            flat(y0, y1 - 0.03, 0.0012, tone_a + t)
-        flat(y1 - 0.03, y1, 0.0018, tone_a + "-1")                       # seam
+        x = 0.0
+        while x < w:
+            x1 = min(w, x + 1.6 + 2.6 * nxt())       # one board, staggered ends
+            r = nxt()
+            t = "+1" if r < 0.16 else ("-1" if r < 0.30 else "")
+            if t:
+                flat(x, y0, x1, y1 - 0.03, 0.0012, tone_a + t)
+            if x1 < w:                                # butt joint at the end
+                flat(x1, y0 + 0.04, x1 + 0.035, y1 - 0.04, 0.0018, tone_a + "-1")
+            x = x1
+        flat(0, y1 - 0.03, w, y1, 0.0018, tone_a + "-1")                 # long seam
     return m
 
 
@@ -148,9 +180,61 @@ def rug(w: float, d: float, mat=FABRIC) -> Mesh:
     return m
 
 
-def wall_run(start, along: str, length: int, height=1.6,
+def warp(m: Mesh, amount: float = 0.030, scale: float = 1.9,
+         seed: int = 0) -> Mesh:
+    """Nudge vertices by a smooth function of WORLD POSITION, not per vertex.
+
+    Every prop in the library is a perfect axis-aligned primitive, so six chairs
+    are six pixel-identical chairs and every edge in the room is machine
+    straight. The SNES backgrounds this project cites are full of stock that
+    sags, leans and wears; that irregularity is most of what separates a drawn
+    interior from a blockout.
+
+    The offset is a function of position, which is the whole trick. Displacing
+    each vertex independently would split every shared corner -- `add_box` emits
+    its own eight vertices per box, so a counter run would open seams between
+    modules and a chair would come apart at the joints. Two coincident vertices
+    evaluate the same function and therefore move together, so connectivity is
+    preserved without the mesh ever needing to know about it.
+
+    It also means variation is free: the same chair placed at two positions in
+    the room samples the field at two places and warps differently, with no
+    per-instance seed to thread through.
+
+    `amount` is in world units. At the room's 27.2 px per unit, 0.03 is about a
+    pixel -- enough to break a straight run without turning it to noise.
+    """
+    import math
+
+    def off(v, k):
+        h = (math.floor(v[0] * scale) * 73856093
+             ^ math.floor(v[1] * scale) * 19349663
+             ^ math.floor(v[2] * scale) * 83492791
+             ^ (seed + k) * 26183)
+        h = (h * 1103515245 + 12345) & 0x7FFFFFFF
+        h ^= h >> 15
+        return ((h & 0xFFFF) / 0xFFFF - 0.5) * 2.0
+
+    out = Mesh()
+    out.verts = [(v[0] + amount * off(v, 1),
+                  v[1] + amount * off(v, 2),
+                  v[2] + amount * off(v, 3) * 0.5) for v in m.verts]
+    out.faces = list(m.faces)
+    out.normals = []
+    return out
+
+
+def wall_run(start, along: str, length: int, height=2.45,
              openings: tuple = ()) -> Mesh:
-    """A wall along +x or +y, with tile indices left open for doors/windows."""
+    """A wall along +x or +y, with tile indices left open for doors/windows.
+
+    Head height is 1.59 units, and the wall used to be 1.6 -- a ceiling exactly
+    at the top of everyone's head, which is why the room read as a dollhouse
+    tray rather than an interior. Real cafes run about 1.6x head height. Only
+    the two far walls are ever drawn, and they sit behind every object in the
+    scene, so raising them cannot occlude anything: it costs nothing and it is
+    what gives signage, shelving and the window heads somewhere to live.
+    """
     m = Mesh()
     x0, y0 = start
     t = 0.12
@@ -158,7 +242,11 @@ def wall_run(start, along: str, length: int, height=1.6,
         if i in openings:
             # A bare aperture reads as a hole punched in a wall. Glass needs a
             # frame, a bright pane, and mullions to catch the light.
-            a, b = 0.38, 1.22                       # sill height, head height
+            # Sill and head, raised with the wall. Left at 0.38/1.22 against a
+            # 2.45 ceiling the windows sat in the bottom third with a blank
+            # metre of plaster above them, which is what a wall looks like when
+            # the openings were sized for a shorter room and never revisited.
+            a, b = 0.58, 1.82                       # sill height, head height
             if along == "x":
                 m.add_box((x0 + i, y0, 0), (x0 + i + 1, y0 + t, a), WOOD)
                 m.add_box((x0 + i, y0, b), (x0 + i + 1, y0 + t, height), WOOD)
@@ -182,6 +270,22 @@ def wall_run(start, along: str, length: int, height=1.6,
         else:
             m.add_box((x0, y0 + i, 0), (x0 + t, y0 + i + 1, 0.5), WOOD)
             m.add_box((x0, y0 + i, 0.5), (x0 + t, y0 + i + 1, height), WALL_FIELD)
+    # Picture rail. The taller wall doubled the area of unbroken WALL_FIELD, and
+    # a single flat field that large goes back to being the biggest quiet mass
+    # in the frame -- the exact failure that pulled the eye to the top edge when
+    # the wall was plain cream. One horizontal trim splits it into a lower band
+    # the windows belong to and an upper band that reads as ceiling.
+    # The trim must stand proud on the ROOM side. The first attempt extended it
+    # to y0 - 0.03, which is outside the room and behind the wall face, so all
+    # that reached the camera was a subpixel sliver that dithered into a dashed
+    # line -- a defect that looks like a rendering bug and is really a sign
+    # error. The room is at y > 0 for the x-wall and x > 0 for the y-wall.
+    rail = min(2.02, height - 0.30)
+    if rail > 0.6:
+        if along == "x":
+            m.add_box((x0, y0, rail), (x0 + length, y0 + t + 0.07, rail + 0.11), WOOD)
+        else:
+            m.add_box((x0, y0, rail), (x0 + t + 0.07, y0 + length, rail + 0.11), WOOD)
     return m
 
 
@@ -203,12 +307,33 @@ def counter(kick=True) -> Mesh:
 
 
 def espresso_machine() -> Mesh:
+    """The largest object on the counter, so it carries the most detail.
+
+    Every part of it used to be plain METAL, which at 1.8 tiles wide made the
+    centre of the focal zone a single featureless grey mass -- the biggest prop
+    in the room and the one with the least to look at. The geometry barely
+    changed; what changed is that the parts now sit at different steps of the
+    neutral ramp, plus a warm drip tray and wood portafilter handles. Detail by
+    value, not by polygon count, exactly as the material tone offsets are for.
+    """
     m = Mesh()
     m.add_box((0.10, 0.15, 0.0), (1.90, 0.85, 0.46), METAL)
-    m.add_box((0.20, 0.20, 0.46), (1.80, 0.80, 0.60), METAL)
-    for gx in (0.55, 1.30):                                     # group heads
-        m.add_cylinder((gx, 0.28, 0.30), 0.09, 0.16, METAL, 10)
-    m.add_cylinder((1.75, 0.50, 0.20), 0.05, 0.30, METAL, 8)    # steam wand
+    m.add_box((0.10, 0.15, 0.40), (1.90, 0.85, 0.46), "neutral-2")   # shadow line
+    m.add_box((0.20, 0.20, 0.46), (1.80, 0.80, 0.60), "neutral+1")   # lit top shell
+    m.add_box((0.24, 0.20, 0.60), (1.76, 0.76, 0.635), "neutral+2")  # cup warmer
+    for cx in (0.50, 0.90, 1.30):                                    # cups on top
+        m.add_cylinder((cx, 0.46, 0.635), 0.075, 0.09, CERAMIC, 8)
+    # Detail goes on the +y and +x faces, because those are the only two this
+    # camera will ever see. The group heads were at y=0.28 inside a body that
+    # spans y 0.15-0.85 -- fully enclosed, contributing not one pixel, which is
+    # the most expensive kind of detail there is. `art_review.check_buried_detail`
+    # now measures exactly this.
+    m.add_box((0.30, 0.85, 0.10), (1.70, 0.91, 0.16), "wood-1")      # drip tray
+    for gx in (0.55, 1.30):                                          # group heads
+        m.add_cylinder((gx, 0.88, 0.30), 0.09, 0.16, "neutral-3", 10)
+        m.add_box((gx - 0.045, 0.86, 0.255), (gx + 0.045, 1.02, 0.29), WOOD)
+    m.add_box((0.42, 0.855, 0.50), (0.68, 0.88, 0.56), "neutral-3")  # gauge
+    m.add_cylinder((1.93, 0.60, 0.20), 0.05, 0.30, "neutral-1", 8)   # steam wand
     return m
 
 
@@ -223,7 +348,9 @@ def register() -> Mesh:
     m = Mesh()
     m.add_box((0.22, 0.25, 0.0), (0.78, 0.75, 0.26), METAL)
     m.add_box((0.30, 0.34, 0.26), (0.70, 0.44, 0.50), CERAMIC)  # screen bezel
-    m.add_box((0.33, 0.33, 0.30), (0.67, 0.35, 0.46), GLASS)    # screen face
+    # Screen on the +y face of the bezel. At y 0.33-0.35 it sat against the
+    # bezel's far side and never reached a pixel: a till with no display.
+    m.add_box((0.33, 0.43, 0.30), (0.67, 0.455, 0.46), GLASS)   # screen face
     return m
 
 
@@ -233,15 +360,30 @@ def pastry_case() -> Mesh:
     m.add_box((0.10, 0.15, 0.34), (1.90, 0.85, 0.40), CERAMIC)      # shelf
     for px in (0.45, 0.95, 1.45):                                    # pastries
         m.add_cylinder((px, 0.50, 0.40), 0.15, 0.11, FABRIC, 10)
-    m.add_box((0.10, 0.15, 0.66), (1.90, 0.85, 0.685), GLASS)       # top pane
+    # The top pane is the one glass surface a dimetric camera sees face-on, and
+    # at GLASS ("sky+2") it was a 1.8 x 0.7 slab of saturated cyan -- the case
+    # read as a lit swimming pool and outcompeted everything else on the counter
+    # for attention. The constant's own rule says glass is nearly the value of
+    # what is behind it with colour only at the edges; a horizontal pane is
+    # where that rule matters most. So the pane takes the interior's tone and
+    # the glass arrives as two specular streaks across it.
+    m.add_box((0.10, 0.15, 0.66), (1.90, 0.85, 0.685), "cream+1")   # top pane
+    for sx in (0.34, 1.12):
+        m.add_box((sx, 0.20, 0.685), (sx + 0.42, 0.36, 0.6895), GLASS)  # highlight
     for (ax, ay, bx, by) in ((0.10, 0.15, 1.90, 0.19), (0.10, 0.81, 1.90, 0.85),
                              (0.10, 0.15, 0.14, 0.85), (1.86, 0.15, 1.90, 0.85)):
         m.add_box((ax, ay, 0.685), (bx, by, 0.72), GLASS_EDGE)      # rim only
     m.add_box((0.10, 0.15, 0.40), (0.14, 0.85, 0.66), GLASS)
     m.add_box((1.86, 0.15, 0.40), (1.90, 0.85, 0.66), GLASS)
-    m.add_box((0.14, 0.15, 0.40), (1.86, 0.17, 0.66), GLASS)        # front pane
+    # Solid back, open front. The pane here used to be GLASS at y 0.15-0.17 --
+    # the side AWAY from the camera, so it was 69 triangles of glass nobody
+    # could see, backed by a view straight through to the wall. The camera-facing
+    # side stays open on purpose: this renderer has no transparency, so a pane
+    # across the front would replace the pastries with a flat blue rectangle.
+    # Glass reads here the way it does on the top -- as rim and highlight only.
+    m.add_box((0.14, 0.15, 0.40), (1.86, 0.19, 0.66), WOOD)         # back panel
     for mx in (0.68, 1.32):                                          # mullions
-        m.add_box((mx, 0.15, 0.40), (mx + 0.035, 0.18, 0.66), GLASS_EDGE)
+        m.add_box((mx, 0.83, 0.40), (mx + 0.035, 0.86, 0.66), GLASS_EDGE)
     return m
 
 
@@ -297,30 +439,109 @@ def stool() -> Mesh:
     return m
 
 
-def plant_large() -> Mesh:
+def leafy_plant(height: float = 0.85, seed: int = 1, stems: int = 5,
+                pot=FABRIC, leaf=PLANT) -> Mesh:
+    """A plant grown from rules instead of placed by hand.
+
+    The two plants this replaces were a sphere on a pot and five spheres in a
+    hand-typed list of offsets. That is a shrub-shaped object rather than a
+    plant, and it was the same shrub everywhere in the room, which is the
+    opposite of what foliage is for -- greenery is where an interior is supposed
+    to look least manufactured.
+
+    Growth is the standard recursion, cut down to what survives at 27 px per
+    world unit: stems radiate from the rim, each segment shorter than the last
+    and drooping harder as it goes, with a leaf mass at every node. Three things
+    are deliberate at this scale:
+
+    * **Leaves carry the mass, stems only imply direction.** A 0.02-unit stem is
+      half a pixel. Stems are drawn as short beads between nodes and would fail
+      `check_member_thickness` on their own; the leaf clusters are what the
+      silhouette is made of.
+    * **Droop compounds.** Each segment keeps 55% of the previous rise and all of
+      the outward lean, so the tips fall away from the centre. Straight radiating
+      stems read as a starburst, which is the one shape that never occurs in a
+      pot.
+    * **Leaves flatten toward the top.** Squashing the upper clusters in z stops
+      the plant reading as a stack of balls, which is exactly what the old
+      five-sphere version looked like.
+
+    `seed` makes each instance different, so ten scattered plants are ten plants.
+    Declared `sym: none` in assets.yaml, which is honest -- this is asymmetric by
+    construction and would cost eight renders as a sprite. In the room it costs
+    one.
+    """
+    import math
+
+    st = (seed * 2654435761 + 1013904223) & 0x7FFFFFFF
+
+    def rnd():
+        nonlocal st
+        st = (st * 1103515245 + 12345) & 0x7FFFFFFF
+        return (st >> 8) / (0x7FFFFFFF >> 8)
+
     m = Mesh()
-    m.add_cylinder((0.5, 0.5, 0.0), 0.24, 0.30, FABRIC, 12)     # terracotta pot
-    for i, (dx, dy, dz, r) in enumerate((
-            (0.0, 0.0, 0.34, 0.26), (0.18, 0.10, 0.58, 0.21),
-            (-0.16, 0.12, 0.62, 0.19), (0.05, -0.16, 0.78, 0.17),
-            (-0.06, -0.02, 0.94, 0.14))):
-        m.add_sphere((0.5 + dx, 0.5 + dy, dz), r, PLANT, 10, 7)
+    pot_h = height * 0.30
+    m.add_prism((0.5, 0.5, 0.0), 0.20, 0.20, pot_h, pot, segments=8)
+    m.add_prism((0.5, 0.5, pot_h * 0.62), 0.215, 0.215, pot_h * 0.16,
+                pot + "+1", segments=8)                      # rim catches light
+    m.add_prism((0.5, 0.5, pot_h - 0.015), 0.175, 0.175, 0.02, "wood-3",
+                segments=8)                                  # soil
+
+    for i in range(stems):
+        ang = 2 * math.pi * (i / stems) + (rnd() - 0.5) * 0.9
+        lean = 0.09 + 0.10 * rnd()
+        rise = height * (0.26 + 0.10 * rnd())
+        x, y, z = 0.5, 0.5, pot_h
+        dx, dy = math.cos(ang) * lean, math.sin(ang) * lean
+        for seg in range(2 + int(rnd() * 2.0)):
+            nx, ny, nz = x + dx, y + dy, z + rise
+            m.add_cylinder(((x + nx) / 2, (y + ny) / 2, z), 0.019,
+                           max(0.02, nz - z), leaf + "-2", 5)
+            # Flatter and a little smaller the higher it gets.
+            t = min(1.0, (nz - pot_h) / max(1e-6, height * 0.75))
+            r = (0.155 - 0.045 * t) * (0.85 + 0.3 * rnd())
+            m.add_prism((nx, ny, nz - r * 0.45), r, r * (0.92 + 0.16 * rnd()),
+                        r * (1.15 - 0.45 * t), leaf, segments=6)
+            rise *= 0.55
+            x, y, z = nx, ny, nz
+    # A low rosette at soil level. Without it the canopy floats clear of the pot
+    # and the plant reads as a bouquet dropped into it rather than as something
+    # growing out of it.
+    for i in range(3):
+        ang = 2 * math.pi * (i / 3) + rnd() * 1.2
+        r = 0.10 + 0.035 * rnd()
+        m.add_prism((0.5 + math.cos(ang) * 0.17, 0.5 + math.sin(ang) * 0.17,
+                     pot_h + 0.01), r, r * 0.9, r * 0.75, leaf + "-1", segments=6)
     return m
 
 
-def plant_small() -> Mesh:
-    m = Mesh()
-    m.add_cylinder((0.5, 0.5, 0.0), 0.13, 0.16, FABRIC, 10)
-    m.add_sphere((0.5, 0.5, 0.26), 0.16, PLANT, 10, 7)
-    return m
+def plant_large(seed: int = 3) -> Mesh:
+    return leafy_plant(height=1.05, seed=seed, stems=6)
+
+
+def plant_small(seed: int = 7) -> Mesh:
+    return leafy_plant(height=0.52, seed=seed, stems=4)
 
 
 def bookshelf() -> Mesh:
+    """Open at +y, which is the only side this camera can see into.
+
+    It used to be a solid carcass box with the shelves and books modelled inside
+    it -- 86% of its camera-facing triangles fully occluded, and on screen a
+    plain wooden slab standing where a bookcase was supposed to be. All the
+    detail existed; none of it was reachable. Building the carcass as a back,
+    two sides and a top instead of one filled box is the entire fix.
+    """
     m = Mesh()
-    m.add_box((0.10, 0.55, 0.0), (0.90, 0.92, 1.45), WOOD)
+    m.add_box((0.10, 0.55, 0.0), (0.90, 0.66, 1.45), WOOD)        # back panel
+    for x0, x1 in ((0.10, 0.20), (0.80, 0.90)):                   # side panels
+        m.add_box((x0, 0.55, 0.0), (x1, 0.92, 1.45), WOOD)
+    m.add_box((0.10, 0.55, 1.36), (0.90, 0.92, 1.45), WOOD)       # top
+    m.add_box((0.10, 0.55, 0.0), (0.90, 0.92, 0.10), WOOD)        # plinth
     for z in (0.34, 0.70, 1.06):
-        m.add_box((0.14, 0.56, z), (0.86, 0.90, z + 0.05), CERAMIC)
-        m.add_box((0.20, 0.60, z + 0.05), (0.74, 0.86, z + 0.26), FABRIC)
+        m.add_box((0.20, 0.55, z), (0.80, 0.92, z + 0.05), CERAMIC)   # shelf
+        m.add_box((0.23, 0.62, z + 0.05), (0.77, 0.90, z + 0.26), FABRIC)
     return m
 
 
@@ -342,15 +563,66 @@ def cup_and_saucer() -> Mesh:
 
 
 def crate() -> Mesh:
+    """Slatted, with the slats drawn as value rather than as geometry.
+
+    This was one box. A single `add_box` was defensible while crates sat in a
+    corner, and stopped being defensible when the generated dressing pass began
+    scattering them through the room: 0.76 tiles square of unbroken wood at one
+    ramp step is the most blockout-looking object that could be put on screen.
+
+    Slats are flat quads a thousandth of a unit proud of each face, alternating
+    one step either side of the carcass, with corner posts a step lighter. Only
+    the +x and +y faces and the top get them, because those are the three this
+    camera can see -- `check_buried_detail` would report the rest as buried, and
+    it would be right.
+    """
     m = Mesh()
-    m.add_box((0.12, 0.12, 0.0), (0.88, 0.88, 0.52), WOOD)
+    lo, hi, top = 0.12, 0.88, 0.52
+    m.add_box((lo, lo, 0.0), (hi, hi, top), "wood-2")          # carcass, in shadow
+    e = 0.0014
+    for i, z in enumerate((0.03, 0.16, 0.29, 0.42)):
+        band = "wood" if i % 2 == 0 else "wood+1"
+        h = 0.095
+        m.add_quad((lo, hi + e, z), (hi, hi + e, z),
+                   (hi, hi + e, z + h), (lo, hi + e, z + h), band)     # +y face
+        m.add_quad((hi + e, lo, z), (hi + e, hi, z),
+                   (hi + e, hi, z + h), (hi + e, lo, z + h), band)     # +x face
+    for a, b in ((lo, lo + 0.09), (hi - 0.09, hi)):                    # corner posts
+        m.add_quad((a, hi + 2 * e, 0.0), (b, hi + 2 * e, 0.0),
+                   (b, hi + 2 * e, top), (a, hi + 2 * e, top), "wood+1")
+        m.add_quad((hi + 2 * e, a, 0.0), (hi + 2 * e, b, 0.0),
+                   (hi + 2 * e, b, top), (hi + 2 * e, a, top), "wood+1")
+    m.add_quad((lo + 0.06, lo + 0.06, top + e), (hi - 0.06, lo + 0.06, top + e),
+               (hi - 0.06, hi - 0.06, top + e), (lo + 0.06, hi - 0.06, top + e),
+               "wood")                                                 # lid panel
     return m
 
 
 def menu_board() -> Mesh:
+    """A framed chalkboard, with chalk.
+
+    The panel used to be a bare METAL rectangle, and a blank grey slab above the
+    counter does not read as a menu -- it reads as an unexplained hole in the
+    wall, which is how it looked in every composite. What makes it legible is
+    not more geometry but chalk: flat quads a hundredth of a unit off the panel
+    face, four steps up the neutral ramp. Same principle as the material tone
+    offsets everywhere else -- the detail is a value change, so it stays
+    palette-exact and cannot dither.
+
+    Row lengths are uneven on purpose. Four bars of equal width read as a
+    barcode; uneven ones read as a list of items and prices.
+    """
     m = Mesh()
     m.add_box((0.10, 0.0, 0.55), (0.90, 0.06, 1.30), WOOD)
-    m.add_box((0.16, 0.06, 0.61), (0.84, 0.08, 1.24), METAL)
+    m.add_box((0.16, 0.06, 0.61), (0.84, 0.08, 1.24), "neutral-2")
+    chalk = 0.081                       # just proud of the panel face
+    m.add_quad((0.26, chalk, 1.13), (0.74, chalk, 1.13),
+               (0.74, chalk, 1.175), (0.26, chalk, 1.175), "neutral+3")  # heading
+    for z, x1 in ((1.02, 0.62), (0.92, 0.70), (0.82, 0.57), (0.72, 0.66)):
+        m.add_quad((0.23, chalk, z), (x1, chalk, z),
+                   (x1, chalk, z + 0.035), (0.23, chalk, z + 0.035), "neutral+2")
+        m.add_quad((0.755, chalk, z), (0.80, chalk, z),          # the price column
+                   (0.80, chalk, z + 0.035), (0.755, chalk, z + 0.035), "neutral+2")
     return m
 
 

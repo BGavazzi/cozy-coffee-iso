@@ -219,16 +219,53 @@ class ShadowMap:
                 dot(p, self.dir))
 
     def lit(self, p: Vec, bias: float = 0.012) -> bool:
+        """Hard in-or-out test. Kept for callers that only need a boolean."""
+        return self.shadow(p, bias) >= 0.999
+
+    def shadow(self, p: Vec, bias: float = 0.012, falloff: float = 1.15,
+               floor: float = 0.20, taps: int = 5) -> float:
+        """How lit a point is, 0.20 (full contact shadow) to 1.0 (unshadowed).
+
+        A boolean shadow is a uniformly dark region with a hard edge, and at
+        this light elevation that reads as a smear stretching away from every
+        prop rather than as the object sitting on the ground. Two changes:
+
+        **Fade with occluder distance.** A shadow is darkest where the caster
+        meets the floor and weakens as it travels, because a real key light has
+        area. Exponential in the depth gap, so contact shadows stay tight and
+        crisp while the long tail falls off instead of dragging.
+
+        **Sample a small cross.** One tap gives a stair-stepped edge at map
+        resolution. Five taps cost little and put the edge between ramp steps,
+        where the dither band can resolve it.
+        """
         x, y, z = self._project(p)
-        ix, iy = int(x), int(y)
-        if not (0 <= ix < self.res and 0 <= iy < self.res):
-            return True
-        return z + bias >= self.depth[iy * self.res + ix]
+        acc = 0.0
+        for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1))[:taps]:
+            ix, iy = int(x) + dx, int(y) + dy
+            if not (0 <= ix < self.res and 0 <= iy < self.res):
+                acc += 1.0
+                continue
+            gap = self.depth[iy * self.res + ix] - (z + bias)
+            if gap <= 0.0:
+                acc += 1.0
+            else:
+                acc += 1.0 - (1.0 - floor) * math.exp(-gap / falloff)
+        return acc / taps
 
 
 @dataclass
 class Pool:
-    """A local warm light -- a pendant lamp, a candle, a hearth."""
+    """A local light. Negative intensity is allowed and is not a hack.
+
+    Negative lights are standard practice in film and game lighting: the way to
+    give a composition a centre is usually to take light OUT of the periphery
+    rather than to pile more onto the subject, because adding light to a subject
+    that is already near the top of its ramp just clips it. Here the palette
+    makes that literal -- pushing a corner DOWN its ramp also pushes it cooler,
+    which is the same warm-centre / cool-edge move the whole palette is built
+    around.
+    """
     pos: Vec
     radius: float
     intensity: float
@@ -281,11 +318,78 @@ class LightRig:
         return out
 
 
+
+# --- surface grain -----------------------------------------------------------
+
+def _lattice(ix: int, iy: int, iz: int) -> float:
+    """Deterministic value in [0,1) for an integer lattice cell."""
+    h = (ix * 73856093) ^ (iy * 19349663) ^ (iz * 83492791)
+    h = (h * 1103515245 + 12345) & 0x7FFFFFFF
+    h ^= h >> 13
+    return (h & 0xFFFFFF) / 0xFFFFFF
+
+
+def surface_grain(p: Vec, axis: Vec = (1.0, 1.0, 1.0),
+                  coarse: float = 1.7, fine: float = 5.3) -> float:
+    """Two octaves of blocky value noise in world space, returned in [-1, 1].
+
+    Deliberately *not* interpolated. Smooth noise resolves to a soft gradient
+    that the ramp quantizer then re-hardens into contour bands -- the exact
+    banding artefact `pixelize` exists to avoid. Blocky cells quantize cleanly
+    because they are already flat, and cell edges land on ramp-step boundaries
+    only where the two happen to disagree, which is what produces mottle rather
+    than contours.
+
+    World space, not screen space, so the pattern is fixed to the surface. In
+    screen space it would crawl across a rotating sprite between the eight
+    azimuths, which is the same class of mistake as screen-space dithering.
+    """
+    import math
+    n = 0.0
+    for scale, weight in ((coarse, 0.52), (fine, 0.48)):
+        n += weight * _lattice(math.floor(p[0] * scale * axis[0]),
+                               math.floor(p[1] * scale * axis[1]),
+                               math.floor(p[2] * scale * axis[2]))
+    return n * 2.0 - 1.0
+
+
+# Per ramp: (amplitude as a fraction of one ramp step, lattice axis scaling).
+#
+# Amplitude never exceeds one step. Grain is meant to break a flat field, not to
+# add a second value structure competing with the lighting. Glass, metal and
+# painted surfaces stay clean because they read as manufactured; wood, plaster
+# and foliage are where a viewer expects texture and are also the ramps holding
+# the largest unbroken areas.
+#
+# The axis scaling is what separates grain from dirt. Isotropic noise on wood
+# produces round blotches that read as stains, because wood does not have round
+# features -- it has long ones. Squashing the lattice on x stretches each cell
+# into a streak that runs along the board, and the floor's own courses already
+# run that way. Plaster is genuinely isotropic and keeps a round cell. Foliage
+# gets a fine, near-isotropic cell so it breaks into leaf-sized dapple rather
+# than into patches larger than the plant.
+# Checked before GRAIN_BY_RAMP, so a material can opt out of its ramp's texture.
+GRAIN_BY_MATERIAL = {
+    "skin": (0.0, (1.0, 1.0, 1.0)),
+}
+
+GRAIN_BY_RAMP = {
+    "wood":    (0.85, (0.42, 2.30, 2.30)),
+    "cream":   (0.65, (1.00, 1.00, 1.00)),
+    "foliage": (0.55, (1.70, 1.70, 1.70)),
+    "rose":    (0.30, (1.00, 1.00, 1.00)),
+    "neutral": (0.0,  (1.00, 1.00, 1.00)),
+    "sky":     (0.0,  (1.00, 1.00, 1.00)),
+}
+
+
 def rasterize(mesh: Mesh, cam: DimetricCamera, size: int,
               target: Vec = (0.0, 0.0, 0.62), smooth: bool = False,
               shadows: "ShadowMap | None" = None, fill: float = 0.0,
               bounce: float = 0.0, rig: "LightRig | None" = None,
-              ambient: float = 0.10, key_gain: float = 0.80):
+              ambient: float = 0.10, key_gain: float = 0.80,
+              haze: float = 0.0, haze_to: float = 0.82,
+              grain: float = 0.0, ramps: dict | None = None):
     """Orthographic scanline z-buffer. Returns (material, lambert, normal).
 
     Three light terms, and the third is not decoration:
@@ -295,6 +399,25 @@ def rasterize(mesh: Mesh, cam: DimetricCamera, size: int,
       value.
     * **bounce** -- a weak light along the view direction.
     * **rig** -- optional staged light: lamp pools and daylight shafts.
+
+    `haze` is aerial perspective. `style_bible.yaml` specifies it -- the entry
+    reads `atmosphere: value compression toward the ramp's light end, not blur`
+    -- and nothing implemented it for four passes, because the substitution table
+    was treated as prose rather than as a spec. Distant surfaces are pulled
+    toward `haze_to` in proportion to their depth, which both *lifts* them and
+    *compresses* their contrast, since everything converges on one value as the
+    weight rises. Blur is not an option at this scale and would be the wrong
+    look anyway; a limited palette does depth by flattening the far plane, which
+    is what every SNES background this project cites does.
+
+    `grain` breaks up flat fields. Every surface in the library is an
+    axis-aligned primitive, so large areas land on exactly one ramp step and read
+    as blockout no matter how good the palette is -- the single largest remaining
+    gap against the SNES backgrounds this project cites, all of which broke every
+    flat area with a step or two of tonal noise. It is applied to the *lambert*,
+    not the colour, so the existing quantizer turns it into legal palette steps
+    for free and it can never produce an off-ramp pixel. `ramps` is needed to
+    know how large one step is for the material under each pixel.
 
     `ambient` and `key_gain` set how much of each ramp the global light claims.
     They drop when a rig is supplied, because staged light needs headroom: if
@@ -321,6 +444,10 @@ def rasterize(mesh: Mesh, cam: DimetricCamera, size: int,
     lam: list[float] = [0.0] * (size * size)
     nrm: list[Vec] = [(0.0, 0.0, 0.0)] * (size * size)
     zbuf: list[float] = [-1e30] * (size * size)
+    zdepth: list[float] = [-1e30] * (size * size)
+    # One ramp-step size per material token, resolved once. Doing this per pixel
+    # meant a string parse and a dict walk seven million times.
+    _grain_amp: dict = {}
 
     def project(v: Vec):
         r = sub(v, target)
@@ -382,8 +509,7 @@ def rasterize(mesh: Mesh, cam: DimetricCamera, size: int,
                 if shadows is not None:
                     world = add(add(mul(a, w1), mul(b, w2)), mul(c, w0))
                 if shadows is not None and key > 0.0:
-                    if not shadows.lit(world):
-                        key *= 0.18          # in shadow: keep a little bounce
+                    key *= shadows.shadow(world)
                 # A weak opposing fill lifts the fully-turned-away face off the
                 # bottom of the ramp, so mid steps get used instead of clamping.
                 amb = fill * max(0.0, dot(n, fill_dir))
@@ -393,7 +519,43 @@ def rasterize(mesh: Mesh, cam: DimetricCamera, size: int,
                     if shadows is None:
                         world = add(add(mul(a, w1), mul(b, w2)), mul(c, w0))
                     stage = rig.boost(world, n)
-                lam[i] = min(1.0, ambient + key_gain * key + amb + bnc + stage)
+                lam[i] = max(0.0, min(1.0, ambient + key_gain * key
+                                          + amb + bnc + stage))
+                if grain > 0.0:
+                    if world is None:
+                        world = add(add(mul(a, w1), mul(b, w2)), mul(c, w0))
+                    g = _grain_amp.get(material)
+                    if g is None:
+                        from pixelize import material as _split
+                        try:
+                            ramp = _split(material)[0]
+                        except (KeyError, ValueError):
+                            ramp = None
+                        steps = len(ramps[ramp]) if (ramps and ramp in ramps) else 0
+                        base = material.split("+")[0].split("-")[0]
+                        amp, axis = GRAIN_BY_MATERIAL.get(
+                            base, GRAIN_BY_RAMP.get(ramp, (0.0, (1.0, 1.0, 1.0))))
+                        g = ((amp / steps) if steps > 1 else 0.0, axis)
+                        _grain_amp[material] = g
+                    if g[0]:
+                        lam[i] = max(0.0, min(1.0, lam[i] + grain * g[0]
+                                              * surface_grain(world, g[1])))
+                if haze > 0.0:
+                    zdepth[i] = z
+
+    if haze > 0.0:
+        seen = [z for z in zdepth if z > -1e29]
+        if seen:
+            near, far = max(seen), min(seen)
+            spread = (near - far) or 1e-9
+            for i, z in enumerate(zdepth):
+                if mat[i] is None:
+                    continue
+                # 1 at the furthest surface, 0 at the nearest. Squared, so the
+                # near two-thirds of the room is left alone and the haze builds
+                # only where depth actually reads.
+                t = haze * ((near - z) / spread) ** 2
+                lam[i] += t * (haze_to - lam[i])
     return mat, lam, nrm
 
 

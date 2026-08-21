@@ -360,3 +360,384 @@ assets now clear it.
 - Cast shadows remain soft and read as smears at this light elevation.
 - The room is now legibly furnished but the near-right quadrant is still the
   weakest area.
+
+---
+
+# Fourth pass — the room as a room
+
+The third pass ended with the counter needing to "win on contrast, not just on
+prop count", and with the tooling to say whether it did. Building that tooling is
+where this pass started, and it immediately produced a number that could not be
+true.
+
+## The measurement was broken before the thing it measured
+
+`focal_report` projects the counter's world bounds to screen pixels and compares
+lightness and local contrast inside against outside. It reported:
+
+```
+focal zone (service counter): mean L 0.719 vs 0.600 elsewhere (+0.120)
+                              contrast 0.000 vs 0.560 (-0.560)   DOES NOT lead the eye
+```
+
+A region containing a counter, an espresso machine, a register and a pastry case
+cannot have a local contrast of exactly zero. The verdict was confident, precise
+and worthless. The cause was one line: the projection subtracted the
+crop-to-content offset from coordinates that index the *uncropped* buffer, so the
+rect landed off the counter and collapsed.
+
+The lesson is not "check your arithmetic". It is that **a metric confident enough
+to print a verdict is confident enough to be believed**, and the only thing that
+caught this was the value being impossible rather than merely wrong. Anything
+slightly wrong would have been acted on. The check now refuses to report at all
+if fewer than 200 pixels fall inside the box.
+
+## Then the render disagreed with the fixed metric
+
+With the projection corrected the counter led on both axes and the tool printed
+`reads as the centre`. Looking at the render, it did not. Three defects the
+metric was structurally unable to see:
+
+**Everything lived in one value band.** Floor, walls and nearly every prop
+between L 0.55 and 0.75. Nothing was dark, so nothing had anything to be bright
+against — a focal lead of +0.09 local contrast is what a composition with no
+value structure can offer. Dropping the floor field one step to `wood-1` gives
+the room a ground in the literal sense: a value everything else is measured up
+from.
+
+**The floor was ruled into stripes.** Board tone varied per *course*, so every
+tone change was a stripe one unit deep and the full width of the room: five lines
+longer and higher-contrast than any prop, pointing nowhere. Two earlier attempts
+tuned the *direction* of the offset (`-1`, then `+1`) and neither helped, because
+the defect was never the offset. It was that the unit of variation was the wrong
+shape. Real flooring varies board to board; the tone now scatters, with staggered
+butt joints from a fixed LCG so the floor is byte-identical between runs. A floor
+that reshuffles per render makes every before/after table in this document
+meaningless.
+
+**The wall was head height.** 1.6 units, against 1.59-unit characters — a ceiling
+exactly at the top of everyone's head, which is why the room read as a dollhouse
+tray. Only the two far walls are ever drawn and they sit behind every object in
+the scene, so raising them to 2.45 cannot occlude anything. Windows moved up with
+it (sill 0.38 → 0.58, head 1.22 → 1.82) and a picture rail splits the enlarged
+field, which had otherwise gone back to being the biggest quiet mass in frame.
+
+## New promoted check: screen-space occlusion
+
+`Layout.collisions()` is a plan-view test, and it is necessary but not
+sufficient. In a dimetric view two objects several tiles apart project to the
+same pixels and the near one erases the far one — the composite shows a
+silhouette nobody modelled. That is what "that corner is mush" means when a human
+says it, and nothing in the layout could see it, because in plan view the objects
+are nowhere near each other.
+
+`Layout.screen_occlusion()` projects each placement's bounds through the shipping
+camera and fires when a pair overlaps by more than 45% of the smaller *and* sits
+at least 1.2 tiles apart in depth. The depth gate is what separates a genuine
+occlusion from a chair legibly tucked at a table, which overlaps on screen
+precisely because it is meant to.
+
+What it found:
+
+| finding | why it mattered |
+|---|---|
+| `char#queue1` hid **56%** of `char#queue0` | the queue ran *into* the view axis: two customers 1.5 tiles apart in world, 0.1 apart on screen, reading as one smeared figure |
+| `decor#coats` hid 65% of `bar#2` | a coat rack standing a tile in front of the window bar |
+| `char#seat1` hid 43% of `stool#0` | the lounge sat in the same screen column as the bar stools, two tiles nearer |
+| `seat#arm1` hid 36% of `stool#1` | same cause |
+
+All cleared. A queue in an isometric view has to run *across* the frame, and the
+lounge moved right by a tile — moving the *bar* made it worse, because the
+occluders were the things in the wrong place.
+
+**The first version of this check was itself wrong, and its numbers are worth
+recording as a caution.** It hand-rolled the screen basis from sin/cos of the
+azimuth instead of using `DimetricCamera`, and got three things wrong: `u` came
+out sign-flipped, `v` was off by up to a third of a tile on tall objects, and
+depth ignored `z` entirely — so the depth gate, the entire point of the check,
+measured the wrong axis. It reported 74%, 67%, 49% and 82% for the four findings
+it produced. Under the shipping camera those are 56%, 33%, 11% and 11%.
+
+Two of the four were real. The other two were artefacts of the broken
+projection: a menu board behind an espresso machine measures 11%, exactly what a
+correctly tucked chair measures, because the two boxes overlap in a narrow
+vertical band that bounding boxes cannot resolve. That defect was real and worth
+fixing, but this check did not find it and does not claim to.
+
+A check that disagrees with the renderer is not a check. The lesson is the same
+one as `focal_report` above, one level up: **re-deriving a projection that
+already ships is how a verification tool ends up confidently measuring
+something else.**
+
+## New promoted check: buried detail
+
+The espresso machine carried two group heads and two portafilters modelled at
+y=0.28 inside a carcass spanning y 0.15–0.85 — fully enclosed, contributing not
+one pixel in any frame, while on the counter it read as a blank grey slab. This
+is the most expensive kind of defect, because it hides as *effort*: the mesh
+insists it is detailed.
+
+The obvious metric is the share of triangles that never win a pixel, and
+measuring it proves why that is useless: a closed box shows at most three of its
+six faces, so **every solid asset scores about 67% "buried"** and the check fires
+on all eighteen props. That is not a defect, it is what solid geometry costs.
+
+What matters is a triangle that *faces the camera* and still reaches no pixel,
+because something else is in front of it. At a 30% threshold that flags 4 of 24
+assets, and three were real:
+
+- **bookshelf**, 86% — shelves and books modelled inside a solid carcass box. On
+  screen, a plain wooden slab standing where a bookcase was meant to be.
+- **register**, 33% — the screen on the far side of its own bezel. A till with no
+  display.
+- **pastry_case**, 48% — 69 triangles of glass on the side away from the camera,
+  backed by a view straight through to the wall.
+
+The remaining two are exempted by name with a reason, the same role `TUCK_OK`
+plays for collisions: a four-legged table hides its far legs behind its own top,
+and a lidded display case has an interior its top pane covers. Both would still
+be true if the asset were re-modelled from scratch. An allowlist is what lets the
+threshold stay tight enough to catch the real thing.
+
+## Two bugs found by looking, not by measuring
+
+**Outline colour was randomised per process.** The outline pass identified each
+material by `hash(m) % 251`. With ~30 materials collisions are near-certain by
+the birthday bound, and Python randomises string hashing per process, so *which*
+materials collided changed every run. The visible symptom was foliage-green edges
+around the wooden counter. The invisible one was worse: the room render was not
+reproducible, which quietly invalidates every before/after comparison here.
+Material ids now come from a sorted index.
+
+**Every sprite in the atlas was filed under the wrong facing.** `DIRECTIONS`
+began at `"s"` for azimuth 45. The character's front is +y; projected through the
+2:1 dimetric basis, +y at azimuth 45 lands at screen down-*right*. The tuple was
+correct in ordering and wrong by exactly one step — the worst size of error to
+have, because the sheet looks perfect, every frame is correctly rendered, and a
+game reading `atlas.json` draws a character walking south using the south-east
+sprite. Eight sprites all subtly turned, in a way that reads as "the animation
+feels off" rather than as a bug with a location.
+
+The order is not a convention to be chosen. It follows from the front being +y
+and the camera being 2:1 dimetric, so `derived_directions()` now recomputes it
+from the camera basis and `check_direction_labels()` fails if the tuple drifts. A
+derived constant cannot agree with a mistake.
+
+## New promoted check: palette spread per character
+
+`check_contrast` catches hair disappearing into a face. It does not catch a
+figure built entirely from one ramp, where every part is individually a legal,
+well-separated tone and the character still reads as one dark mass because there
+is no hue change anywhere to give the eye an edge. `commuter` shipped that way —
+neutral shirt, neutral trousers, neutral hair, neutral bag — and at the till it
+was a silhouette-shaped hole in the room. No spec may now spend more than half
+its parts on one ramp.
+
+## Where the numbers landed
+
+| | third pass | fourth pass |
+|---|---|---|
+| focal zone lightness lead | not measurable | **+0.064 L** |
+| focal zone contrast lead | not measurable | **+0.094** |
+| wood share of frame | 62.7% | **59.8%** |
+| minority ramps | 15.5% | **17.5%** |
+| screen-space occlusions | 4, unmeasured | **0** |
+| assets with buried detail | 3, unmeasured | **0** |
+| automated checks in the ratchet | 7 | **11** |
+
+The four added: screen-space occlusion, buried detail, per-character palette
+spread, and derived direction labels. All eleven run from `manifest.py --check`.
+
+## Still open
+
+- Local contrast is measured as a p95−p05 spread of lightness, which is quantized
+  by the palette itself and therefore lands on a handful of values. It separates
+  "has structure" from "flat" and should not be read more finely than that.
+- The near-right quadrant is dressed but is still the weakest area of the
+  composition.
+- Stages 1–3 (SDXL concept → TRELLIS 2 mesh → UniRig rig) remain specified and
+  unbuilt; everything above is the deterministic render half of the factory.
+
+---
+
+# Fifth pass — generators, not placements
+
+This pass started from a question rather than a defect: *are we building tools to
+make art assets, or just making the assets?*
+
+Counting settles it. `assetlib.py` held 135 hand-written primitive calls, and
+`build_room` held 85 hand-typed coordinates. `PIPELINE.md` stages 1–3 (SDXL
+concept → TRELLIS mesh → UniRig rig) are the generative half and remain unbuilt,
+which means the library was a *placeholder standing where generated meshes should
+arrive* — and four passes of art critique had been spent polishing the
+placeholder. Every fix was real, and each one was promoted into a check, but the
+ratio was wrong.
+
+The second question was whether the result was close to the target. It was worth
+re-reading what the target actually says, because the answer was being measured
+against the wrong thing.
+
+## The target was never painted Ghibli
+
+`style_bible.yaml` is explicit:
+
+> Not soft-rendered Ghibli — Ghibli's *colour science* filtered through a locked
+> palette and hard pixel edges.
+> **precedent:** SNES-era JRPG backgrounds (Secret of Mana, Terranigma, Illusion
+> of Gaia) already solved this.
+
+Measured against *that*, the colour work was already done — and the fact that the
+whole room render uses 38 distinct colours is the idiom working, not evidence
+against it. SNES tiles ran 16 colours per palette.
+
+| rule from the bible | measured | |
+|---|---|---|
+| warm light / cool shadow hue shift ("the single most defining rule") | 5/6 ramps warm toward light; wood runs 42.9° → 3.3° from the warm anchor | pass |
+| high-key value distribution | 60.3% of the frame above L 0.50, median 0.600 | pass |
+| modest chroma, peaking mid-tones, never neon | mean 0.065, max 0.113 | pass |
+| almost never pure black or white | 0.67% at the extremes | pass |
+
+The bible also names three substitutions for the Ghibli qualities a locked
+palette cannot have. Two were built. The third —
+`atmosphere: value compression toward the ramp's light end, not blur` — had never
+been implemented, in four passes, because a substitution table reads like prose
+and nobody had treated it as a spec.
+
+So the gap was never colour. It was **form**: every surface an axis-aligned
+primitive, six chairs pixel-identical to each other, every edge machine-straight,
+and large unbroken areas landing on exactly one ramp step. And none of that
+needs a pencil. All five fixes below are generators.
+
+## Aerial perspective
+
+Twenty lines against an existing spec. Depth is already in the z-buffer; distant
+surfaces are pulled toward `haze_to` in proportion to the *square* of normalised
+depth, which both lifts them and compresses their contrast, since everything
+converges on one value as the weight rises. Squared, so the near two-thirds of
+the room is untouched and the effect only builds where depth actually reads.
+
+## Surface grain
+
+The largest single change. Applied to the **lambert**, not the colour, so the
+existing quantizer turns it into legal palette steps for free and it can never
+produce an off-ramp pixel.
+
+Three decisions did the work:
+
+**Blocky, not smooth.** Interpolated noise resolves to a soft gradient that the
+ramp quantizer then re-hardens into contour bands — the exact artefact
+`pixelize` exists to prevent. Blocky cells quantize cleanly because they are
+already flat.
+
+**World space, not screen space.** In screen space the pattern would crawl across
+a rotating sprite between the eight azimuths, the same class of mistake as
+screen-space dithering.
+
+**Anisotropic per material.** This is what separates grain from dirt. Isotropic
+noise on wood produces round blotches that read as stains, because wood has no
+round features — it has long ones. Squashing the lattice on x by 0.42 stretches
+each cell into a streak along the board.
+
+Amplitude is capped below one ramp step everywhere: grain breaks a flat field, it
+does not add a second value structure competing with the lighting.
+
+**And it immediately went wrong in an instructive place.** Skin is drawn on the
+wood ramp — the warm mid-browns are exactly right for it — so at 0.85 of a step
+the barista's face came out streaked with plank grain. Two materials that want
+the same colour and opposite treatment need separate names, so `skin` is now its
+own entry in `MATERIAL_RAMPS` resolving to `wood`, and grain resolves by
+material before falling back to ramp.
+
+## Warp, and why it displaces by position
+
+Every prop was a perfect primitive, so six chairs were six pixel-identical
+chairs. `warp` offsets vertices by a smooth function of **world position** rather
+than per vertex. That is the whole trick: `add_box` emits its own eight vertices
+per box, so displacing each independently would open seams between counter
+modules and take a chair apart at the joints. Two coincident vertices evaluate
+the same function and move together, so connectivity survives without the mesh
+needing to know about it. Variation comes free — the same chair at two positions
+samples the field twice and warps differently, with no per-instance seed.
+
+It also broke a check, correctly. The crate stack touches at *exactly* z=0.52,
+and an exact z-separation test fails the moment anything perturbs a vertex; a
+stack that had been right for four passes reported a 100% collision. Stacked
+props now get a 5 cm skin, which real interpenetration (measured in tenths of a
+tile) clears easily.
+
+## The checks became a solver
+
+This is the answer to the opening question.
+
+For four passes `collisions`, `grounded` and `screen_occlusion` were
+*validators*: they graded 85 hand-typed coordinates and said which were wrong.
+The same predicates, run **before** a placement instead of after, are a
+constraint solver. Propose a position, test it, keep or discard. Density stops
+being authoring work and becomes a number.
+
+`Layout.scatter` places 19–33 props per run depending on how much room the
+regions have. A saturated region returning fewer than asked is the solver
+working, not failing. Two things it taught immediately:
+
+- The first pass scattered crates along the **near** edges, where they stood in
+  front of the whole room. The far walls are x=0 and y=0; clutter belongs against
+  those, because the near sides are open to the camera.
+- A generated vase landed 0.82 up in clear air just past the end of the bar, and
+  `grounded` caught it after the fact. A solver that can check a rule afterwards
+  can check it beforehand, so support is now tested at proposal time and the rule
+  never fires.
+
+`factory(i)` receives the instance index, because ten scattered plants calling a
+zero-argument factory would be ten identical plants — which defeats the point of
+having made the plant procedural.
+
+## Plants that grow
+
+The two plants being replaced were a sphere on a pot, and five spheres in a
+hand-typed list of offsets — the same shrub everywhere, in the one place an
+interior is supposed to look least manufactured.
+
+`leafy_plant` is the standard recursion cut down to what survives at 27 px per
+world unit. Leaves carry the mass and stems only imply direction, because a
+0.02-unit stem is half a pixel. Droop compounds — each segment keeps 55% of the
+previous rise and all of the outward lean — because straight radiating stems read
+as a starburst, the one shape that never occurs in a pot. Leaves flatten toward
+the top so the plant does not read as a stack of balls, which is precisely what
+the five-sphere version looked like.
+
+`check_buried_detail` then reported 55% of a 420-triangle canopy hidden behind
+its own leaves. Both halves of that got answered: the exemption covers *hidden*
+— overlapping leaves are what a canopy is — and the leaf prisms dropped from 8
+sides to 6 to cover *420 triangles*. An allowlist entry that silences a warning
+without first asking whether it had a point is how a ratchet turns back into
+decoration.
+
+## And the crate
+
+One `add_box`. Defensible while crates sat in a corner; indefensible once the
+generated pass began scattering them, because 0.76 tiles square of unbroken wood
+at one ramp step is the most blockout-looking object that can be put on screen.
+Now slatted, with the slats drawn as value a thousandth of a unit proud of each
+face — and only on the three faces this camera can see, because
+`check_buried_detail` would report the rest as buried and would be right.
+
+## Where the numbers landed
+
+| | fourth pass | fifth pass |
+|---|---|---|
+| bible substitutions implemented | 2 of 3 | **3 of 3** |
+| props in the reference room | 85, all hand-placed | **104, of which 19 generated** |
+| distinct plant meshes | 2 | **one generator, a different plant per seed** |
+| hand-written primitive calls in `assetlib` | 135 | **131, and the growth is now in generators** |
+| surfaces with texture | none | **wood, plaster, foliage, fabric** |
+| focal zone contrast lead | +0.094 | **+0.133** |
+
+## Still open
+
+- `assetlib.py` is still 131 hand-written primitive calls. `leafy_plant` shows
+  what the replacement looks like; furniture has not had the same treatment.
+- Stages 1–3 remain unbuilt. Everything here is still the deterministic render
+  half — but the scatter solver is the first piece that *generates* rather than
+  verifies, and it runs on the checks the earlier passes built.
+- Grain is a single global amplitude per material. Wear should concentrate where
+  hands and feet go, not spread evenly.

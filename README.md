@@ -31,8 +31,8 @@ which is the point.
     python tools/review_queue.py stats            # what to automate next
 
     # the gates
-    python tools/manifest.py --check     # budget, ramps, clips, symmetry claims
-    python tools/character.py            # hair contrast, silhouette floor
+    python tools/manifest.py --check     # runs all eleven checks
+    python tools/character.py            # hair contrast, palette spread, silhouette floor
     python tools/fx.py                   # loop seams
 
 ## The loop is a ratchet
@@ -41,11 +41,15 @@ Every human rejection carries a reason. Reasons that recur get promoted into the
 automated tier, so **human review volume falls as the factory matures**. `stats`
 names the next check to write rather than leaving it to guesswork.
 
-Seven checks have been promoted so far: camera-space key light, hair/skin
-contrast, silhouette pixel floor, seating orientation, member thickness,
-grounding, and declared-symmetry verification. Three of them found bugs the
-moment they were written — floating counters, back-to-front chairs, and five
-wrong symmetry claims that were costing 31% of the effects budget.
+Eleven checks have been promoted so far: camera-space key light, hair/skin
+contrast, per-character palette spread, silhouette pixel floor, seating
+orientation, member thickness, grounding, declared-symmetry verification,
+screen-space occlusion, buried detail, and derived direction labels. Most found
+a bug the moment they were written — floating counters, back-to-front chairs,
+five wrong symmetry claims costing 31% of the effects budget, a queue of
+customers stacked into a single smear, an espresso machine whose entire
+mechanism was modelled inside its own carcass, and eight sprite sheets filed one
+facing off from the direction they actually depict.
 
 This has already happened once. The first batch rotated the camera with a
 world-fixed light, so the lit face drifted around the object between directions.
@@ -54,6 +58,22 @@ was obvious to a person scanning the contact sheet. The fix was conceptual: in a
 isometric game the camera is fixed and the *object* rotates, so the key light
 belongs in the camera basis. That finding is now an automated check and will
 never need a human again.
+
+## The checks are also the generator
+
+`collisions`, `grounded` and `screen_occlusion` began as validators: they graded
+hand-typed coordinates and reported which were wrong. Run *before* a placement
+rather than after, the same predicates are a constraint solver — propose a
+position, test it, keep or discard.
+
+    made = L.scatter(lambda i: A.plant_small(seed=40 + i),
+                     region=(0.5, 0.45, 13.4, 1.55), count=6, name="decor#plant")
+
+Density stops being authoring work and becomes a number. A saturated region
+returning fewer props than asked is the solver working, not failing. This is the
+first part of the pipeline that *generates* rather than verifies, and it is built
+entirely out of the checks the earlier passes accumulated — which is the argument
+for accumulating them.
 
 ## Why generation goes through 3D
 

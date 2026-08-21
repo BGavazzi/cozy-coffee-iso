@@ -32,10 +32,53 @@ from pixelize import (  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# Eight facings, named by where the character looks on screen. The camera is
-# fixed and the character rotates, so "direction" is a property of the sprite,
-# not of the view.
-DIRECTIONS = ("s", "sw", "w", "nw", "n", "ne", "e", "se")
+# Eight facings, named by where the character looks ON SCREEN, for azimuths
+# 45, 90, ... 360 in that order. The camera is fixed and the character rotates,
+# so "direction" is a property of the sprite, not of the view.
+#
+# This tuple used to start at "s" and was wrong by exactly one step, which is
+# the worst size of error to have: the sheet looked perfect, every frame was
+# correctly rendered, and the manifest filed each one under the neighbouring
+# facing. A game reading atlas.json would have drawn a character walking south
+# using the south-east sprite -- eight sprites all subtly turned, in a way that
+# reads as "the animation feels off" rather than as a bug with a location.
+#
+# The order is not a convention to be chosen. It is a consequence of the
+# character's front being +y and the camera being 2:1 dimetric, so it is derived
+# rather than declared: `check_direction_labels` recomputes it from the camera
+# basis and fails if this tuple drifts.
+DIRECTIONS = ("se", "s", "sw", "w", "nw", "n", "ne", "e")
+
+
+def derived_directions() -> tuple:
+    """The facing each azimuth actually produces, from the camera basis alone.
+
+    `character.face()` puts the front at +y. Project that vector through each
+    azimuth's screen basis and read off the compass point it lands on, where
+    screen-down is south. No tuning constants, so this cannot agree with a
+    mistake.
+    """
+    import math
+
+    from isorender import DimetricCamera, dot
+    fwd = (0.0, 1.0, 0.0)
+    names = ("e", "se", "s", "sw", "w", "nw", "n", "ne")
+    out = []
+    for d in range(8):
+        cam = DimetricCamera(45.0 + d * 45.0)
+        u, v = dot(fwd, cam.right), dot(fwd, cam.up)
+        out.append(names[int(round(math.degrees(math.atan2(-v, u)) / 45.0)) % 8])
+    return tuple(out)
+
+
+def check_direction_labels() -> list:
+    want = derived_directions()
+    if want == DIRECTIONS:
+        return []
+    bad = [f"{45 + i * 45:.0f}deg: labelled {DIRECTIONS[i]!r}, actually {want[i]!r}"
+           for i in range(8) if want[i] != DIRECTIONS[i]]
+    return [f"DIRECTIONS is wrong for {len(bad)}/8 azimuths -- every sprite in "
+            f"the atlas is filed under the wrong facing: " + "; ".join(bad)]
 
 FPS = 12
 
@@ -86,13 +129,22 @@ def render_frame(mesh, azimuth, ramps, target, factor, centre=(0.0, 0.0, 0.70),
     cam.span = span
     size = target * factor
     sm = ShadowMap(mesh, camera_light(cam), res=192)
+    # Grain, but no haze. Aerial perspective is a property of where a thing
+    # sits in a scene, and a sprite is composited at whatever depth the game
+    # decides; baking it in would fix every copy at one distance. Grain is a
+    # property of the surface itself and travels with it.
     mat, lam, _ = rasterize(mesh, cam, size, target=centre, shadows=sm,
-                            fill=0.20, bounce=0.26, ambient=0.05, key_gain=0.60)
+                            fill=0.20, bounce=0.26, ambient=0.05, key_gain=0.60,
+                            grain=1.0, ramps=ramps)
     px = downsample_modal(shade_toon(mat, lam, size, ramps, dither=True),
                           size, factor)
     # Rebuild a downsampled material buffer so outlining knows which ramp each
     # edge pixel belongs to; outlines are tinted, never black.
-    ids = {m: (hash(m) % 251, 0, 0) for m in set(mat) if m is not None}
+    # Sorted index, not hash: see the note in render_room. Randomised string
+    # hashing made outline colour non-deterministic across processes, which on
+    # a sprite sheet means the same frame outlines differently between runs.
+    ids = {m: (i % 256, i // 256, 0)
+           for i, m in enumerate(sorted(m for m in set(mat) if m is not None))}
     back = {v: k for k, v in ids.items()}
     small = downsample_modal([ids[m] if m is not None else None for m in mat],
                              size, factor)
