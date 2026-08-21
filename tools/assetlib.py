@@ -738,11 +738,32 @@ def chair(cushion=None, frame=WOOD, seed: int | None = None) -> Mesh:
     return m
 
 
-def stool() -> Mesh:
+def stool(seed: int | None = None, cushion=FABRIC) -> Mesh:
+    """A bar stool. Height is the only thing about one that reads at this size.
+
+    A row of three along a window bar is the most obviously repeated thing in
+    the room after the counter run, and unlike the counter a row of stools has
+    no reason to match -- they are pulled about and swapped between tables.
+    """
+    st = None if seed is None else _mix(seed)
+
+    def rnd():
+        nonlocal st
+        if st is None:
+            return 0.5
+        st = _mix(st)
+        return st / 0x7FFFFFFF
+
     m = Mesh()
-    m.add_cylinder((0.5, 0.5, 0.62), 0.24, 0.08, FABRIC, 14)
-    m.add_cylinder((0.5, 0.5, 0.0), 0.095, 0.62, METAL, 10)
-    m.add_cylinder((0.5, 0.5, 0.0), 0.22, 0.03, METAL, 12)
+    h = 0.62 if seed is None else 0.54 + rnd() * 0.14
+    r = 0.24 if seed is None else 0.20 + rnd() * 0.07
+    m.add_cylinder((0.5, 0.5, h), r, 0.08, cushion, 14)
+    m.add_cylinder((0.5, 0.5, 0.0), 0.095, h, METAL, 10)
+    m.add_cylinder((0.5, 0.5, 0.0), r * 0.92, 0.03, METAL, 12)
+    if seed is not None and rnd() > 0.45:
+        # A foot ring, on about half of them. It is four pixels of detail and
+        # the only thing that distinguishes two stools of the same height.
+        m.add_cylinder((0.5, 0.5, h * 0.34), 0.17, 0.028, METAL, 12)
     return m
 
 
@@ -954,7 +975,7 @@ def cup_and_saucer() -> Mesh:
     return m
 
 
-def crate() -> Mesh:
+def crate(seed: int | None = None) -> Mesh:
     """Slatted, with the slats drawn as value rather than as geometry.
 
     This was one box. A single `add_box` was defensible while crates sat in a
@@ -967,14 +988,36 @@ def crate() -> Mesh:
     the +x and +y faces and the top get them, because those are the three this
     camera can see -- `check_buried_detail` would report the rest as buried, and
     it would be right.
+
+    `seed` varies height, how far the carcass is inset, and how many bands
+    divide it. A crate has no silhouette to speak of -- it is a box -- so those
+    three are the whole of what one crate has that another does not.
     """
+    st = None if seed is None else _mix(seed)
+
+    def rnd():
+        nonlocal st
+        if st is None:
+            return 0.5
+        st = _mix(st)
+        return st / 0x7FFFFFFF
+
     m = Mesh()
-    lo, hi, top = 0.12, 0.88, 0.52
+    # A stack of crates in a store room is not a stack of one crate. Height and
+    # slat count are what a crate has instead of a silhouette: it is a box, and
+    # the only things about it that can differ are how tall it is and how the
+    # bands divide it.
+    top = 0.52 if seed is None else 0.40 + rnd() * 0.22
+    inset = 0.12 if seed is None else 0.09 + rnd() * 0.05
+    lo, hi = inset, 1.0 - inset
     m.add_box((lo, lo, 0.0), (hi, hi, top), "wood-2")          # carcass, in shadow
     e = 0.0014
-    for i, z in enumerate((0.03, 0.16, 0.29, 0.42)):
+    bands = 4 if seed is None else 3 + int(rnd() * 2.99)
+    gap = top / bands
+    h = gap * 0.72
+    for i in range(bands):
+        z = gap * i + gap * 0.14
         band = "wood" if i % 2 == 0 else "wood+1"
-        h = 0.095
         m.add_quad((lo, hi + e, z), (hi, hi + e, z),
                    (hi, hi + e, z + h), (lo, hi + e, z + h), band)     # +y face
         m.add_quad((hi + e, lo, z), (hi + e, hi, z),
@@ -987,6 +1030,11 @@ def crate() -> Mesh:
     m.add_quad((lo + 0.06, lo + 0.06, top + e), (hi - 0.06, lo + 0.06, top + e),
                (hi - 0.06, hi - 0.06, top + e), (lo + 0.06, hi - 0.06, top + e),
                "wood")                                                 # lid panel
+    # Crates get stacked, and the height now varies, so the stack has to be
+    # told where the lid ended up. Exactly the table's `top_z` problem: a
+    # generator that changes a dimension without saying so leaves whatever
+    # sits on it floating, and `grounded` reports that as a placement bug.
+    m.top_z = top
     return m
 
 
@@ -1169,10 +1217,31 @@ def cake_stand() -> Mesh:
     return m
 
 
-def basket(fill=FABRIC) -> Mesh:
+def basket(fill=FABRIC, seed: int | None = None) -> Mesh:
+    """A woven basket with something heaped in it.
+
+    Sides taper, because a basket that does not is a bucket, and the taper is
+    most of what the outline says at this size.
+    """
+    st = None if seed is None else _mix(seed)
+
+    def rnd():
+        nonlocal st
+        if st is None:
+            return 0.5
+        st = _mix(st)
+        return st / 0x7FFFFFFF
+
     m = Mesh()
-    m.add_cylinder((0.5, 0.5, 0.0), 0.28, 0.30, WOOD, 12)
-    m.add_cylinder((0.5, 0.5, 0.30), 0.24, 0.08, fill, 12)
+    r = 0.28 if seed is None else 0.23 + rnd() * 0.08
+    h = 0.30 if seed is None else 0.22 + rnd() * 0.14
+    m.add_prism((0.5, 0.5, 0.0), r * 0.82, r * 0.82, h * 0.55, WOOD, 12)
+    m.add_prism((0.5, 0.5, h * 0.55), r, r, h * 0.45, WOOD, 12)
+    # A rim one step lighter, which is what reads as "woven" at 27 px -- the
+    # weave itself is a texture no pixel in this frame is large enough to hold.
+    m.add_prism((0.5, 0.5, h), r * 1.04, r * 1.04, 0.035, "wood+1", 12)
+    m.add_prism((0.5, 0.5, h - 0.02), r * 0.88, r * 0.88,
+                0.05 + rnd() * 0.06, fill, 10)
     return m
 
 
@@ -1183,10 +1252,48 @@ def trash_bin() -> Mesh:
     return m
 
 
-def flower_vase() -> Mesh:
+VASE_BLOOMS = ("rose+1", "rose+2", "cream+1", "rose", "cream+2")
+
+
+def flower_vase(seed: int | None = None) -> Mesh:
+    """Stems in a vase, with the blooms as low-poly spheres.
+
+    Three identical vases on three tables is the same tell as three identical
+    plants, and this one is worse, because a vase of flowers is the object in a
+    cafe that most obviously came from somebody choosing them.
+    """
+    import math
+    st = None if seed is None else _mix(seed)
+
+    def rnd():
+        nonlocal st
+        if st is None:
+            return 0.5
+        st = _mix(st)
+        return st / 0x7FFFFFFF
+
     m = Mesh()
-    m.add_cylinder((0.5, 0.5, 0.0), 0.09, 0.22, CERAMIC, 10)
-    for dx, dy, dz, r in ((0.0, 0.0, 0.30, 0.10), (0.07, 0.04, 0.38, 0.08),
-                          (-0.06, 0.05, 0.36, 0.08)):
-        m.add_sphere((0.5 + dx, 0.5 + dy, dz), r, "rose+1", 8, 6)
+    neck = 0.09 if seed is None else 0.075 + rnd() * 0.035
+    tall = 0.22 if seed is None else 0.17 + rnd() * 0.11
+    m.add_cylinder((0.5, 0.5, 0.0), neck, tall, CERAMIC, 10)
+    if seed is None:
+        heads = ((0.0, 0.0, 0.30, 0.10), (0.07, 0.04, 0.38, 0.08),
+                 (-0.06, 0.05, 0.36, 0.08))
+        for dx, dy, dz, r in heads:
+            m.add_sphere((0.5 + dx, 0.5 + dy, dz), r, "rose+1", 8, 6)
+        return m
+    n = 2 + int(rnd() * 2.99)
+    bloom = VASE_BLOOMS[int(rnd() * len(VASE_BLOOMS)) % len(VASE_BLOOMS)]
+    turn = rnd() * math.tau
+    for i in range(n):
+        a = turn + i * math.tau / n
+        lean = 0.02 + rnd() * 0.075
+        z = tall + 0.06 + rnd() * 0.14
+        r = 0.065 + rnd() * 0.035
+        # A stem, so the head is attached to something rather than hovering.
+        strut(m, (0.5, 0.5, tall - 0.02),
+              (0.5 + math.cos(a) * lean, 0.5 + math.sin(a) * lean, z - r * 0.5),
+              0.012, PLANT)
+        m.add_sphere((0.5 + math.cos(a) * lean, 0.5 + math.sin(a) * lean, z),
+                     r, bloom if i else bloom, 8, 6)
     return m

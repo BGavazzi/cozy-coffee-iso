@@ -359,15 +359,122 @@ CUSTOMERS = [
                   bulk=1.12),
     CharacterSpec("artist",   shirt="cream",   trousers="sky",     hair_style="curly",
                   hair_mat="neutral-2", accessory_kind="scarf", accessory_mat="foliage"),
-    CharacterSpec("elder",    shirt="wood",    trousers="neutral", hair_style="short",
+    # Trousers were plain `neutral`, which sits 0.004 in value from a plain
+    # `wood` shirt: two legal, well-separated ramps landing on the same step,
+    # so the figure rendered as one column with no waist. Found by
+    # `check_waistline`, which was itself promoted off the generated-extras
+    # sheet -- the generator turned up a defect in the hand-written roster.
+    CharacterSpec("elder",    shirt="wood",    trousers="neutral-2", hair_style="short",
                   hair_mat="cream+1", accessory_kind=None,     bulk=1.08),
     CharacterSpec("writer",   shirt="sky",     trousers="wood",    hair_style="bun",
                   hair_mat="wood-4",  accessory_kind="cup",    accessory_mat="cream"),
-    CharacterSpec("friend",   shirt="foliage", trousers="rose",    hair_style="bob",
+    # As `elder`: foliage over rose was 0.020 apart in value.
+    CharacterSpec("friend",   shirt="foliage", trousers="rose-2",  hair_style="bob",
                   hair_mat="wood-3",  accessory_kind=None),
 ]
 
 ROSTER = [BARISTA] + CUSTOMERS
+
+
+# --- generated characters ----------------------------------------------------
+
+# The parts library, as the generator sees it. Kept beside the roster rather
+# than derived from `hair()` and `accessory()` by regex, because a list that
+# reads itself out of an implementation silently loses an option the day
+# somebody renames a branch.
+HAIR_STYLES = ("short", "bob", "long", "bun", "cap", "curly")
+ACCESSORIES = (None, "scarf", "bag", "cup", None)
+
+# Shirts and trousers may take any ramp; hair may not. Hair on `sky` or
+# `foliage` is a costume choice this art direction does not make.
+GARMENT_RAMPS = ("wood", "cream", "foliage", "rose", "sky", "neutral")
+
+# Three ramps, every offset. The ramps are an art-direction choice -- black,
+# grey, brown, blonde and white are hair; pink is a costume, and the generator
+# put pink hair on an extra the first time `rose` was in this list. The
+# OFFSETS deliberately are not filtered.
+#
+# That distinction is the whole point. An earlier version listed seven hair
+# tones hand-picked to pass `check_contrast` against a mid-wood skin, and
+# across 200 generated specs the contrast check fired exactly zero times: the
+# constraint had been solved by hand and the check was decoration hanging off a
+# random draw. A solver whose search space is pre-filtered to the answer is not
+# solving anything. Offering every offset -- including the mid browns that
+# vanish into a face -- makes the check reject 47% of proposals, and it is the
+# check rather than a person that decides which tones are usable.
+HAIR_MATS = tuple(f"{r}{o:+d}" if o else r
+                  for r in ("neutral", "wood", "cream")
+                  for o in (-4, -3, -2, -1, 0, 1, 2))
+
+
+def generate_spec(seed: int, ramps=None, tries: int = 60) -> CharacterSpec:
+    """A character built by proposing and testing, not by being typed out.
+
+    The roster is nine hand-written specs, and characters are what this factory
+    exists to produce -- so it is the largest remaining piece of the library
+    that is an *asset* rather than a tool. A game wants forty extras and no
+    person should be choosing forty pairs of trousers.
+
+    What makes this more than a random draw is that the checks come first.
+    `check_contrast` and `check_palette_spread` were both promoted from human
+    rejections -- hair vanishing into a face, and a customer built entirely
+    from one ramp reading as a silhouette-shaped hole at the till -- and both
+    are predicates on a finished spec. Run them *before* accepting a proposal
+    rather than after, and they stop being graders and become a solver. That is
+    the same move `Layout.scatter` made with `collisions` and `grounded`, and
+    it is the strongest argument this repo has that the checks were worth
+    writing.
+
+    Raising `tries` cannot make an unsatisfiable palette satisfiable, so a
+    proposal that never passes falls back to the last one tried and is left for
+    the checks to report. Silently returning something invalid would be worse
+    than the hand-written roster it replaces.
+    """
+    ramps = ramps or _palette()
+    st = (seed * 2654435761 + 1013904223) & 0xFFFFFFFF
+
+    def rnd():
+        nonlocal st
+        st ^= st >> 16
+        st = (st * 2246822519) & 0xFFFFFFFF
+        st ^= st >> 13
+        st = (st * 3266489917) & 0xFFFFFFFF
+        st = (st ^ (st >> 16)) & 0xFFFFFFFF
+        return st / 0xFFFFFFFF
+
+    def pick(seq):
+        return seq[int(rnd() * len(seq)) % len(seq)]
+
+    spec = None
+    for _ in range(tries):
+        shirt = pick(GARMENT_RAMPS)
+        # Offsets on garments, because two characters in flat `sky` and flat
+        # `rose` still read as two poster-paint blocks. A step either way is
+        # what separates a shirt from a swatch.
+        shirt += pick(("", "", "+1", "-1", "-2"))
+        trousers = pick(GARMENT_RAMPS) + pick(("", "-1", "-2", "-2"))
+        acc = pick(ACCESSORIES)
+        spec = CharacterSpec(
+            f"extra{seed:02d}", shirt=shirt, trousers=trousers,
+            hair_style=pick(HAIR_STYLES), hair_mat=pick(HAIR_MATS),
+            accessory_kind=acc,
+            accessory_mat=pick(GARMENT_RAMPS) + pick(("", "-1", "+1")),
+            bulk=0.94 + rnd() * 0.22)
+        if not (check_contrast(ramps, [spec]) + check_palette_spread([spec])
+                + check_waistline(ramps, [spec])):
+            return spec
+    return spec
+
+
+def generate_roster(n: int = 8, seed: int = 1, ramps=None) -> list:
+    """`n` extras from consecutive seeds."""
+    ramps = ramps or _palette()
+    return [generate_spec(seed + i, ramps) for i in range(n)]
+
+
+def _palette():
+    from pixelize import load_palette
+    return load_palette()
 
 
 # --- promoted checks ---------------------------------------------------------
@@ -401,6 +508,47 @@ def check_contrast(ramps, roster=None) -> list[str]:
         if gap < MIN_HAIR_SKIN_GAP:
             out.append(f"{s.name}: hair '{s.hair_mat}' is {gap:.3f} from skin "
                        f"(need {MIN_HAIR_SKIN_GAP}) -- head reads as one lump")
+    return out
+
+
+# A shirt and trousers this close in lightness give a figure no waistline.
+# Measured in OKLab L, and set at one ramp step: the palette's ramps run about
+# 0.10 apart, so anything under that is the two garments landing on the same or
+# adjacent steps.
+MIN_WAIST_GAP = 0.085
+
+
+def check_waistline(ramps, roster=None) -> list[str]:
+    """A shirt and trousers that resolve to the same value have no edge between them.
+
+    Promoted from the generated-extras sheet, which is what the sheet is for.
+    `check_palette_spread` allows two of four parts on one ramp, and that is
+    the right rule -- it exists to stop a figure being built entirely from one
+    ramp. But it counts *ramps*, not values, so a rose shirt over rose trousers
+    passes it at exactly the 50% limit and renders as a single pink column with
+    no waist. At 46 px of figure the waist is one edge, and losing it costs
+    more than any of the detail this pipeline spends triangles on.
+
+    This is the same shape of gap as the one `check_palette_spread` itself
+    filled: `check_contrast` was already comparing two parts for value
+    separation, just the wrong two.
+    """
+    from oklab import srgb_to_oklab
+    from pixelize import material
+
+    out = []
+    for s in roster or ROSTER:
+        vals = []
+        for part in (s.shirt, s.trousers):
+            ramp, tone = material(part)
+            steps = ramps[ramp]
+            vals.append(srgb_to_oklab(
+                steps[_clamp(len(steps) // 2 + tone, steps)])[0])
+        gap = abs(vals[0] - vals[1])
+        if gap < MIN_WAIST_GAP:
+            out.append(f"{s.name}: shirt {s.shirt!r} and trousers "
+                       f"{s.trousers!r} are {gap:.3f} apart in value "
+                       f"(need {MIN_WAIST_GAP}) -- no waistline")
     return out
 
 
@@ -489,6 +637,7 @@ if __name__ == "__main__":
     from pixelize import load_palette
     ramps = load_palette()
     problems = (check_contrast(ramps) + check_palette_spread()
+                + check_waistline(ramps)
                 + check_direction_stability())
     for p in problems:
         print(f"  BLOCKER  {p}")

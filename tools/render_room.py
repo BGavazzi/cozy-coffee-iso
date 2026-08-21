@@ -157,16 +157,17 @@ def build_room():
     for i in range(3):
         add(A.counter(kick=False, seed=1 + i, front="x"),
             at=(0.45, 5.3 + i * 1.5, 0), name=f"bar#{i}")
-        add(A.stool(), at=(1.70, 5.3 + i * 1.5, 0), name=f"stool#{i}")
+        add(A.stool(seed=91 + i), at=(1.70, 5.3 + i * 1.5, 0), name=f"stool#{i}")
 
     # --- dressing
     add(A.plant_large(seed=3), at=(0.5, 3.2, 0),  name="decor#plant1")
     add(A.plant_large(seed=8), at=(12.5, 1.0, 0), name="decor#plant2")
     add(A.plant_large(seed=15), at=(7.1, 4.2, 0),  name="decor#plant3")
     add(A.bookshelf(seed=4), at=(9.9, 0.25, 0), name="decor#shelf")
-    add(A.crate(), at=(0.55, 1.15, 0),      name="decor#crate1")
-    add(A.crate(), at=(0.55, 1.15, 0.52),   name="decor#crate2")
-    add(A.crate(), at=(13.15, 1.9, 0),      name="decor#crate3")
+    add(A.crate(seed=11), at=(0.55, 1.15, 0),   name="decor#crate1")
+    add(A.crate(seed=12), at=(0.55, 1.15, A.crate(seed=11).top_z),
+        name="decor#crate2")
+    add(A.crate(seed=13), at=(13.15, 1.9, 0),   name="decor#crate3")
     for lx, ly in ((4.6, 5.0), (6.6, 7.6), (9.9, 4.5)):
         add(A.pendant_lamp(), at=(lx - 0.5, ly - 0.5, 0.60), name=f"decor#lamp{lx}",
             track=False)
@@ -187,12 +188,12 @@ def build_room():
     add(A.armchair(),   at=(4.4, 7.6, 0), rot=205, name="seat#arm1", centre=True)
     add(A.armchair(),   at=(4.7, 9.0, 0), rot=25,  name="seat#arm2", centre=True)
     add(A.side_table(), at=(3.4, 9.1, 0),          name="table#side1", centre=True)
-    add(A.flower_vase(), at=(3.4, 9.1, 0.53),      name="clutter#vase1", centre=True)
+    add(A.flower_vase(seed=21), at=(3.4, 9.1, 0.53), name="clutter#vase1", centre=True)
 
     add(A.bench(2.0),   at=(12.6, 3.6, 0), rot=0,  name="seat#bench1", centre=True)
     add(A.side_table(), at=(12.5, 4.8, 0),         name="table#side2", centre=True)
     add(A.armchair(),   at=(12.5, 5.9, 0), rot=180, name="seat#arm3", centre=True)
-    add(A.basket("foliage"), at=(13.3, 5.6, 0),    name="decor#basket1", centre=True)
+    add(A.basket("foliage", seed=31), at=(13.3, 5.6, 0), name="decor#basket1", centre=True)
 
     # Against the left wall, not mid-floor. A free-standing rack at (8.5, 8.4)
     # projected straight over a chair 1.9 tiles behind it and hid 67% of it --
@@ -213,7 +214,7 @@ def build_room():
     add(A.cake_stand(), at=(5.55, 0.95, 0.92), name="clutter#cake", centre=True)
     add(A.cup_and_saucer(), at=(5.6, 0.72, 0.92), name="clutter#cup1")
     add(A.cup_and_saucer(), at=(5.05, 1.15, 0.92), name="clutter#cup2")
-    add(A.flower_vase(),    at=(7.6, 0.95, 0.92), name="clutter#vase2", centre=True)
+    add(A.flower_vase(seed=22), at=(7.6, 0.95, 0.92), name="clutter#vase2", centre=True)
 
     # --- generated dressing
     #
@@ -234,19 +235,20 @@ def build_room():
     # count is small and the regions are tight. The small props carry the
     # density instead.
     made = 0
-    made += L.scatter(lambda i: A.crate(), (0.55, 1.7, 1.35, 4.4), 3,
+    made += L.scatter(lambda i: A.crate(seed=140 + i), (0.55, 1.7, 1.35, 4.4), 3,
                       "decor#gcrate", seed=11)
-    made += L.scatter(lambda i: A.basket("foliage"), (8.7, 0.35, 11.2, 1.15), 4,
+    made += L.scatter(lambda i: A.basket("foliage", seed=150 + i),
+                      (8.7, 0.35, 11.2, 1.15), 4,
                       "decor#gbasket", seed=12)
     made += L.scatter(lambda i: A.plant_small(seed=40 + i), (0.5, 0.45, 13.4, 1.55), 6,
                       "decor#gplantN", seed=13)
     made += L.scatter(lambda i: A.plant_small(seed=70 + i), (0.45, 1.6, 1.55, 9.3), 5,
                       "decor#gplantW", seed=18)
-    made += L.scatter(lambda i: A.basket("rose"), (11.8, 1.6, 13.3, 3.6), 3,
+    made += L.scatter(lambda i: A.basket("rose", seed=160 + i), (11.8, 1.6, 13.3, 3.6), 3,
                       "decor#gbasket2", seed=14)
     made += L.scatter(lambda i: A.cup_and_saucer(), (2.1, 0.6, 7.9, 1.3), 6,
                       "clutter#gcup", z=0.92, seed=16)
-    made += L.scatter(lambda i: A.flower_vase(), (0.5, 5.2, 1.4, 8.5), 3,
+    made += L.scatter(lambda i: A.flower_vase(seed=170 + i), (0.5, 5.2, 1.4, 8.5), 3,
                       "clutter#gvase", z=0.82, seed=17)
     print(f"  generated dressing: {made} props placed by constraint")
 

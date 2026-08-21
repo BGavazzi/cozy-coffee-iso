@@ -196,6 +196,24 @@ def check(man: dict) -> int:
         # brown smear has only proved the rules were incomplete.
         for msg in _c.check_palette_spread():
             errs.append(msg)
+        # And a figure needs a waist. `check_palette_spread` counts ramps, not
+        # values, so two different ramps landing on the same step slip past it:
+        # `elder` shipped with a wood shirt 0.004 in value from neutral
+        # trousers and rendered as one column.
+        from pixelize import load_palette as _lp
+        for msg in _c.check_waistline(_lp()):
+            errs.append(msg)
+        # The generated extras have to pass everything the hand-written roster
+        # does. They are proposed against exactly these predicates, so a failure
+        # here means the solver has stopped consulting one of them -- which is
+        # invisible on the sheet, because the sheet only shows what was
+        # accepted.
+        _ramps = _lp()
+        _extras = _c.generate_roster(12, seed=1, ramps=_ramps)
+        for msg in (_c.check_contrast(_ramps, _extras)
+                    + _c.check_palette_spread(_extras)
+                    + _c.check_waistline(_ramps, _extras)):
+            errs.append(f"generated: {msg}")
         from animate import check_direction_labels
         for msg in check_direction_labels():
             errs.append(msg)

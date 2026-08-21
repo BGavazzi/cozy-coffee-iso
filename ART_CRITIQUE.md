@@ -1035,16 +1035,118 @@ fires at 0% against its own floor. That floor is set at 4%, under the measured
 thresholds needed, where defaults chosen looser than the scan that found the
 defect left the check blind.
 
+## Seven more generators, and a thing that is not a silhouette
+
+`table`, `chair`, `bookshelf` and `counter` covered the furniture a person
+looks at. What was left was the stuff a room is *filled* with, and the scatter
+solver had quietly made that worse: it places crates, baskets, cups and vases
+by the dozen, and every one of them was the same mesh, so raising the density
+had multiplied the repetition rather than hiding it.
+
+Most of these have no silhouette worth varying. A crate is a box. What one
+crate has that another does not is its height, how far its carcass is inset,
+and how many bands divide it -- three numbers, and that is the whole of it. A
+stool is a disc on a post, so height is nearly all of it, plus a foot ring on
+about half of them, which is four pixels and the only thing that tells two
+stools of the same height apart.
+
+The vase was the one worth doing properly. Three identical vases on three
+tables is the same tell as three identical plants and slightly worse, because
+a vase of flowers is the object in a cafe that most obviously came from
+somebody choosing them. It now grows two to four stems at a random turn, each
+with an actual stem rather than a head hovering above a neck, and it measures
+62% spread -- the most varied thing in the library.
+
+The crate then repeated the table's mistake before it was even placed: it
+gets *stacked*, and once its height varied, whatever sat on it floated. The
+same `top_z` fix, for the same reason -- a generator that changes a dimension
+without saying so leaves `grounded` reporting a placement bug that is really
+the generator's.
+
+The dressing pass dropped from 19 placed props to 18 with nothing else
+changed, which is the solver doing its job: crates and baskets of varying size
+no longer all fit where uniform ones did.
+
+| generator | screen spread |
+|---|---|
+| `counter` | 7% (floor 4%) |
+| `bookshelf` | 18% |
+| `table_round` | 19% |
+| `stool` | 21% |
+| `basket` | 30% |
+| `table_4top` | 30% |
+| `crate` | 32% |
+| `chair` | 34% |
+| `chair, cushioned` | 41% |
+| `plant_small` | 47% |
+| `plant_large` | 53% |
+| `flower_vase` | 62% |
+
+## The roster stops being typed
+
+Nine hand-written character specs were the largest asset left in a repo that is
+supposed to be a factory, and characters are the thing it exists to produce. A
+game wants forty extras, and nobody should be choosing forty pairs of trousers.
+
+`generate_spec` proposes a character and tests it. That is the whole design,
+and it is the same move `Layout.scatter` made with `collisions` and `grounded`:
+`check_contrast` and `check_palette_spread` were both promoted from human
+rejections and are both predicates on a finished spec, so running them *before*
+accepting a proposal turns two graders into a solver.
+
+**The first version cheated, and measuring caught it.** It offered seven hair
+tones, all hand-picked to pass contrast against a mid-wood skin, and across 200
+generated specs `check_contrast` fired exactly **zero times**. That is a random
+draw with a check bolted to the side: the constraint had been solved by hand,
+and the check was decoration. Offering every offset of every plausible hair
+ramp instead -- including the mid browns that vanish into a face -- makes it
+reject 43% of proposals, and it is the check rather than a person that decides
+which twelve of twenty-one tones are usable.
+
+The ramps stayed a choice, and the offsets did not. That distinction is the
+line between art direction and constraint solving. `rose` was in the hair list
+for one run and the generator put pink hair on an extra, which is a costume
+this art direction does not make -- so `rose` came out. Which *shades* of brown
+work is not a taste question and belongs to the check.
+
+## And then the generator found a defect in the hand-written roster
+
+Looking at the first sheet of extras, one had a rose shirt over rose trousers
+and rendered as a single pink column. `check_palette_spread` passed it at
+exactly its 50% limit, correctly: it counts **ramps**, and its job is to stop a
+figure being built entirely from one. It cannot see two different ramps landing
+on the same value.
+
+`check_waistline` compares shirt and trousers in OKLab L, at a floor of one
+ramp step. Run against the roster it had never been near, it failed two of the
+nine archetypes immediately -- `elder` shipped with a wood shirt **0.004** in
+value from neutral trousers, and `friend` foliage over rose at 0.020. Both had
+survived five passes of human critique.
+
+This is the ratchet running in a direction it had not run before. Every check
+so far was promoted from a person rejecting something. This one was promoted
+from a person rejecting something *the machine made*, and it then found two
+defects in what the people had made. At 46 px of figure the waist is one edge,
+and losing it costs more than any of the detail this pipeline spends triangles
+on.
+
+The sixteenth check is the other half of that: the generated extras have to
+pass everything the hand-written roster does. They are proposed against exactly
+those predicates, so a failure there means the solver has stopped consulting
+one of them -- which is invisible on the sheet, because a sheet only shows what
+was accepted. Disable one predicate in the solver and six of twelve extras fail
+downstream.
+
 ## Where the numbers landed
 
 | | fifth pass | sixth pass |
 |---|---|---|
 | bases the tables can be built on | 2 fixed meshes | **4 styles × top shape, thickness, overhang** |
-| seeded generators in the library | 3 | **7** |
+| seeded generators in the library | 3 | **11**, plus the character roster |
 | floor texture | one amplitude everywhere | **derived from where the seats and tills are** |
 | high-key share of frame | 63.8% | **66.7%** |
 | generator range | unmeasured | **measured, and a check** |
-| automated checks in the ratchet | 11 | **12** |
+| automated checks in the ratchet | 11 | **16** |
 
 Median L, chroma and the extremes are unmoved, the checks stay clean, and the
 render is still byte-identical across processes.
@@ -1052,8 +1154,11 @@ render is still byte-identical across processes.
 ## Still open
 
 - The espresso machine, bench, armchair and pastry case are still fixed
-  meshes. Tables, chairs, the bookshelf and the counter show the shape of the
-  replacement.
+  meshes. Eleven others show the shape of the replacement.
+- `ingest.py` binds an arbitrary mesh to the palette and the tile grid, so the
+  seam stages 1–3 attach to now exists and is checked. Nothing feeds it yet,
+  which is exactly why it needed checks: an adapter that is never exercised is
+  an adapter that is wrong by the time something arrives.
 - Stages 1–3 (SDXL concept → TRELLIS 2 mesh → UniRig rig) remain unbuilt.
   Everything here is still the deterministic render half.
 - Furniture screen spread sits at 19–34% against the plants' 47–53%. That is

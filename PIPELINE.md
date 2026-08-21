@@ -167,7 +167,7 @@ foliage, fabric and skin — most of the material range a 2D game needs.
 | 5 (render) | working — exact 2:1, 8 azimuths, camera-space key. **Consumes OBJ meshes** via `mesh.py`, or analytic primitives as a fixture |
 | 6 (pixelize) | working — `pixelize.py`, ramp-quantized, zero contamination |
 | 7 (metadata) | working — `animate.py` emits `atlas.json`: frame rects, per-clip anchors, fps, direction order |
-| 8 (auto-review) | working — `art_review.py` and friends, **14 checks**, all run by `manifest.py --check` |
+| 8 (auto-review) | working — `art_review.py` and friends, **16 checks**, all run by `manifest.py --check` |
 | 9 (human critique) | working — `review_queue.py`, contact sheet + ratchet |
 
 `isorender.py` is a software raytracer and `mesh.py` an orthographic rasterizer,
