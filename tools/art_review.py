@@ -368,6 +368,7 @@ GENERATORS = (
     ("chair", lambda A, s: A.chair(seed=s), 1.4),
     ("plant_large", lambda A, s: A.plant_large(seed=s), 1.7),
     ("plant_small", lambda A, s: A.plant_small(seed=s), 1.1),
+    ("bookshelf", lambda A, s: A.bookshelf(seed=s), 1.9),
 )
 
 # Below this a row of seeds reads as one object. It is set under the furniture
@@ -380,9 +381,21 @@ GENERATORS = (
 MIN_SILHOUETTE_SPREAD = 0.12
 
 
-def silhouette(mesh, azimuth: float, span: float, res: int = 64) -> frozenset:
-    """The set of pixels a mesh covers, in a framing shared with its siblings."""
-    from isorender import DimetricCamera, dot
+def screen_materials(mesh, azimuth: float, span: float, res: int = 64) -> list:
+    """The material each pixel resolves to, in a framing shared with siblings.
+
+    This started out as a plain silhouette -- the set of covered pixels -- on
+    the argument that the outline is what survives the downsample. That is true
+    of a chair and false of a bookcase. An open-fronted carcass has the same
+    outline whatever is on its shelves, so the seeded bookshelf measured 0%
+    spread across eight seeds that plainly differ, and the check would have
+    condemned a working generator.
+
+    Resolving materials instead subsumes the silhouette case, since an
+    uncovered pixel is simply a pixel whose material is None, and it counts a
+    change of interior as the change it is.
+    """
+    from isorender import DimetricCamera, cross, dot, norm, sub
     import math
     cam = DimetricCamera(azimuth)
     vs = mesh.verts
@@ -390,12 +403,17 @@ def silhouette(mesh, azimuth: float, span: float, res: int = 64) -> frozenset:
           + min(dot(v, cam.right) for v in vs)) * 0.5
     cv = (max(dot(v, cam.up) for v in vs)
           + min(dot(v, cam.up) for v in vs)) * 0.5
-    inv = res / (2.0 * (span * 0.5))
-    hit = set()
-    for tri, _n, _m in mesh.faces:
-        pts = [((dot(vs[i], cam.right) - cu) * inv + res * 0.5,
-                res * 0.5 - (dot(vs[i], cam.up) - cv) * inv) for i in tri]
-        (ax, ay), (bx, by), (cx, cy) = pts
+    inv = res / span
+    zbuf = [-1e30] * (res * res)
+    out: list = [None] * (res * res)
+    for tri, _n, mat in mesh.faces:
+        a3, b3, c3 = (vs[i] for i in tri)
+        if dot(norm(cross(sub(b3, a3), sub(c3, a3))), cam.dir) <= 0.0:
+            continue
+        pts = [((dot(v, cam.right) - cu) * inv + res * 0.5,
+                res * 0.5 - (dot(v, cam.up) - cv) * inv,
+                dot(v, cam.dir)) for v in (a3, b3, c3)]
+        (ax, ay, az), (bx, by, bz), (cx, cy, cz) = pts
         area = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
         if abs(area) < 1e-12:
             continue
@@ -407,9 +425,32 @@ def silhouette(mesh, azimuth: float, span: float, res: int = 64) -> frozenset:
                 fx = px + 0.5
                 w0 = ((bx - ax) * (fy - ay) - (by - ay) * (fx - ax)) / area
                 w1 = ((cx - bx) * (fy - by) - (cy - by) * (fx - bx)) / area
-                if w0 >= -1e-9 and w1 >= -1e-9 and 1.0 - w0 - w1 >= -1e-9:
-                    hit.add(py * res + px)
-    return frozenset(hit)
+                w2 = 1.0 - w0 - w1
+                if w0 < -1e-9 or w1 < -1e-9 or w2 < -1e-9:
+                    continue
+                z = w1 * az + w2 * bz + w0 * cz
+                i = py * res + px
+                if z > zbuf[i]:
+                    zbuf[i], out[i] = z, mat
+    return out
+
+
+def _screen_spread(frames: list) -> float:
+    """Mean pairwise disagreement, over the pixels either frame covers."""
+    pairs = [(a, b) for i, a in enumerate(frames) for b in frames[i + 1:]]
+    if not pairs:
+        return 0.0
+    total = 0.0
+    for a, b in pairs:
+        union = differ = 0
+        for x, y in zip(a, b):
+            if x is None and y is None:
+                continue
+            union += 1
+            if x != y:
+                differ += 1
+        total += differ / (union or 1)
+    return total / len(pairs)
 
 
 def check_generator_range(seeds: int = 8, azimuth: float = 45.0,
@@ -437,13 +478,10 @@ def check_generator_range(seeds: int = 8, azimuth: float = 45.0,
 
     out = []
     for name, factory, span in GENERATORS:
-        shapes = [silhouette(factory(A, s + 1), azimuth, span)
-                  for s in range(seeds)]
-        pairs = [(a, b) for i, a in enumerate(shapes) for b in shapes[i + 1:]]
-        spread = sum(1.0 - len(a & b) / (len(a | b) or 1)
-                     for a, b in pairs) / (len(pairs) or 1)
+        spread = _screen_spread([screen_materials(factory(A, s + 1), azimuth,
+                                                  span) for s in range(seeds)])
         if spread < floor:
-            out.append(f"{name}: silhouette spread {spread:.0%} over {seeds} "
+            out.append(f"{name}: screen spread {spread:.0%} over {seeds} "
                        f"seeds (floor {floor:.0%}) -- the seed is barely "
                        f"changing the shape")
     return out

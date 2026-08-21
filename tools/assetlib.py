@@ -746,7 +746,76 @@ def plant_small(seed: int = 7) -> Mesh:
     return leafy_plant(height=0.52, seed=seed, stems=4)
 
 
-def bookshelf() -> Mesh:
+# Book spine colours. Deliberately drawn from four different ramps: a shelf of
+# books is the one place in a cafe where a dozen unrelated hues sit together,
+# and it is the cheapest hue variety the room can buy, since the shelf is small
+# enough that no single spine ever becomes a mass.
+BOOK_SPINES = ("rose-1", "foliage-2", "cream-1", "wood+1", "neutral-1",
+               "rose-3", "foliage", "sky-1", "wood-1", "cream-3")
+
+
+def _books(m: Mesh, x0: float, x1: float, y0: float, y1: float,
+           z: float, rnd, mats=BOOK_SPINES) -> None:
+    """A row of books, as a stepped block with the spines drawn in value.
+
+    The obvious approach is one box per book, and it does not survive the room.
+    `check_member_thickness` puts the floor at 4 px, which at 27.2 px per unit
+    is 0.147 of a tile -- so a modelled book spine is as wide as a hand, and a
+    shelf holds four of them. What that renders is a shelf of ledgers.
+
+    So the crate's idiom, which was invented for exactly this: the block is
+    real geometry, and the individual spines are flat quads a thousandth of a
+    unit proud of its face at different ramp steps. Nothing can be thinner than
+    a pixel because nothing is being modelled, the result cannot leave the
+    palette because a ramp step is all a spine ever is, and the block still
+    steps in height so the row keeps a silhouette.
+    """
+    span = x1 - x0
+    # Height steps first, so the silhouette is decided by geometry. Three is
+    # enough to read as "not a slab" and few enough that each stays well over
+    # the member floor.
+    edges = [x0, x0 + span * (0.42 + rnd() * 0.18), x1]
+    for i in range(2):
+        h = 0.15 + rnd() * 0.085
+        m.add_box((edges[i], y0, z), (edges[i + 1], y1, z + h), "wood-1")
+        # Spines on the +y face and the top, the two this camera can see.
+        #
+        # Divided, not accumulated. Laying spines left to right until the next
+        # one would not fit left up to a third of every section bare, which on
+        # a shelf reads as a gap rather than as a book. Choosing the count
+        # first and splitting the width fills it exactly.
+        #
+        # At the room's 27.2 px per unit a spine narrower than 0.074 is under
+        # two pixels. The first version ran 0.018-0.048 and was sub-pixel
+        # throughout: invisible in the room, aliasing between azimuths, and
+        # correctly reported by `check_generator_range` as a generator whose
+        # output does not vary -- because at the scale that matters, it did
+        # not. Being value rather than geometry exempts a detail from
+        # `check_member_thickness`, not from the pixel grid.
+        eps, run = 0.0012, edges[i + 1] - edges[i] - 0.012
+        n = max(2, int(run / 0.115))
+        w = run / n
+        for k in range(n):
+            x = edges[i] + 0.006 + k * w
+            mat = mats[int(rnd() * len(mats)) % len(mats)]
+            # A spine shorter than its neighbours is a book pushed in, which is
+            # most of what stops a row reading as a printed pattern.
+            top = z + h - (0.0 if rnd() > 0.30 else 0.02 + rnd() * 0.03)
+            # `facing` rather than a hand-ordered winding. Written the obvious
+            # way (left, right, up, back) this quad's normal pointed -y, into
+            # the carcass: culled by every visibility check in the tree, lit
+            # against a normal facing away from the key light in the passes
+            # that do not cull, and still perfectly convincing on a contact
+            # sheet, which is how it survived being written.
+            m.add_quad((x, y1 + eps, z + 0.012), (x + w - 0.006, y1 + eps, z + 0.012),
+                       (x + w - 0.006, y1 + eps, top), (x, y1 + eps, top), mat,
+                       facing=(0.0, 1.0, 0.0))
+            m.add_quad((x, y0, top + eps), (x + w - 0.006, y0, top + eps),
+                       (x + w - 0.006, y1, top + eps), (x, y1, top + eps), mat,
+                       facing=(0.0, 0.0, 1.0))
+
+
+def bookshelf(seed: int | None = None) -> Mesh:
     """Open at +y, which is the only side this camera can see into.
 
     It used to be a solid carcass box with the shelves and books modelled inside
@@ -754,7 +823,20 @@ def bookshelf() -> Mesh:
     plain wooden slab standing where a bookcase was supposed to be. All the
     detail existed; none of it was reachable. Building the carcass as a back,
     two sides and a top instead of one filled box is the entire fix.
+
+    The books were then one `FABRIC` box per shelf: three coloured slabs, in the
+    one object in the room that has an obvious reason to carry a dozen hues.
+    `_books` generates them.
     """
+    st = None if seed is None else _mix(seed)
+
+    def rnd():
+        nonlocal st
+        if st is None:
+            return 0.5
+        st = _mix(st)
+        return st / 0x7FFFFFFF
+
     m = Mesh()
     m.add_box((0.10, 0.55, 0.0), (0.90, 0.66, 1.45), WOOD)        # back panel
     for x0, x1 in ((0.10, 0.20), (0.80, 0.90)):                   # side panels
@@ -763,7 +845,10 @@ def bookshelf() -> Mesh:
     m.add_box((0.10, 0.55, 0.0), (0.90, 0.92, 0.10), WOOD)        # plinth
     for z in (0.34, 0.70, 1.06):
         m.add_box((0.20, 0.55, z), (0.80, 0.92, z + 0.05), CERAMIC)   # shelf
-        m.add_box((0.23, 0.62, z + 0.05), (0.77, 0.90, z + 0.26), FABRIC)
+        if seed is None:
+            m.add_box((0.23, 0.62, z + 0.05), (0.77, 0.90, z + 0.26), FABRIC)
+        else:
+            _books(m, 0.23, 0.77, 0.62, 0.90, z + 0.05, rnd)
     return m
 
 

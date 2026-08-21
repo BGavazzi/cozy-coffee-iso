@@ -156,7 +156,7 @@ def build_room():
     add(A.plant_large(seed=3), at=(0.5, 3.2, 0),  name="decor#plant1")
     add(A.plant_large(seed=8), at=(12.5, 1.0, 0), name="decor#plant2")
     add(A.plant_large(seed=15), at=(7.1, 4.2, 0),  name="decor#plant3")
-    add(A.bookshelf(),   at=(9.9, 0.25, 0), name="decor#shelf")
+    add(A.bookshelf(seed=4), at=(9.9, 0.25, 0), name="decor#shelf")
     add(A.crate(), at=(0.55, 1.15, 0),      name="decor#crate1")
     add(A.crate(), at=(0.55, 1.15, 0.52),   name="decor#crate2")
     add(A.crate(), at=(13.15, 1.9, 0),      name="decor#crate3")

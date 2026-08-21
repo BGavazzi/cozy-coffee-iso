@@ -25,6 +25,7 @@ from PIL import Image, ImageDraw
 sys.path.insert(0, str(Path(__file__).parent))
 import assetlib as A  # noqa: E402
 from animate import render_frame  # noqa: E402
+from art_review import _screen_spread, screen_materials  # noqa: E402
 from pixelize import load_palette  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -45,25 +46,8 @@ ROWS = (
                                            seed=s), 1.4),
     ("plant_large", lambda s: A.plant_large(seed=s), 1.7),
     ("plant_small", lambda s: A.plant_small(seed=s), 1.1),
+    ("bookshelf", lambda s: A.bookshelf(seed=s), 1.9),
 )
-
-
-def silhouette_spread(shapes) -> float:
-    """Mean pairwise disagreement between silhouettes, as a share of their area.
-
-    Counting *distinct* silhouettes is the same mistake `check_buried_detail`
-    made first time out: it scored 8/8 for a row in which one seed moved a
-    single pixel, because distinctness is a threshold at one pixel and says
-    nothing about magnitude. Jaccard distance says how different the shapes
-    actually are, which is the question a reviewer is asking.
-
-    Roughly: below 15% a row reads as one object, and around 30% the shapes are
-    clearly different pieces of furniture.
-    """
-    pairs = [(a, b) for i, a in enumerate(shapes) for b in shapes[i + 1:]]
-    if not pairs:
-        return 0.0
-    return sum(1.0 - len(a & b) / (len(a | b) or 1) for a, b in pairs) / len(pairs)
 
 
 def main() -> int:
@@ -86,7 +70,7 @@ def main() -> int:
     for r, (name, factory, span) in enumerate(ROWS):
         y = pad + r * (cell + pad)
         d.text((6, y + cell // 2 - 10), name, fill=LABEL)
-        shapes = []
+        frames = []
         for c in range(args.seeds):
             mesh = factory(c + 1)
             # Centre on the mesh's own bounds. Generators vary in height by
@@ -103,14 +87,15 @@ def main() -> int:
             img.putdata([p if p is not None else BG for p in px])
             sheet.paste(img.resize((cell, cell), Image.NEAREST),
                         (gutter + c * (cell + pad), y))
-            # Silhouette, not pixels: two chairs in different paints are two
-            # chairs, but two chairs in the same outline are one chair.
-            shapes.append(frozenset(i for i, p in enumerate(px)
-                                    if p is not None))
-        spread = silhouette_spread(shapes)
+            # The spread number comes from `art_review`, deliberately. The
+            # sheet and the check must not be able to report different figures
+            # for the same generator; if they diverge, one of them is wrong and
+            # nobody can tell which.
+            frames.append(screen_materials(mesh, args.azimuth, span))
+        spread = _screen_spread(frames)
         d.text((6, y + cell // 2 + 4), f"spread {spread:.0%}",
                fill=LABEL if spread >= 0.15 else (206, 122, 122))
-        print(f"  {name:18s} silhouette spread {spread:5.1%}"
+        print(f"  {name:18s} screen spread {spread:5.1%}"
               f"{'   <-- barely varies' if spread < 0.15 else ''}")
 
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)

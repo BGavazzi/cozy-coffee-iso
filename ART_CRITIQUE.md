@@ -910,12 +910,13 @@ separates the rows honestly:
 
 | generator | silhouette spread |
 |---|---|
-| `table_round` | 17% |
-| `chair, cushioned` | 18% |
-| `table_4top` | 19% |
-| `chair` | 19% |
-| `plant_large` | 41% |
+| `table_round` | 19% |
+| `bookshelf` | 18% |
+| `table_4top` | 30% |
+| `chair` | 34% |
+| `chair, cushioned` | 41% |
 | `plant_small` | 47% |
+| `plant_large` | 53% |
 
 The furniture generators produce meaningfully but modestly different shapes;
 the plants are genuinely different objects each time. That gap is real and
@@ -932,6 +933,58 @@ catch a dead generator, and tightening it toward the plants' 41% would be
 asserting that cafe chairs ought to vary as much as houseplants, which is a
 taste call nobody has made.
 
+## The bookshelf, and a metric that was wrong in the other direction
+
+The books were one `FABRIC` box per shelf -- three coloured slabs, in the one
+object in a cafe that has an obvious reason to carry a dozen unrelated hues.
+
+Modelling individual spines does not survive the room.
+`check_member_thickness` puts the floor at 4 px, which at 27.2 px per unit is
+0.147 of a tile, so a modelled spine is as wide as a hand and a shelf holds
+four of them: a shelf of ledgers. So the crate's idiom, which was invented for
+exactly this. The block is real geometry and steps in height, and the spines
+are flat quads a thousandth of a unit proud of its face at different ramp
+steps. Nothing can be thinner than a pixel because nothing is being modelled,
+and nothing can leave the palette because a ramp step is all a spine ever is.
+
+Then the new check reported the seeded bookshelf at **0% spread**, and it was
+right twice over for two different reasons, neither of them the one I assumed.
+
+**The metric was measuring the wrong thing.** It compared silhouettes, on the
+argument that the outline is what survives the downsample. That is true of a
+chair and false of a bookcase: an open-fronted carcass has the same outline
+whatever is on its shelves. Resolving *materials* per pixel subsumes the
+silhouette case -- an uncovered pixel is a pixel whose material is None -- and
+counts a change of interior as the change it is. Every generator's number went
+up, the chair from 22% to 34%, which is the metric finally seeing detail that
+was there all along.
+
+**And the spines were genuinely invisible.** At 0.018-0.048 wide they were
+sub-pixel at room scale throughout: aliasing between azimuths and contributing
+almost nothing to any frame. Being drawn as value rather than geometry exempts
+a detail from `check_member_thickness`; it does not exempt it from the pixel
+grid. They are 0.076-0.128 now, and divided across the shelf rather than laid
+left to right until one will not fit -- which had been leaving a third of every
+section bare, reading as a gap rather than as a book.
+
+## Winding, which nothing could have caught
+
+Underneath both of those was a third defect. The spine quads on the shelf front
+were written (left, right, up, back), which is the order anyone writes, and
+that produces a normal pointing *into* the carcass. Culled by every visibility
+check in the tree. Lit against a normal facing away from the key light in the
+passes that do not cull. And perfectly convincing on a contact sheet, which is
+how it survived being written.
+
+A scan of the whole library turned up no other case -- `flower_vase` reports 48
+faces pointing away from every azimuth, and they are the far hemispheres of
+three spheres, which is what a closed sphere is. So rather than build a check
+with a known false-positive class for a bug that has occurred once,
+`add_quad` now takes an optional `facing` vector and flips the winding itself.
+One argument, and the mistake stops being writable. The boxes, prisms and
+cylinders do not pass it, because their winding was fixed and verified at the
+point they were written.
+
 ## Where the numbers landed
 
 | | fifth pass | sixth pass |
@@ -947,11 +1000,11 @@ render is still byte-identical across processes.
 
 ## Still open
 
-- The espresso machine, counter, bookshelf and bench are still fixed meshes.
-  Tables and chairs show the shape of the replacement.
+- The espresso machine, counter and bench are still fixed meshes. Tables,
+  chairs and the bookshelf show the shape of the replacement.
 - Stages 1–3 (SDXL concept → TRELLIS 2 mesh → UniRig rig) remain unbuilt.
   Everything here is still the deterministic render half.
-- Furniture silhouette spread sits at 17–19% against the plants' 41–47%. That
-  is not obviously wrong — a cafe buys chairs from a catalogue and a
-  greenhouse does not — but nobody has decided what the target is, and an
-  unowned number drifts.
+- Furniture screen spread sits at 19–34% against the plants' 47–53%. That is
+  not obviously wrong — a cafe buys chairs from a catalogue and a greenhouse
+  does not — but nobody has decided what the target is, and an unowned number
+  drifts.

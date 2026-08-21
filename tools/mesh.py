@@ -39,7 +39,25 @@ class Mesh:
 
     # --- construction helpers -------------------------------------------------
 
-    def add_quad(self, a: Vec, b: Vec, c: Vec, d: Vec, material: str) -> None:
+    def add_quad(self, a: Vec, b: Vec, c: Vec, d: Vec, material: str,
+                 facing: Vec | None = None) -> None:
+        """Four coplanar points. `facing` flips the winding to point that way.
+
+        Winding is the one thing about a quad that is invisible until it is far
+        too late. A book spine laid on a shelf front went in as (left, right,
+        up, back), which is the order anyone writes, and produced a normal
+        pointing *into* the carcass: culled by every visibility check in the
+        tree, lit against a normal facing away from the key light in the passes
+        that do not cull, and still perfectly convincing on a contact sheet.
+
+        Passing `facing` costs one argument and removes the possibility. It is
+        optional because the boxes, prisms and cylinders below have their
+        winding fixed at the point they were written and verified.
+        """
+        if facing is not None:
+            n = cross(sub(b, a), sub(c, a))
+            if dot(n, facing) < 0.0:
+                a, b, c, d = d, c, b, a
         i = len(self.verts)
         self.verts += [a, b, c, d]
         self.faces.append(((i, i + 1, i + 2), None, material))
