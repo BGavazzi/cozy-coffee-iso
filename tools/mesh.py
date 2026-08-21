@@ -373,6 +373,10 @@ GRAIN_BY_MATERIAL = {
     "skin": (0.0, (1.0, 1.0, 1.0)),
 }
 
+# Full wear lifts a surface by about one ramp step. Less and the quantizer eats
+# it; more and the tracks read as a second light source on the floor.
+WEAR_LIFT = 1.15
+
 GRAIN_BY_RAMP = {
     "wood":    (0.85, (0.42, 2.30, 2.30)),
     "cream":   (0.65, (1.00, 1.00, 1.00)),
@@ -383,13 +387,97 @@ GRAIN_BY_RAMP = {
 }
 
 
+_UNBAKED = object()
+
+
+class WearField:
+    """Where the floor has been walked on, as a function of world position.
+
+    Grain gives every wooden surface the same texture everywhere, which is what
+    a factory finish looks like and not what a floor looks like. Real wear is
+    concentrated: pale, scuffed tracks in front of a counter and around every
+    chair, and untouched boards under the furniture and in the corners.
+
+    The point is that this is *derived*, not authored. `Layout.wear_field()`
+    reads the placements and puts a patch wherever feet go -- in front of each
+    seat, around the service counter, along the spine between them. Hand-placing
+    wear would be the same mistake as hand-placing the dressing: the room already
+    knows where people stand, because it knows where the chairs are.
+
+    Same shape as `LightRig`, deliberately. A pool with a radius and a falloff is
+    the right primitive for "influence that fades with distance", and having two
+    unrelated implementations of it would be worse than reusing the idea.
+    """
+
+    def __init__(self, pools=(), height: float = 0.55):
+        self.pools = list(pools)
+        # Wear is a floor phenomenon. Without this the field would scuff the
+        # walls and the tops of tables at whatever height happened to pass over
+        # a pool, which reads as damp rather than as traffic.
+        self.height = height
+        self._grid = _UNBAKED
+
+    # Cell size of the baked grid, in world units. At the shipping 27 px per
+    # unit this is about three pixels, which is finer than the wear itself
+    # varies -- the field is a sum of pools a tile across, so there is nothing
+    # below this scale to lose.
+    CELL = 0.12
+
+    def _plan(self, x: float, y: float) -> float:
+        best = 0.0
+        for cx, cy, r, amount in self.pools:
+            d = math.hypot(x - cx, y - cy)
+            if d >= r:
+                continue
+            # Not linear: traffic wears a plateau with a quick edge, not a cone.
+            t = 1.0 - (d / r)
+            best = max(best, amount * (t ** 0.55))
+        return best
+
+    def _bake(self) -> None:
+        """Grid the plan-view field once, because `at` is a per-pixel call.
+
+        Routes overlap by construction, so the pool list runs to a few hundred
+        and an exact query is a few hundred hypots. Multiplied by every lit
+        pixel of floor that is a render's worth of work spent re-deriving a
+        field that does not change during the render.
+        """
+        if not self.pools:
+            self._grid = None
+            return
+        pad = max(r for _, _, r, _ in self.pools)
+        self._x0 = min(c for c, _, _, _ in self.pools) - pad
+        self._y0 = min(c for _, c, _, _ in self.pools) - pad
+        self._nx = int((max(c for c, _, _, _ in self.pools) + pad
+                        - self._x0) / self.CELL) + 2
+        self._ny = int((max(c for _, c, _, _ in self.pools) + pad
+                        - self._y0) / self.CELL) + 2
+        self._grid = [self._plan(self._x0 + i * self.CELL,
+                                 self._y0 + j * self.CELL)
+                      for j in range(self._ny) for i in range(self._nx)]
+
+    def at(self, p: Vec) -> float:
+        if p[2] > self.height:
+            return 0.0
+        if self._grid is _UNBAKED:
+            self._bake()
+        if self._grid is None:
+            return 0.0
+        i = int((p[0] - self._x0) / self.CELL + 0.5)
+        j = int((p[1] - self._y0) / self.CELL + 0.5)
+        if not (0 <= i < self._nx and 0 <= j < self._ny):
+            return 0.0
+        return self._grid[j * self._nx + i] * (1.0 - (p[2] / self.height) ** 2)
+
+
 def rasterize(mesh: Mesh, cam: DimetricCamera, size: int,
               target: Vec = (0.0, 0.0, 0.62), smooth: bool = False,
               shadows: "ShadowMap | None" = None, fill: float = 0.0,
               bounce: float = 0.0, rig: "LightRig | None" = None,
               ambient: float = 0.10, key_gain: float = 0.80,
               haze: float = 0.0, haze_to: float = 0.82,
-              grain: float = 0.0, ramps: dict | None = None):
+              grain: float = 0.0, ramps: dict | None = None,
+              wear: "WearField | None" = None):
     """Orthographic scanline z-buffer. Returns (material, lambert, normal).
 
     Three light terms, and the third is not decoration:
@@ -535,10 +623,30 @@ def rasterize(mesh: Mesh, cam: DimetricCamera, size: int,
                         base = material.split("+")[0].split("-")[0]
                         amp, axis = GRAIN_BY_MATERIAL.get(
                             base, GRAIN_BY_RAMP.get(ramp, (0.0, (1.0, 1.0, 1.0))))
-                        g = ((amp / steps) if steps > 1 else 0.0, axis)
+                        # The step is the unit everything here is denominated
+                        # in. Grain is deliberately under one step, so it breaks
+                        # a flat field without competing with the lighting; wear
+                        # is deliberately about one, so it actually shows.
+                        step = (1.0 / steps) if steps > 1 else 0.0
+                        g = (amp * step, axis, step)
                         _grain_amp[material] = g
                     if g[0]:
-                        lam[i] = max(0.0, min(1.0, lam[i] + grain * g[0]
+                        amp, lift = grain * g[0], 0.0
+                        if wear is not None:
+                            w = wear.at(world)
+                            if w > 0.0:
+                                # Worn boards are paler -- the finish is rubbed
+                                # off -- and rougher. Both, or the tracks read as
+                                # a lighting artefact rather than as wear.
+                                #
+                                # The lift is a share of a RAMP STEP, not of the
+                                # grain amplitude. Denominating it in grain gave
+                                # a maximum lift of 0.086 against a step of 0.20,
+                                # so the quantizer rounded nearly all of it away
+                                # and the whole field moved 2.5% of pixels.
+                                amp *= 1.0 + 0.9 * w
+                                lift = WEAR_LIFT * g[2] * w
+                        lam[i] = max(0.0, min(1.0, lam[i] + lift + amp
                                               * surface_grain(world, g[1])))
                 if haze > 0.0:
                     zdepth[i] = z

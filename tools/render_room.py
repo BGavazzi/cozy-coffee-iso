@@ -389,7 +389,8 @@ def main() -> int:
                             fill=0.0 if args.no_shadows else 0.20,
                             bounce=0.26, rig=light_rig(),
                             ambient=0.05, key_gain=0.60,
-                            haze=0.30, grain=1.0, ramps=ramps)
+                            haze=0.30, grain=1.0, ramps=ramps,
+                            wear=L.wear_field())
 
     px = downsample_modal(shade_toon(mat, lam, size, ramps, dither=True),
                           size, args.factor)

@@ -422,3 +422,91 @@ class Layout:
                 placed += 1
                 break
         return placed
+
+    def wear_field(self, seat_r: float = 0.62, seat_amt: float = 0.55,
+                   counter_r: float = 1.15, counter_amt: float = 0.85,
+                   spine_amt: float = 0.45):
+        """Traffic patches derived from what is already placed.
+
+        Nobody types these. A chair means someone stands in front of it to sit
+        down; a counter means a queue; and the route between the door corner and
+        the till is the busiest line in any cafe. All three are readable off the
+        placements, which is the whole argument for tracking placements in the
+        first place.
+
+        Wear goes in FRONT of a seat, not under it -- the boards under a chair
+        are the least-walked in the room, which is why an evenly-worn floor reads
+        as dirty rather than as used. `rots` already records which way each seat
+        faces, so "in front" is known exactly.
+
+        Returns a `mesh.WearField`.
+        """
+        import math
+
+        from mesh import WearField
+        pools = []
+        for p in self.items:
+            kind = p.name.split("#")[0]
+            cx, cy = (p.x0 + p.x1) / 2, (p.y0 + p.y1) / 2
+            if kind in ("chair", "stool", "seat"):
+                # A chair's back is at -y in local space, so a seat at rot=0 is
+                # approached from +y. Step one radius that way.
+                rot = math.radians(self.rots.get(p.name, 0.0))
+                # Local +y, rotated into world.
+                pools.append((cx - math.sin(rot) * 0.55,
+                              cy + math.cos(rot) * 0.55, seat_r, seat_amt))
+            elif kind in ("counter", "bar"):
+                # The customer side, which for the service run is +y.
+                pools.append((cx, cy + 0.95, counter_r, counter_amt))
+        # The routes. Wherever there is a counter and a seat, there is a line
+        # people walk between them, and that line is the busiest floor in the
+        # room -- so lay a run of pools along each one. Spurs to nearby seats
+        # share their first half, which makes the trunk in front of the counter
+        # come out strongest without anyone deciding it should be; that is what
+        # a worn floor looks like, and it falls out of the geometry.
+        #
+        # An earlier version picked a single "walkway" as the emptiest lane
+        # across the room. The scores came out 4.6 against 6.9 over 23
+        # candidates -- an argmin over what is essentially noise, which would
+        # have moved the walkway to a different place on any change to the
+        # dressing. Two real endpoints beat one shallow minimum.
+        tills = [q for q in pools if q[3] >= counter_amt]
+        seats = [q for q in pools if q[3] == seat_amt]
+        # Origins are the service run thinned onto a coarse grid. Neither
+        # extreme worked: the tills' centroid put the fan's apex a couple of
+        # tiles clear of the counter and left a bare stripe across the one
+        # stretch of floor that certainly is walked on, while one origin per
+        # placement gave nine, because a six-module counter is six placements
+        # and one counter -- 207 routes, and the room came out uniformly worn,
+        # which is the failure this whole field exists to fix.
+        origins: dict = {}
+        for q in tills:
+            origins.setdefault((round(q[0] / 1.8), round(q[1] / 1.8)), q)
+        for tx, ty, _, _ in origins.values():
+            for sx, sy, _, _ in seats:
+                steps = max(2, int(math.hypot(sx - tx, sy - ty) / 0.55))
+                for i in range(1, steps):
+                    t = i / steps
+                    # Fades toward the seat: the last stretch of any route is
+                    # walked by one party, the first by everybody.
+                    pools.append((tx + (sx - tx) * t, ty + (sy - ty) * t,
+                                  0.72, spine_amt * (1.0 - 0.45 * t)))
+        # Merge onto a grid. `at` is O(pools) per pixel, and the spurs overlap
+        # heavily by construction, so without this the trunk would be re-tested
+        # twenty times for every pixel it covers.
+        merged: dict = {}
+        for cx, cy, r, amt in pools:
+            k = (round(cx / 0.45), round(cy / 0.45), round(r, 2))
+            cur = merged.get(k)
+            if cur is None:
+                merged[k] = [cx, cy, r, amt, 1]
+            else:
+                cur[3], cur[4] = max(cur[3], amt), cur[4] + 1
+        # Traffic count, not just presence. `at` takes the max over pools, so
+        # without this a stretch of floor crossed by nine routes would wear
+        # exactly as much as one crossed by a single route -- which is how the
+        # first version came out uniformly faint across half the room. The
+        # trunk is now darker than the fringe for the reason it should be:
+        # more people walk down it.
+        return WearField([(cx, cy, r, min(0.92, amt * (1.0 + 0.11 * (n - 1))))
+                          for cx, cy, r, amt, n in merged.values()])
