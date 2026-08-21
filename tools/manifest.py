@@ -211,6 +211,14 @@ def check(man: dict) -> int:
         # eye on a contact sheet.
         for msg in check_generator_range():
             warns.append(msg)
+        # The stage 1-3 seam. Nothing feeds it yet, which is exactly why it
+        # needs a check: an adapter that is never exercised is an adapter that
+        # is wrong by the time something arrives.
+        from ingest import check_roundtrip, check_transform
+        for msg in check_roundtrip():
+            errs.append(f"ingest: {msg}")
+        for msg in check_transform():
+            errs.append(f"ingest: {msg}")
     except Exception as exc:                       # pragma: no cover
         warns.append(f"clip cross-check skipped: {exc}")
 

@@ -31,7 +31,7 @@ which is the point.
     python tools/review_queue.py stats            # what to automate next
 
     # the gates
-    python tools/manifest.py --check     # runs all twelve checks
+    python tools/manifest.py --check     # runs all fourteen checks
     python tools/character.py            # hair contrast, palette spread, silhouette floor
     python tools/fx.py                   # loop seams
 
@@ -41,11 +41,11 @@ Every human rejection carries a reason. Reasons that recur get promoted into the
 automated tier, so **human review volume falls as the factory matures**. `stats`
 names the next check to write rather than leaving it to guesswork.
 
-Twelve checks have been promoted so far: camera-space key light, hair/skin
+Fourteen checks have been promoted so far: camera-space key light, hair/skin
 contrast, per-character palette spread, silhouette pixel floor, seating
 orientation, member thickness, grounding, declared-symmetry verification,
-screen-space occlusion, buried detail, derived direction labels, and generator
-range. Most found a bug the moment they were written — floating counters,
+screen-space occlusion, buried detail, derived direction labels, generator
+range, palette-binding round trip, and ingest transform. Most found a bug the moment they were written — floating counters,
 back-to-front chairs, five wrong symmetry claims costing 31% of the effects
 budget, a queue of customers stacked into a single smear, an espresso machine
 whose entire mechanism was modelled inside its own carcass, and eight sprite
@@ -60,6 +60,14 @@ so `check_generator_range` asks whether consecutive seeds actually produce
 different silhouettes. Its first version counted *distinct* silhouettes and
 scored a perfect 8 of 8 for generators the eye read as a single object, because
 distinctness is a threshold at one pixel. It measures distance now.
+
+The last two guard the seam where stages 1–3 will attach — `ingest.py`, which
+binds an arbitrary mesh to the palette and the tile grid. Nothing feeds it yet,
+which is precisely why it needs checks: an adapter that is never exercised is an
+adapter that is wrong by the time something arrives. Both were verified to fail
+before being trusted, and one of them needed an instrument the other four
+assertions could not provide, because a mirrored mesh has the same bounds, the
+same height and the same materials as the original.
 
 Its floor is per-generator, and every relaxed one carries the reason it is
 relaxed. A single number is the wrong shape here: the default catches a

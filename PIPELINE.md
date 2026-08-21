@@ -162,17 +162,59 @@ foliage, fabric and skin — most of the material range a 2D game needs.
 
 | Stage | State |
 |---|---|
-| 1–3 (concept, mesh, rig) | specified, tooling verified available, not built |
+| 1–3 (concept, mesh, rig) | specified, tooling verified available, not built — but **the seam they attach to is built and checked**: `ingest.py` binds an arbitrary mesh to the palette and the tile grid |
 | 4 (motion) | working as a **procedural rig** — `character.py` poses, `animate.py` clips. Stands in for HY-Motion the way the rasterizer stands in for Blender |
 | 5 (render) | working — exact 2:1, 8 azimuths, camera-space key. **Consumes OBJ meshes** via `mesh.py`, or analytic primitives as a fixture |
 | 6 (pixelize) | working — `pixelize.py`, ramp-quantized, zero contamination |
 | 7 (metadata) | working — `animate.py` emits `atlas.json`: frame rects, per-clip anchors, fps, direction order |
-| 8 (auto-review) | working — `art_review.py`, 7 checks + direction-set |
+| 8 (auto-review) | working — `art_review.py` and friends, **14 checks**, all run by `manifest.py --check` |
 | 9 (human critique) | working — `review_queue.py`, contact sheet + ratchet |
 
 `isorender.py` is a software raytracer and `mesh.py` an orthographic rasterizer,
 both standing in for Blender so the deterministic half runs with no GPU or DCC
 dependency. Stages 4-9 are complete end to end.
+
+## The seam where stages 1-3 attach
+
+Stage 5 has always been described as consuming OBJ meshes, and that was true of
+meshes this repo wrote itself, whose `usemtl` tokens are already palette
+materials like `wood-2`. It was never true of anything a generator produces. A
+mesh out of TRELLIS arrives with vertex colours or an MTL full of arbitrary RGB,
+Y-up because almost everything upstream of a game engine is, and an arbitrary
+scale and origin. Each of those is a hard stop, and none of them needs a GPU to
+solve — so `ingest.py` is built and under check now, and stages 1-3 stop being
+hypothetical.
+
+**Binding is the interesting half, and it is not nearest-colour.** Everything
+downstream is built on one material meaning one ramp: grain resolves by ramp,
+tone offsets compose within a ramp, `check_palette_spread` counts ramps per
+character. So a ramp is chosen as an *identity* — by distance to the ramp
+treated as a curve through OKLab — and only then is the step chosen by
+lightness. A binder free to trade lightness against hue would scatter one
+object across several ramps wherever a shadow fell near a step of something
+else, and hand all of the above a mesh it cannot reason about.
+
+Three versions were wrong before that one was right, and each failed on a case
+the previous one fixed:
+
+| approach | failure |
+|---|---|
+| hue angle, with a chroma threshold forcing greys to `neutral` | `neutral` here is *not* achromatic — it is a cool violet-grey at chroma 0.016–0.022, so a threshold near its own chroma swallows every quiet colour. A warm off-white bound to `neutral+2` at dE 0.124 with `cream` two steps away. |
+| each ramp's chroma-weighted mean (a, b) | chroma is a function of lightness. A dark brown carries a third the chroma of a mid brown, so it scored nearer pale `cream` than `wood`. |
+| (a, b) at each ramp's nearest step in lightness | `cream` has no dark end, so its "nearest" step was 0.41 away in L — a ramp that cannot reach the source's lightness was competing as though it could. |
+
+Both halves are checked, and both checks were verified to fail before being
+trusted. `check_roundtrip` is exhaustive rather than sampled: every step of
+every bindable ramp is a colour the palette definitely contains, so each has
+exactly one right answer, and a stub binder that answers `neutral` for
+everything reports 36 of 37. `check_transform` runs a library chair out to a
+real OBJ and MTL — Y-up, scaled 37x, shifted off the origin, every material
+renamed — and asserts it comes back grounded, centred, at the height asked for,
+with its materials intact, and **not mirrored**. That last one needs its own
+instrument: a reflection has the same bounds, the same height and the same
+materials, so the first four assertions all pass on one. Signed volume is what
+catches it, and a mirrored asset renders perfectly right up until it is a
+character with a bag on the wrong shoulder in half of its directions.
 
 ## Stage 4: motion, and why the rig is six numbers
 
