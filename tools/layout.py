@@ -100,6 +100,44 @@ class Layout:
                                  min(zs), max(zs)) if track else
                           Placed("_untracked", m, 0, 0, 0, 0, 0, 0))
 
+    def add_seeded(self, factory, seeds, at=(0.0, 0.0, 0.0), rot: float = 0.0,
+                   name: str = "prop", azimuth: float = 45.0,
+                   occlude: float = 0.35, **kw) -> int:
+        """Place the first seed whose result breaks no rule already enforced.
+
+        `scatter` solves for a *position* with the seed fixed; this solves for a
+        seed with the position fixed, which is the case a fitted prop actually
+        has -- an espresso machine goes where the counter is, and what is free
+        to move is which machine it is.
+
+        Written after the third time a hand-picked constant had to dodge a
+        check. Seeding the pastry case made it taller, the taller case covered
+        39% of a crate two tiles behind it, and the fix was to read a table of
+        eight measurements and type the seed that passed. That is a person
+        doing a search, and a search is the thing this file is for. Note that
+        the two props involved were BOTH hand-placed: `scatter` has tested
+        occlusion at proposal time for two passes, and neither of these went
+        through it.
+
+        Falls back to the first seed if none pass, for the reason `scatter`
+        returns short rather than raising -- a room with one warning is worth
+        more than no room.
+        """
+        seeds = list(seeds)
+        for k in seeds:
+            before = len(self.items)
+            self.add(factory(k), at=at, rot=rot, name=name, **kw)
+            if len(self.items) == before:
+                return k                       # empty mesh, nothing placed
+            cand = self.items[-1]
+            self.items.pop()
+            if not self._conflicts(cand, azimuth, occlude):
+                self.items.append(cand)
+                return k
+            self.rots.pop(name, None)
+        self.add(factory(seeds[0]), at=at, rot=rot, name=name, **kw)
+        return seeds[0]
+
     def mesh(self) -> Mesh:
         return merge(*(p.mesh for p in self.items))
 

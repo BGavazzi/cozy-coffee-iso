@@ -101,17 +101,10 @@ def build_room():
         # which reads as a showroom. The generator is right either
         # way; choosing where a run starts is the room's job.
         add(A.counter(seed=4 + i), at=(2.0 + i, 0.85, 0), name=f"counter#{i}")
-    add(A.espresso_machine(), at=(2.3, 0.95, 0.92), name="prop#espresso")
     add(A.grinder(),          at=(4.4, 0.95, 0.92), name="prop#grinder")
     add(A.register(),         at=(6.3, 0.95, 0.92), name="prop#register")
     add(A.plant_small(seed=21), at=(7.15, 0.95, 0.92), name="prop#plant")
     add(A.table_clutter("counter"), at=(5.35, 0.95, 0.92), name="clutter#counter")
-    # Nudged left by 0.3 when `reader`'s scarf grew. The scarf had been
-    # measuring zero pixels of silhouette, so widening it to something a person
-    # is actually wearing pushed the seated figure over the 35% occlusion floor
-    # against the case two tiles behind it. At x=1.7 the case starts covering a
-    # crate instead; 1.9 is the gap between the two.
-    add(A.pastry_case(), at=(1.9, 2.05, 0), name="prop#pastry")
     # Menu boards hang ABOVE the counter-top props, not level with them. At
     # z=0 the board spans 0.55-1.30 and the espresso machine on the counter
     # spans 0.92-1.52 -- the same screen band, one tile apart in depth, so the
@@ -123,6 +116,14 @@ def build_room():
     # Tiles 2 and 3 are solid and sit directly above the counter run.
     for mx in (2.15, 3.05):
         add(A.menu_board(), at=(mx, 0.04, 0.62), name=f"decor#menu{mx}")
+    # And the machine goes in after the boards it hangs beneath, for the same
+    # reason the pastry case goes in after the crates: `add_seeded` can only
+    # solve against what is already in the room. Seeding the machine gave it an
+    # optional raised back panel, and the first seed with one covered 41% of a
+    # menu board -- caught by the check, then avoided by the solver rather than
+    # by a person reading the check's output and typing a different number.
+    L.add_seeded(lambda k: A.espresso_machine(seed=k), range(1, 12),
+                 at=(2.3, 0.95, 0.92), name="prop#espresso")
 
     # --- cafe tables, chairs on all four sides
     # Painted seating, cycling through the ramps that were starved of frame.
@@ -173,6 +174,18 @@ def build_room():
     add(A.crate(seed=12), at=(0.55, 1.15, A.crate(seed=11).top_z),
         name="decor#crate2")
     add(A.crate(seed=13), at=(13.15, 1.9, 0),   name="decor#crate3")
+    # The case is placed HERE, after the crates, and not up with the counter
+    # props it belongs to. `add_seeded` solves against what is already in the
+    # room, so a prop that has to clear its neighbours has to be added after
+    # them -- the same reason `scatter` runs last. Placed with the counter it
+    # would have found an empty corner and taken the first seed.
+    #
+    # Nudged left by 0.3 when `reader`'s scarf grew: the scarf had been
+    # measuring zero pixels of silhouette, so widening it to something a person
+    # is actually wearing pushed the seated figure over the 35% occlusion floor
+    # against the case two tiles behind it.
+    L.add_seeded(lambda k: A.pastry_case(seed=k), range(1, 12),
+                 at=(1.9, 2.05, 0), name="prop#pastry")
     for lx, ly in ((4.6, 5.0), (6.6, 7.6), (9.9, 4.5)):
         add(A.pendant_lamp(), at=(lx - 0.5, ly - 0.5, 0.60), name=f"decor#lamp{lx}",
             track=False)
@@ -190,14 +203,18 @@ def build_room():
     # smaller voids at x3-4/y7-9 and x8-9/y7-9. Each cluster below targets one
     # of them; a room reads as under-dressed long before it reads as under-lit.
     add(A.rug(3.0, 2.3, "wood"), at=(3.6, 7.1, 0), name="floor#rug3", track=False)
-    add(A.armchair(),   at=(4.4, 7.6, 0), rot=205, name="seat#arm1", centre=True)
-    add(A.armchair(),   at=(4.7, 9.0, 0), rot=25,  name="seat#arm2", centre=True)
+    L.add_seeded(lambda k: A.armchair(seed=k), range(5, 16), at=(4.4, 7.6, 0),
+                 rot=205, name="seat#arm1", centre=True)
+    L.add_seeded(lambda k: A.armchair(seed=k), range(9, 20), at=(4.7, 9.0, 0),
+                 rot=25, name="seat#arm2", centre=True)
     add(A.side_table(), at=(3.4, 9.1, 0),          name="table#side1", centre=True)
     add(A.flower_vase(seed=21), at=(3.4, 9.1, 0.53), name="clutter#vase1", centre=True)
 
-    add(A.bench(2.0),   at=(12.6, 3.6, 0), rot=0,  name="seat#bench1", centre=True)
+    L.add_seeded(lambda k: A.bench(2.0, seed=k), range(4, 15), at=(12.6, 3.6, 0),
+                 rot=0, name="seat#bench1", centre=True)
     add(A.side_table(), at=(12.5, 4.8, 0),         name="table#side2", centre=True)
-    add(A.armchair(),   at=(12.5, 5.9, 0), rot=180, name="seat#arm3", centre=True)
+    L.add_seeded(lambda k: A.armchair(seed=k), range(2, 13), at=(12.5, 5.9, 0),
+                 rot=180, name="seat#arm3", centre=True)
     add(A.basket("foliage", seed=31), at=(13.3, 5.6, 0), name="decor#basket1", centre=True)
 
     # Against the left wall, not mid-floor. A free-standing rack at (8.5, 8.4)

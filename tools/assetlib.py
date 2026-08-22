@@ -391,7 +391,7 @@ def counter(kick=True, seed: int | None = None, front: str = "y") -> Mesh:
     return m
 
 
-def espresso_machine() -> Mesh:
+def espresso_machine(seed: int | None = None) -> Mesh:
     """The largest object on the counter, so it carries the most detail.
 
     Every part of it used to be plain METAL, which at 1.8 tiles wide made the
@@ -400,21 +400,51 @@ def espresso_machine() -> Mesh:
     changed; what changed is that the parts now sit at different steps of the
     neutral ramp, plus a warm drip tray and wood portafilter handles. Detail by
     value, not by polygon count, exactly as the material tone offsets are for.
+
+    Detail goes on the +y and +x faces, because those are the only two this
+    camera will ever see. The group heads were at y=0.28 inside a body that
+    spans y 0.15-0.85 -- fully enclosed, contributing not one pixel, which is
+    the most expensive kind of detail there is.
+
+    `seed` varies the group count, the top shell and how many cups are warming
+    on it. The width is deliberately NOT varied: the machine is fitted to a
+    counter run whose modules are one tile each, and a generator free to resize
+    a built-in is a generator that will eventually hang it off the end.
     """
+    st = None if seed is None else _mix(seed)
+
+    def rnd():
+        nonlocal st
+        st = _mix(st)
+        return st / 0x7FFFFFFF
+
     m = Mesh()
     m.add_box((0.10, 0.15, 0.0), (1.90, 0.85, 0.46), METAL)
     m.add_box((0.10, 0.15, 0.40), (1.90, 0.85, 0.46), "neutral-2")   # shadow line
     m.add_box((0.20, 0.20, 0.46), (1.80, 0.80, 0.60), "neutral+1")   # lit top shell
     m.add_box((0.24, 0.20, 0.60), (1.76, 0.76, 0.635), "neutral+2")  # cup warmer
-    for cx in (0.50, 0.90, 1.30):                                    # cups on top
+    if seed is None:
+        cups, groups = (0.50, 0.90, 1.30), (0.55, 1.30)
+    else:
+        # A two-group machine is a cafe; a one-group is a kiosk and a
+        # three-group is a busy morning. The cup count follows the groups,
+        # because a machine that pulls more shots warms more cups -- variation
+        # that agrees with itself reads as a different shop rather than as
+        # noise.
+        n = (1, 2, 2, 3)[int(rnd() * 4) % 4]
+        span = 1.30
+        groups = tuple(0.35 + span * (i + 0.5) / n for i in range(n))
+        k = n + int(rnd() * 2)
+        cups = tuple(0.40 + 1.00 * (i + 0.5) / k for i in range(k))
+        if rnd() < 0.45:
+            # A raised back panel. The one part of the outline that is free to
+            # grow, since it sits against the wall behind the counter.
+            m.add_box((0.30, 0.22, 0.635), (1.70, 0.62, 0.635 + 0.10 + rnd() * 0.10),
+                      "neutral")
+    for cx in cups:
         m.add_cylinder((cx, 0.46, 0.635), 0.075, 0.09, CERAMIC, 8)
-    # Detail goes on the +y and +x faces, because those are the only two this
-    # camera will ever see. The group heads were at y=0.28 inside a body that
-    # spans y 0.15-0.85 -- fully enclosed, contributing not one pixel, which is
-    # the most expensive kind of detail there is. `art_review.check_buried_detail`
-    # now measures exactly this.
     m.add_box((0.30, 0.85, 0.10), (1.70, 0.91, 0.16), "wood-1")      # drip tray
-    for gx in (0.55, 1.30):                                          # group heads
+    for gx in groups:
         m.add_cylinder((gx, 0.88, 0.30), 0.09, 0.16, "neutral-3", 10)
         m.add_box((gx - 0.045, 0.86, 0.255), (gx + 0.045, 1.02, 0.29), WOOD)
     m.add_box((0.42, 0.855, 0.50), (0.68, 0.88, 0.56), "neutral-3")  # gauge
@@ -439,12 +469,41 @@ def register() -> Mesh:
     return m
 
 
-def pastry_case() -> Mesh:
+def pastry_case(seed: int | None = None) -> Mesh:
+    """`seed` varies the carcass height, the number of shelves and what is on
+    them. The footprint stays 2.0 x 0.8 for the same reason the espresso
+    machine keeps its width: this is a fitted piece."""
+    st = None if seed is None else _mix(seed)
+
+    def rnd():
+        nonlocal st
+        st = _mix(st)
+        return st / 0x7FFFFFFF
+
     m = Mesh()
-    m.add_box((0.05, 0.10, 0.0), (1.95, 0.90, 0.34), WOOD)          # carcass
-    m.add_box((0.10, 0.15, 0.34), (1.90, 0.85, 0.40), CERAMIC)      # shelf
-    for px in (0.45, 0.95, 1.45):                                    # pastries
-        m.add_cylinder((px, 0.50, 0.40), 0.15, 0.11, FABRIC, 10)
+    carcass = 0.34 if seed is None else 0.28 + rnd() * 0.14
+    m.add_box((0.05, 0.10, 0.0), (1.95, 0.90, carcass), WOOD)       # carcass
+    m.add_box((0.10, 0.15, carcass), (1.90, 0.85, carcass + 0.06), CERAMIC)
+    top = carcass + 0.32 if seed is None else carcass + 0.26 + rnd() * 0.14
+    tiers = [carcass + 0.06]
+    if seed is not None and rnd() < 0.5 and top - carcass > 0.34:
+        # A second tier. Two shelves of pastry behind glass is the shape a
+        # display case has when the shop is doing well, and it is the only
+        # change here that reaches the interior rather than the outline --
+        # which is allowed, because a glass case is the one prop whose interior
+        # is the point.
+        mid = carcass + 0.06 + (top - carcass - 0.12) * 0.5
+        m.add_box((0.12, 0.17, mid), (1.88, 0.83, mid + 0.025), "cream+1")
+        tiers.append(mid + 0.025)
+    for z in tiers:
+        if seed is None:
+            xs, r = (0.45, 0.95, 1.45), 0.15
+        else:
+            n = 2 + int(rnd() * 3)
+            xs = tuple(0.30 + 1.40 * (i + 0.5) / n for i in range(n))
+            r = min(0.15, 0.62 / n)
+        for px in xs:
+            m.add_cylinder((px, 0.50, z), r, 0.11, FABRIC, 10)
     # The top pane is the one glass surface a dimetric camera sees face-on, and
     # at GLASS ("sky+2") it was a 1.8 x 0.7 slab of saturated cyan -- the case
     # read as a lit swimming pool and outcompeted everything else on the counter
@@ -452,23 +511,23 @@ def pastry_case() -> Mesh:
     # what is behind it with colour only at the edges; a horizontal pane is
     # where that rule matters most. So the pane takes the interior's tone and
     # the glass arrives as two specular streaks across it.
-    m.add_box((0.10, 0.15, 0.66), (1.90, 0.85, 0.685), "cream+1")   # top pane
+    m.add_box((0.10, 0.15, top), (1.90, 0.85, top + 0.025), "cream+1")
     for sx in (0.34, 1.12):
-        m.add_box((sx, 0.20, 0.685), (sx + 0.42, 0.36, 0.6895), GLASS)  # highlight
+        m.add_box((sx, 0.20, top + 0.025), (sx + 0.42, 0.36, top + 0.0295), GLASS)
     for (ax, ay, bx, by) in ((0.10, 0.15, 1.90, 0.19), (0.10, 0.81, 1.90, 0.85),
                              (0.10, 0.15, 0.14, 0.85), (1.86, 0.15, 1.90, 0.85)):
-        m.add_box((ax, ay, 0.685), (bx, by, 0.72), GLASS_EDGE)      # rim only
-    m.add_box((0.10, 0.15, 0.40), (0.14, 0.85, 0.66), GLASS)
-    m.add_box((1.86, 0.15, 0.40), (1.90, 0.85, 0.66), GLASS)
+        m.add_box((ax, ay, top + 0.025), (bx, by, top + 0.06), GLASS_EDGE)
+    m.add_box((0.10, 0.15, carcass + 0.06), (0.14, 0.85, top), GLASS)
+    m.add_box((1.86, 0.15, carcass + 0.06), (1.90, 0.85, top), GLASS)
     # Solid back, open front. The pane here used to be GLASS at y 0.15-0.17 --
     # the side AWAY from the camera, so it was 69 triangles of glass nobody
     # could see, backed by a view straight through to the wall. The camera-facing
     # side stays open on purpose: this renderer has no transparency, so a pane
     # across the front would replace the pastries with a flat blue rectangle.
     # Glass reads here the way it does on the top -- as rim and highlight only.
-    m.add_box((0.14, 0.15, 0.40), (1.86, 0.19, 0.66), WOOD)         # back panel
+    m.add_box((0.14, 0.15, carcass + 0.06), (1.86, 0.19, top), WOOD)  # back panel
     for mx in (0.68, 1.32):                                          # mullions
-        m.add_box((mx, 0.83, 0.40), (mx + 0.035, 0.86, 0.66), GLASS_EDGE)
+        m.add_box((mx, 0.83, carcass + 0.06), (mx + 0.035, 0.86, top), GLASS_EDGE)
     return m
 
 
@@ -1107,24 +1166,198 @@ def table_clutter(kind: str = "cafe") -> Mesh:
 # a 4 px floor, below which a member stops reading as a shape and starts reading
 # as a stray line.
 
-def bench(length: float = 2.0, cushion=FABRIC) -> Mesh:
-    """Banquette seating: reads as one mass, which is what a wall run wants."""
+# --- soft seating ------------------------------------------------------------
+#
+# The armchair and the bench were the last two seats in the library that were
+# one mesh each. They are also the two the eye spends longest on, because they
+# are the largest single objects on the floor after the counter run, and a
+# lounge corner furnished from one catalogue entry twice is the tell.
+#
+# What varies is the arms, the back and the base -- the three things that ARE
+# the outline. What does not vary is anything inside it, for the reason the
+# chair backs recorded two passes ago.
+
+
+def _arm_panel(m, f, x0, x1, y0, y1, sz, t):
+    """Solid panel arms. The heaviest reading: a club chair."""
+    for ax in (x0, x1 - t):
+        m.add_box((ax, y0 + 0.18, sz - 0.14), (ax + t, y1, sz + 0.13), f)
+
+
+def _arm_open(m, f, x0, x1, y0, y1, sz, t):
+    """A post at each end under a rail. The gap beneath the rail is the whole
+    point -- it is the one place an armchair can show floor through itself,
+    which is worth more to a silhouette than any amount of surface."""
+    for ax in (x0 + 0.02, x1 - t):
+        for ay in (y0 + 0.21, y1 - 0.17):
+            m.add_box((ax, ay, sz - 0.14), (ax + t * 0.7, ay + 0.15, sz + 0.05), f)
+        m.add_box((ax, y0 + 0.21, sz + 0.05), (ax + t * 0.7, y1, sz + 0.14), f)
+
+
+def _arm_rolled(m, f, x0, x1, y0, y1, sz, t):
+    """Stepped in two heights. A roll is a curve, and a curve is one pixel at
+    room scale, so it is drawn as a value step instead."""
+    for ax in (x0, x1 - t):
+        m.add_box((ax + 0.03, y0 + 0.18, sz - 0.14), (ax + t - 0.03, y1, sz + 0.10), f)
+        m.add_box((ax, y0 + 0.22, sz + 0.10), (ax + t, y1 - 0.05, sz + 0.20), f + "+1")
+
+
+def _arm_none(m, f, x0, x1, y0, y1, sz, t):
+    """A slipper chair. This has to be an option: a generator every output of
+    which has arms is a generator with three settings, and the armless
+    silhouette is the furthest of the four from the other three."""
+    return
+
+
+ARM_STYLES = (_arm_panel, _arm_open, _arm_rolled, _arm_none)
+
+
+def _seat_base_plinth(m, f, x0, x1, y0, y1, sz):
+    """A skirt to the floor. Reads as mass, which upholstery should."""
+    m.add_box((x0, y0, 0.0), (x1, y1, sz - 0.14), f)
+
+
+def _seat_base_legs(m, f, x0, x1, y0, y1, sz):
+    """Four posts. Lifting the mass off the floor is the single biggest change
+    available to a seat's outline, because it puts floor underneath it."""
+    r = 0.055
+    for cx in (x0 + 0.10, x1 - 0.10 - r * 2):
+        for cy in (y0 + 0.10, y1 - 0.10 - r * 2):
+            m.add_box((cx, cy, 0.0), (cx + r * 2, cy + r * 2, sz - 0.14), f + "-1")
+    m.add_box((x0 + 0.04, y0 + 0.04, sz - 0.20), (x1 - 0.04, y1 - 0.04, sz - 0.14), f)
+
+
+def _seat_base_splay(m, f, x0, x1, y0, y1, sz):
+    """Raked posts, which no axis-aligned box can draw -- this is what `strut`
+    was added for when the tables needed it."""
+    r, inset = 0.048, 0.16
+    for sx, ex in ((x0 + inset, x0 + 0.05), (x1 - inset, x1 - 0.05)):
+        for sy, ey in ((y0 + inset, y0 + 0.05), (y1 - inset, y1 - 0.05)):
+            strut(m, (ex, ey, 0.0), (sx, sy, sz - 0.14), r, f + "-1")
+    m.add_box((x0 + 0.04, y0 + 0.04, sz - 0.20), (x1 - 0.04, y1 - 0.04, sz - 0.14), f)
+
+
+SEAT_BASES = (_seat_base_plinth, _seat_base_legs, _seat_base_splay,
+              _seat_base_plinth)
+
+
+def armchair(cushion=FABRIC, frame=WOOD, seed: int | None = None) -> Mesh:
+    """Back at -y, matching `chair`, so both face a table at +y under rot=0.
+
+    `seed=None` reproduces the fixed mesh exactly, so callers that have not
+    opted in keep their sprites.
+    """
+    st = None if seed is None else _mix(seed)
+
+    def rnd():
+        nonlocal st
+        st = _mix(st)
+        return st / 0x7FFFFFFF
+
     m = Mesh()
-    m.add_box((0.08, 0.14, 0.0), (length - 0.08, 0.82, 0.38), WOOD)
-    m.add_box((0.08, 0.16, 0.38), (length - 0.08, 0.80, 0.46), cushion)
-    m.add_box((0.08, 0.14, 0.46), (length - 0.08, 0.30, 1.02), WOOD)      # back
-    m.add_box((0.12, 0.28, 0.50), (length - 0.12, 0.34, 0.94), cushion)
+    if seed is None:
+        m.add_box((0.10, 0.10, 0.0), (0.90, 0.90, 0.34), frame)
+        m.add_box((0.16, 0.16, 0.34), (0.84, 0.84, 0.48), cushion)
+        m.add_box((0.10, 0.10, 0.34), (0.90, 0.28, 0.92), frame)
+        m.add_box((0.14, 0.26, 0.40), (0.86, 0.32, 0.86), cushion)
+        for ax in (0.10, 0.72):
+            m.add_box((ax, 0.28, 0.34), (ax + 0.18, 0.88, 0.60), frame)
+        return m
+
+    x0, x1, y0, y1 = 0.10, 0.90, 0.10, 0.90
+    sz = 0.46 + rnd() * 0.06                      # seat top
+    SEAT_BASES[int(rnd() * len(SEAT_BASES)) % len(SEAT_BASES)](
+        m, frame, x0, x1, y0, y1, sz)
+    m.add_box((x0 + 0.06, y0 + 0.06, sz - 0.14), (x1 - 0.06, y1 - 0.06, sz), cushion)
+    # Back. Height is the loudest single number in the outline, so it gets the
+    # widest range of any parameter here.
+    bh = sz + 0.34 + rnd() * 0.26
+    m.add_box((x0, y0, sz - 0.14), (x1, y0 + 0.18, bh), frame)
+    m.add_box((x0 + 0.04, y0 + 0.16, sz + 0.02), (x1 - 0.04, y0 + 0.22, bh - 0.06),
+              cushion)
+    if rnd() < 0.34:
+        # Wings, only sometimes: a wing on every chair is not a wing.
+        for ax in (x0, x1 - 0.10):
+            m.add_box((ax, y0, sz + 0.10), (ax + 0.10, y0 + 0.34, bh - 0.02),
+                      frame + "-1")
+    ARM_STYLES[int(rnd() * len(ARM_STYLES)) % len(ARM_STYLES)](
+        m, frame, x0, x1, y0 + 0.18, y1, sz, 0.16 + rnd() * 0.06)
     return m
 
 
-def armchair(cushion=FABRIC) -> Mesh:
+def _bench_back_solid(m, f, x0, x1, y0, sz, bh):
+    m.add_box((x0, y0, sz - 0.08), (x1, y0 + 0.16, bh), f)
+
+
+def _bench_back_slat(m, f, x0, x1, y0, sz, bh):
+    """Horizontal rails with air between them."""
+    m.add_box((x0, y0, sz - 0.08), (x1, y0 + 0.16, sz + 0.06), f)
+    m.add_box((x0, y0, bh - 0.10), (x1, y0 + 0.16, bh), f)
+    n = 3
+    h = ((bh - 0.10) - (sz + 0.06)) / (n * 2 - 1)
+    for i in range(n):
+        z = sz + 0.06 + i * 2 * h
+        m.add_box((x0 + 0.03, y0 + 0.03, z), (x1 - 0.03, y0 + 0.13, z + h), f + "-1")
+
+
+def _bench_back_spindle(m, f, x0, x1, y0, sz, bh):
+    """Vertical spindles, divided across the run rather than accumulated, so a
+    longer bench gets more of them and not wider ones -- the book spines
+    learned this rule the expensive way."""
+    m.add_box((x0, y0, sz - 0.08), (x1, y0 + 0.16, sz + 0.06), f)
+    m.add_box((x0, y0, bh - 0.09), (x1, y0 + 0.16, bh), f)
+    run = (x1 - 0.06) - (x0 + 0.06)
+    n = max(2, int(run / 0.30))
+    w = run / n
+    for i in range(n):
+        cx = x0 + 0.06 + (i + 0.5) * w
+        m.add_box((cx - 0.045, y0 + 0.04, sz + 0.06),
+                  (cx + 0.045, y0 + 0.12, bh - 0.09), f + "-1")
+
+
+def _bench_back_rail(m, f, x0, x1, y0, sz, bh):
+    """One rail on two posts: the most open of the four, and the only one that
+    leaves the wall behind it visible."""
+    for ax in (x0 + 0.02, x1 - 0.14):
+        m.add_box((ax, y0 + 0.02, sz - 0.08), (ax + 0.12, y0 + 0.14, bh), f)
+    m.add_box((x0, y0 + 0.02, bh - 0.14), (x1, y0 + 0.14, bh), f)
+
+
+BENCH_BACKS = (_bench_back_solid, _bench_back_slat, _bench_back_spindle,
+               _bench_back_rail)
+
+
+def bench(length: float = 2.0, cushion=FABRIC, frame=WOOD,
+          seed: int | None = None) -> Mesh:
+    """Banquette seating: reads as one mass, which is what a wall run wants."""
     m = Mesh()
-    m.add_box((0.10, 0.10, 0.0), (0.90, 0.90, 0.34), WOOD)
-    m.add_box((0.16, 0.16, 0.34), (0.84, 0.84, 0.48), cushion)            # seat
-    m.add_box((0.10, 0.10, 0.34), (0.90, 0.28, 0.92), WOOD)               # back
-    m.add_box((0.14, 0.26, 0.40), (0.86, 0.32, 0.86), cushion)
-    for ax in (0.10, 0.72):                                                # arms
-        m.add_box((ax, 0.28, 0.34), (ax + 0.18, 0.88, 0.60), WOOD)
+    if seed is None:
+        m.add_box((0.08, 0.14, 0.0), (length - 0.08, 0.82, 0.38), frame)
+        m.add_box((0.08, 0.16, 0.38), (length - 0.08, 0.80, 0.46), cushion)
+        m.add_box((0.08, 0.14, 0.46), (length - 0.08, 0.30, 1.02), frame)
+        m.add_box((0.12, 0.28, 0.50), (length - 0.12, 0.34, 0.94), cushion)
+        return m
+
+    st = _mix(seed)
+
+    def rnd():
+        nonlocal st
+        st = _mix(st)
+        return st / 0x7FFFFFFF
+
+    x0, x1, y0, y1 = 0.08, length - 0.08, 0.14, 0.82
+    sz = 0.44 + rnd() * 0.06
+    if rnd() < 0.5:
+        m.add_box((x0, y0, 0.0), (x1, y1, sz - 0.08), frame)
+    else:
+        for cx in (x0 + 0.06, x1 - 0.20):
+            m.add_box((cx, y0 + 0.08, 0.0), (cx + 0.14, y1 - 0.08, sz - 0.08),
+                      frame + "-1")
+        m.add_box((x0, y0 + 0.02, sz - 0.16), (x1, y1 - 0.02, sz - 0.08), frame)
+    m.add_box((x0, y0 + 0.02, sz - 0.08), (x1, y1 - 0.02, sz), cushion)
+    bh = sz + 0.46 + rnd() * 0.20
+    BENCH_BACKS[int(rnd() * len(BENCH_BACKS)) % len(BENCH_BACKS)](
+        m, frame, x0, x1, y0, sz, bh)
     return m
 
 

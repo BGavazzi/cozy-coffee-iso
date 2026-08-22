@@ -385,6 +385,10 @@ GENERATORS = (
     ("basket", lambda A, s: A.basket(seed=s), 0.9, None, ""),
     ("flower_vase", lambda A, s: A.flower_vase(seed=s), 0.9, None, ""),
     ("stool", lambda A, s: A.stool(seed=s), 1.0, None, ""),
+    ("armchair", lambda A, s: A.armchair(seed=s), 1.5, None, ""),
+    ("bench", lambda A, s: A.bench(2.0, seed=s), 2.6, None, ""),
+    ("espresso_machine", lambda A, s: A.espresso_machine(seed=s), 2.4, None, ""),
+    ("pastry_case", lambda A, s: A.pastry_case(seed=s), 2.4, None, ""),
     ("counter", lambda A, s: A.counter(seed=s), 1.5, 0.04,
      "a fitted module, whose front is one of three faces this camera sees and "
      "whose style table is deliberately weighted toward plain; the seed has to "

@@ -622,6 +622,67 @@ a figure that got bigger occludes more. The case moved 0.3 of a tile.
 8.5% and 10.0% the two casts now measure, and well above the 0.0%, 1.3% and
 4.3% it was written for.
 
+## The last four fixed meshes, and a search a person was doing by hand
+
+The armchair, the bench, the espresso machine and the pastry case were the four
+props the room holds exactly one or two of, and they had stayed fixed meshes
+for six passes on the reasoning that a prop appearing once does not need a
+range. That reasoning is wrong for a factory. A generator that can only make
+*this* cafe is a description of this cafe.
+
+They vary in the three things that are the outline and in nothing else:
+
+| generator | screen spread over 8 seeds |
+|---|---|
+| `armchair` | 45% |
+| `bench` | 38% |
+| `espresso_machine` | 33% |
+| `pastry_case` | 22% |
+
+The armchair is the widest range in the library after the plants and the vase,
+and the reason is one style out of four: `_arm_none`. A slipper chair shares no
+outline with a club chair, and the temptation with an armchair generator is to
+make four kinds of arm. A generator whose every output has arms has three
+settings.
+
+Two things are deliberately *not* varied. The espresso machine and the pastry
+case keep their width, because both are fitted to a counter run of one-tile
+modules and a generator free to resize a built-in will eventually hang it off
+the end. And `seed=None` reproduces the old fixed mesh vertex-for-vertex on all
+four, checked against the previous commit — the pastry case failed that on the
+first attempt, because dividing three pastries evenly across the case is not
+where three pastries used to be.
+
+### The search a person was doing by hand
+
+Seeding the pastry case made it taller. The taller case covered 39% of a crate
+two tiles behind it, `screen_occlusion` said so, and the fix was to print the
+case height for eight seeds and type in one that passed. Then seeding the
+espresso machine gave it an optional raised back panel, the panel covered 41%
+of a menu board, and the fix was about to be the same thing again.
+
+That is a person running a search, and the search is what this file has been
+converting into code for two passes. `Layout.scatter` solves for a *position*
+with the seed fixed. `Layout.add_seeded` solves for a *seed* with the position
+fixed, which is the case a fitted prop actually has: the espresso machine goes
+where the counter is, and what is free to vary is which machine it is. Both run
+the same `_conflicts` predicate, so the rule that rejects a proposal is the rule
+that would have failed the render.
+
+It rejects seed 1 for both counter props and settles on 2 and 4. The four seats
+pass on their first try, which is the correct outcome for a solver and not
+evidence it is idle — `scatter` returning a full count is not a bug either.
+
+What this exposed is worth more than the two seeds. **Both collisions were
+between two hand-placed props.** `scatter` has tested occlusion at proposal time
+since the fifth pass, and neither of these ever went through it, so the room had
+a whole class of placement that only the after-the-fact check could see. The
+ordering matters too, and it is a real constraint rather than an implementation
+detail: `add_seeded` can only solve against what is already in the room, so the
+pastry case is now placed after the crates and the espresso machine after the
+menu boards, out of the tidy blocks they read best in. A prop that has to clear
+its neighbours goes in after them.
+
 ## Where the numbers landed
 
 | | third pass | fourth pass |
@@ -1308,7 +1369,7 @@ downstream.
 | | fifth pass | sixth pass |
 |---|---|---|
 | bases the tables can be built on | 2 fixed meshes | **4 styles × top shape, thickness, overhang** |
-| seeded generators in the library | 3 | **11** |
+| seeded generators in the library | 3 | **15** |
 | hand-written character specs | 9, and no way to make a tenth | **9, plus a solver that makes as many as asked** |
 | floor texture | one amplitude everywhere | **derived from where the seats and tills are** |
 | high-key share of frame | 63.8% | **66.7%** |
@@ -1322,10 +1383,10 @@ render is still byte-identical across processes.
 
 ## Still open
 
-- The espresso machine, bench, armchair and pastry case are still fixed
-  meshes. Eleven others show the shape of the replacement, and these four are
-  the props the room holds exactly one of — which is why they are last, not
-  why they are fine.
+- Every prop in the room now comes from a seeded generator. What is still
+  authored is the *room*: 85 hand-typed coordinates, of which the scatter
+  solver and `add_seeded` between them account for about a quarter. A floor
+  plan is the next thing that should be proposed and tested rather than typed.
 - Cast variety is now measured on shape as well as colour, and the generator
   solves for it. What is still unmeasured is whether an accessory or a hair
   style is *distinguishable* rather than merely present: the scarf went from
