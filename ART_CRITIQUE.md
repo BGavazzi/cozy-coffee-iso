@@ -1551,10 +1551,29 @@ render is still byte-identical across processes.
   48 coordinates are actually made of, and the ratchet has not caught up to
   them because nobody has yet been surprised by their absence in a way that
   could be written down as a rule.
-- No characters are placed in a generated room. The reference room positions
-  six by hand, and the plan has the information to do better than that — a
-  queue band, seats, a service side — but "who is standing where" is a
-  simulation question rather than a layout one.
+### And the two generators met
+
+A generated room is now occupied. The cast is `C.generate_roster`, so the
+character solver makes people the room has never seen and the room solver sorts
+them into the three places a cafe's occupants go — the staff side of the run, the
+queue band, and whatever seats got placed. Neither generator knows about the
+other; the plan supplies all three.
+
+The queue is stepped along the screen-horizontal, which is the reference room's
+finding reapplied: two customers 1.5 tiles apart in world space sat 0.1 apart on
+screen and the near one hid 74% of the far one. Occupants also fixed the focal
+reading — the barista puts skin and a dark apron right where the eye is supposed
+to land, and the counter's contrast lead went from +0.054 to **+0.101**.
+
+One defect here is invisible to every check in the ratchet. `C.build(seated=True)`
+authors the legs about a hip at SEAT_Z 0.45, and a bar stool stands at 0.62–0.78,
+so a customer assigned to a stool is ground-clamped, does not float, and sits in
+mid-air beside it at dining height. `grounded` measures the distance to the floor
+and there is none to measure. Seats are chairs and armchairs only, and the real
+fix — a seated rig that takes the seat height it is sitting on — is not written.
+
+- Seated characters are placed on chairs and armchairs but not stools or
+  benches, because the seated rig has one hip height baked into it.
 - The plan generator has one topology: a straight run against a far wall with
   the seating in strips. An island counter, an L-shaped run, or a counter
   facing the door are all cafes it cannot propose. The measured 43% mean layout

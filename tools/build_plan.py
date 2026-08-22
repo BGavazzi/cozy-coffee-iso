@@ -24,6 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import assetlib as A  # noqa: E402
+import character as C  # noqa: E402
 import floorplan as F  # noqa: E402
 from layout import Layout  # noqa: E402
 from mesh import LightRig, Pool  # noqa: E402
@@ -287,8 +288,89 @@ def build(plan: F.Plan) -> Layout:
             add(A.pendant_lamp(), at=((z.x0 + z.x1) / 2 - 0.5,
                                       (z.y0 + z.y1) / 2 - 0.5, 0.60),
                 name=f"decor#lamp{zi}", track=False)
+    made += _people(L, plan)
     L.generated = made
     return L
+
+
+def _people(L: Layout, plan: F.Plan, n: int = 7, seed: int = 1) -> int:
+    """A barista, a queue, and customers in whatever seats were placed.
+
+    The cast is `C.generate_roster`, so the two generators meet here: the
+    character solver makes people the room has never seen, and the room solver
+    puts them where the plan says people go. Neither knows about the other --
+    the plan supplies a service side, a queue band and a set of seats, and
+    those are the three things a cafe's occupants are sorted into.
+
+    A queue runs ACROSS the view, not into it. The reference room recorded this
+    the expensive way: two customers 1.5 tiles apart in world space sat 0.1
+    apart on screen and the near one hid 74% of the far one. The camera looks
+    down +x/+y, so a line of people spread along x - y stays legible and a line
+    along x + y is one person with extra depth.
+    """
+    roster = C.generate_roster(n, seed)
+    run = plan.of("service")[0]
+    horizontal = run.facing == 0.0
+    placed = 0
+
+    def put(mesh, at, rot, name):
+        nonlocal placed
+        before = len(L.items)
+        L.add(mesh, at=at, rot=rot, name=name)
+        if len(L.items) == before:
+            return
+        cand = L.items[-1]
+        L.items.pop()
+        if L._conflicts(cand, 45.0, 0.35):
+            L.rots.pop(name, None)
+            return
+        L.items.append(cand)
+        placed += 1
+
+    # Barista, on the staff side of the run, facing the customers.
+    if horizontal:
+        put(C.build(C.BARISTA), ((run.x0 + run.x1) / 2, run.y0 - 0.42, 0.0),
+            180, "char#barista")
+    else:
+        put(C.build(C.BARISTA), (run.x0 - 0.42, (run.y0 + run.y1) / 2, 0.0),
+            90, "char#barista")
+
+    # The queue, stepped along the screen-horizontal so nobody hides anybody.
+    q = plan.of("queue")
+    if q:
+        band = q[0]
+        for i, spec in enumerate(roster[:2]):
+            t = 0.30 + 0.34 * i
+            if horizontal:
+                at = (band.x0 + band.w * t, band.y0 + 0.45 + i * 0.30, 0.0)
+                rot = 180
+            else:
+                at = (band.x0 + 0.45 + i * 0.30, band.y0 + band.d * t, 0.0)
+                rot = 90
+            put(C.build(spec), at, rot, f"char#queue{i}")
+
+    # Everyone else sits. Seats are taken in a strided order rather than the
+    # first few, because scatter fills a zone at a time and the first few are
+    # all in one corner -- a cafe with one full table and three empty ones.
+    # Chairs and armchairs only. `C.build(seated=True)` authors the legs about
+    # a hip at SEAT_Z=0.45, and a bar stool stands at 0.62 to 0.78 -- the
+    # figure is ground-clamped, so it does not float and `grounded` never
+    # complains, it just sits in mid-air beside the stool at dining height.
+    # A check that measures the floor cannot see a seat height.
+    seats = [q for q in L.items
+             if q.name.startswith(("chair#", "seat#arm"))]
+    if seats:
+        stride = max(1, len(seats) // max(1, len(roster) - 2))
+        for i, spec in enumerate(roster[2:]):
+            k = (i * stride + 1) % len(seats)
+            st = seats[k]
+            cx, cy = (st.x0 + st.x1) / 2, (st.y0 + st.y1) / 2
+            put(C.build(spec, seated=True), (cx, cy, 0.0),
+                L.rots.get(st.name, 0.0), f"char#sit{i}")
+    return placed
+
+
+
 
 
 def check_built_rooms(n: int = 6, seed: int = 1) -> list[str]:

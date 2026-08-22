@@ -51,6 +51,11 @@ TUCK_OK = {
     frozenset({"char", "counter"}), frozenset({"clutter", "counter"}),
     frozenset({"prop", "wall"}), frozenset({"decor", "wall"}),
     frozenset({"chair", "clutter"}), frozenset({"char", "clutter"}),
+    # An armchair is named `seat#arm...` and a bench `seat#bench...`, and a
+    # character sitting in one interpenetrates it exactly as a character on a
+    # `chair` does. The reference room never needed this because it seats
+    # everyone on dining chairs.
+    frozenset({"char", "seat"}),
 }
 
 
