@@ -61,6 +61,15 @@ HIP_Z, SHOULDER_Z = 0.46, 0.92     # limb pivots, for posing
 ANKLE_Z = 0.10
 SEAT_Z = 0.45          # chair seat height; assetlib.chair() must agree
 
+# The tallest seat this rig can sit on with its feet on the floor. Above it a
+# person perches -- feet on a rail, weight on the hips -- and that is a
+# different rig and a different support model, not a longer shin. `grounded`
+# asks whether an object's underside meets a surface, which is the wrong
+# question for a figure held up by its backside: a customer put on a 0.70 bar
+# stool is ground-clamped, does not float, and sits in mid-air beside it at
+# dining height, with no check in the ratchet able to see it.
+MAX_SEAT_Z = 0.58
+
 
 def leg(sx: float, mat: str, hip: float = HIP_Z) -> Mesh:
     """Leg shaft only, hip to ankle. Built per side so a walk cycle can swing
@@ -101,19 +110,24 @@ def _ankle_offset(sx: float, degrees: float, hip: float = HIP_Z):
 
 
 def legs(mat: str, spread: float = 0.105, seated: bool = False,
-         hip: float = HIP_Z) -> Mesh:
+         hip: float = HIP_Z, seat: float = SEAT_Z) -> Mesh:
     if seated:
         # Thighs forward (+y, the side the camera sees), shins down: a standing
         # figure parked at seat height reads as standing *on* the chair.
         # Authored about the HIP at z=0, with the shins reaching down to
         # -SEAT_Z so the feet land on the floor when a chair seat is at SEAT_Z.
+        # Shins reach the seat height they are sitting on, rather than the
+        # one dining chairs happen to have. An armchair's cushion lands
+        # anywhere from 0.46 to 0.52 once its base style and seat jitter are
+        # applied, so a figure authored for 0.45 sat up to 0.07 inside it.
+        seat = min(seat, MAX_SEAT_Z)
         m = Mesh()
         for sx in (-spread, spread):
             m.add_box((sx - 0.098, -0.10, -0.10), (sx + 0.098, 0.34, 0.04), mat)
-            m.add_box((sx - 0.098, 0.16, -SEAT_Z + 0.06),
+            m.add_box((sx - 0.098, 0.16, -seat + 0.06),
                       (sx + 0.098, 0.34, -0.10), mat)
-            m.add_box((sx - 0.105, 0.16, -SEAT_Z),
-                      (sx + 0.105, 0.40, -SEAT_Z + 0.08), "neutral-1")
+            m.add_box((sx - 0.105, 0.16, -seat),
+                      (sx + 0.105, 0.40, -seat + 0.08), "neutral-1")
         return m
     return merge(leg(-spread, mat, hip), leg(spread, mat, hip))
 
@@ -309,7 +323,7 @@ REST = Pose()
 
 
 def build(spec: CharacterSpec, seated: bool = False,
-          pose: Pose | None = None) -> Mesh:
+          pose: Pose | None = None, seat: float = SEAT_Z) -> Mesh:
     p = pose or REST
     spread = 0.105 * spec.stance
     hip = ANKLE_Z + (HIP_Z - ANKLE_Z) * spec.leg_len
@@ -355,7 +369,7 @@ def build(spec: CharacterSpec, seated: bool = False,
         # standing torso on top of folded legs and produced a seated figure
         # 2.24 tall against a standing 1.72 -- taller sitting down than up.
         drop = (0.0, 0.0, -HIP_Z)
-        out = merge(legs(spec.trousers, spread, seated=True),
+        out = merge(legs(spec.trousers, spread, seated=True, seat=seat),
                     transformed(body, at=(0.0, 0.0, -HIP_Z - dz)),
                     *(transformed(l, at=drop) for l in limbs))
         # Ground-clamped like the standing rig. The seated parts are authored

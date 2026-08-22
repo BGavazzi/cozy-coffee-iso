@@ -794,6 +794,12 @@ def chair(cushion=None, frame=WOOD, seed: int | None = None) -> Mesh:
     style(m, frame, seat_z, 0.19, 0.83, 0.19, 0.34)
     if cushion:
         m.add_box((0.21, 0.21, seat_z), (0.79, 0.79, seat_z + 0.06), cushion)
+    # The seat SURFACE, reported the way `table` reports `top_z`. A placement's
+    # bounding box tops out at the backrest, so anything reading z1 for a seat
+    # height gets 0.95 and sits a figure a third of a metre in the air -- the
+    # same class of mistake as the clutter that sat at a hardcoded z while the
+    # table thickness varied underneath it.
+    m.seat_z = seat_z + (0.06 if cushion else 0.0)
     return m
 
 
@@ -1262,6 +1268,7 @@ def armchair(cushion=FABRIC, frame=WOOD, seed: int | None = None) -> Mesh:
         m.add_box((0.14, 0.26, 0.40), (0.86, 0.32, 0.86), cushion)
         for ax in (0.10, 0.72):
             m.add_box((ax, 0.28, 0.34), (ax + 0.18, 0.88, 0.60), frame)
+        m.seat_z = 0.48
         return m
 
     x0, x1, y0, y1 = 0.10, 0.90, 0.10, 0.90
@@ -1282,6 +1289,7 @@ def armchair(cushion=FABRIC, frame=WOOD, seed: int | None = None) -> Mesh:
                       frame + "-1")
     ARM_STYLES[int(rnd() * len(ARM_STYLES)) % len(ARM_STYLES)](
         m, frame, x0, x1, y0 + 0.18, y1, sz, 0.16 + rnd() * 0.06)
+    m.seat_z = sz
     return m
 
 

@@ -1566,14 +1566,28 @@ reading — the barista puts skin and a dark apron right where the eye is suppos
 to land, and the counter's contrast lead went from +0.054 to **+0.101**.
 
 One defect here is invisible to every check in the ratchet. `C.build(seated=True)`
-authors the legs about a hip at SEAT_Z 0.45, and a bar stool stands at 0.62–0.78,
-so a customer assigned to a stool is ground-clamped, does not float, and sits in
-mid-air beside it at dining height. `grounded` measures the distance to the floor
-and there is none to measure. Seats are chairs and armchairs only, and the real
-fix — a seated rig that takes the seat height it is sitting on — is not written.
+authored the legs about a hip at SEAT_Z 0.45 whatever it was sitting on, so a
+customer put on a 0.70 bar stool is ground-clamped, does not float, and sits in
+mid-air beside it at dining height. `grounded` asks how far an underside is from
+the floor, and there is nothing wrong with the answer.
 
-- Seated characters are placed on chairs and armchairs but not stools or
-  benches, because the seated rig has one hip height baked into it.
+The rig now takes its seat height, which mattered for armchairs too: their
+cushions land anywhere from 0.48 to 0.52 once the base style and seat jitter are
+applied, so every seated figure had been sitting up to 0.07 inside one. Stools
+stay unoccupied on purpose — a person on a bar stool is held up by their
+backside with their feet on a rail, and that is a different support model, not a
+longer shin.
+
+Getting the seat height took a second fix underneath the first. Reading it from
+the placement's bounding box gives the top of the *backrest*, 0.95, which
+excluded every chair in the room from the filter and left the rooms with three
+occupants. `chair` and `armchair` now report `seat_z` the way `table` reports
+`top_z` — the same lesson as the clutter that sat at a hardcoded height while
+the table thickness varied underneath it, arrived at from a third direction.
+
+- Bar stools and benches are still never sat on, because perching needs a
+  support model `grounded` does not have: a figure held up by its hips has no
+  underside meeting anything.
 - The plan generator has one topology: a straight run against a far wall with
   the seating in strips. An island counter, an L-shaped run, or a counter
   facing the door are all cafes it cannot propose. The measured 43% mean layout

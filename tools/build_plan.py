@@ -76,6 +76,10 @@ def light_rig(plan: F.Plan) -> LightRig:
 def build(plan: F.Plan) -> Layout:
     L = Layout()
     add = L.add
+    # name -> the height of the surface someone sits on. Kept beside the
+    # layout because `Placed` carries a bounding box and a seat's box tops out
+    # at its backrest.
+    seat_z: dict = {}
     add(A.floor(plan.w, plan.d), name="floor", track=False)
     # A rug under each substantial seating block. The reference room uses two
     # to say "this group of tables is one place to sit", and a zone is exactly
@@ -212,11 +216,11 @@ def build(plan: F.Plan) -> Layout:
         for k, (dx, dy, rot) in enumerate(((0, -reach, 0), (0, reach, 180),
                                            (-reach, 0, 270), (reach, 0, 90))):
             before = len(L.items)
-            add(A.chair(cushion=None if k % 2 else A.FABRIC,
-                        frame=PAINTS[(k + len(L.items)) % len(PAINTS)],
-                        seed=40 + k + int(cx * 3)),
-                at=(cx + dx, cy + dy, 0), rot=rot, centre=True,
-                name=f"chair#{p.name[6:]}_{k}")
+            piece = A.chair(cushion=None if k % 2 else A.FABRIC,
+                            frame=PAINTS[(k + len(L.items)) % len(PAINTS)],
+                            seed=40 + k + int(cx * 3))
+            nm = f"chair#{p.name[6:]}_{k}"
+            add(piece, at=(cx + dx, cy + dy, 0), rot=rot, centre=True, name=nm)
             cand = L.items[-1]
             L.items.pop()
             # And it has to satisfy `seating_faces_tables`, asked here rather
@@ -237,10 +241,12 @@ def build(plan: F.Plan) -> Layout:
                 L.rots.pop(cand.name, None)
                 continue
             L.items.append(cand)
+            seat_z[nm] = piece.seat_z
             made += 1
 
     for zi, z in enumerate(plan.of("lounge")):
-        made += L.scatter(lambda i, zi=zi: A.armchair(seed=5 + zi * 7 + i),
+        made += L.scatter(lambda i, zi=zi: _remember(seat_z, f"seat#arm{zi}#{i}",
+                                                     A.armchair(seed=5 + zi * 7 + i)),
                           (z.x0 + 0.6, z.y0 + 0.6, z.x1 - 0.6, z.y1 - 0.6),
                           max(1, int(z.area / 5.0)), f"seat#arm{zi}",
                           seed=50 + zi, rot_choices=(0, 90, 180, 270))
@@ -288,12 +294,24 @@ def build(plan: F.Plan) -> Layout:
             add(A.pendant_lamp(), at=((z.x0 + z.x1) / 2 - 0.5,
                                       (z.y0 + z.y1) / 2 - 0.5, 0.60),
                 name=f"decor#lamp{zi}", track=False)
-    made += _people(L, plan)
+    made += _people(L, plan, seat_z=seat_z)
     L.generated = made
     return L
 
 
-def _people(L: Layout, plan: F.Plan, n: int = 7, seed: int = 1) -> int:
+def _remember(table: dict, name: str, mesh):
+    """Stash a generated seat's surface height under the name it will be given.
+
+    `scatter` builds the mesh and names the placement itself, so there is no
+    hook between the two; the factory records what it made and the name is
+    reconstructed to match. Ugly, and better than reading a backrest.
+    """
+    table[name] = getattr(mesh, "seat_z", 0.45)
+    return mesh
+
+
+def _people(L: Layout, plan: F.Plan, n: int = 7, seed: int = 1,
+            seat_z: dict | None = None) -> int:
     """A barista, a queue, and customers in whatever seats were placed.
 
     The cast is `C.generate_roster`, so the two generators meet here: the
@@ -308,6 +326,7 @@ def _people(L: Layout, plan: F.Plan, n: int = 7, seed: int = 1) -> int:
     down +x/+y, so a line of people spread along x - y stays legible and a line
     along x + y is one person with extra depth.
     """
+    seat_z = seat_z or {}
     roster = C.generate_roster(n, seed)
     run = plan.of("service")[0]
     horizontal = run.facing == 0.0
@@ -358,14 +377,15 @@ def _people(L: Layout, plan: F.Plan, n: int = 7, seed: int = 1) -> int:
     # complains, it just sits in mid-air beside the stool at dining height.
     # A check that measures the floor cannot see a seat height.
     seats = [q for q in L.items
-             if q.name.startswith(("chair#", "seat#arm"))]
+             if q.name.startswith(("chair#", "seat#arm"))
+             and seat_z.get(q.name, 9.0) <= C.MAX_SEAT_Z]
     if seats:
         stride = max(1, len(seats) // max(1, len(roster) - 2))
         for i, spec in enumerate(roster[2:]):
             k = (i * stride + 1) % len(seats)
             st = seats[k]
             cx, cy = (st.x0 + st.x1) / 2, (st.y0 + st.y1) / 2
-            put(C.build(spec, seated=True), (cx, cy, 0.0),
+            put(C.build(spec, seated=True, seat=seat_z[st.name]), (cx, cy, 0.0),
                 L.rots.get(st.name, 0.0), f"char#sit{i}")
     return placed
 
