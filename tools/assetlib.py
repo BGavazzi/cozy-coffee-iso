@@ -419,10 +419,19 @@ def espresso_machine(seed: int | None = None) -> Mesh:
         return st / 0x7FFFFFFF
 
     m = Mesh()
-    m.add_box((0.10, 0.15, 0.0), (1.90, 0.85, 0.46), METAL)
-    m.add_box((0.10, 0.15, 0.40), (1.90, 0.85, 0.46), "neutral-2")   # shadow line
-    m.add_box((0.20, 0.20, 0.46), (1.80, 0.80, 0.60), "neutral+1")   # lit top shell
-    m.add_box((0.24, 0.20, 0.60), (1.76, 0.76, 0.635), "neutral+2")  # cup warmer
+    # Shell height, because the width is fixed and the height is therefore the
+    # only dimension left that reaches the outline. Two of eight seeds rendered
+    # PIXEL-IDENTICAL machines while the generator's mean spread read 33%: the
+    # group count and cup count are all interior, and a machine with no back
+    # panel had nothing else to distinguish it.
+    lift = 0.0 if seed is None else (rnd() - 0.5) * 0.13
+    m.add_box((0.10, 0.15, 0.0), (1.90, 0.85, 0.46 + lift), METAL)
+    m.add_box((0.10, 0.15, 0.40 + lift), (1.90, 0.85, 0.46 + lift),
+              "neutral-2")                                           # shadow line
+    m.add_box((0.20, 0.20, 0.46 + lift), (1.80, 0.80, 0.60 + lift),
+              "neutral+1")                                           # lit top shell
+    m.add_box((0.24, 0.20, 0.60 + lift), (1.76, 0.76, 0.635 + lift),
+              "neutral+2")                                           # cup warmer
     if seed is None:
         cups, groups = (0.50, 0.90, 1.30), (0.55, 1.30)
     else:
@@ -439,16 +448,22 @@ def espresso_machine(seed: int | None = None) -> Mesh:
         if rnd() < 0.45:
             # A raised back panel. The one part of the outline that is free to
             # grow, since it sits against the wall behind the counter.
-            m.add_box((0.30, 0.22, 0.635), (1.70, 0.62, 0.635 + 0.10 + rnd() * 0.10),
+            m.add_box((0.30, 0.22, 0.635 + lift),
+                      (1.70, 0.62, 0.635 + lift + 0.10 + rnd() * 0.10),
                       "neutral")
     for cx in cups:
-        m.add_cylinder((cx, 0.46, 0.635), 0.075, 0.09, CERAMIC, 8)
+        m.add_cylinder((cx, 0.46, 0.635 + lift), 0.075, 0.09, CERAMIC, 8)
     m.add_box((0.30, 0.85, 0.10), (1.70, 0.91, 0.16), "wood-1")      # drip tray
     for gx in groups:
         m.add_cylinder((gx, 0.88, 0.30), 0.09, 0.16, "neutral-3", 10)
         m.add_box((gx - 0.045, 0.86, 0.255), (gx + 0.045, 1.02, 0.29), WOOD)
-    m.add_box((0.42, 0.855, 0.50), (0.68, 0.88, 0.56), "neutral-3")  # gauge
-    m.add_cylinder((1.93, 0.60, 0.20), 0.05, 0.30, "neutral-1", 8)   # steam wand
+    m.add_box((0.42, 0.855, 0.50 + lift), (0.68, 0.88, 0.56 + lift),
+              "neutral-3")                                           # gauge
+    m.add_cylinder((1.93, 0.60, 0.20), 0.05, 0.30 + lift, "neutral-1", 8)  # wand
+    if seed is not None and rnd() < 0.5:
+        # Two wands, one each side. Both stand outside the body, so this is one
+        # of the few parts of this machine that is outline rather than infill.
+        m.add_cylinder((0.07, 0.60, 0.20), 0.05, 0.30 + lift, "neutral-1", 8)
     return m
 
 
@@ -599,6 +614,33 @@ def _base_pedestal(m, f, x0, x1, y0, y1, h, r):
     m.add_cylinder((mx, my, 0.0), min(x1 - x0, y1 - y0) * 0.30, 0.055, f, 14)
 
 
+def _base_tripod(m, f, x0, x1, y0, y1, h, r):
+    """Three raked legs to a small hub. The other round-table base.
+
+    Round tops used to send the trestle style to the pedestal, which meant a
+    disc had three bases with one of them drawn twice, and `table_round`'s
+    closest pair over eight seeds measured 2.9%. Collapsing a style onto
+    another style is how a generator loses range without losing a branch --
+    the code still has four cases and the output has three.
+    """
+    import math as _m
+    mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+    reach = min(x1 - x0, y1 - y0) * 0.44
+    m.add_cylinder((mx, my, h - 0.10), r * 1.3, 0.10, f, 10)
+    for i in range(3):
+        a = _m.radians(90 + i * 120)
+        fx, fy = mx + reach * _m.cos(a), my + reach * _m.sin(a)
+        # Two segments, because a rake drawn as one box is a vertical box.
+        m.add_box((min(fx, mx) - r, min(fy, my) - r, 0.0),
+                  (min(fx, mx) + r * 0.2 + abs(fx - mx) * 0.5,
+                   min(fy, my) + r * 0.2 + abs(fy - my) * 0.5, r * 1.2), f)
+        m.add_box((mx - r * 0.9, my - r * 0.9, r * 0.9),
+                  (mx + r * 0.9, my + r * 0.9, h - 0.09), f)
+        m.add_box((min(fx, mx + r) - r * 0.8, min(fy, my + r) - r * 0.8, 0.0),
+                  (max(fx, mx - r) + r * 0.8, max(fy, my - r) + r * 0.8,
+                   r * 0.95), f)
+
+
 def _base_trestle(m, f, x0, x1, y0, y1, h, r):
     """Two end frames joined by a spine. The long communal table."""
     r *= 1.25
@@ -650,6 +692,16 @@ def table(w: float = 1.0, d: float = 1.0, h: float = 0.58, top=WOOD,
         return st / 0x7FFFFFFF
 
     m = Mesh()
+    # Height, which is the biggest silhouette lever a table has and was the one
+    # it did not pull. Thickness varies by 0.045 and overhang by 0.05 -- one and
+    # two pixels at room scale -- so two seeds that drew the same base style
+    # were the same table: `table_4top`'s closest pair over eight seeds measured
+    # 0.3% disagreement while its mean read 30%. `m.top_z` already reports the
+    # surface, and everything that puts a cup or a vase on a table reads it, so
+    # a taller table is a taller table all the way through rather than a change
+    # that has to be matched somewhere else.
+    if seed is not None:
+        h = h * (0.93 + rnd() * 0.14)
     thick = 0.085 + rnd() * 0.045
     over = 0.03 + rnd() * 0.05                 # how far the top oversails the base
     if round_top is None:
@@ -660,8 +712,11 @@ def table(w: float = 1.0, d: float = 1.0, h: float = 0.58, top=WOOD,
              _base_posts if seed is None else
              BASE_STYLES[int(rnd() * len(BASE_STYLES)) % len(BASE_STYLES)])
     if round_top and style is _base_trestle:
-        # A trestle under a disc is a chair with two left legs.
-        style = _base_pedestal
+        # A trestle under a disc is a chair with two left legs -- so it becomes
+        # a tripod, not a second pedestal. Sending it to the pedestal left a
+        # disc with three bases one of which was drawn twice, and the closest
+        # pair of eight round tables measured 2.9%.
+        style = _base_tripod
     # 0.085 read as tree trunks under a disc; 0.052 read as wire. Each base
     # style scales this itself, because a lone raked leg carries more load --
     # and looks like it should -- than one of four posts.
@@ -746,6 +801,40 @@ def _back_solid(m, f, sz, x0, x1, y0, y1):
 BACK_STYLES = (_back_low, _back_tall, _back_shoulder, _back_solid)
 
 
+def _legs_square(m, f, cx, cy, r, top):
+    m.add_box((cx - r, cy - r, 0), (cx + r, cy + r, top), f)
+
+
+def _legs_tapered(m, f, cx, cy, r, top):
+    # Wider at the floor, narrower under the seat. Two boxes, because a taper
+    # rendered as one is a taper nobody sees at 27 px per tile.
+    m.add_box((cx - r * 1.35, cy - r * 1.35, 0),
+              (cx + r * 1.35, cy + r * 1.35, top * 0.34), f)
+    m.add_box((cx - r * 0.80, cy - r * 0.80, top * 0.34),
+              (cx + r * 0.80, cy + r * 0.80, top), f)
+
+
+def _legs_splayed(m, f, cx, cy, r, top):
+    # Foot pushed outward from the seat's centre, which is the one leg style
+    # that changes the chair's FOOTPRINT and so its silhouette from every
+    # azimuth rather than only from the side.
+    ox = 0.10 if cx > 0.5 else -0.10
+    oy = 0.10 if cy > 0.5 else -0.10
+    m.add_box((cx - r + ox, cy - r + oy, 0), (cx + r + ox, cy + r + oy,
+                                              top * 0.30), f)
+    m.add_box((cx - r + ox * 0.5, cy - r + oy * 0.5, top * 0.30),
+              (cx + r + ox * 0.5, cy + r + oy * 0.5, top), f)
+
+
+def _legs_turned(m, f, cx, cy, r, top):
+    m.add_cylinder((cx, cy, 0), r * 1.15, top * 0.62, f, 8)
+    m.add_cylinder((cx, cy, top * 0.62), r * 1.45, top * 0.10, f, 8)
+    m.add_cylinder((cx, cy, top * 0.72), r * 0.95, top * 0.28, f, 8)
+
+
+LEG_STYLES = (_legs_square, _legs_tapered, _legs_splayed, _legs_turned)
+
+
 def chair(cushion=None, frame=WOOD, seed: int | None = None) -> Mesh:
     """Back at -y, so a chair at rot=0 has its back away from a table to its +y.
 
@@ -783,11 +872,23 @@ def chair(cushion=None, frame=WOOD, seed: int | None = None) -> Mesh:
         return st / 0x7FFFFFFF
 
     m = Mesh()
-    seat_z = 0.45                      # ~28% of character height; was 0.52
+    # Three independent axes, not one. With only the back style, any two of
+    # eight seeds that drew the same style were the same chair to the pixel --
+    # measured at 3.0% disagreement for the closest pair while the generator's
+    # MEAN spread read a healthy 34%. The leg radius was varying by 0.01, which
+    # is a third of a pixel at room scale: variation that exists in the mesh
+    # and dies in the raster is not variation.
+    #
+    # Seat height is the most valuable of the three because it moves the back,
+    # the legs and the cushion together, and because `chair` already publishes
+    # `seat_z` and the seated rig already takes it -- so a shorter chair seats
+    # a person correctly rather than needing a matching change anywhere else.
+    seat_z = 0.45 if seed is None else 0.415 + rnd() * 0.075
     leg_r = 0.090 + ((rnd() - 0.5) * 0.020 if seed is not None else 0.0)
+    legs = (_legs_square if seed is None
+            else LEG_STYLES[int(rnd() * len(LEG_STYLES)) % len(LEG_STYLES)])
     for cx, cy in ((0.28, 0.28), (0.72, 0.28), (0.28, 0.72), (0.72, 0.72)):
-        m.add_box((cx - leg_r, cy - leg_r, 0),
-                  (cx + leg_r, cy + leg_r, seat_z - 0.07), frame)
+        legs(m, frame, cx, cy, leg_r, seat_z - 0.07)
     m.add_box((0.18, 0.18, seat_z - 0.07), (0.82, 0.82, seat_z), frame)     # seat
     style = (_back_low if seed is None
              else BACK_STYLES[int(rnd() * len(BACK_STYLES)) % len(BACK_STYLES)])

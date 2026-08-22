@@ -1852,3 +1852,55 @@ Three readers reconstructing one decision from its consequences will get three
 answers, and the wrong one is indistinguishable from a real bug.
 
 Over 60 seeds: **30 wall runs, 16 peninsulas, 14 L runs**, 0 errors, 7 ms each.
+
+## The mean said the generators moved; the closest pair said they repeated
+
+`check_cast_silhouette` has graded people on their most similar two from the
+start — a cast is only as varied as its closest pair. The generators were still
+being graded on an *average*, and the average hid exactly what it exists to
+catch:
+
+| generator | mean spread | closest pair |
+|---|---|---|
+| espresso_machine | 33% | **0.0%** — pixel-identical |
+| table_4top | 30% | **0.3%** |
+| table_round | 19% | 1.7% |
+| chair | 34% | 3.0% |
+
+Those are the instances a player actually compares: four chairs round one table
+come from four consecutive seeds.
+
+The cause was the same in every case — **one discrete axis, plus jitter below
+the raster**. The chair varied on four back styles and a leg radius of ±0.010,
+which is a third of a pixel at room scale; any two seeds drawing the same back
+were the same chair. *Variation that exists in the mesh and dies in the raster
+is not variation.*
+
+What each one got is an axis that reaches the outline:
+
+- **chair** — a leg style (square, tapered, splayed, turned) and a seat height
+  of 0.415–0.49. Height is the best of the three because it moves the back, the
+  legs and the cushion together, and `chair` already publishes `seat_z` and the
+  seated rig already reads it, so a shorter chair seats a person correctly with
+  no matching change anywhere. **3.0% → 11.1%**
+- **table** — height, the biggest lever a table has and the one it was not
+  pulling; thickness and overhang were varying by one and two pixels.
+  `top_z` already propagates it. **0.3% → 5.2%**
+- **espresso_machine** — shell height and an optional second steam wand. Its
+  width is deliberately fixed (it is a built-in), so height was the only
+  dimension left that reaches the outline, and the group and cup counts are all
+  interior. **0.0% → 9.0%**
+- **table_round** — round tops were sending the trestle style to the pedestal,
+  so a disc had three bases with one drawn twice. It gets a tripod instead.
+  *Collapsing a style onto another style is how a generator loses range without
+  losing a branch: the code still has four cases and the output has three.*
+  **2.9% → 5.7%**
+
+`CLOSEST_PAIR_FLOOR = 0.045`, bracketed by the 0.000/0.003/0.029 of the defects
+and the 5.2% of the weakest generator after the fix, and verified to fire on all
+four against the pre-fix library — where the mean-spread floor caught none of
+them. Generators with their own floor are exempt: the counter's modules are
+meant to tile flush and two identical ones are the point.
+
+Every unseeded mesh is byte-identical to before, so existing sprite sheets are
+untouched.

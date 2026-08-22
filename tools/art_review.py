@@ -374,6 +374,26 @@ def check_member_thickness(mesh, name="asset", ppu=ROOM_PX_PER_UNIT,
 # how a ratchet turns back into decoration.
 DEFAULT_SPREAD_FLOOR = 0.12
 
+# How different the two most similar instances of one generator must be.
+# Bracketed by measurement, as the cast floor is: the defects it was calibrated
+# against were 0.000 (espresso_machine), 0.003 (table_4top) and 0.029
+# (table_round), and the weakest generator once those were fixed is 5.2%.
+# Generators with their own `own` floor are exempt -- the counter's modules are
+# meant to tile flush and two identical ones are the point.
+CLOSEST_PAIR_FLOOR = 0.045
+
+
+def _pair_disagreement(a, b) -> float:
+    """Share of covered pixels where two frames resolve to different materials."""
+    union = differ = 0
+    for x, y in zip(a, b):
+        if x is None and y is None:
+            continue
+        union += 1
+        if x != y:
+            differ += 1
+    return differ / (union or 1)
+
 GENERATORS = (
     ("table_round", lambda A, s: A.table_round(seed=s), 1.7, None, ""),
     ("table_4top", lambda A, s: A.table_4top(seed=s), 2.6, None, ""),
@@ -471,7 +491,8 @@ def _screen_spread(frames: list) -> float:
 
 
 def check_generator_range(seeds: int = 8, azimuth: float = 45.0,
-                          floor: float = DEFAULT_SPREAD_FLOOR) -> list[str]:
+                          floor: float = DEFAULT_SPREAD_FLOOR,
+                          pair_floor: float = CLOSEST_PAIR_FLOOR) -> list[str]:
     """Do the seeded generators actually generate different shapes?
 
     A generator can rot in a way nothing else here notices. Add a base style
@@ -496,12 +517,30 @@ def check_generator_range(seeds: int = 8, azimuth: float = 45.0,
     out = []
     for name, factory, span, own, why in GENERATORS:
         bar = floor if own is None else own
-        spread = _screen_spread([screen_materials(factory(A, s + 1), azimuth,
-                                                  span) for s in range(seeds)])
+        frames = [screen_materials(factory(A, s + 1), azimuth, span)
+                  for s in range(seeds)]
+        spread = _screen_spread(frames)
         if spread < bar:
             out.append(f"{name}: screen spread {spread:.0%} over {seeds} seeds "
                        f"(floor {bar:.0%}{'; ' + why if why else ''}) -- the "
                        f"seed is barely changing the shape")
+        # And the CLOSEST pair, which is the question the mean cannot answer.
+        # `check_cast_silhouette` has graded people this way from the start --
+        # a cast is only as varied as its most similar two -- and the
+        # generators were still being graded on an average. The average hid
+        # exactly what it exists to catch: `espresso_machine` averaged 33%
+        # spread while two of its eight seeds rendered PIXEL-IDENTICAL, and
+        # `table_4top` averaged 30% with a closest pair of 0.3%. Those are the
+        # instances a player actually compares, because four chairs round one
+        # table come from four consecutive seeds.
+        if pair_floor > 0.0 and own is None:
+            lo = min(_pair_disagreement(frames[i], frames[j])
+                     for i in range(len(frames))
+                     for j in range(i + 1, len(frames)))
+            if lo < pair_floor:
+                out.append(f"{name}: closest pair of {seeds} seeds differs by "
+                           f"only {lo:.1%} (floor {pair_floor:.0%}) -- the "
+                           f"generator moves on average and repeats itself")
     return out
 
 
