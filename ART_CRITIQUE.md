@@ -2520,6 +2520,111 @@ lighting-independent metric. It does. Four rooms cannot separate that from
 topology, though — seed 1 is also the only wall run in the sample — so this is
 a thread, not a finding.
 
+## The thread was real and it was not orientation
+
+The edge re-read left a thread: the worst room on a lighting-independent metric
+was a facing-0 run, which the raking key cannot explain. Four rooms could not
+separate that from topology. Twelve can.
+
+| plan | topology | facing | focal detail lead |
+|---|---|---|---|
+| 11 | wall run | 0 | **−0.009** |
+| 1 | wall run | 0 | **−0.008** |
+| 10 | wall run | 0 | **−0.005** |
+| 2 | peninsula | 90 | +0.015 |
+| 6 | peninsula | 90 | +0.016 |
+| 4 | wall run | 0 | +0.018 |
+| 9 | L run | 0 | +0.024 |
+| 7 | wall run | 90 | +0.042 |
+| 12 | island | 0 | +0.046 |
+| 5 | peninsula | 0 | +0.052 |
+| 3 | island | 90 | +0.053 |
+| 8 | L run | 90 | +0.058 |
+
+Grouped by facing the two sets overlap almost completely — facing 0 spans
+−0.009 to +0.052 and facing 90 spans +0.015 to +0.058. **Orientation does not
+explain this one.** Grouped by topology, every negative room is a wall run.
+
+So the thread dies as an orientation story and lives as a topology one, and
+the explanation is the same wall that the brightness section credited:
+
+- a wall run's focal region contains 1.5 m of **lit vertical mass**, which is
+  why wall runs read brightest;
+- that mass is 1.5 m of **one flat ramp step**, which is why they read
+  flattest.
+
+Two metrics disagreeing about the same rooms, for one structural reason, each
+of them right.
+
+## The wall was a surface nobody used
+
+The reference room is a wall run too, and it reads **+0.092** — above every
+generated room in the table. What its back wall carries that a generated one
+does not:
+
+| | reference | generated wall run |
+|---|---|---|
+| menu boards | 2 | 2 |
+| open wall shelving | **2** | **0** |
+| hanging sign | **1** | **0** |
+
+`A.wall_shelf` has been in the library since the second pass and was only ever
+called for the *window bar's* worktop. `A.wall_sign` has been in it just as
+long, with a docstring reading *"this is a focal device, not decoration — it is
+the one bright, high-contrast object over the interaction zone, which is how
+the composition tells the player where to look."*
+
+**No generated room has ever had one.** A focal device that the focal check
+never saw, sitting in the library the whole time the focal check was being
+argued about. Two hundred lines of this file are about what the counter needs;
+the answer was already written down in a docstring above the counter.
+
+With the band between the counter top and the boards dressed:
+
+| plan | before | after |
+|---|---|---|
+| 11 wall run | −0.009 | **+0.011** |
+| 1 wall run | −0.008 | **+0.006** |
+| 10 wall run | −0.005 | **+0.005** |
+| 4 wall run | +0.018 | +0.033 |
+| 9 L run | +0.024 | +0.036 |
+| 7 wall run | +0.042 | +0.071 |
+| 8 L run | +0.058 | +0.082 |
+
+Minimum over twelve rooms **−0.009 → +0.005**, no room negative, and the five
+wall-less rooms read bit-identical, which is the scope the change was supposed
+to have. Brightness barely moved — plans 4 and 10 gained 0.004 and 0.002, plan
+7 lost 0.007 — which is the point: this is detail, not mass, and the metric
+that found it is the only one that reports it.
+
+### Proposed and tested, because an index is not a footprint
+
+First version handed out tiles by index: menus 0 and 1, shelves 2 and 3, the
+sign in the middle. That put the sign through a shelf in three rooms and
+through a menu board in three more, because `A.wall_shelf(1.6)` is two tiles
+wide. The back bar shelving above already learned this and the rule is the same
+rule, so it is the same loop — propose, test against `_conflicts`, keep or
+drop. The sign goes first and takes the middle, because it is the one object
+here with a place it needs to be.
+
+### The floor, and how thin it is
+
+Promoted into `check_focal_contrast` as a third reading off the same four
+renders rather than as a twenty-fifth check, so the suite costs nothing extra.
+
+Zero is not a tuned constant, it is the sign change: below it the busiest thing
+in frame is not the thing the composition is pointing at. The bracket is
+**0.010 wide** — three measured defects at −0.005, −0.008 and −0.009 against a
+weakest good room at +0.005 — and thin is the honest report rather than a
+reason to round the floor somewhere more comfortable. A wall run that loses its
+shelf will fail this, and should.
+
+Verified in both directions on shipped code: clean at 0.000, and at a floor of
+0.020 it reports *plan 1 (wall run): counter carries +0.006 detail against its
+room* and *plan 2 (peninsula): +0.015*. Those two numbers match the standalone
+edge script to three decimals, which is the check and the experiment agreeing
+through two separate implementations.
+
 ## Still open
 
 - **Stages 1–3** (SDXL concept → TRELLIS 2 mesh → UniRig rig) need a GPU and
@@ -2540,8 +2645,7 @@ a thread, not a finding.
   bracketed by measurement) but the mean-spread floor of 0.15 is still close to
   the original guess. It has never rejected anything the closest-pair floor did
   not also reject, which is either redundancy or a floor set too low to fire.
-- **Is the facing-0 penalty structural as well as lit?** Edge density is blind
-  to the light rig, and the worst room on it is a facing-0 run. Four rooms
-  cannot separate orientation from topology — the sample's only facing-0 room
-  is also its only wall run — so this needs the full twelve before it is
-  anything more than a thread.
+- **The detail floor's bracket is 0.010 wide.** Three measured defects at
+  −0.005 to −0.009 against a weakest good room at +0.005. It is the tightest
+  floor in the suite and the first one whose margin is smaller than the
+  difference between two adjacent rooms.
