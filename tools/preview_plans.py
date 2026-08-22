@@ -13,7 +13,7 @@ the door. That last layer is the point of the sheet. Every other rule in
 the numbers; circulation is emergent, and the only honest way to review it is
 to look at the floor that is left.
 
-    python tools/preview_plans.py [--plans 6] [--seed 1]
+    python tools/preview_plans.py [--plans 9] [--seed 1]
 """
 from __future__ import annotations
 
@@ -91,7 +91,7 @@ def draw_plan(d: ImageDraw.ImageDraw, plan: F.Plan, ox: int, oy: int,
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--plans", type=int, default=6)
+    ap.add_argument("--plans", type=int, default=9)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--px", type=float, default=26.0)
     ap.add_argument("--cols", type=int, default=3)

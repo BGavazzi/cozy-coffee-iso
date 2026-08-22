@@ -43,6 +43,9 @@ SILL, HEAD = 0.58, 1.82
 # the one thing in the room that is supposed to lead the eye.
 PAINTS = ("wood", "foliage-3", "rose-3", "wood", "wood-2", "wood")
 
+# How much of the run the espresso machine takes, including its lead-in gap.
+MACHINE_SPAN = 2.9
+
 
 def light_rig(plan: F.Plan) -> LightRig:
     """Daylight at each window, a core over the till, and dark corners.
@@ -103,6 +106,15 @@ def build(plan: F.Plan) -> Layout:
 
     run = plan.of("service")[0]
     horizontal = run.facing == 0.0
+    # A peninsula juts into the room, so its back bar does not hug the wall
+    # that its run is parallel to. Everything below that used to say "the wall"
+    # has to say "the back bar zone" instead: shelving was going to x=0.15
+    # whatever the plan said, four tiles from the counter it belongs to, and
+    # the only reason nothing complained is that `add_seeded` found the spot
+    # empty and took it. A fallback that succeeds is the hardest kind of bug to
+    # see.
+    back0 = plan.of("backbar")[0]
+    on_wall = (back0.y0 < 0.05) if horizontal else (back0.x0 < 0.05)
     length = run.w if horizontal else run.d
     # What stands on the counter, and how much of the run it eats. Tallied
     # before the back bar goes in rather than after, because the back bar has
@@ -110,7 +122,6 @@ def build(plan: F.Plan) -> Layout:
     # behind the grinder 37%.
     kit = [(A.espresso_machine, 2.0, "espresso"), (A.grinder, 0.8, "grinder"),
            (A.register, 0.9, "register")]
-    kit = [k for k in kit if True]
     kit_extent, used = 0.35, 0.35
     for _, width, _ in kit:
         if kit_extent + width > length - 0.3:
@@ -128,22 +139,75 @@ def build(plan: F.Plan) -> Layout:
             m = A.counter(seed=4 + i, front="x")
         add(m, at=at, name=f"counter#{i}")
 
+    # Placed BEFORE the back bar, not after. The shelves go in with
+    # `add_seeded`, which rejects a seed whose result is hidden -- but it can
+    # only see what is already in the layout, and the kit used to arrive
+    # afterwards. So every shelf was checked against an empty counter and
+    # passed, and three rooms in eight shipped a shelf 45% behind a grinder.
+    # Ordering is part of a constraint solver's correctness: a check that runs
+    # before the thing it constrains is a check that always passes.
+    # --- the kit itself, spaced along the run rather than at coordinates
+    top = run.y0 + 0.10 if horizontal else run.x0 + 0.10
+    for factory, width, tag in kit:
+        if used + width > length - 0.3:
+            break
+        pos = (run.x0 + used, top + 0.05, 0.92) if horizontal else (
+            top + 0.05, run.y0 + used, 0.92)
+        try:
+            L.add_seeded(lambda k, f=factory: f(seed=k), range(1, 10),
+                         at=pos, name=f"prop#{tag}")
+        except TypeError:
+            add(factory(), at=pos, name=f"prop#{tag}")
+        used += width + 0.55
+
     # --- back bar: shelving against the wall behind the run
     back = plan.of("backbar")
     if back:
         b = back[0]
-        span = b.w if horizontal else b.d
+        # Shelving runs along the back bar's own long axis and sits inside it,
+        # rather than against whichever wall the reference room happened to
+        # use. `A.bookshelf` is 0.9 wide and 0.3 deep, so it fits the 0.8 strip.
+        along_x = b.w >= b.d
+        span = b.w if along_x else b.d
         # Started from the FAR end of the run. Shelving from the near end sat
         # directly behind the espresso machine and `screen_occlusion` reported
         # 97% of it hidden -- geometry nobody can see, which is the most
         # expensive kind. The machine takes the first two tiles of any run, so
         # the back bar takes the rest.
-        for i in range(max(0, int((span - kit_extent - 0.6) / 1.6))):
-            off = span - 1.7 - i * 1.6
-            at = (b.x0 + off, 0.15, 0) if horizontal else (0.15, b.y0 + off, 0)
-            L.add_seeded(lambda k: A.bookshelf(seed=k), range(3 + i, 14 + i),
-                         at=at, rot=0 if horizontal else 270,
-                         name=f"prop#backbar{i}")
+        # Only the MACHINE is subtracted, not the whole kit. Subtracting all
+        # three left `span - 5.7` on a six-tile run and the rooms shipped with
+        # no back bar at all -- invisible, because an empty wall behind a
+        # counter looks like a decision. The grinder and the register top out
+        # at 1.3 against a 1.9 shelf; the machine reaches 1.74 and is the only
+        # one that hides anything.
+        # The offset is searched, not computed. `add_seeded` cannot rescue
+        # this placement -- every `A.bookshelf` seed has the same 0.9 x 0.3
+        # footprint, so no seed moves the shelf out from behind the grinder,
+        # and the fallback quietly shipped one 45% hidden in three rooms of
+        # eight. When the solver's only lever does not move the failing
+        # quantity, give it the lever that does: here that is where along the
+        # run the shelf goes, so the loop proposes offsets and keeps the ones
+        # the occlusion rule accepts.
+        want = max(0, int((span - MACHINE_SPAN - 0.6) / 1.6))
+        taken, placed_i = [], 0
+        off = span - 1.7
+        while off > 0.3 and placed_i < want:
+            if any(abs(off - t) < 1.5 for t in taken):
+                off -= 0.35
+                continue
+            at = ((b.x0 + off, b.y0 + 0.08, 0) if along_x
+                  else (b.x0 + 0.08, b.y0 + off, 0))
+            name = f"prop#backbar{placed_i}"
+            L.add(A.bookshelf(seed=3 + placed_i), at=at,
+                  rot=0 if along_x else 270, name=name)
+            cand = L.items.pop()
+            if L._conflicts(cand, 45.0, 0.35):
+                L.rots.pop(name, None)
+            else:
+                L.items.append(cand)
+                taken.append(off)
+                placed_i += 1
+            off -= 0.35
 
     # --- menu boards above the counter, on solid wall and never over glass.
     # The reference room learned both halves of that the hard way: at counter
@@ -160,24 +224,14 @@ def build(plan: F.Plan) -> Layout:
     hi = run.x1 if horizontal else run.y1
     glass = plan.win_x if horizontal else plan.win_y
     solid = [t for t in range(int(lo), int(hi) + 1) if t not in glass]
-    for bi, t in enumerate(solid[:2]):
+    # Only when the run is parallel to the wall it backs onto. A peninsula
+    # meets the wall end-on, so there is no stretch of wall behind it to hang a
+    # board on -- and hanging one anyway put two chalkboards across the room
+    # from the counter they price.
+    for bi, t in enumerate(solid[:2] if on_wall else []):
         at = (t + 0.12, 0.04, 0.62) if horizontal else (0.04, t + 0.12, 0.62)
         add(A.menu_board(), at=at, rot=0 if horizontal else 270,
             name=f"decor#menu{bi}")
-
-    # --- the kit itself, spaced along the run rather than at coordinates
-    top = run.y0 + 0.10 if horizontal else run.x0 + 0.10
-    for factory, width, tag in kit:
-        if used + width > length - 0.3:
-            break
-        pos = (run.x0 + used, top + 0.05, 0.92) if horizontal else (
-            top + 0.05, run.y0 + used, 0.92)
-        try:
-            L.add_seeded(lambda k, f=factory: f(seed=k), range(1, 10),
-                         at=pos, name=f"prop#{tag}")
-        except TypeError:
-            add(factory(), at=pos, name=f"prop#{tag}")
-        used += width + 0.55
 
     # --- window bar: a run of stools facing the glass
     for bi, z in enumerate(plan.of("window_bar")):

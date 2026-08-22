@@ -338,10 +338,47 @@ def generate(seed: int = 1, tries: int = 120) -> Plan:
         w = 12 + int(rnd() * 5)
         d = 9 + int(rnd() * 4)
         run_len = 4.0 + rnd() * 3.0
+        # A peninsula juts into the room from the far wall instead of running
+        # along it. It is the one counter arrangement here that changes the
+        # circulation problem rather than the furniture arrangement: the floor
+        # is cut in two and everything has to come round the end, which is a
+        # question the flood fill is already equipped to ask and the rectangle
+        # comparisons are not.
+        peninsula = rnd() < 0.26
         horizontal = rnd() < 0.62
         zones = []
 
-        if horizontal:
+        if peninsula:
+            run_len = min(run_len, (d if horizontal else w) - 3.2)
+            if run_len < 3.0:
+                continue
+            if horizontal:
+                rx = 2.2 + rnd() * max(0.1, w - run_len - 6.0)
+                run = Zone("service", rx, 0.8, rx + SERVICE_DEPTH,
+                           0.8 + run_len, 90.0)
+                back = Zone("backbar", rx - BACKBAR_DEPTH, 0.0,
+                            rx, 0.8 + run_len + 0.3, 90.0)
+                queue = Zone("queue", run.x1, 0.5, run.x1 + QUEUE_DEPTH,
+                             run.y1 + 0.4, 90.0)
+                blocked_x = (back.x0 - 0.2, queue.x1 + 0.2)
+                blocked_y = None
+                main = (queue.x1 + 0.5, 0.5, w - 0.5, d - 0.5)
+                side = (0.5, 0.5, back.x0 - 0.5, d - 0.5)
+                door = (w - 0.4, d - 0.4)
+            else:
+                ry = 2.2 + rnd() * max(0.1, d - run_len - 6.0)
+                run = Zone("service", 0.8, ry, 0.8 + run_len,
+                           ry + SERVICE_DEPTH, 0.0)
+                back = Zone("backbar", 0.0, ry - BACKBAR_DEPTH,
+                            0.8 + run_len + 0.3, ry, 0.0)
+                queue = Zone("queue", 0.5, run.y1, run.x1 + 0.4,
+                             run.y1 + QUEUE_DEPTH, 0.0)
+                blocked_x = None
+                blocked_y = (back.y0 - 0.2, queue.y1 + 0.2)
+                main = (0.5, queue.y1 + 0.5, w - 0.5, d - 0.5)
+                side = (0.5, 0.5, w - 0.5, back.y0 - 0.5)
+                door = (w - 0.4, d - 0.4)
+        elif horizontal:
             x0 = 0.8 + rnd() * max(0.1, w - run_len - 1.6)
             run = Zone("service", x0, BACKBAR_DEPTH, x0 + run_len,
                        BACKBAR_DEPTH + SERVICE_DEPTH, 0.0)
@@ -353,7 +390,7 @@ def generate(seed: int = 1, tries: int = 120) -> Plan:
         else:
             y0 = 0.8 + rnd() * max(0.1, d - run_len - 1.6)
             run = Zone("service", BACKBAR_DEPTH, y0,
-                       BACKBAR_DEPTH + SERVICE_DEPTH, y0 + run_len, 90.0)
+                       BACKBAR_DEPTH + SERVICE_DEPTH, y0 + run_len, 90.0)  # noqa
             back = Zone("backbar", 0.0, y0 - 0.3, BACKBAR_DEPTH,
                         y0 + run_len + 0.3, 90.0)
             queue = Zone("queue", run.x1, y0 - 0.4, run.x1 + QUEUE_DEPTH,
@@ -376,6 +413,8 @@ def generate(seed: int = 1, tries: int = 120) -> Plan:
 
         # The floor the service band leaves, as TWO rectangles: the one below
         # the band, and the strip beside it that still reaches the wall.
+        # A peninsula has already worked its own two out -- they are the floor
+        # either side of it rather than below and beside.
         #
         # The second one is not a refinement, it is the difference between a
         # rule and a ban. With only the strip below, a horizontal counter puts
@@ -386,7 +425,9 @@ def generate(seed: int = 1, tries: int = 120) -> Plan:
         # and the layout was wrong: a five-tile counter on a fourteen-tile wall
         # leaves nine tiles of window, and that is exactly where a cafe puts
         # its seats.
-        if horizontal:
+        if peninsula:
+            pass
+        elif horizontal:
             main = (0.5, queue.y1 + 0.4, w - 0.5, d - 0.5)
             side = (back.x1 + 0.6, 0.5, w - 0.5, queue.y1 - 0.1)
             door = (min(w - 0.5, back.x1 + 1.8), d - 0.4)
