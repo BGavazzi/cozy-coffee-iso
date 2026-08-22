@@ -497,21 +497,30 @@ def generate(seed: int = 1, tries: int = 120) -> Plan:
         # rule.
         if not peninsula and not island and rnd() < 0.30:
             arm = 1.4 + rnd() * 1.1
-            near = rnd() < 0.5          # which end of the run it turns at
+            # The arm turns at the end of the run FURTHEST from the camera,
+            # always. Which end used to be a coin flip, and the flip is a
+            # camera-space question with only one answer: an arm at the near
+            # end crosses in front of the run it belongs to. Measured over
+            # every L plan in twenty-four seeds -- every near-end arm hid
+            # 53-55% of a counter module behind it and every far-end arm hid
+            # nothing, six for six.
+            #
+            # So the draw is gone rather than constrained. A degree of freedom
+            # whose every second value is wrong is not a degree of freedom, and
+            # leaving the flip in and rejecting half its outcomes would have
+            # been the plan generator's original 0.3% acceptance in miniature.
             if horizontal:
-                ax = run.x0 if near else run.x1 - SERVICE_DEPTH
+                ax = run.x0
                 ret = Zone("service_return", ax, run.y1,
                            ax + SERVICE_DEPTH, run.y1 + arm, 0.0)
-                q = Zone("queue", ret.x1 + 0.3 if near else queue.x0,
-                         queue.y0, queue.x1 if near else ret.x0 - 0.3,
+                q = Zone("queue", ret.x1 + 0.3, queue.y0, queue.x1,
                          queue.y1, 0.0)
             else:
-                ay = run.y0 if near else run.y1 - SERVICE_DEPTH
+                ay = run.y0
                 ret = Zone("service_return", run.x1, ay,
                            run.x1 + arm, ay + SERVICE_DEPTH, 90.0)
-                q = Zone("queue", queue.x0,
-                         ret.y1 + 0.3 if near else queue.y0, queue.x1,
-                         queue.y1 if near else ret.y0 - 0.3, 90.0)
+                q = Zone("queue", queue.x0, ret.y1 + 0.3, queue.x1,
+                         queue.y1, 90.0)
             # The queue steps aside for the arm rather than the checker
             # rejecting the pair. Left alone this was 9 of 20 L proposals
             # failing on "service_return zone stands in the queue" -- which is

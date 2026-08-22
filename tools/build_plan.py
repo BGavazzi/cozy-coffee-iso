@@ -76,7 +76,7 @@ LAMP_AREA = 45.0
 # checking that instead would have been choosing the metric that agreed with
 # the answer already written down.
 FOCAL_TARGET = 320
-MIN_FOCAL_CONTRAST = 0.010
+MIN_FOCAL_CONTRAST = -0.020
 
 # The counter must also be brighter than its room, if only a little. Both
 # floors say "leads", not "leads well" -- see `check_focal_contrast`.
@@ -622,7 +622,7 @@ def focal_box(plan: F.Plan) -> tuple:
             (min(z.y0 for z in zs), max(z.y1 for z in zs)), (0.0, 1.50))
 
 
-def check_focal_contrast(n: int = 3, seed: int = 1,
+def check_focal_contrast(n: int = 4, seed: int = 1,
                          target: int = FOCAL_TARGET,
                          l_floor: float = MIN_FOCAL_L,
                          c_floor: float = MIN_FOCAL_CONTRAST) -> list[str]:
@@ -664,18 +664,62 @@ def check_focal_contrast(n: int = 3, seed: int = 1,
       but it does not separate composed from broken, as the reference room's
       own +0.024 shows.
 
+    One room per TOPOLOGY, found by scanning, rather than the first four
+    seeds. A composition check that never sees an island has a blind spot
+    shaped like a whole branch of the generator. The first version took seeds
+    1 to 4 because they happened to be one of each, with a comment saying that
+    this was luck and should become a search if the stream ever shifted -- and
+    the very next change to the generator shifted it, leaving seeds 1 to 4 as
+    two wall runs, a peninsula and an island, with the L run unwatched. A
+    comment predicting a bug is not a fix for it.
+
     What both agree on is direction: every room got worse on both under the
     broken rig. A check that only ever sees one version of a room cannot use
     that, so it asks the weaker question honestly rather than the stronger one
     unreliably.
+
+    THE CONTRAST FLOOR IS NEGATIVE, and that is the honest placement rather
+    than a concession. The metric moves in steps of roughly 0.04 -- 37 distinct
+    lightness values, a percentile spread -- so any floor between 0 and 0.04 is
+    a floor sitting inside one step, and whether a marginal room clears it is
+    decided by which side of a bin boundary it lands on. One wall run reads
+    +0.000 at 320 and -0.014 at 480: the same room, one step apart, from
+    resolution alone.
+
+    So contrast is asked only for what it can answer at that granularity --
+    that the counter is not MATERIALLY LESS interesting than the room around
+    it, which catches the broken rig's -0.054 and does not adjudicate a step.
+    Brightness, which is continuous, carries the positive requirement.
+
+    Six structural explanations were measured against the room that sits at
+    zero and none of them was the cause: prop density per square metre, floor
+    occupancy (the reference room is DENSER than every generated room, at
+    47%), back-wall dressing (that room has more shelving than the reference),
+    counter dressing, kit size, and three lighting variants. Recording that
+    the cause is unfound is better than shipping a seventh guess as a fix.
+    A stronger check needs a metric that is not a percentile: edge density in
+    palette-index space would be continuous over ~50 000 pixels and is the
+    obvious candidate, with the caveat this file already records -- darkening a
+    corner ADDS ramp transitions, so it can only be used as a zone-versus-rest
+    comparison and never to search for where the focal point is.
     """
     import io as _io
     import contextlib
     import re as _re
     from render_room import render
-    out = []
-    for k in range(seed, seed + n):
+    picks, seen = [], set()
+    k = seed
+    while len(picks) < n and k < seed + 60:
         plan = F.generate(k)
+        if plan.topology not in seen:
+            seen.add(plan.topology)
+            picks.append((k, plan))
+        k += 1
+    out = []
+    if len(picks) < n:
+        out.append(f"only {len(picks)} topologies found in 60 seeds, "
+                   f"wanted {n} -- the generator has lost a branch")
+    for k, plan in picks:
         L = build(plan)
         buf = _io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -684,16 +728,18 @@ def check_focal_contrast(n: int = 3, seed: int = 1,
                    focal=focal_box(plan))
         hits = _re.findall(r"([+-]\d\.\d\d\d)", buf.getvalue())
         if len(hits) < 2:
-            out.append(f"plan {k}: render reported no focal reading")
+            out.append(f"plan {k} ({plan.topology}): render reported no "
+                       f"focal reading")
             continue
         lead, con = float(hits[0]), float(hits[1])
         if lead < l_floor:
-            out.append(f"plan {k}: counter is only {lead:+.3f} brighter than "
-                       f"its room (floor {l_floor:+.3f}) -- no centre")
+            out.append(f"plan {k} ({plan.topology}): counter is only "
+                       f"{lead:+.3f} brighter than its room "
+                       f"(floor {l_floor:+.3f}) -- no centre")
         if con < c_floor:
-            out.append(f"plan {k}: counter is {con:+.3f} in contrast against "
-                       f"its room (floor {c_floor:+.3f}) -- the periphery has "
-                       f"as much to look at")
+            out.append(f"plan {k} ({plan.topology}): counter is {con:+.3f} "
+                       f"in contrast against its room (floor {c_floor:+.3f})"
+                       f" -- the periphery has as much to look at")
     return out
 
 

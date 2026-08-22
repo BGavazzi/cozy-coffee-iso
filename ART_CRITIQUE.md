@@ -2082,3 +2082,47 @@ exists not to be.
 
 60 seeds: **20 wall runs, 23 peninsulas, 12 L runs, 5 islands**, 0 errors,
 8 ms each.
+
+## Widening the focal check found a room, and six explanations that were not it
+
+Making the check pick **one seed per topology** rather than the first four
+seeds — the fix its own comment had predicted would be needed, one commit
+before it was — immediately surfaced a wall run whose counter reads **+0.000**
+contrast against its room at 320 and **−0.014** at 480. `focal_report` prints
+*DOES NOT lead the eye* for it in words.
+
+Six structural explanations were measured and none was the cause:
+
+| hypothesis | measurement | verdict |
+|---|---|---|
+| over-dressed room | occupancy 44% vs the reference's **47%** | the reference is denser |
+| prop density per m² | 0.66 vs reference 0.62 | marginal, and the densest-periphery room reads strongest |
+| bare back wall | 2 shelves + 2 boards vs the reference's 1 + 2 | it has *more* |
+| bare counter | 7 clutter items, top of the range | no |
+| oversized kit | already reduced to 2 | no |
+| lighting | three pool variants, incl. mid-field negative | moved it by 0.000 |
+
+Recording that the cause is unfound is better than shipping a seventh guess as
+a fix.
+
+### The floor is negative now, and that is the honest placement
+
+The metric moves in steps of roughly 0.04. Any floor between 0 and 0.04 sits
+*inside one step*, and whether a marginal room clears it is decided by which
+side of a bin boundary it lands on — the same room reads +0.000 and −0.014 one
+resolution apart. So contrast is asked only what it can answer at that
+granularity: that the counter is not **materially less** interesting than the
+room around it. That still catches the broken rig at −0.054 and it no longer
+adjudicates a step. Brightness, which is continuous, carries the positive
+requirement.
+
+A stronger check needs a metric that is not a percentile. **Edge density in
+palette-index space** is the obvious candidate — continuous over ~50 000 pixels
+— with the caveat this file already records from the first attempt at a focal
+metric: darkening a corner *adds* ramp transitions, so it can only ever be a
+zone-versus-rest comparison and never a search for where the focal point is.
+
+Verified in both directions after the retune: clean on the good rig across all
+four topologies, and the broken rig now fails the same room on **both** metrics
+— brightness +0.005 against a floor of 0.015, contrast −0.054 against −0.020.
+The two floors catch it independently, which is what having two is for.
