@@ -182,7 +182,12 @@ def build(plan: F.Plan) -> Layout:
     # the only reason nothing complained is that `add_seeded` found the spot
     # empty and took it. A fallback that succeeds is the hardest kind of bug to
     # see.
-    on_wall = plan.topology != "peninsula"
+    # A peninsula meets the wall end-on and an island meets none at all, so
+    # neither has a stretch of wall behind its counter. Written as the set that
+    # DOES hug a wall rather than as a list of exceptions, because the last
+    # time a new topology arrived this line said `!= "peninsula"` and quietly
+    # gave the island two chalkboards on a wall across the room.
+    on_wall = plan.topology in ("wall run", "L run")
     length = run.w if horizontal else run.d
     # What stands on the counter, and how much of the run it eats. Tallied
     # before the back bar goes in rather than after, because the back bar has
@@ -264,7 +269,10 @@ def build(plan: F.Plan) -> Layout:
                 at=at, name=f"counter#ret{ri}_{i}")
 
     # --- back bar: shelving against the wall behind the run
-    back = plan.of("backbar")
+    # Tall shelving only where there is a wall to put it against. A 1.9 stack
+    # standing free on an island is a partition between the barista and the
+    # room, which is the one thing an island exists not to be.
+    back = plan.of("backbar") if on_wall else []
     if back:
         b = back[0]
         # Shelving runs along the back bar's own long axis and sits inside it,

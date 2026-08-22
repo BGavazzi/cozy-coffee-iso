@@ -46,13 +46,16 @@ which is the point.
 |---|---|
 | `proof/shop.png`, `proof/shop_big.png` | the hand-authored reference room |
 | `proof/plan_room.png` | a room generated end to end from a checked plan |
-| `proof/plan_room_perimeter.png` | the same, on the other seating topology |
-| `proof/floorplans.png` | six plans, top-down, with the walkable floor shaded |
+| `proof/plan_room_lrun.png` | the same, with an L-shaped counter |
+| `proof/plan_room_peninsula.png` | the same, counter jutting in from a wall |
+| `proof/plan_room_island.png` | the same, counter free-standing, walls all glass |
+| `proof/plan_room_stools.png` | a window bar with people perched at it |
+| `proof/floorplans.png` | twelve plans, top-down, walkable floor shaded, topology labelled |
 | `proof/generators.png` | every generator, eight seeds each, spread measured |
 | `proof/characters.png` | roster, eight directions, and generated extras |
 | `ART_CRITIQUE.md` | what was rejected, why, and what became a check |
 
-The reference room is still the better room. It holds six passes of judgement
+The reference room is still the better room. It holds seven passes of judgement
 that no rule encodes — why the queue runs across the view rather than into it,
 why the crates go against the far walls. What the generator has is that it can
 make a different cafe, and that every one it makes clears twenty-three checks.

@@ -2015,3 +2015,70 @@ unreliably.**
   bracketed by measurement) but the mean-spread floor of 0.12 is still the
   original guess. It has never rejected anything the closest-pair floor did not
   also reject, which is either redundancy or a floor set too low to fire.
+
+---
+
+# Seventh pass — the island, and a floor that had never fired
+
+## The mean-spread floor was blind
+
+Flagged in the open list as possibly redundant. Testing it properly meant
+degrading a generator on purpose — a bookshelf emitting only *N* distinct
+meshes from eight seeds:
+
+| distinct | mean | closest | floor 0.12 | floor 0.15 | pair floor |
+|---|---|---|---|---|---|
+| 1 | 0.0% | 0.0% | fail | fail | fail |
+| 2 | 10.8% | 0.0% | fail | fail | fail |
+| 3 | 14.1% | 0.0% | **PASS** | fail | fail |
+| 4 | 16.3% | 0.0% | **PASS** | **PASS** | fail |
+| 8 | 18.4% | 15.9% | PASS | PASS | PASS |
+
+A generator that has lost **half its range** sails through both mean floors and
+is caught only by the closest pair, which has been reporting 0.0% since the
+second row. At 0.12 the mean did not fire until six of eight seeds collided.
+
+It is kept rather than deleted, because it catches the mode the closest pair
+cannot see — every instance differing a little and none differing much — but
+retuned to 0.15, three points under the weakest real generator. A secondary
+instrument, labelled as one.
+
+## The island
+
+The fourth and last counter arrangement, and the only one left that changes
+circulation rather than furniture: it touches no wall, the floor becomes a
+ring, and every seat has to be reachable the long way round when the short way
+is blocked. Nothing in the island code tests that — `blocking()` selects by
+kind and the erosion grid does the rest, the same bargain the L run made.
+
+It is also the only arrangement that **frees every wall for glass**. The other
+three pin a counter or a back bar against one and hand `_windows` a blocked
+span to route around; an island hands it `None`. That is not a special case so
+much as the absence of a constraint, and it is a real reason cafes build them.
+
+Two bugs, both of them the same bugs a previous topology had:
+
+- **The duplicated `zones += [run, back, queue]`** — written from the peninsula
+  as a template, which reproduced the peninsula's own first-cut failure
+  exactly. Every proposal failed *a cafe has one service run*. That is what a
+  template is for and also what it costs.
+- **The proposal was uninformed, for the third time in this generator.** Placed
+  anywhere in the band its wall clearances allowed, the island pushed the main
+  seating rectangle under the 4.0 × 3.5 minimum and died on a guard further
+  down: **7 island proposals reached the checker in sixty seeds**. Bounding the
+  island's position by the floor it has to *leave* took that to 42% acceptance
+  and **5 plans of 60**. After the windows and the L run's queue, the lesson has
+  not changed: a constraint the proposal can satisfy for free should not be left
+  to the checker.
+
+The consumer needed one change, and the shape of it matters. `on_wall` had been
+written as `topology != "peninsula"`, so an island inherited two chalkboards on
+a wall across the room from the counter they price. It is now the set that
+*does* hug a wall — `("wall run", "L run")` — because a list of exceptions is
+wrong every time a fifth thing arrives and a list of members is not. Tall
+shelving is gated on the same test: a 1.9 stack standing free on an island is a
+partition between the barista and the room, which is the one thing an island
+exists not to be.
+
+60 seeds: **20 wall runs, 23 peninsulas, 12 L runs, 5 islands**, 0 errors,
+8 ms each.

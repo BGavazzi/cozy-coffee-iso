@@ -356,10 +356,80 @@ def generate(seed: int = 1, tries: int = 120) -> Plan:
         # question the flood fill is already equipped to ask and the rectangle
         # comparisons are not.
         peninsula = rnd() < 0.26
+        # An island touches no wall at all. It is the last of the four and the
+        # one that asks the most of the flood fill: the floor becomes a ring,
+        # and every seat has to be reachable the long way round if the short
+        # way is blocked. Nothing here tests that -- `blocking()` selects by
+        # kind and the erosion grid does the rest, the same bargain the L run
+        # made.
+        #
+        # It is also the only arrangement that frees every wall for glass. The
+        # other three pin a counter or a back bar against one, and `_windows`
+        # is handed a blocked span to route around; an island hands it None,
+        # which is not a special case so much as the absence of the constraint
+        # the other three impose. That is a real reason cafes build them.
+        island = not peninsula and rnd() < 0.22
         horizontal = rnd() < 0.62
         zones = []
 
-        if peninsula:
+        if island:
+            span = SERVICE_DEPTH + BACKBAR_DEPTH
+            if horizontal:
+                run_len = min(run_len, w - 2 * ISLAND_CLEAR - 0.4)
+                if run_len < 3.0 or d < 2 * ISLAND_CLEAR + span + QUEUE_DEPTH:
+                    continue
+                # `iy` is bounded by the floor the island has to LEAVE, not
+                # just by the walls it has to clear. Placed anywhere in the
+                # legal band it pushed the main seating rectangle under the
+                # 4.0 x 3.5 minimum and the proposal was thrown away further
+                # down -- 7 island proposals reached the checker in sixty
+                # seeds, and the rest died on a guard the branch could have
+                # satisfied itself. Third time in this generator: the windows,
+                # then the L run's queue, now this.
+                lo = ISLAND_CLEAR + BACKBAR_DEPTH
+                hi = d - 3.3 - MIN_SEAT_RECT_D
+                if hi < lo:
+                    continue        # an island needs floor on both sides
+                ix = ISLAND_CLEAR + rnd() * max(0.1, w - run_len -
+                                                2 * ISLAND_CLEAR)
+                iy = lo + rnd() * (hi - lo)
+                run = Zone("service", ix, iy, ix + run_len,
+                           iy + SERVICE_DEPTH, 0.0)
+                back = Zone("backbar", ix, iy - BACKBAR_DEPTH,
+                            ix + run_len, iy, 0.0)
+                queue = Zone("queue", ix - 0.4, run.y1, ix + run_len + 0.4,
+                             run.y1 + QUEUE_DEPTH, 0.0)
+                main = (0.5, queue.y1 + 0.4, w - 0.5, d - 0.5)
+                side = (0.5, 0.5, w - 0.5, back.y0 - 0.6)
+            else:
+                run_len = min(run_len, d - 2 * ISLAND_CLEAR - 0.4)
+                if run_len < 3.0 or w < 2 * ISLAND_CLEAR + span + QUEUE_DEPTH:
+                    continue
+                lo = ISLAND_CLEAR + BACKBAR_DEPTH
+                hi = w - 3.3 - MIN_SEAT_RECT_W
+                if hi < lo:
+                    continue
+                iy = ISLAND_CLEAR + rnd() * max(0.1, d - run_len -
+                                                2 * ISLAND_CLEAR)
+                ix = lo + rnd() * (hi - lo)
+                run = Zone("service", ix, iy, ix + SERVICE_DEPTH,
+                           iy + run_len, 90.0)
+                back = Zone("backbar", ix - BACKBAR_DEPTH, iy, ix,
+                            iy + run_len, 90.0)
+                queue = Zone("queue", run.x1, iy - 0.4,
+                             run.x1 + QUEUE_DEPTH, iy + run_len + 0.4, 90.0)
+                main = (queue.x1 + 0.4, 0.5, w - 0.5, d - 0.5)
+                side = (0.5, 0.5, back.x0 - 0.6, d - 0.5)
+            # No wall is blocked, so the glass may go anywhere.
+            blocked_x = blocked_y = None
+            door = (w - 0.4, d - 0.4)
+            # NO `zones += [run, back, queue]` here. The shared block below
+            # does it, and the peninsula branch shipped with both -- every
+            # proposal failing its own "a cafe has one service run" rule, 0%
+            # acceptance. Writing the island from the peninsula as a template
+            # reproduced it exactly, which is what a template is for and also
+            # what it costs.
+        elif peninsula:
             run_len = min(run_len, (d if horizontal else w) - 3.2)
             if run_len < 3.0:
                 continue
@@ -425,7 +495,7 @@ def generate(seed: int = 1, tries: int = 120) -> Plan:
         # same terms as everything else. A generator that has to be taught each
         # new obstacle separately is a generator with a list; this one has a
         # rule.
-        if not peninsula and rnd() < 0.30:
+        if not peninsula and not island and rnd() < 0.30:
             arm = 1.4 + rnd() * 1.1
             near = rnd() < 0.5          # which end of the run it turns at
             if horizontal:
@@ -481,7 +551,7 @@ def generate(seed: int = 1, tries: int = 120) -> Plan:
         # and the layout was wrong: a five-tile counter on a fourteen-tile wall
         # leaves nine tiles of window, and that is exactly where a cafe puts
         # its seats.
-        if peninsula:
+        if peninsula or island:
             pass
         elif horizontal:
             # The seating floor starts past the deeper of the queue and the
@@ -498,7 +568,7 @@ def generate(seed: int = 1, tries: int = 120) -> Plan:
             side = (0.5, back.y1 + 0.6, queue.x1 - 0.1, d - 0.5)
             door = (w - 0.4, min(d - 0.5, back.y1 + 1.8))
         sx0, sy0, sx1, sy1 = main
-        if sx1 - sx0 < 4.0 or sy1 - sy0 < 3.5:
+        if sx1 - sx0 < MIN_SEAT_RECT_W or sy1 - sy0 < MIN_SEAT_RECT_D:
             continue
 
         # A window bar: stools along glass, on a stretch the run left free and
@@ -514,7 +584,7 @@ def generate(seed: int = 1, tries: int = 120) -> Plan:
             zones.append(Zone("window_bar", 0.0, max(sy0, t0 + 0.1), 1.5,
                               min(sy1, t1 - 0.1), 270.0))
             sx0 = max(sx0, 1.9)
-        if sx1 - sx0 < 4.0 or sy1 - sy0 < 3.5:
+        if sx1 - sx0 < MIN_SEAT_RECT_W or sy1 - sy0 < MIN_SEAT_RECT_D:
             continue
 
         # Split into blocks small enough to clear MAX_SEAT_BLOCK, with an
@@ -527,6 +597,7 @@ def generate(seed: int = 1, tries: int = 120) -> Plan:
             zones += _seating_blocks(*side, rnd)
 
         plan = Plan(w, d, win_x, win_y, door, zones,
+                    "island" if island else
                     "peninsula" if peninsula else
                     ("L run" if ret is not None else "wall run"))
         bad = check_plan(plan)
@@ -692,6 +763,14 @@ def _windows(span: int, blocked, rnd) -> tuple:
 # whether the generator covers ground, not whether some pair happens to be
 # close. The closest pair over forty seeds is 6% and that is not a defect.
 MIN_PLAN_SPREAD = 0.30
+
+# Floor an island must keep clear of every wall, so a body can pass behind it.
+ISLAND_CLEAR = 1.7
+
+# The smallest seating rectangle the generator will cut blocks from. Named
+# because three places used to spell it 4.0 and 3.5 inline, and the island has
+# to solve for it rather than be rejected by it.
+MIN_SEAT_RECT_W, MIN_SEAT_RECT_D = 4.0, 3.5
 
 
 def plan_labels(plan: Plan, nx: int = 24, ny: int = 18) -> list:

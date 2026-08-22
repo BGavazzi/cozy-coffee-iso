@@ -372,7 +372,27 @@ def check_member_thickness(mesh, name="asset", ppu=ROOM_PX_PER_UNIT,
 # Every relaxed floor carries the reason it is relaxed, the same role
 # `ACCEPTED_BURIAL` plays for occlusion -- an unexplained loosened threshold is
 # how a ratchet turns back into decoration.
-DEFAULT_SPREAD_FLOOR = 0.12
+# The SECONDARY of the two range floors, and it was blind at 0.12. Degrading a
+# bookshelf to emit only N distinct meshes from eight seeds:
+#
+#     distinct   mean    closest    floor .12   floor .15   pair floor
+#         1      0.0%     0.0%        fail        fail        fail
+#         2     10.8%     0.0%        fail        fail        fail
+#         3     14.1%     0.0%        PASS        fail        fail
+#         4     16.3%     0.0%        PASS        PASS        fail
+#         8     18.4%    15.9%        PASS        PASS        PASS
+#
+# A generator that has lost HALF its range sails through both mean floors and
+# is caught only by the closest pair, which has been reporting 0.0% since the
+# second row. For the realistic failure mode -- a generator repeating itself --
+# the mean is strictly the weaker instrument, and at 0.12 it did not fire until
+# six of eight seeds collided.
+#
+# It is kept rather than deleted because it catches the OTHER mode, which the
+# closest pair cannot see: a generator whose every instance differs a little
+# and none differs much. Retuned to 0.15, three points under the weakest real
+# generator (bookshelf, 18%), so that it is at least able to fire.
+DEFAULT_SPREAD_FLOOR = 0.15
 
 # How different the two most similar instances of one generator must be.
 # Bracketed by measurement, as the cast floor is: the defects it was calibrated
