@@ -1781,3 +1781,37 @@ them.**
 Occupied window bars also moved the focal numbers, which was not the point of
 the change: seed 2 from +0.054 to +0.101 and seed 3 from +0.039 to +0.084 at
 320.
+
+## The fix that was applied to the instance and not to the class
+
+The scarf was fixed for being invisible in outline — 0.0% to 10.7%. The same
+test was never re-run on the other three accessories. Holding the body fixed
+and swapping only the accessory, over the eight sprite directions:
+
+| | none | apron | scarf | bag | cup |
+|---|---|---|---|---|---|
+| **none** | – | **3.2%** | 7.5% | 11.8% | 21.3% |
+| **apron** | 3.2% | – | 7.9% | 13.5% | 21.9% |
+| **scarf** | 7.5% | 7.9% | – | 17.1% | 20.3% |
+| **bag** | 11.8% | 13.5% | 17.1% | – | 29.5% |
+| **cup** | 21.3% | 21.9% | 20.3% | 29.5% | – |
+
+The apron was worth **3.2%** against wearing nothing: a flat panel between the
+shoulders, inside the widest part of the figure at every azimuth — precisely
+what the scarf had been. By rendered material it reads 14.6%, so it was visible
+as colour and absent as shape, which is the failure mode the whole silhouette
+programme exists to catch.
+
+An apron's real outline is its skirt flaring past the hips and its ties
+standing out at the waist. Given those — 0.285 at the hem against the 0.2475
+shoulder — apron/none goes **3.2% → 7.4%** and apron/scarf 7.9% → 11.6%.
+
+`check_accessory_distinct` is check 23, floor 0.055, bracketed by the 0.032 of
+the flat apron and the 0.074 of the weakest pair after the fix, and verified to
+fire on the old geometry. `None` is a row in the matrix on purpose: *does this
+differ from no accessory* is the same question as *does it exist*, so one test
+covers presence and legibility and nothing passes by being merely unlike the
+other three.
+
+**A fix applied to the instance rather than to the class leaves the rest of the
+class broken and the log saying it was handled.**

@@ -263,11 +263,26 @@ def hair(style: str, mat: str) -> Mesh:
 def accessory(kind: str, mat: str, sx: float = 0.0) -> Mesh:
     m = Mesh()
     if kind == "apron":
+        # The scarf's lesson, applied to the accessory that still had not
+        # learned it. Measured against a bare body the apron was worth 3.2% of
+        # outline over eight views -- a flat panel between the shoulders, which
+        # is inside the widest part of the figure at every azimuth and so is a
+        # colour swatch, exactly what the scarf was before it was widened. That
+        # it went unnoticed is the point: the scarf was fixed and the same test
+        # was never re-run on the other three.
+        #
+        # An apron's real outline is its skirt flaring past the hips and its
+        # ties standing out at the waist, so that is what it is now: 0.285 at
+        # the hem against the 0.2475 shoulder, and tie ends that clear it.
         f = TORSO_RY * FACET
-        m.add_box((-0.235, f - 0.020, 0.30), (0.235, f + 0.015, 0.86), mat)
+        m.add_box((-0.235, f - 0.020, 0.52), (0.235, f + 0.015, 0.86), mat)
+        m.add_box((-0.285, f - 0.026, 0.30), (0.285, f + 0.018, 0.52), mat)
         m.add_box((-0.10, f - 0.015, 0.86), (0.10, f + 0.015, 0.95), mat)  # bib
         m.add_box((-0.235, f + 0.008, 0.56),
                   (0.235, f + 0.018, 0.59), mat + "-2")                    # tie
+        for sx in (-1.0, 1.0):
+            m.add_box((sx * 0.212, f - 0.055, 0.50),
+                      (sx * 0.300, f + 0.010, 0.585), mat + "-2")       # tie end
     elif kind == "scarf":
         # Drawn at 0.86 of the torso this was inside the body at all eight
         # azimuths -- zero pixels of silhouette, a colour swatch rather than a
@@ -794,6 +809,54 @@ def check_roster_variety(roster=None, azimuth: float = 45.0,
 # at any azimuth. With those fixed the casts sit at 10.0% (hand) and 8.5%
 # (generated), so 0.07 sits under the evidence rather than at it.
 MIN_CAST_SILHOUETTE = 0.07
+
+# How far apart two accessories must be in outline, measured on the same body.
+MIN_ACCESSORY_DISTINCT = 0.055
+
+
+ACCESSORY_KINDS = (None, "apron", "scarf", "bag", "cup")
+
+
+def check_accessory_distinct(floor: float = MIN_ACCESSORY_DISTINCT) -> list[str]:
+    """Every accessory must read as a different thing from every other one.
+
+    `check_cast_silhouette` asks whether two *people* are distinguishable, and
+    the accessories rode along inside that: as long as some other parameter
+    separated a pair, an accessory that changed nothing was never charged for
+    it. This holds the body fixed and swaps only the accessory, which is the
+    only way to see what the accessory is worth on its own.
+
+    Presence was already measured -- the scarf went from 0.0% of outline to
+    10.7%. Presence is not legibility. What was never measured is whether two
+    accessories differ from *each other*, and the answer was that the apron did
+    not differ from wearing nothing: 3.2% over eight views, a flat panel
+    between the shoulders that is inside the widest part of the figure at every
+    azimuth. The scarf had been fixed for exactly this and the same test was
+    never re-run on the other three. A fix applied to the instance rather than
+    to the class leaves the rest of the class broken and the log saying it was
+    handled.
+
+    None is in the matrix on purpose: "does this accessory differ from no
+    accessory" is the same question as "does it exist", so one test covers both
+    and there is no way to pass by being merely unlike the other accessories.
+
+    Floor 0.055, between the 0.032 of the flat apron and the 0.074 of the
+    weakest pair once it was given a hem and ties.
+    """
+    from itertools import combinations
+    from dataclasses import replace
+    base = replace(BARISTA, accessory_kind=None)
+    seen = {k: silhouette(replace(base, accessory_kind=k,
+                                  accessory_mat="rose"))
+            for k in ACCESSORY_KINDS}
+    out = []
+    for a, b in combinations(ACCESSORY_KINDS, 2):
+        d = silhouette_distance(seen[a], seen[b])
+        if d < floor:
+            out.append(f"{a or 'no accessory'} and {b or 'no accessory'} "
+                       f"differ by only {d * 100:.1f}% of outline "
+                       f"(floor {floor * 100:.1f}%) - not distinguishable")
+    return out
 
 
 def check_cast_silhouette(roster=None,

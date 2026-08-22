@@ -229,6 +229,11 @@ def check(man: dict) -> int:
         for msg in _c.check_cast_silhouette() + [
                 f"generated: {m}" for m in _c.check_cast_silhouette(_extras)]:
             errs.append(msg)
+        # And the accessories on their own. The cast check holds whole people
+        # apart, which lets an accessory that changes nothing ride along behind
+        # whatever else separates the pair wearing it.
+        for msg in _c.check_accessory_distinct():
+            errs.append(f"accessory: {msg}")
         from animate import check_direction_labels
         for msg in check_direction_labels():
             errs.append(msg)
