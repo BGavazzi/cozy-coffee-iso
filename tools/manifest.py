@@ -221,6 +221,14 @@ def check(man: dict) -> int:
         for msg in _c.check_roster_variety() + [
                 f"generated: {m}" for m in _c.check_roster_variety(_extras)]:
             errs.append(msg)
+        # Same question asked of the shape alone. Variety compares materials
+        # too, so two identical figures in different shirts clear it easily --
+        # and did, while the cast contained a pair whose outlines matched to
+        # the pixel. Colour is noticed first; shape is what survives being one
+        # of eight figures at 46 px.
+        for msg in _c.check_cast_silhouette() + [
+                f"generated: {m}" for m in _c.check_cast_silhouette(_extras)]:
+            errs.append(msg)
         from animate import check_direction_labels
         for msg in check_direction_labels():
             errs.append(msg)

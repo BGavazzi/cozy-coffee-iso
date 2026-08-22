@@ -32,7 +32,7 @@ quarter of total height so the character reads at a glance.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as _replace
 
 from assetlib import merge, pivot_rot, transformed
 from mesh import Mesh
@@ -209,7 +209,7 @@ def hair(style: str, mat: str) -> Mesh:
     return m
 
 
-def accessory(kind: str, mat: str) -> Mesh:
+def accessory(kind: str, mat: str, sx: float = 0.0) -> Mesh:
     m = Mesh()
     if kind == "apron":
         f = TORSO_RY * FACET
@@ -218,15 +218,36 @@ def accessory(kind: str, mat: str) -> Mesh:
         m.add_box((-0.235, f + 0.008, 0.56),
                   (0.235, f + 0.018, 0.59), mat + "-2")                    # tie
     elif kind == "scarf":
-        m.add_prism((0, 0, 0.87), TORSO_RX * 0.86, TORSO_RY * 0.90, 0.12, mat,
-                    segments=8)
+        # Drawn at 0.86 of the torso this was inside the body at all eight
+        # azimuths -- zero pixels of silhouette, a colour swatch rather than a
+        # thing worn. Filling the neck notch is not enough either: a collar at
+        # 0.202 still measured 0.0%, because the head above and the shoulder
+        # cap below already close that gap at every angle. An accessory only
+        # exists in outline once it beats the widest part of the figure, so the
+        # collar runs past the 0.2475 shoulder and reads as a knitted wrap.
+        m.add_prism((0, 0, 0.88), 0.295, 0.272, 0.13, mat, segments=8)
+        f = TORSO_RY * FACET
+        m.add_box((0.045, f - 0.03, 0.54), (0.155, f + 0.075, 0.95),
+                  mat + "-1")                                            # tail
     elif kind == "bag":
         m.add_box((0.27, -0.08, 0.50), (0.42, 0.12, 0.78), mat)
         m.add_box((0.27, -0.02, 0.78), (0.42, 0.02, 0.96), mat + "-2")   # strap
     elif kind == "cup":
-        m.add_prism((-0.36, 0.05, 0.52), 0.062, 0.062, 0.13, mat, segments=8)
+        # Authored in arm-local space around the hand, because `build` merges
+        # held accessories into the arm before posing it. Sitting in the body
+        # mesh, the cup stayed at the hip through every frame of a walk while
+        # the hand that was supposedly holding it swung away.
+        m.add_prism((sx, 0.092, 0.455), 0.072, 0.072, 0.155, mat, segments=8)
+        m.add_prism((sx, 0.092, 0.610), 0.085, 0.085, 0.030, mat + "-2",
+                    segments=8)                                          # lid
     return m
 
+
+# Accessories a hand carries rather than a body wears. These are merged into
+# the arm mesh and posed with it, and the arm takes a standing forward swing so
+# the object is held in front of the chest instead of buried against the hip.
+HELD_ACCESSORIES = ("cup",)
+CARRY_SWING = -34.0     # degrees; negative is forward, see Pose
 
 # --- assembly ----------------------------------------------------------------
 
@@ -253,9 +274,13 @@ class Pose:
     from joint articulation -- an elbow is one pixel. Adding a spine chain would
     cost render time and change nothing on screen.
     """
-    leg_l: float = 0.0      # degrees, + swings the limb forward (+y)
+    # Sign convention, measured rather than assumed: *negative* swings the
+    # limb forward (+y, toward the camera at azimuth 45). Legs, arms and the
+    # foot offset all agree; only this comment used to say the opposite, and no
+    # clip caught it because a walk cycle swings symmetrically.
+    leg_l: float = 0.0      # degrees, - swings the limb forward (+y)
     leg_r: float = 0.0
-    arm_l: float = 0.0
+    arm_l: float = 0.0      # - forward, as above
     arm_r: float = 0.0
     bob: float = 0.0        # vertical offset of everything above the hips
     lean: float = 0.0       # forward tilt of the upper body, degrees
@@ -279,7 +304,8 @@ def build(spec: CharacterSpec, seated: bool = False,
         face(spec.skin, spec.blush),
         hair(spec.hair_style, spec.hair_mat),
     ]
-    if spec.accessory_kind:
+    held = spec.accessory_kind in HELD_ACCESSORIES
+    if spec.accessory_kind and not held:
         upper.append(accessory(spec.accessory_kind, spec.accessory_mat))
     body = merge(*upper)
     if p.turn:
@@ -287,13 +313,18 @@ def build(spec: CharacterSpec, seated: bool = False,
     if p.lean:
         body = pivot_rot(body, "x", -p.lean, (0.0, 0.0, HIP_Z))
 
-    def posed_arm(sx, swing, out):
+    def posed_arm(sx, swing, out, carried=None):
         a = arm(sx, spec.shirt, spec.skin)
+        if carried is not None:
+            a = merge(a, carried)
         if out:
             a = pivot_rot(a, "y", out if sx > 0 else -out, (sx, 0.0, SHOULDER_Z))
         return pivot_rot(a, "x", -swing, (sx, 0.0, SHOULDER_Z))
 
-    limbs = [posed_arm(-x, p.arm_l, p.out_l), posed_arm(x, p.arm_r, p.out_r)]
+    limbs = [posed_arm(-x, p.arm_l + (CARRY_SWING if held else 0.0), p.out_l,
+                       accessory(spec.accessory_kind, spec.accessory_mat, -x)
+                       if held else None),
+             posed_arm(x, p.arm_r, p.out_r)]
     if seated:
         # Drop the upper body to the seated hip. The torso and arms are authored
         # for a standing figure whose hips sit at HIP_Z, while the seated leg rig
@@ -368,9 +399,12 @@ CUSTOMERS = [
                   hair_mat="cream+1", accessory_kind=None,     bulk=1.08),
     CharacterSpec("writer",   shirt="sky",     trousers="wood",    hair_style="bun",
                   hair_mat="wood-4",  accessory_kind="cup",    accessory_mat="cream"),
-    # As `elder`: foliage over rose was 0.020 apart in value.
-    CharacterSpec("friend",   shirt="foliage", trousers="rose-2",  hair_style="bob",
-                  hair_mat="wood-3",  accessory_kind=None),
+    # As `elder`: foliage over rose was 0.020 apart in value. And `friend` was
+    # a bob at bulk 1.0 with no accessory, which is `reader` without the scarf:
+    # 4.3% of outline apart over the eight sprite directions, against a roster
+    # median of 19%. A slighter build under a cap puts it at 14.2%.
+    CharacterSpec("friend",   shirt="foliage", trousers="rose-2",  hair_style="cap",
+                  hair_mat="wood-3",  accessory_kind=None, bulk=0.90),
 ]
 
 ROSTER = [BARISTA] + CUSTOMERS
@@ -407,6 +441,51 @@ HAIR_MATS = tuple(f"{r}{o:+d}" if o else r
                   for o in (-4, -3, -2, -1, 0, 1, 2))
 
 
+MIN_SILHOUETTE = 0.10
+
+
+SPRITE_AZIMUTHS = (0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0)
+
+
+def silhouette(spec: CharacterSpec, azimuths=SPRITE_AZIMUTHS) -> tuple:
+    """The screen pixels a character covers in each sprite direction, materials
+    ignored.
+
+    Shirt colour is what a viewer notices first and the last thing that
+    survives being one figure among eight in a room -- at 46 px a crowd is read
+    as shapes, and two extras with the same build are the same person in a
+    different jumper.
+
+    This started life as `silhouette_key`, a tuple of the parameters believed
+    to change the outline: hair style, accessory, and bulk in 0.06 buckets. It
+    did nothing. Twenty extras produced twenty distinct keys, so the rejection
+    never fired once, while the rendered cast still contained a pair whose
+    outlines matched to the pixel -- they differed by an accessory, and the
+    accessory turned out to be invisible in silhouette at every azimuth.
+
+    The key was not mistuned, it was the wrong kind of thing: a guess at which
+    parameters reach the outline, standing in for the outline. At 3.6 ms a view
+    there is no reason to guess. `screen_materials` already renders the figure
+    the checks are going to grade, so the generator grades the same render.
+
+    All eight directions, not the canonical one. The sheet turns the character
+    rather than the camera, so those azimuths are the eight frames a player
+    actually sees, and judging a cast from azimuth 45 alone grades one of them.
+    That is not a hypothetical: `reader` and `friend` differ by a scarf, which
+    at azimuth 45 is worth 1.3% and over the eight views is worth 4.3%.
+    """
+    from art_review import screen_materials
+    m = build(spec)
+    return tuple(frozenset(i for i, x in enumerate(screen_materials(m, a, 2.0)) if x)
+                 for a in azimuths)
+
+
+def silhouette_distance(a: tuple, b: tuple) -> float:
+    """Mean Jaccard distance over the sprite directions: 0 is the same figure."""
+    v = [len(x ^ y) / max(1, len(x | y)) for x, y in zip(a, b)]
+    return sum(v) / len(v)
+
+
 def generate_spec(seed: int, ramps=None, tries: int = 60) -> CharacterSpec:
     """A character built by proposing and testing, not by being typed out.
 
@@ -424,6 +503,13 @@ def generate_spec(seed: int, ramps=None, tries: int = 60) -> CharacterSpec:
     the same move `Layout.scatter` made with `collisions` and `grounded`, and
     it is the strongest argument this repo has that the checks were worth
     writing.
+
+    `taken` carries the silhouette keys already used by this cast, so a
+    proposal that would be shape-identical to an accepted one is rejected
+    before it is accepted rather than after. That makes the solver
+    order-dependent, which is the same property `Layout.scatter` has and for
+    the same reason: a cast is a set, and whether a member fits is a question
+    about the members already in it.
 
     Raising `tries` cannot make an unsatisfiable palette satisfiable, so a
     proposal that never passes falls back to the last one tried and is left for
@@ -459,17 +545,50 @@ def generate_spec(seed: int, ramps=None, tries: int = 60) -> CharacterSpec:
             hair_style=pick(HAIR_STYLES), hair_mat=pick(HAIR_MATS),
             accessory_kind=acc,
             accessory_mat=pick(GARMENT_RAMPS) + pick(("", "-1", "+1")),
-            bulk=0.94 + rnd() * 0.22)
+            bulk=0.90 + rnd() * 0.30)
         if not (check_contrast(ramps, [spec]) + check_palette_spread([spec])
                 + check_waistline(ramps, [spec])):
             return spec
     return spec
 
 
-def generate_roster(n: int = 8, seed: int = 1, ramps=None) -> list:
-    """`n` extras from consecutive seeds."""
+def generate_roster(n: int = 8, seed: int = 1, ramps=None,
+                    distinct_shapes: bool = True,
+                    floor: float = MIN_SILHOUETTE, tries: int = 6) -> list:
+    """`n` extras from consecutive seeds, no two of them the same shape.
+
+    Built incrementally rather than independently, because "is this character
+    already in the cast?" cannot be answered by a function that has only seen
+    one character.
+
+    Each slot draws up to `tries` candidates and keeps the one whose outline is
+    furthest from every extra already cast, stopping early once a candidate
+    clears `floor`. Keeping the best rather than looping until one passes means
+    a saturated cast degrades instead of hanging -- the same bargain
+    `Layout.scatter` makes when a region runs out of room.
+    """
     ramps = ramps or _palette()
-    return [generate_spec(seed + i, ramps) for i in range(n)]
+    out: list = []
+    seen: list = []
+    for i in range(n):
+        if not distinct_shapes:
+            out.append(generate_spec(seed + i, ramps))
+            continue
+        best = best_sil = None
+        best_score = -1.0
+        for k in range(tries):
+            # 977 is coprime with the stride, so a retry cannot collide with
+            # the seed of another slot and hand two extras the same draw.
+            spec = generate_spec(seed + i + 977 * k, ramps)
+            sil = silhouette(spec)
+            score = min((silhouette_distance(sil, s) for s in seen), default=1.0)
+            if score > best_score:
+                best, best_sil, best_score = spec, sil, score
+            if score >= floor:
+                break
+        seen.append(best_sil)
+        out.append(_replace(best, name=f"extra{seed + i:02d}"))
+    return out
 
 
 def _palette():
@@ -569,6 +688,47 @@ def check_roster_variety(roster=None, azimuth: float = 45.0,
                 out.append(f"{specs[i].name} and {specs[j].name} are "
                            f"{d:.0%} apart on screen (floor {floor:.0%}) -- "
                            f"the same person twice")
+    return out
+
+
+# Two characters whose OUTLINES are this close read as one figure recoloured.
+#
+# `check_roster_variety` sits at 0.38 and passed both casts comfortably while
+# this was broken, because it compares materials as well as coverage: two
+# identical shapes in different shirts disagree on most of their pixels and
+# score as different people. Stripping the materials out drops the same casts
+# by a factor of four, which is the measurement that mattered -- colour is what
+# a viewer notices first and shape is what survives the downsample.
+#
+# Calibrated against the defects it was written for: a generated pair at 0.0%,
+# `reader`/`friend` at 4.3%, and an accessory that moved zero pixels of outline
+# at any azimuth. With those fixed the casts sit at 10.0% (hand) and 8.5%
+# (generated), so 0.07 sits under the evidence rather than at it.
+MIN_CAST_SILHOUETTE = 0.07
+
+
+def check_cast_silhouette(roster=None,
+                          floor: float = MIN_CAST_SILHOUETTE) -> list[str]:
+    """Are any two characters in this cast the same SHAPE?
+
+    The shape-only half of `check_roster_variety`, and the half that turned out
+    to be doing the work. Run over the eight sprite directions rather than the
+    canonical one, because the sheet turns the character under a fixed camera:
+    those eight azimuths are the frames a player sees, and a pair that separates
+    at 45 and collapses at 0 is a pair that collapses one frame in eight.
+    """
+    specs = list(roster or ROSTER)
+    if len(specs) < 2:
+        return []
+    sils = [silhouette(s) for s in specs]
+    out = []
+    for i in range(len(sils)):
+        for j in range(i + 1, len(sils)):
+            d = silhouette_distance(sils[i], sils[j])
+            if d < floor:
+                out.append(f"{specs[i].name} and {specs[j].name} have "
+                           f"{d:.1%} of outline between them (floor "
+                           f"{floor:.0%}) -- one shape, two paint jobs")
     return out
 
 

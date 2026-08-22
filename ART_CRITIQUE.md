@@ -533,6 +533,95 @@ neutral shirt, neutral trousers, neutral hair, neutral bag — and at the till i
 was a silhouette-shaped hole in the room. No spec may now spend more than half
 its parts on one ramp.
 
+## The accessory that was not there
+
+The open item from the last section was that nothing measured whether a cast
+varied in the ways that *matter*. Measuring it took one function and produced a
+worse answer than expected: over the eight sprite directions, with materials
+discarded so only coverage remained, the nine hand-written archetypes had a
+closest pair at **4.3%** and twenty generated extras had a pair at **0.0%** —
+two figures whose outlines matched to the pixel.
+
+`check_roster_variety` had been passing both casts at a floor of 38% the whole
+time. It compares materials as well as coverage, so two identical shapes in
+different shirts disagree on most of their pixels and score as different
+people. The metric was not wrong, it was answering a different question, and
+the question it was not answering is the one that survives a downsample.
+
+### The fix that did nothing
+
+The first attempt was `silhouette_key`: a tuple of the parameters believed to
+change the outline — hair style, accessory, bulk in 0.06 buckets — with the
+roster built incrementally and a proposal rejected if its key was already cast.
+
+It produced output byte-identical to the unmodified generator. Twenty extras
+gave twenty distinct keys, so the rejection never fired once, while the cast
+still contained the 0.0% pair. The two colliding characters had *different*
+keys: `('cap', None, 20)` and `('cap', 'cup', 20)`. They differed by an
+accessory, and the accessory was worth nothing.
+
+This is worth stating plainly because the mechanism looked right and was
+inert. A key is a guess about which parameters reach the outline, standing in
+for the outline. At 3.6 ms a view there was never a reason to guess —
+`screen_materials` already renders the figure that the checks grade, so the
+generator can grade the same render.
+
+### Three of four accessories did not exist
+
+Measured against the same figure with no accessory, as a share of pixels
+changed, averaged over the eight directions:
+
+| accessory | before | after |
+|---|---|---|
+| `scarf` | **0.0%**, at every azimuth | 10.7% |
+| `cup` | 1.2% | 21.7% |
+| `bag` | 12.8% | 12.8% |
+
+The scarf was a prism at 0.86 of the torso radius — drawn *inside* the body it
+was supposed to be wrapped around. Widening it to fill the neck did not help
+either: a collar at 0.202 still measured 0.0%, because the head above and the
+shoulder cap below already close that gap at every angle. **An accessory only
+exists in outline once it beats the widest part of the figure.** Past the
+0.2475 shoulder the numbers climb steeply, and 0.295 reads as a knitted wrap.
+
+A tail hanging down the front was added on the assumption it would break the
+profile, and it is worth 1.8 points against the collar's 10 — because +y near
+the centreline projects *inside* the torso's screen width at every diagonal
+view. Sticking out toward the camera is not sticking out.
+
+The cup had a second problem underneath the first. It lived in the body mesh,
+so it stayed at the hip through every frame of a walk while the hand supposedly
+holding it swung away. Held accessories now merge into the arm and pose with
+it, and the arm takes a standing forward swing, which is both the fix for the
+animation and the reason the cup is now the strongest accessory in the set: it
+is out in front of the chest where nothing else on the figure is.
+
+Chasing that turned up a third thing. The `Pose` docstring says positive swings
+a limb forward; measured, negative does, on arms and legs alike. No clip caught
+it in six passes because a walk cycle swings symmetrically.
+
+### And the hand-written roster again
+
+With the accessories fixed, the generated cast went from 0.0% to 8.5% at its
+closest pair and the hand-written one went to 4.3% — now the worse of the two,
+for the second pass running. `reader` and `friend` were both a bob at bulk 1.0,
+one with a scarf and one without: the same person, and the scarf had been
+invisible. Seven of the nine archetypes are bulk exactly 1.0.
+
+Rather than pick a repair, the fix was searched: every hair style × accessory ×
+bulk for that one slot, scored on its distance to the rest of the cast. A cap
+at bulk 0.90 with no accessory scores 14.2% against the 4.3% it replaced, and
+keeps `friend` the plain figure it was written to be. The roster minimum is now
+**10.0%**.
+
+Widening the scarf then pushed the seated `reader` over the 35% occlusion floor
+against the pastry case two tiles behind it, which is the check doing its job:
+a figure that got bigger occludes more. The case moved 0.3 of a tile.
+
+`check_cast_silhouette` is the eighteenth check, floored at 7% — under the
+8.5% and 10.0% the two casts now measure, and well above the 0.0%, 1.3% and
+4.3% it was written for.
+
 ## Where the numbers landed
 
 | | third pass | fourth pass |
@@ -1225,7 +1314,8 @@ downstream.
 | high-key share of frame | 63.8% | **66.7%** |
 | generator range | unmeasured | **measured, per generator, with a floor each** |
 | the seam stages 1–3 attach to | described | **built, and checked from both ends** |
-| automated checks in the ratchet | 11 | **17** |
+| automated checks in the ratchet | 11 | **18** |
+| closest pair in the cast, by outline alone | 0.0% and 4.3%, unmeasured | **8.5% and 10.0%** |
 
 Median L, chroma and the extremes are unmoved, the checks stay clean, and the
 render is still byte-identical across processes.
@@ -1236,11 +1326,15 @@ render is still byte-identical across processes.
   meshes. Eleven others show the shape of the replacement, and these four are
   the props the room holds exactly one of — which is why they are last, not
   why they are fine.
-- The extras are now checked against each other as well as individually, but
-  only in one direction. Nothing measures whether a generated cast is varied in
-  the ways that *matter* rather than merely different — twenty extras could
-  differ only in shirt colour and clear the pairwise floor comfortably while
-  reading as one silhouette repeated twenty times.
+- Cast variety is now measured on shape as well as colour, and the generator
+  solves for it. What is still unmeasured is whether an accessory or a hair
+  style is *distinguishable* rather than merely present: the scarf went from
+  0.0% to 10.7% of outline, which proves it exists, not that a player can tell
+  it from a collar. That needs a different instrument.
+- Bulk is the only continuous shape parameter a generated extra has, and seven
+  of the nine hand-written archetypes sit at exactly 1.0. Height, limb length
+  and stance are all fixed, so two extras with the same hair and accessory have
+  very little left to differ by.
 - `ingest.py` binds an arbitrary mesh to the palette and the tile grid, so the
   seam stages 1–3 attach to now exists and is checked. Nothing feeds it yet,
   which is exactly why it needed checks: an adapter that is never exercised is

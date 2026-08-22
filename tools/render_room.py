@@ -106,7 +106,12 @@ def build_room():
     add(A.register(),         at=(6.3, 0.95, 0.92), name="prop#register")
     add(A.plant_small(seed=21), at=(7.15, 0.95, 0.92), name="prop#plant")
     add(A.table_clutter("counter"), at=(5.35, 0.95, 0.92), name="clutter#counter")
-    add(A.pastry_case(), at=(2.2, 2.05, 0), name="prop#pastry")
+    # Nudged left by 0.3 when `reader`'s scarf grew. The scarf had been
+    # measuring zero pixels of silhouette, so widening it to something a person
+    # is actually wearing pushed the seated figure over the 35% occlusion floor
+    # against the case two tiles behind it. At x=1.7 the case starts covering a
+    # crate instead; 1.9 is the gap between the two.
+    add(A.pastry_case(), at=(1.9, 2.05, 0), name="prop#pastry")
     # Menu boards hang ABOVE the counter-top props, not level with them. At
     # z=0 the board spans 0.55-1.30 and the espresso machine on the counter
     # spans 0.92-1.52 -- the same screen band, one tile apart in depth, so the
