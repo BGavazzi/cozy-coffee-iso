@@ -2483,6 +2483,43 @@ wall runs, both in the group the orientation section leaves open. That is where
 the next failure will come from, and it is written down before it happens
 rather than after.
 
+## Re-reading the edge density through the corrected region
+
+The seventh pass measured edge density in palette-index space and concluded
+that the failing wall run's focal zone is *under-detailed*, not that its room
+is over-dressed. Those readings were taken through the old bounding-box
+region, so they inherit the same third-to-a-half of floor and wall as
+everything else. Re-run under the hull clip, same rooms, same two rigs:
+
+| room | focal | periphery | lead, hull | lead, bbox |
+|---|---|---|---|---|
+| **reference room** | 0.422 | 0.330 | **+0.092** | +0.063 |
+| wall run (seed 1) | 0.333 | 0.341 | **−0.008** | −0.037 |
+| L run (seed 8) | 0.370 | 0.311 | +0.058 | +0.064 |
+| peninsula (seed 2) | 0.344 | 0.329 | +0.015 | +0.041 |
+| island (seed 3) | 0.356 | 0.303 | +0.053 | +0.086 |
+
+The wall run and the L run are unchanged rooms, so those two rows compare
+directly; the peninsula and the island have gained a back bar since and do not.
+
+**The conclusion survives and the magnitudes do not.** The failing wall run
+still reads below its own periphery and the reference still reads far above it,
+and the gap between them is 0.100 either way — but the wall run's deficit
+shrank fourfold, −0.037 to −0.008, and the reference's lead grew by half. A
+claim that was carried on a number four times too large was still pointing the
+right way, which is luck and worth naming as luck.
+
+Good rig and broken rig still read the same to within 0.012 in every room, so
+edge density remains blind to lighting, which is what made it useless as a rig
+check and useful as a detail-hierarchy one.
+
+One thing it does add: the room that reads worst here is seed 1, a **facing-0**
+run, and edge density has nothing to do with the key direction. If the
+orientation penalty were purely the raking key it should not appear in a
+lighting-independent metric. It does. Four rooms cannot separate that from
+topology, though — seed 1 is also the only wall run in the sample — so this is
+a thread, not a finding.
+
 ## Still open
 
 - **Stages 1–3** (SDXL concept → TRELLIS 2 mesh → UniRig rig) need a GPU and
@@ -2503,8 +2540,8 @@ rather than after.
   bracketed by measurement) but the mean-spread floor of 0.15 is still close to
   the original guess. It has never rejected anything the closest-pair floor did
   not also reject, which is either redundancy or a floor set too low to fire.
-- **The edge-density table in the seventh pass was read through the old focal
-  region** — the bounding box that is half floor and wall. Its conclusion, that
-  the failing wall run's focal zone is under-detailed in material variety, has
-  not been re-measured under the hull clip. It drove the counter-dressing work,
-  which helped; that does not make the number right.
+- **Is the facing-0 penalty structural as well as lit?** Edge density is blind
+  to the light rig, and the worst room on it is a facing-0 run. Four rooms
+  cannot separate orientation from topology — the sample's only facing-0 room
+  is also its only wall run — so this needs the full twelve before it is
+  anything more than a thread.
