@@ -2126,3 +2126,36 @@ Verified in both directions after the retune: clean on the good rig across all
 four topologies, and the broken rig now fails the same room on **both** metrics
 — brightness +0.005 against a floor of 0.015, contrast −0.054 against −0.020.
 The two floors catch it independently, which is what having two is for.
+
+## Edge density: the successor metric, tested before it was written in
+
+The previous section named edge density in palette-index space as the obvious
+replacement for the quantized percentile. It was measured before being adopted,
+and it **is the wrong instrument** — for the job it was proposed for:
+
+| room | good rig | broken rig |
+|---|---|---|
+| wall run | 0.310 vs 0.346 = **−0.037** | 0.309 vs 0.346 = −0.037 |
+| peninsula | 0.364 vs 0.323 = +0.041 | 0.369 vs 0.323 = +0.046 |
+| island | 0.374 vs 0.287 = +0.086 | 0.371 vs 0.296 = +0.076 |
+| L run | 0.370 vs 0.306 = +0.064 | 0.371 vs 0.310 = +0.061 |
+
+Good rig and broken rig read the **same to within 0.01 in every room**. Edge
+density counts material transitions, and the light rig does not add or remove
+transitions — it moves the ramp steps they sit between. So the metric is blind
+to precisely the failure the focal check exists to catch, and a check built on
+it would have been green through a rig that puts the counter at −0.054.
+
+It is a good instrument for a different question, though, and it answered the
+one that six structural hypotheses had failed to. The failing wall run's focal
+zone has **fewer** material transitions than its own room, alone among the four
+topologies. Its periphery reads 0.346 against the others' 0.287–0.323 — the
+busiest of the four — which agrees with its occupancy (44%, the highest) and
+its props per square metre (0.66, the highest). *The counter is not
+under-dressed; the room around it is over-dressed, uniformly.*
+
+That is a real, continuous, lighting-independent measure of the thing the
+critique originally called "dressed but not composed", and it is the first
+instrument that has separated the failing room from the passing ones. Two
+different questions, two different instruments: mean L catches a badly lit
+counter, edge density catches a room with no hierarchy of detail.
