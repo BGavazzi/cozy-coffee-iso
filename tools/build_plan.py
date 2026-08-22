@@ -97,6 +97,29 @@ MIN_FOCAL_CONTRAST = 0.030
 # floors say "leads", not "leads well" -- see `check_focal_contrast`.
 MIN_FOCAL_L = 0.015
 
+# A third floor inside check 22, not a twenty-fifth check: it is read off
+# the same four renders, so the suite costs nothing extra for it.
+#
+# The counter must not be LESS detailed than the room around it,
+# where detail means material transitions per pixel rather than brightness or
+# spread. Zero is not a tuned constant, it is the sign change: below it the
+# busiest thing in frame is not the thing the composition is pointing at.
+#
+# Bracketed, and the bracket is tight on purpose. Measured on live code before
+# the back wall was dressed, three of five generated wall runs read NEGATIVE
+# -- -0.005, -0.008, -0.009 -- while every peninsula, island and L run read
+# positive. Afterwards the weakest room is +0.005. Ten thousandths between the
+# defect and the floor and five between the floor and the weakest good room,
+# which is thin, and thin is the honest report: a wall run that loses its
+# shelf will fail this, and should.
+#
+# It exists because neither of the two floors above could see the defect. The
+# same wall runs read +0.032 and +0.026 on brightness -- comfortably passing --
+# because the wall behind a counter is lit vertical mass. It is also one flat
+# ramp step, which is the same fact seen from the other side, and only this
+# metric reports it.
+MIN_FOCAL_DETAIL = 0.0
+
 
 def light_rig(plan: F.Plan) -> LightRig:
     """Daylight at each window, a core over the till, and dark corners.
@@ -386,10 +409,66 @@ def build(plan: F.Plan) -> Layout:
     # meets the wall end-on, so there is no stretch of wall behind it to hang a
     # board on -- and hanging one anyway put two chalkboards across the room
     # from the counter they price.
-    for bi, t in enumerate(solid[:2] if on_wall else []):
+
+    # --- the rest of the back wall: open shelving, and the sign.
+    #
+    # Found by measuring edge density -- material transitions per pixel -- in
+    # the focal region rather than by looking for missing assets. Every
+    # generated WALL RUN reads at or below its own periphery on that metric
+    # (three of five are negative) while the reference room, which is also a
+    # wall run, reads +0.092. The wall is what makes the difference in both
+    # directions: it hands a wall run 1.5 m of lit vertical mass, which is why
+    # those rooms read brightest, and it is 1.5 m of one flat ramp step, which
+    # is why they read flattest. A wall behind a counter is a surface that has
+    # to be USED, and the generator was leaving the band between the counter
+    # top and the menu boards empty.
+    #
+    # `A.wall_shelf` puts a row of alternating jars on it, which is transitions
+    # rather than mass -- the metric and the fix agree about what is missing.
+    # Proposed and tested rather than allocated. Handing out tiles by index --
+    # menus 0 and 1, shelves 2 and 3, the sign in the middle -- put the sign
+    # through a shelf in three rooms and through a menu board in three more,
+    # because a 1.6 shelf is two tiles wide and an index is not a footprint.
+    # The back bar shelving above already learned this; the rule is the same
+    # rule, so it is the same loop.
+    def try_wall(mesh, at, rot, name):
+        L.add(mesh, at=at, rot=rot, name=name)
+        cand = L.items.pop()
+        if L._conflicts(cand, 45.0, 0.35):
+            L.rots.pop(name, None)
+            return False
+        L.items.append(cand)
+        return True
+
+    # The sign goes first and takes the middle, because it is the one object
+    # here that has a place it needs to be. `A.wall_sign` has sat in the
+    # library since the second pass with a docstring calling it "the one
+    # bright, high-contrast object over the interaction zone, which is how the
+    # composition tells the player where to look" -- and no generated room has
+    # ever had one. The reference has had one all along. A focal device the
+    # focal check never saw.
+    if on_wall and solid:
+        mid = solid[len(solid) // 2]
+        at = (mid + 0.05, 0.0, 0) if horizontal else (0.0, mid + 0.05, 0)
+        try_wall(A.wall_sign(), at, 0 if horizontal else 270, "decor#sign")
+
+    placed_m = 0
+    for t in (solid if on_wall else []):
+        if placed_m >= 2:
+            break
         at = (t + 0.12, 0.04, 0.62) if horizontal else (0.04, t + 0.12, 0.62)
-        add(A.menu_board(), at=at, rot=0 if horizontal else 270,
-            name=f"decor#menu{bi}")
+        if try_wall(A.menu_board(), at, 0 if horizontal else 270,
+                    f"decor#menu{placed_m}"):
+            placed_m += 1
+
+    placed_s = 0
+    for t in (solid if on_wall else []):
+        if placed_s >= 2:
+            break
+        at = (t + 0.10, 0.10, 0.66) if horizontal else (0.10, t + 0.10, 0.66)
+        if try_wall(A.wall_shelf(1.6, "x" if horizontal else "y"), at, 0,
+                    f"decor#wshelf{placed_s}"):
+            placed_s += 1
 
     # --- the counter top. The reference room carries ELEVEN clutter items
     # within 3.5 tiles of its till -- cups, a cake stand, vases, a clutter
@@ -761,7 +840,8 @@ def check_stool_occupancy(n: int = 8, seed: int = 1,
 def check_focal_contrast(n: int = 4, seed: int = 1,
                          target: int = FOCAL_TARGET,
                          l_floor: float = MIN_FOCAL_L,
-                         c_floor: float = MIN_FOCAL_CONTRAST) -> list[str]:
+                         c_floor: float = MIN_FOCAL_CONTRAST,
+                         d_floor: float = MIN_FOCAL_DETAIL) -> list[str]:
     """A generated room's counter must still read as the place to look.
 
     The last of the composition questions to survive being measured. Depth
@@ -863,11 +943,11 @@ def check_focal_contrast(n: int = 4, seed: int = 1,
                    / "_focal_check.png", wear=L.wear_field(),
                    focal=focal_box(plan))
         hits = _re.findall(r"([+-]\d\.\d\d\d)", buf.getvalue())
-        if len(hits) < 2:
+        if len(hits) < 3:
             out.append(f"plan {k} ({plan.topology}): render reported no "
                        f"focal reading")
             continue
-        lead, con = float(hits[0]), float(hits[1])
+        lead, con, det = float(hits[0]), float(hits[1]), float(hits[2])
         if lead < l_floor:
             out.append(f"plan {k} ({plan.topology}): counter is only "
                        f"{lead:+.3f} brighter than its room "
@@ -876,6 +956,10 @@ def check_focal_contrast(n: int = 4, seed: int = 1,
             out.append(f"plan {k} ({plan.topology}): counter is {con:+.3f} "
                        f"in contrast against its room (floor {c_floor:+.3f})"
                        f" -- the periphery has as much to look at")
+        if det < d_floor:
+            out.append(f"plan {k} ({plan.topology}): counter carries {det:+.3f} "
+                       f"detail against its room (floor {d_floor:+.3f}) -- the "
+                       f"busiest thing in frame is not the counter")
     return out
 
 
@@ -939,11 +1023,12 @@ def _focal_scan(n: int, target: int) -> int:
                    / "_focal_scan.png", wear=L.wear_field(),
                    focal=focal_box(plan))
         hits = _re.findall(r"([+-]\d\.\d\d\d)", buf.getvalue())
-        lead, con = float(hits[0]), float(hits[1])
-        fail = lead < MIN_FOCAL_L or con < MIN_FOCAL_CONTRAST
+        lead, con, det = float(hits[0]), float(hits[1]), float(hits[2])
+        fail = (lead < MIN_FOCAL_L or con < MIN_FOCAL_CONTRAST
+                or det < MIN_FOCAL_DETAIL)
         bad += fail
         print(f"  plan {k:2d}  {plan.topology:10s} L {lead:+.3f}  C {con:+.3f}"
-              f"   {'FAIL' if fail else 'ok'}")
+              f"  D {det:+.3f}   {'FAIL' if fail else 'ok'}")
     print("")
     print(f"  {bad} of {n} rooms fail the focal floors "
           f"({bad / n:.0%})")

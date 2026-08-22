@@ -409,6 +409,30 @@ def focal_report(px, target, cam, centre, span, box=None):
     print(f"                                contrast {cc:.3f} vs {oc:.3f} "
           f"({cc - oc:+.3f})   {'reads as the centre' if ok else 'DOES NOT lead the eye'}")
 
+    # Detail, as material transitions per horizontal pixel pair. Reported from
+    # the same buffer as the two above because it answers a question neither
+    # of them can: brightness and percentile spread both move when the LIGHT
+    # moves, and this does not -- a deliberately broken rig shifts it by at
+    # most 0.012 in any room. So it grades the composition rather than the
+    # exposure, and it is continuous over ~50 000 pixels where contrast is a
+    # percentile over 37 quantized levels.
+    ein = etot = eout = eotot = 0
+    for i, c in enumerate(px):
+        if c is None or (i % w) + 1 >= w:
+            continue
+        r = px[i + 1]
+        if r is None:
+            continue
+        if inside(i % w, i // w):
+            etot += 1
+            ein += (c != r)
+        else:
+            eotot += 1
+            eout += (c != r)
+    di, do = ein / max(1, etot), eout / max(1, eotot)
+    print(f"                                detail {di:.3f} vs {do:.3f} "
+          f"({di - do:+.3f})")
+
 
 def frame(mesh, cam, target_px, margin=0.04):
     """Fit the camera span and target to the mesh's projected bounds."""
