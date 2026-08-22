@@ -252,6 +252,15 @@ def check(man: dict) -> int:
             errs.append(f"ingest: {msg}")
         for msg in check_transform():
             errs.append(f"ingest: {msg}")
+        # Floor plans. The room itself was the last authored asset in the
+        # pipeline, and these are the two questions asked of every other
+        # generator here: does what it returns satisfy the rules it solved
+        # against, and do consecutive seeds actually produce different rooms.
+        from floorplan import check_generated_plans, check_plan_range
+        for msg in check_generated_plans():
+            errs.append(f"floorplan: {msg}")
+        for msg in check_plan_range():
+            errs.append(f"floorplan: {msg}")
     except Exception as exc:                       # pragma: no cover
         warns.append(f"clip cross-check skipped: {exc}")
 

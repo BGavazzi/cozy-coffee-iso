@@ -31,7 +31,7 @@ which is the point.
     python tools/review_queue.py stats            # what to automate next
 
     # the gates
-    python tools/manifest.py --check     # runs all eighteen checks
+    python tools/manifest.py --check     # runs all twenty checks
     python tools/character.py            # hair contrast, palette spread, silhouette floor
     python tools/fx.py                   # loop seams
 
@@ -41,12 +41,13 @@ Every human rejection carries a reason. Reasons that recur get promoted into the
 automated tier, so **human review volume falls as the factory matures**. `stats`
 names the next check to write rather than leaving it to guesswork.
 
-Eighteen checks have been promoted so far: camera-space key light, hair/skin
+Twenty checks have been promoted so far: camera-space key light, hair/skin
 contrast, per-character palette spread, waistline separation, silhouette pixel
 floor, seating orientation, member thickness, grounding, declared-symmetry
 verification, screen-space occlusion, buried detail, derived direction labels,
 generator range, generated-spec conformance, roster variety, cast silhouette,
-palette-binding round trip, and ingest transform. Most found a bug the moment they were written — floating counters,
+palette-binding round trip, ingest transform, floor-plan conformance, and
+floor-plan range. Most found a bug the moment they were written — floating counters,
 back-to-front chairs, five wrong symmetry claims costing 31% of the effects
 budget, a queue of customers stacked into a single smear, an espresso machine
 whose entire mechanism was modelled inside its own carcass, and eight sprite

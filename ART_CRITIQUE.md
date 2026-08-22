@@ -683,6 +683,93 @@ pastry case is now placed after the crates and the espresso machine after the
 menu boards, out of the tidy blocks they read best in. A prop that has to clear
 its neighbours goes in after them.
 
+## The room was the last authored asset
+
+Six passes went into turning the things *in* the room into generators. The room
+itself was still 249 lines of code holding 48 hand-written coordinates:
+`assetlib` could make any number of chairs, and there was exactly one place to
+put them.
+
+`floorplan.py` proposes a plan — room size, glazing, which wall the service run
+takes, where the seating goes — and tests it. What comes out is zones, not
+props: a plan says "a lounge belongs in this rectangle facing this way", and
+the existing generators fill it. Eleven rules, each one demonstrated to fire
+against a deliberately broken plan before being trusted, because a rule that
+has never rejected anything is indistinguishable from a rule that cannot.
+
+Circulation is the one that needed a real algorithm. Two zones can leave a
+legal-looking 1.4-wide gap that is a dead end, and a corridor can be wide at
+both ends and pinched in the middle; neither is visible in a comparison of
+rectangle edges. So the floor is eroded by a body radius and flood-filled from
+the door, and every seating zone has to be in the result. `proof/floorplans.png`
+shades that region underneath everything else, because it is the only rule here
+that cannot be reviewed by reading the numbers.
+
+### A search that rejects everything is not a strict search
+
+The first generator drew the run and the windows independently and cut the
+seating out of a "free area" that did not know which wall the counter was on.
+It passed **6 proposals in 2157**, and the two failures it kept re-drawing were
+both ones it had the information to avoid: the back bar crossed the glass 4754
+times, and the seating landed on the till or the queue 5900 times.
+
+That is not the solver being strict, it is the proposal being uninformed, and
+the difference is not cosmetic. `generate` returns its least-bad attempt rather
+than looping — the bargain `scatter` makes when a region runs out of room — so
+**21 of 60 seeds were returning a plan that failed its own rules**, silently,
+because a fallback looks exactly like an answer. Choosing the windows around
+the back bar and cutting the seating from the floor the service band actually
+leaves took acceptance from 0.3% to 78% and the plan cost from 790 ms to 6 ms.
+
+### Two thresholds that were quietly choosing the layout
+
+The sheet showed five plans in six with the counter on the same wall. The
+measurement said horizontal runs were accepted at 2.8% against vertical at
+12.5%, and the cause was the daylight rule: a horizontal counter eats 3.2 tiles
+of depth, so every seat below it is out of reach of the only wall on that side
+with glass in it. The rule was right and the layout was wrong — a five-tile
+counter on a fourteen-tile wall leaves nine tiles of window, and that is where
+a cafe puts its seats. Seating now takes the strip beside the run as well as
+the one below it.
+
+Then the rule itself turned out to be a cliff. It asked whether a zone's *near
+edge* fell within reach of a window, which made a block spanning y 3.6–8.0
+exactly as dark as one spanning 6.0–8.0: a threshold standing in for a
+quantity, the same mistake the silhouette metric made when it counted distinct
+outlines instead of measuring how far apart they were. Measured as lit area
+instead, the bias inverted rather than vanishing — 48 plans against 12, the
+other way.
+
+What settled it was asking what the exemplar scores. **The reference room — the
+only cafe here that six passes of art direction have signed off on — puts 30%
+of its seats within daylight reach, and 27% by footprint area.** The floor was
+set at 45%. A threshold above the known-good case is as wrong as one below the
+defect, and it is the more dangerous of the two, because it does not look
+blind. It looks strict. At 22% the acceptance rates are 72% and 60%, the wall
+mix is 38 to 22, and the generated plans come out slightly better lit than the
+room they were calibrated against.
+
+| | before | after |
+|---|---|---|
+| proposals accepted | 0.3% | **67%** |
+| seeds returning a plan that fails its own rules | 21 of 60 | **0 of 60** |
+| cost per plan | 790 ms | **7 ms** |
+| service run on the wall the rules preferred | 5 in 6 | **38 / 22** |
+| largest single seating block | 93 tiles | **24, capped at 34** |
+| mean layout distance between plans | unmeasured | **43%** |
+
+`check_plan_range` takes the **mean** pairwise distance where
+`check_roster_variety` insists on the minimum, and that is a real distinction
+rather than an inconsistency: a cast of extras stands in one room together, so
+the two that collide are the two a player sees. Two floor plans are never in
+frame together. The closest pair over forty seeds is 6% and that is not a
+defect.
+
+The reference room stays hand-authored. It is the exemplar a person critiques,
+six passes of art direction live in its coordinates, and it is now also the
+thing the plan rules are calibrated against — which is a better job for it than
+being the only room the pipeline can make.
+
 ## Where the numbers landed
 
 | | third pass | fourth pass |
@@ -1375,7 +1462,7 @@ downstream.
 | high-key share of frame | 63.8% | **66.7%** |
 | generator range | unmeasured | **measured, per generator, with a floor each** |
 | the seam stages 1–3 attach to | described | **built, and checked from both ends** |
-| automated checks in the ratchet | 11 | **18** |
+| automated checks in the ratchet | 11 | **20** |
 | closest pair in the cast, by outline alone | 0.0% and 4.3%, unmeasured | **10.1% and 10.0%** |
 
 Median L, chroma and the extremes are unmoved, the checks stay clean, and the
@@ -1383,10 +1470,15 @@ render is still byte-identical across processes.
 
 ## Still open
 
-- Every prop in the room now comes from a seeded generator. What is still
-  authored is the *room*: 85 hand-typed coordinates, of which the scatter
-  solver and `add_seeded` between them account for about a quarter. A floor
-  plan is the next thing that should be proposed and tested rather than typed.
+- `floorplan.py` generates and checks a plan, but nothing renders one yet. The
+  zones carry a kind and a facing, and `Layout.scatter` already fills a
+  rectangle with props; joining those two is the remaining half, and until it
+  is joined the plan generator is an adapter with no consumer — the same
+  position `ingest.py` is in, and it needed checks for the same reason.
+- The plan generator has one topology: a straight run against a far wall with
+  the seating in strips. An island counter, an L-shaped run, or a counter
+  facing the door are all cafes it cannot propose. The measured 43% mean layout
+  distance is range within one idea.
 - Cast variety is now measured on shape as well as colour, and the generator
   solves for it. What is still unmeasured is whether an accessory or a hair
   style is *distinguishable* rather than merely present: the scarf went from
