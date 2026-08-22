@@ -1815,3 +1815,40 @@ other three.
 
 **A fix applied to the instance rather than to the class leaves the rest of the
 class broken and the log saying it was handled.**
+
+## An L, and a decision three readers were reconstructing
+
+The L run is modelled as the main run plus a short `service_return` arm rather
+than as a second `service` zone. Not a dodge of the "a cafe has one service
+run" rule — it is what an L is: one counter with a short arm at the till end.
+Modelling it as two would also have been the expensive kind of wrong, since
+seven places in `build_plan` read `plan.of("service")[0]` and every one would
+have quietly served the first arm and ignored the second.
+
+Nothing in the L code checks that the arm leaves room to walk round it.
+`blocking()` selects by kind, so naming the kind puts the arm in the erosion
+grid and the flood fill judges it on the same terms as everything else. *A
+generator that must be taught each new obstacle separately is a generator with
+a list; this one has a rule.*
+
+First cut: **0 L plans in 60 seeds**, all 20 proposals rejected. Both reasons
+were the proposal's to fix, not the checker's — 9 on *service_return stands in
+the queue*, which is true and describes a cafe where the line forms inside the
+counter, and 8 on the seating being cut from a service band that had grown
+while the rectangle describing it had not. With the queue stepping aside for
+the arm and the seating floor starting past the deeper of the two: **14 of 60
+plans, 61% acceptance**, and what still fails is the daylight rule.
+
+### The topology was implied, so three readers implied it differently
+
+`build_plan` read `backbar.y0 < 0.05` to decide whether the run hugs a wall.
+The proof sheet had its own version. A sweep written to count the three
+topologies used a third, and it was simply wrong: it reported **zero
+peninsulas in sixty seeds**, and there were sixteen. For a few minutes that
+looked exactly like a regression in the generator.
+
+`Plan.topology` now records what the generator chose and the readers read it.
+Three readers reconstructing one decision from its consequences will get three
+answers, and the wrong one is indistinguishable from a real bug.
+
+Over 60 seeds: **30 wall runs, 16 peninsulas, 14 L runs**, 0 errors, 7 ms each.

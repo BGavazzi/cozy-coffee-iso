@@ -36,7 +36,7 @@ which is the point.
     python tools/review_queue.py stats            # what to automate next
 
     # the gates
-    python tools/manifest.py --check     # runs all twenty-one checks
+    python tools/manifest.py --check     # runs all twenty-three checks
     python tools/character.py            # hair contrast, palette spread, silhouette floor
     python tools/fx.py                   # loop seams
 
@@ -55,7 +55,7 @@ which is the point.
 The reference room is still the better room. It holds six passes of judgement
 that no rule encodes — why the queue runs across the view rather than into it,
 why the crates go against the far walls. What the generator has is that it can
-make a different cafe, and that every one it makes clears twenty-one checks.
+make a different cafe, and that every one it makes clears twenty-three checks.
 
 ## The loop is a ratchet
 
@@ -63,13 +63,24 @@ Every human rejection carries a reason. Reasons that recur get promoted into the
 automated tier, so **human review volume falls as the factory matures**. `stats`
 names the next check to write rather than leaving it to guesswork.
 
-Twenty-one checks have been promoted so far: camera-space key light, hair/skin
+Twenty-three checks have been promoted so far: camera-space key light, hair/skin
 contrast, per-character palette spread, waistline separation, silhouette pixel
 floor, seating orientation, member thickness, grounding, declared-symmetry
 verification, screen-space occlusion, buried detail, derived direction labels,
 generator range, generated-spec conformance, roster variety, cast silhouette,
-palette-binding round trip, ingest transform, floor-plan conformance,
-floor-plan range, and built-room conformance. Most found a bug the moment they were written — floating counters,
+accessory distinguishability, palette-binding round trip, ingest transform,
+floor-plan conformance, floor-plan range, built-room conformance, and focal
+contrast.
+
+The last of those is the only one that looks at the picture rather than the
+geometry: it renders whole rooms and asks whether the counter still owns the
+frame. It is also the one that caught the instrument being tuned to the answer.
+Committed at a render size of 160 because one seed read the same there as at
+240, it turned out that no other seed did — the reference room holds +0.133
+from 320 to 480 while a generated room fell from +0.084 to +0.014. Mean
+brightness was stable at every size and would have kept the check green;
+picking it would have been choosing the measurement that agreed with the
+conclusion already written down. Most found a bug the moment they were written — floating counters,
 back-to-front chairs, five wrong symmetry claims costing 31% of the effects
 budget, a queue of customers stacked into a single smear, an espresso machine
 whose entire mechanism was modelled inside its own carcass, and eight sprite
