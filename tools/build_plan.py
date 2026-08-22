@@ -76,7 +76,22 @@ LAMP_AREA = 45.0
 # checking that instead would have been choosing the metric that agreed with
 # the answer already written down.
 FOCAL_TARGET = 320
-MIN_FOCAL_CONTRAST = -0.020
+
+# Positive for the first time. It was -0.020 because generated rooms genuinely
+# read negative -- but they read negative because the focal REGION was the
+# axis-aligned bounding box of a projected parallelogram, which is 51-64%
+# counter and the rest floor and wall. Clipping the region to the projected
+# hull moved the worst room from -0.054 to +0.047 without touching a single
+# room. Bracketed between the broken rig at -0.001 and the weakest good room
+# at +0.047.
+#
+# It catches only 1 of 7 broken-rig rooms now, where it used to catch most of
+# them -- and that is the honest reading of what it was doing before. The
+# broken rig lights the PERIPHERY, so a focal box stuffed with periphery
+# pixels moved when the rig broke. It was detecting the regression by
+# measuring the very pixels it existed to exclude. Brightness carries the
+# detection; contrast states the floor.
+MIN_FOCAL_CONTRAST = 0.030
 
 # The counter must also be brighter than its room, if only a little. Both
 # floors say "leads", not "leads well" -- see `check_focal_contrast`.
@@ -233,7 +248,12 @@ def build(plan: F.Plan) -> Layout:
         else:
             at = (run.x0, run.y0 + i, 0)
             m = A.counter(seed=4 + i, front="x")
-        add(m, at=at, name=f"counter#{i}")
+        # `bar_` because the run and the back bar it serves are ONE fitted
+        # group, and `screen_occlusion` already knows what to do with those:
+        # how much of each other two members of a group cover is a property of
+        # the group's geometry, not of anyone's placement. See the back
+        # counter below for why that matters here.
+        add(m, at=at, name=f"counter#bar_{i}")
 
     # Placed BEFORE the back bar, not after. The shelves go in with
     # `add_seeded`, which rejects a seed whose result is hidden -- but it can
@@ -267,6 +287,33 @@ def build(plan: F.Plan) -> Layout:
             add(A.counter(seed=40 + ri * 5 + i,
                           front="y" if along_x else "x"),
                 at=at, name=f"counter#ret{ri}_{i}")
+
+    # --- back counter: what an island has instead of a wall
+    # The exclusion below is right about TALL shelving and was wrong to leave
+    # the zone empty. A back bar is a counter before it is a shelf, and a run
+    # with nothing behind it loses the one surface a wall run gets for free:
+    # roughly 1.5 m of lit vertical mass directly behind the till, inside the
+    # focal region, holding the eye there. At 0.92 it is under eye level from
+    # either side, so it is not the partition the tall stack would be.
+    #
+    # Anchored to the edge the back bar SHARES with the run, because the tile
+    # is 1.0 deep against a 0.8 zone and the 0.2 has to overflow away from the
+    # counter it serves. Flush the other way puts it 0.2 inside the service
+    # run and every tile is a collision.
+    if not on_wall:
+        for z in plan.of("backbar"):
+            along_x = z.w >= z.d
+            n_bc = max(1, int(round(z.w if along_x else z.d)))
+            for i in range(n_bc):
+                if along_x:
+                    y = z.y1 - 1.0 if abs(z.y1 - run.y0) < 0.05 else z.y0
+                    at = (z.x0 + i, y, 0)
+                else:
+                    x = z.x1 - 1.0 if abs(z.x1 - run.x0) < 0.05 else z.x0
+                    at = (x, z.y0 + i, 0)
+                add(A.counter(seed=70 + i, front="y" if along_x else "x",
+                              h=BACK_COUNTER_H),
+                    at=at, name=f"counter#bar_back{i}")
 
     # --- back bar: shelving against the wall behind the run
     # Tall shelving only where there is a wall to put it against. A 1.9 stack
@@ -634,6 +681,25 @@ def focal_box(plan: F.Plan) -> tuple:
             (min(z.y0 for z in zs), max(z.y1 for z in zs)), (0.0, 1.50))
 
 
+# How tall the island's back bar stands, and the reasoning that got there is
+# worth keeping because half of it was wrong.
+#
+# At the service counter's own 0.92 the back bar reads 52-55% hidden behind
+# the run, which `screen_occlusion` calls an error. Raising it looked like the
+# fix, and the projection says it cannot be: the run sits 1.1 nearer in depth,
+# which lifts it 0.39 up the screen, so the back bar's top only clears the
+# run's above h = 1.37 -- past chest height and into the partition an island
+# exists not to be. Swept 1.10 to 1.32, the hidden share moved 49% to 44%.
+# Height was never going to clear that rule; what the back bar actually shows
+# is its END, because the same depth offset shifts it 0.78 sideways.
+#
+# So the occlusion is exempted as what it is -- a fitted pair, like the four
+# chairs of a table set -- and the height is chosen on the focal reading
+# instead, where it turns out to matter for a different reason than the one it
+# was proposed for: the exposed end is taller. The worst island goes +0.017 to
+# +0.037 against a floor of 0.015, and the best +0.123 to +0.136.
+BACK_COUNTER_H = 1.24
+
 MIN_STOOL_OCCUPANCY = 0.20
 
 
@@ -876,7 +942,12 @@ def _focal_scan(n: int, target: int) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed", type=int, default=3)
-    ap.add_argument("--target", type=int, default=480)
+    # 0 means "whatever this mode is calibrated at". A single default of 480
+    # made `--focal-scan` grade twelve rooms at a resolution the suite check
+    # does not use, so the two gates disagreed by construction and the scan's
+    # own docstring cited a 17% escape rate measured against different floors
+    # than the ones it was comparing to.
+    ap.add_argument("--target", type=int, default=0)
     ap.add_argument("--out", default=str(ROOT / "proof" / "plan_room.png"))
     ap.add_argument("--focal-scan", type=int, default=0, metavar="N",
                     help="measure focal lead over N consecutive plans and "
@@ -885,12 +956,13 @@ def main() -> int:
                          "be optimistic")
     args = ap.parse_args()
 
+    if args.focal_scan:
+        return _focal_scan(args.focal_scan, args.target or FOCAL_TARGET)
+
     plan = F.generate(args.seed)
     bad = F.check_plan(plan)
     print(f"plan seed {args.seed}: " + ("clean" if not bad else "; ".join(bad)))
     print(F.describe(plan))
-    if args.focal_scan:
-        return _focal_scan(args.focal_scan, args.target)
     L = build(plan)
     print(f"  {L.generated} props placed by constraint, "
           f"{len(L.items)} tracked in all")
@@ -921,7 +993,7 @@ def main() -> int:
     focal = ((min(run.x0, back.x0), max(run.x1, back.x1)),
              (min(run.y0, back.y0), max(run.y1, back.y1)), (0.0, 1.50))
     from render_room import render
-    render(L, light_rig(plan), args.target, Path(args.out),
+    render(L, light_rig(plan), (args.target or 480), Path(args.out),
            wear=L.wear_field(), focal=focal)
     return 0
 

@@ -332,7 +332,8 @@ FRONT_STYLES = (_front_plain, _front_drawers, _front_shelf, _front_beaded,
                 _front_drawers, _front_plain)
 
 
-def counter(kick=True, seed: int | None = None, front: str = "y") -> Mesh:
+def counter(kick=True, seed: int | None = None, front: str = "y",
+            h: float = 0.92) -> Mesh:
     """Modular: the body spans the FULL tile so a run tiles seamlessly.
     Insetting it left a seam between every adjacent module.
 
@@ -351,16 +352,27 @@ def counter(kick=True, seed: int | None = None, front: str = "y") -> Mesh:
     service run tiles along x so its front is +y; the window bar tiles along y,
     so its +y face is a joint between two modules and its front is +x. Detail on
     the wrong one is sealed inside the run.
+
+    `h` raises the whole unit. A back bar built at the service counter's own
+    0.92 is HALF HIDDEN behind it -- `screen_occlusion` measured 52-55% on
+    every tile of every island and peninsula -- because two equal boxes 1.1
+    apart in depth stack to one silhouette in this projection. Real back bars
+    are taller than the counter in front of them for exactly that reason. The
+    default is unchanged, so every existing counter is byte-identical.
     """
     m = Mesh()
     # Without a plinth the carcass must reach the floor itself. It did not, so
     # every kick=False counter -- the whole window bar run -- hovered 0.10 above
     # the ground. Invisible at a glance and caught by Layout.grounded().
     base = 0.10 if kick else 0.0
-    m.add_box((0.0, 0.06, base), (1.0, 0.94, 0.82), WOOD)       # carcass, full width
+    # Rounded because 0.92 - 0.10 is 0.8200000000000001 and the literal it
+    # replaces was 0.82. Every counter in the library changed hash on a
+    # parameter whose default was supposed to change nothing.
+    top = round(h - 0.10, 10)                                   # worktop underside
+    m.add_box((0.0, 0.06, base), (1.0, 0.94, top), WOOD)        # carcass, full width
     if kick:
         m.add_box((0.0, 0.12, 0.0), (1.0, 0.88, 0.10), "neutral")  # recessed plinth
-    m.add_box((0.0, 0.0, 0.82), (1.0, 1.0, 0.92), CERAMIC)      # worktop, overhangs
+    m.add_box((0.0, 0.0, top), (1.0, 1.0, h), CERAMIC)          # worktop, overhangs
     if seed is None:
         return m
 
@@ -374,7 +386,7 @@ def counter(kick=True, seed: int | None = None, front: str = "y") -> Mesh:
     # Inset from the module edges so two neighbours never share a reveal, which
     # would read as one four-tile cabinet rather than as two.
     lo, hi = 0.035, 0.965
-    z0, z1 = base + 0.03, 0.79
+    z0, z1 = base + 0.03, round(top - 0.03, 10)
     face, n = (0.9412, (0.0, 1.0, 0.0)) if front == "y" else (0.9412, (1.0, 0.0, 0.0))
 
     def put(u0, u1, v0, v1, mat):

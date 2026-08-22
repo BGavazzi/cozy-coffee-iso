@@ -297,6 +297,54 @@ def build_room():
 FOCAL_BOX = ((2.0, 8.0), (0.06, 1.30), (0.0, 1.50))
 
 
+def _convex_hull(pts):
+    """Monotone chain, counter-clockwise in pixel coordinates."""
+    P = sorted(set(pts))
+    if len(P) < 3:
+        return P
+
+    def half(P):
+        h = []
+        for q in P:
+            while len(h) >= 2 and ((h[-1][0] - h[-2][0]) * (q[1] - h[-2][1])
+                                   - (h[-1][1] - h[-2][1])
+                                   * (q[0] - h[-2][0])) <= 0:
+                h.pop()
+            h.append(q)
+        return h
+
+    return half(P)[:-1] + half(P[::-1])[:-1]
+
+
+def _in_hull(hull):
+    """A point-in-convex-polygon test, precomputed into edge half-planes.
+
+    Called once per pixel of the frame, so the edges are hoisted out and the
+    sign test is a bare cross product.
+
+    The winding is read off the hull's own signed area rather than assumed.
+    Pixel coordinates flip y, so a chain that is counter-clockwise in world
+    space comes out clockwise here, and hard-coding the sign reported "only 0
+    px inside the projected hull" -- the whole frame classified as outside.
+    """
+    edges = [(hull[i][0], hull[i][1],
+              hull[(i + 1) % len(hull)][0] - hull[i][0],
+              hull[(i + 1) % len(hull)][1] - hull[i][1])
+             for i in range(len(hull))]
+    area2 = sum(hull[i][0] * hull[(i + 1) % len(hull)][1]
+                - hull[(i + 1) % len(hull)][0] * hull[i][1]
+                for i in range(len(hull)))
+    sign = 1.0 if area2 >= 0 else -1.0
+
+    def inside(x, y):
+        for ex, ey, dx, dy in edges:
+            if sign * (dx * (y - ey) - dy * (x - ex)) < 0:
+                return False
+        return True
+
+    return inside
+
+
 def focal_report(px, target, cam, centre, span, box=None):
     """Does the interaction zone actually read as the focal point?
 
@@ -324,10 +372,17 @@ def focal_report(px, target, cam, centre, span, box=None):
         return ((u / span * 0.5 + 0.5) * target,
                 (0.5 - v / span * 0.5) * target)
     pts = [to_px(u, v) for u, v in zip(us, vs)]
-    fx0 = int(max(0, min(p[0] for p in pts)))
-    fx1 = int(min(target, max(p[0] for p in pts)))
-    fy0 = int(max(0, min(p[1] for p in pts)))
-    fy1 = int(min(target, max(p[1] for p in pts)))
+
+    # The eight corners of a world-space box project to a HEXAGON, not to a
+    # rectangle, and taking their axis-aligned bounding box was grading a
+    # region that is only 51-64% counter -- measured, per plan, over twelve
+    # rooms. The rest is floor in front and wall behind, which is exactly the
+    # "elsewhere" the focal zone is supposed to be brighter than. Averaging a
+    # third of the background into the foreground reading does not bias the
+    # answer in a known direction; it just makes the instrument deaf, and the
+    # first sign of that was a contrast floor that had to be set NEGATIVE to
+    # let real rooms through.
+    hull = _convex_hull(pts)
 
     w = target
     def stats(pred):
@@ -339,12 +394,12 @@ def focal_report(px, target, cam, centre, span, box=None):
         return (sum(Ls) / len(Ls),
                 Ls[int(len(Ls) * 0.95)] - Ls[int(len(Ls) * 0.05)])
 
-    inside = lambda x, y: fx0 <= x <= fx1 and fy0 <= y <= fy1   # noqa: E731
+    inside = _in_hull(hull)
     n_in = sum(1 for i, c in enumerate(px)
                if c is not None and inside(i % w, i // w))
     if n_in < 200:
-        print(f"  focal zone: only {n_in} px in the box "
-              f"({fx0}..{fx1}, {fy0}..{fy1}) - projection is wrong")
+        print(f"  focal zone: only {n_in} px inside the projected hull "
+              f"- projection is wrong")
         return
     cm, cc = stats(inside)
     om, oc = stats(lambda x, y: not inside(x, y))
