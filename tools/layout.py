@@ -396,6 +396,27 @@ class Layout:
                 # the case this check exists for, and the message said "hides
                 # 33% of the chair" while reporting 33% of the coat rack.
                 near, far = (a, b) if ad > bd else (b, a)
+                # A person in front of a plant is a scene; a plant in front of
+                # a person is a problem. The rule was symmetric, so whichever
+                # was placed second lost -- and characters are placed last, so
+                # they lost to scatter decor every time. That is not a
+                # near-miss in the calibration, it is the wrong hierarchy: the
+                # check exists so that MODELLED GEOMETRY is not invisible, and
+                # a fern behind a customer has not been wasted, it has been
+                # stood behind.
+                #
+                # It cost the whole perching feature to find. Stools went from
+                # ten occupants across twelve rooms to one when a change
+                # elsewhere moved the plants; the solver rejected every
+                # perched figure to protect the greenery, silently, because a
+                # rejected placement looks exactly like a room with nobody at
+                # the window bar.
+                #
+                # Asymmetric on purpose, and one direction only: decor hiding a
+                # character still fires.
+                if (near.name.split("#")[0] == "char"
+                        and far.name.split("#")[0] == "decor"):
+                    continue
                 fu0, fu1, fv0, fv1, _ = boxes[far.name]
                 far_area = (fu1 - fu0) * (fv1 - fv0) or 1e-9
                 frac = (ou * ov) / far_area

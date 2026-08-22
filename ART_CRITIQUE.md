@@ -2159,3 +2159,122 @@ critique originally called "dressed but not composed", and it is the first
 instrument that has separated the failing room from the passing ones. Two
 different questions, two different instruments: mean L catches a badly lit
 counter, edge density catches a room with no hierarchy of detail.
+
+### Correction: it is the focal zone, not the periphery
+
+The section above concluded *the room around it is over-dressed, uniformly*.
+The reference room's own edge reading, which had not come back yet when that
+was written, says the opposite:
+
+| | focal zone | periphery | lead |
+|---|---|---|---|
+| **reference room** | **0.391** | 0.328 | +0.063 |
+| failing wall run | **0.310** | 0.346 | −0.037 |
+| peninsula | 0.364 | 0.323 | +0.041 |
+| island | 0.374 | 0.287 | +0.086 |
+| L run | 0.370 | 0.306 | +0.064 |
+
+The failing room's periphery (0.346) is barely above the reference's (0.328).
+Its **focal zone** is the outlier — 0.310 against every other zone measured at
+0.364 to 0.391. And prop density agrees: that room runs 0.60 props per square
+metre against the reference's 0.68, so it is not a crowded room at all.
+
+So the counter *is* under-detailed, in material variety rather than in item
+count: its zone holds twenty items in 11.9 m², more per square metre than the
+L run's twenty in 17.9, and they are pale clutter on a pale counter with one
+figure behind it where the L run has three. Edge density counts transitions,
+and six cream objects on a cream counter are one object as far as an outline is
+concerned — which is the silhouette lesson again, arriving in a third place.
+
+## The sample was optimistic, and here is by how much
+
+The suite check renders one room per topology — four renders, about a minute.
+Scanning twelve consecutive plans instead:
+
+**2 of 12 fail**, and *neither is one the suite check looks at*. One wall run at
+−0.054 contrast, and one island whose counter is **darker** than its room
+(−0.018 mean L).
+
+A 17% escape rate is worth stating rather than hiding behind a green check.
+Twelve rooms is three minutes, and a check nobody runs protects nothing, so the
+deep scan is a flag rather than a suite entry:
+
+```
+python tools/build_plan.py --focal-scan 12
+```
+
+It exits non-zero on any failure, so it can be wired into a slower gate. What
+it reports is a defect in the **generator**, not in the check.
+
+## The occlusion rule was protecting the plants from the customers
+
+Perching regressed from ten occupants across twelve rooms to **one**, silently,
+and stayed that way through several commits. Nothing failed: the stools were
+placed, the rig worked, the support model worked. The rooms simply had nobody
+at the window bar, which looks exactly like a room where nobody sat down.
+
+`screen_occlusion` was rejecting every perched figure with
+
+```
+char#probe hides 53% of decor#gplantW#1 (1.4 apart in depth)
+```
+
+The rule was symmetric, so of any two objects the one placed *second* lost —
+and characters are placed last, so they lost to scatter decor every time. When
+an unrelated change moved the plants behind the stools, the whole feature
+switched off.
+
+That is not a mis-calibration, it is the wrong hierarchy. **A person in front
+of a plant is a scene; a plant in front of a person is a problem.** The check
+exists so that modelled geometry is not invisible, and a fern behind a customer
+has not been wasted — it has been stood behind. The exemption is asymmetric and
+one-directional: decor hiding a character still fires.
+
+Perching went 1 → 5 across twelve rooms with zero issues, and the rejections
+that remain are correct — the second figure on a four-stool bar is refused
+because a seated customer would hide 39% of it, which is character-on-character
+and exactly what the rule is for.
+
+The general lesson is about the *shape* of the bug rather than the rule. **A
+feature that silently switches off looks identical to a feature that had
+nothing to do.** The perch count was never asserted anywhere, so twelve empty
+window bars read as twelve quiet cafes.
+
+### Check 24: is the furniture used
+
+Promoted directly from the regression above, because the shape of that bug is
+the reason to have it. Perching switched off and stayed off for several
+commits without failing anything — every other check asks whether the room is
+*correct*, and an empty window bar is perfectly correct.
+
+There turned out to be **two** independent causes, and the second only surfaced
+once the first was fixed and the number was counted again:
+
+| state | stools occupied |
+|---|---|
+| symmetric occlusion rule | 1 of 23 — **4%** |
+| after the char/decor exemption | 7 of 25 — 28% |
+| after placing people before the dressing | 10 of 25 — **40%** |
+
+The second cause was ordering. `scatter` already rejects a conflicting
+placement, so whichever of people and dressing goes down first wins the floor,
+and the dressing was winning it: a six-stool window bar came out empty because
+plants had been scattered along the same strip and a perched figure's legs
+landed inside one. A real collision, correctly rejected, caused entirely by the
+order. **This is the occlusion hierarchy again, one level up** — there a person
+may stand in front of a plant, here a person gets the seat and the plant goes
+somewhere else.
+
+The check is a **rate** across eight rooms, floor 0.20, bracketed by the 4% of
+the broken state and the 39% the shipped code measures. A rate rather than a
+per-room rule because a room whose only stool is awkwardly placed should be
+allowed to stay empty, and a generator that never seats anyone anywhere should
+not.
+
+On verification, honestly: the 4% was measured on live code before either fix,
+so the bracket is real, but it cannot be reproduced now by reverting only the
+occlusion asymmetry — with people placed first there are no plants behind the
+stools for the symmetric rule to trip on. The two fixes overlap and either
+alone suffices. What was verified against shipped code is that the failure path
+executes: at a floor of 0.45 it reports *7 of 18 stools occupied across 8 rooms
+(39%)*. A check whose failure path has never run is not a check.

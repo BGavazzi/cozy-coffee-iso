@@ -280,6 +280,11 @@ def check(man: dict) -> int:
         # picture instead of the geometry.
         for msg in check_focal_contrast():
             errs.append(f"composition: {msg}")
+        # And whether the furniture is used. Everything above asks whether the
+        # room is correct; this asks whether it is inhabited.
+        from build_plan import check_stool_occupancy
+        for msg in check_stool_occupancy():
+            errs.append(f"occupancy: {msg}")
     except Exception as exc:                       # pragma: no cover
         warns.append(f"clip cross-check skipped: {exc}")
 

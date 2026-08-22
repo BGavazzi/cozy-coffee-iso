@@ -459,6 +459,19 @@ def build(plan: F.Plan) -> Layout:
                           max(1, int(z.area / 9.0)), f"prop#side{zi}",
                           seed=60 + zi)
 
+    # People BEFORE the dressing. `scatter` already rejects a placement that
+    # conflicts, so whichever of the two goes down first wins the floor -- and
+    # the dressing was winning it. A six-stool window bar came out empty
+    # because plants had been scattered along the same strip and a perched
+    # figure's legs landed inside one: a real collision, correctly rejected,
+    # caused entirely by the order.
+    #
+    # This is the occlusion hierarchy again, one level up. There the rule was
+    # that a person may stand in front of a plant; here it is that a person
+    # gets the seat and the plant goes somewhere else. People are the subject
+    # and dressing fills what is left, in both senses.
+    made += _people(L, plan, seat_z=seat_z, perch_rail=perch_rail)
+
     # --- dressing in whatever is left, against the far walls where clutter
     # belongs: the near sides are open to the camera.
     made += L.scatter(lambda i: A.plant_small(seed=40 + i),
@@ -498,7 +511,6 @@ def build(plan: F.Plan) -> Layout:
             add(A.pendant_lamp(), at=((z.x0 + z.x1) / 2 - 0.5,
                                       (z.y0 + z.y1) / 2 - 0.5, 0.60),
                 name=f"decor#lamp{zi}", track=False)
-    made += _people(L, plan, seat_z=seat_z, perch_rail=perch_rail)
     L.generated = made
     return L
 
@@ -620,6 +632,64 @@ def focal_box(plan: F.Plan) -> tuple:
     zs = plan.of("service") + plan.of("backbar") + plan.of("service_return")
     return ((min(z.x0 for z in zs), max(z.x1 for z in zs)),
             (min(z.y0 for z in zs), max(z.y1 for z in zs)), (0.0, 1.50))
+
+
+MIN_STOOL_OCCUPANCY = 0.20
+
+
+def check_stool_occupancy(n: int = 8, seed: int = 1,
+                          floor: float = MIN_STOOL_OCCUPANCY) -> list[str]:
+    """Somebody must actually be sitting at the window bars.
+
+    Promoted because perching switched itself off and stayed off for several
+    commits without failing anything. The stools were placed, the rig worked,
+    the support model worked, and the rooms simply had nobody at the bar --
+    which is indistinguishable from a room where nobody felt like sitting
+    down. A FEATURE THAT SILENTLY SWITCHES OFF LOOKS IDENTICAL TO A FEATURE
+    THAT HAD NOTHING TO DO, and the only defence is to assert that it did
+    something.
+
+    Two unrelated causes, both found only because the number was eventually
+    counted:
+
+    - `screen_occlusion` was symmetric, so of any two objects the one placed
+      second lost, and characters are placed last. Every perched figure was
+      rejected for hiding a plant. Occupancy 4%.
+    - the perimeter dressing was scattered before the people, so plants took
+      the window-bar strip and a perched figure's legs landed inside one --
+      a real collision, correctly rejected, caused entirely by the order.
+      Occupancy 28%.
+
+    With both fixed, 39% over eight rooms. The floor is 0.20, bracketed by the
+    4% of the broken state and that 39%. It is a RATE rather than a per-room
+    rule on purpose: a room whose only stool is behind a pillar should be
+    allowed to stay empty, and one that never seats anyone anywhere should not.
+
+    On verification, honestly: the 4% was measured on the live code before
+    either fix, so the bracket is real. It cannot be reproduced now by
+    reverting only the occlusion asymmetry -- with people placed before the
+    dressing there are no plants behind the stools yet for the symmetric rule
+    to trip on, so the two fixes turn out to overlap and either one alone is
+    enough. What was verified against the shipped code is that the check
+    computes and reports: at a floor of 0.45 it says "7 of 18 stools occupied
+    across 8 rooms (39%)". A check whose failure path has never executed is
+    not a check, so that much had to be shown even where the original defect
+    is no longer reachable.
+    """
+    stools = perched = 0
+    for k in range(seed, seed + n):
+        L = build(F.generate(k))
+        stools += sum(1 for q in L.items if q.name.startswith("seat#stool"))
+        perched += sum(1 for q in L.items if "perch" in q.name)
+    if stools == 0:
+        return [f"no window bars at all in {n} rooms -- the plan generator "
+                f"has stopped proposing them"]
+    got = perched / stools
+    if got < floor:
+        return [f"{perched} of {stools} stools occupied across {n} rooms "
+                f"({got:.0%}, floor {floor:.0%}) -- the window bars are "
+                f"furniture nobody uses"]
+    return []
 
 
 def check_focal_contrast(n: int = 4, seed: int = 1,
@@ -767,17 +837,60 @@ def check_built_rooms(n: int = 6, seed: int = 1) -> list[str]:
     return out
 
 
+def _focal_scan(n: int, target: int) -> int:
+    """Every plan from 1 to n, graded against the focal floors.
+
+    Exists because the suite check samples ONE ROOM PER TOPOLOGY -- four
+    renders, about a minute -- and that sample was measured to be optimistic.
+    Over twelve consecutive plans two fail, and neither of the two is one the
+    suite check looks at. A 17% escape rate is worth knowing about and worth
+    stating; hiding it behind a green check would be worse than the escape.
+
+    Not folded into the suite because twelve rooms is three minutes, and a
+    check nobody runs protects nothing.
+    """
+    import io as _io
+    import contextlib
+    import re as _re
+    from render_room import render
+    bad = 0
+    for k in range(1, n + 1):
+        plan = F.generate(k)
+        L = build(plan)
+        buf = _io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            render(L, light_rig(plan), target, Path(tempfile.gettempdir())
+                   / "_focal_scan.png", wear=L.wear_field(),
+                   focal=focal_box(plan))
+        hits = _re.findall(r"([+-]\d\.\d\d\d)", buf.getvalue())
+        lead, con = float(hits[0]), float(hits[1])
+        fail = lead < MIN_FOCAL_L or con < MIN_FOCAL_CONTRAST
+        bad += fail
+        print(f"  plan {k:2d}  {plan.topology:10s} L {lead:+.3f}  C {con:+.3f}"
+              f"   {'FAIL' if fail else 'ok'}")
+    print("")
+    print(f"  {bad} of {n} rooms fail the focal floors "
+          f"({bad / n:.0%})")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed", type=int, default=3)
     ap.add_argument("--target", type=int, default=480)
     ap.add_argument("--out", default=str(ROOT / "proof" / "plan_room.png"))
+    ap.add_argument("--focal-scan", type=int, default=0, metavar="N",
+                    help="measure focal lead over N consecutive plans and "
+                         "exit; the suite check only samples one room per "
+                         "topology, and this is how that sample was shown to "
+                         "be optimistic")
     args = ap.parse_args()
 
     plan = F.generate(args.seed)
     bad = F.check_plan(plan)
     print(f"plan seed {args.seed}: " + ("clean" if not bad else "; ".join(bad)))
     print(F.describe(plan))
+    if args.focal_scan:
+        return _focal_scan(args.focal_scan, args.target)
     L = build(plan)
     print(f"  {L.generated} props placed by constraint, "
           f"{len(L.items)} tracked in all")

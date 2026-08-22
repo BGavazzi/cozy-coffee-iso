@@ -36,7 +36,8 @@ which is the point.
     python tools/review_queue.py stats            # what to automate next
 
     # the gates
-    python tools/manifest.py --check     # runs all twenty-three checks
+    python tools/manifest.py --check     # runs all twenty-four checks
+    python tools/build_plan.py --focal-scan 12   # slower gate: 12 whole rooms
     python tools/character.py            # hair contrast, palette spread, silhouette floor
     python tools/fx.py                   # loop seams
 
@@ -58,7 +59,7 @@ which is the point.
 The reference room is still the better room. It holds seven passes of judgement
 that no rule encodes — why the queue runs across the view rather than into it,
 why the crates go against the far walls. What the generator has is that it can
-make a different cafe, and that every one it makes clears twenty-three checks.
+make a different cafe, and that every one it makes clears twenty-four checks.
 
 ## The loop is a ratchet
 
@@ -66,16 +67,22 @@ Every human rejection carries a reason. Reasons that recur get promoted into the
 automated tier, so **human review volume falls as the factory matures**. `stats`
 names the next check to write rather than leaving it to guesswork.
 
-Twenty-three checks have been promoted so far: camera-space key light, hair/skin
+Twenty-four checks have been promoted so far: camera-space key light, hair/skin
 contrast, per-character palette spread, waistline separation, silhouette pixel
 floor, seating orientation, member thickness, grounding, declared-symmetry
 verification, screen-space occlusion, buried detail, derived direction labels,
 generator range, generated-spec conformance, roster variety, cast silhouette,
 accessory distinguishability, palette-binding round trip, ingest transform,
-floor-plan conformance, floor-plan range, built-room conformance, and focal
-contrast.
+floor-plan conformance, floor-plan range, built-room conformance, focal
+contrast, and window-bar occupancy.
 
-The last of those is the only one that looks at the picture rather than the
+The last one asks something none of the others do: not whether the room is
+correct but whether it is *inhabited*. It exists because perching switched
+itself off for several commits without failing anything — the stools were
+placed, the rig worked, and the rooms just had nobody at the bar. A feature
+that silently switches off looks identical to a feature that had nothing to do.
+
+Focal contrast is the only check that looks at the picture rather than the
 geometry: it renders whole rooms and asks whether the counter still owns the
 frame. It is also the one that caught the instrument being tuned to the answer.
 Committed at a render size of 160 because one seed read the same there as at
