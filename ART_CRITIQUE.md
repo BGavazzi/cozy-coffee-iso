@@ -1588,10 +1588,28 @@ the table thickness varied underneath it, arrived at from a third direction.
 - Bar stools and benches are still never sat on, because perching needs a
   support model `grounded` does not have: a figure held up by its hips has no
   underside meeting anything.
-- The plan generator has one topology: a straight run against a far wall with
-  the seating in strips. An island counter, an L-shaped run, or a counter
-  facing the door are all cafes it cannot propose. The measured 43% mean layout
-  distance is range within one idea.
+### A number that says a generator moved, and a sheet that says where
+
+`check_plan_range` measured the plan generator at 43% mean layout distance and
+said nothing, which was correct — 43% is a real spread. What a scalar cannot
+say is that the whole spread sits *inside* one idea, and a contact sheet of six
+plans made that obvious in a second: a straight run against a far wall with the
+seating in strips, six times. This is the same relationship the generator sheet
+has to `check_generator_range`. The number says a generator moved; the sheet
+says whether it had anywhere interesting to move to.
+
+A second seating topology answers it. Perimeter blocks hug the walls and leave
+the middle clear, which is what a cafe does when the floor is wide rather than
+long — and it is a different room rather than a reparameterised one, because the
+circulation runs through the centre instead of down aisles between blocks. Mean
+layout distance goes to **50%**, and two plans in six now read as the other kind
+of cafe.
+
+- The plan generator still puts its counter in a straight run against a far
+  wall. An island, an L-shaped run and a counter that faces the door are all
+  cafes it cannot propose, and an island in particular would change the
+  circulation problem rather than the furniture arrangement — you can walk
+  round it, and the flood fill would have something to say about that.
 - Cast variety is now measured on shape as well as colour, and the generator
   solves for it. What is still unmeasured is whether an accessory or a hair
   style is *distinguishable* rather than merely present: the scarf went from

@@ -465,15 +465,25 @@ def _lit_area(z: Zone, plan: Plan) -> float:
 def _seating_blocks(x0, y0, x1, y1, rnd) -> list:
     """Cut a seating floor into blocks under the cap, aisles between them.
 
-    Strips along the shorter axis, so the aisles run the long way -- which is
-    both how a room this shape is actually laid out and what keeps every block
-    touching the circulation the flood fill tests.
+    Two topologies, because one is not a range. `check_plan_range` measured the
+    strip-only generator at 43% mean layout distance and said nothing, which is
+    correct -- 43% is a real spread. What it cannot say is that the spread is
+    all *within* one idea, and a sheet of six plans made that obvious in a way
+    no scalar did. This is the same relationship the generator sheet has to
+    `check_generator_range`: the number says whether a generator moved, and the
+    contact sheet says whether it had anywhere interesting to move to.
 
-    Each block then loses a random bite off its far edge. Without that, a room
-    splits into three identical rectangles in a row, and a plan generator whose
-    output is a regular grid has replaced one hand-typed layout with one
-    procedural layout.
+    STRIPS run along the shorter axis, so the aisles run the long way. That is
+    how a room this shape is usually laid out and it keeps every block touching
+    the circulation the flood fill tests.
+
+    PERIMETER hugs the walls and leaves the middle clear, which is what a cafe
+    does when the floor is wide rather than long -- and it is a genuinely
+    different room, not a reparameterised one: the circulation runs through the
+    centre instead of down aisles between blocks.
     """
+    if (x1 - x0) > 5.5 and (y1 - y0) > 4.6 and rnd() < 0.42:
+        return _perimeter_blocks(x0, y0, x1, y1, rnd)
     out = []
     aisle = 0.9 + rnd() * 0.5
     horizontal = (x1 - x0) >= (y1 - y0)
@@ -495,6 +505,48 @@ def _seating_blocks(x0, y0, x1, y1, rnd) -> list:
             out.append(Zone(kind, a, y0, b, y0 + short_span * keep))
         else:
             out.append(Zone(kind, x0, a, x0 + short_span * keep, b))
+    return out
+
+
+def _perimeter_blocks(x0, y0, x1, y1, rnd) -> list:
+    """Seating against the edges of the floor, circulation through the middle.
+
+    The bands are deliberately shallow -- 1.5 to 2.1 tiles, a table and a chair
+    each side -- because a deep perimeter band is just a strip layout with a
+    hole in it, and the hole is the point.
+    """
+    out = []
+    depth = 1.5 + rnd() * 0.6
+    if (x1 - x0) - 2 * depth < 2.4 or (y1 - y0) - 2 * depth < 2.4:
+        return out
+    # Four bands, each cut short of the corners so the blocks do not overlap
+    # and so a person can turn each one.
+    gap = 0.5 + rnd() * 0.4
+    bands = [
+        ("cafe", x0, y0, x1, y0 + depth),
+        ("lounge", x0, y1 - depth, x1, y1),
+        ("cafe", x0, y0 + depth + gap, x0 + depth, y1 - depth - gap),
+        ("lounge", x1 - depth, y0 + depth + gap, x1, y1 - depth - gap),
+    ]
+    for kind, a, b, c, d in bands:
+        if c - a < 1.6 or d - b < 1.4:
+            continue
+        # Long bands get split, for the same reason a long strip does: the cap
+        # is about how much undivided seating reads as a canteen, and a band is
+        # no different from a block.
+        run = c - a if (c - a) >= (d - b) else d - b
+        n = max(1, int((c - a) * (d - b) / (MAX_SEAT_BLOCK * 0.7)) + 1)
+        n = min(n, max(1, int(run / 2.4)))
+        if (c - a) >= (d - b):
+            step = (c - a - gap * (n - 1)) / n
+            for i in range(n):
+                sx = a + i * (step + gap)
+                out.append(Zone(kind, sx, b, sx + step, d))
+        else:
+            step = (d - b - gap * (n - 1)) / n
+            for i in range(n):
+                sy = b + i * (step + gap)
+                out.append(Zone(kind, a, sy, c, sy + step))
     return out
 
 
