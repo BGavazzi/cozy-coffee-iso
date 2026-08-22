@@ -770,6 +770,80 @@ six passes of art direction live in its coordinates, and it is now also the
 thing the plan rules are calibrated against — which is a better job for it than
 being the only room the pipeline can make.
 
+## And then something rendered one
+
+A plan generator with no consumer is an adapter, which is the position
+`ingest.py` is still in and the reason both needed checks before anything fed
+them. `build_plan.py` fills the zones: the counter run tiles along the service
+zone, the seating comes from `Layout.scatter`, the fitted props from
+`add_seeded`. No coordinate in that file is a number about a particular room —
+everything is derived from a zone — and that is the whole difference between a
+room and a room generator.
+
+`render` had to be extracted from `render_room.main` first, and it had to be
+the *same* function rather than a similar one: the material-id mapping, the
+outline pass and the crop between them are three places a second copy would
+drift, and a proof image rendered through a near-copy of the shipping pipeline
+is not proof of anything. The reference room came out byte-identical after the
+extraction.
+
+Five things went wrong, and four of them were caught by checks written for
+hand-typed work three passes ago.
+
+**Two of the four chair rotations were backwards.** A chair's back is at −y, so
+the side seats needed 270 and 90 and got 90 and 270. `seating_faces_tables`
+reported it on every side chair in every room — 8 to 14 failures per room on
+the first run. A check written to grade rotations somebody typed caught the
+same mistake made by a loop.
+
+**The solver was looser than its own validator.** Two vases scattered onto
+tables were accepted at proposal time and reported as floating afterwards,
+because `grounded` allows 0.03 of gap and the support test inside `_conflicts`
+allowed 0.06. A solver whose predicate is weaker than the check it exists to
+satisfy is not a solver, it is a source of warnings. One constant now.
+
+**Ordering, three more times.** `add_seeded` can only solve against what is
+already in the room. Menu boards hung after the espresso machine were boards
+the machine never had to avoid, and 38–47% of one was covered in seven rooms
+out of twelve. Moving them earlier did not fix it either: the machine is 2.0
+tiles wide whatever its seed, so no seed moves it off the board. **When the
+solver has no move to make, the constraint belongs in the proposal** — the same
+conclusion the floor plan reached about its windows and its back bar. The
+boards now start past the machine.
+
+**Approximating a rule instead of asking it.** Denser scatter put chairs
+between two tables, serving one and backing onto the other.
+`seating_faces_tables` judges a seat against whichever table is *nearest*, so
+the obvious fix was a "is my table the closest one" test at placement — and it
+left one chair in twelve rooms still failing. Calling the real predicate on the
+candidate leaves none. Reimplementing a validator inside the solver that is
+supposed to satisfy it reproduces its conclusion approximately, which is the
+one thing a constraint solver may not do.
+
+**And the focal box was degenerate, from the other direction.**
+`focal_report`'s own docstring records a mis-projected box giving a contrast of
+exactly 0.000 — "a number a real region cannot have". Handed a box padded out
+to the customer side, it gave the focal region and the rest of the frame
+*identical* readings of 0.546. Two regions agreeing to three decimals is the
+same tell as one impossible number: the box had grown until inside and outside
+were the same sample. Sized to the counter the way the reference room's is
+written by hand, the generated rooms read +0.039 to +0.093 of contrast against
+the reference room's stable +0.133.
+
+| | reference room | generated from a plan |
+|---|---|---|
+| coordinates typed by hand | 48 | **0** |
+| props | 104 | 51–83 depending on the plan |
+| collisions, floating, facing, occlusion | 0 | **0 across twelve rooms** |
+| focal contrast lead | +0.133 | +0.039 to +0.093 |
+
+The reference room is still the better room, and saying so is the point. It
+holds six passes of judgement that no rule in `floorplan.py` encodes — why the
+queue runs across the view rather than into it, why the crates go against the
+far walls, why one bench is pink. What the generator has is that it can make a
+different cafe, and that every one it makes satisfies twenty-one checks a
+person had to be surprised by first.
+
 ## Where the numbers landed
 
 | | third pass | fourth pass |
@@ -1462,7 +1536,7 @@ downstream.
 | high-key share of frame | 63.8% | **66.7%** |
 | generator range | unmeasured | **measured, per generator, with a floor each** |
 | the seam stages 1–3 attach to | described | **built, and checked from both ends** |
-| automated checks in the ratchet | 11 | **20** |
+| automated checks in the ratchet | 11 | **21** |
 | closest pair in the cast, by outline alone | 0.0% and 4.3%, unmeasured | **10.1% and 10.0%** |
 
 Median L, chroma and the extremes are unmoved, the checks stay clean, and the
@@ -1470,11 +1544,17 @@ render is still byte-identical across processes.
 
 ## Still open
 
-- `floorplan.py` generates and checks a plan, but nothing renders one yet. The
-  zones carry a kind and a facing, and `Layout.scatter` already fills a
-  rectangle with props; joining those two is the remaining half, and until it
-  is joined the plan generator is an adapter with no consumer — the same
-  position `ingest.py` is in, and it needed checks for the same reason.
+- The generated rooms are dressed but not *composed*. Every check passes and
+  the counter leads the eye, but nothing decides that the crates belong against
+  the far wall rather than the near one, or that a bench wants a different ramp
+  from the four chairs beside it. Those are the judgements the reference room's
+  48 coordinates are actually made of, and the ratchet has not caught up to
+  them because nobody has yet been surprised by their absence in a way that
+  could be written down as a rule.
+- No characters are placed in a generated room. The reference room positions
+  six by hand, and the plan has the information to do better than that — a
+  queue band, seats, a service side — but "who is standing where" is a
+  simulation question rather than a layout one.
 - The plan generator has one topology: a straight run against a far wall with
   the seating in strips. An island counter, an L-shaped run, or a counter
   facing the door are all cafes it cannot propose. The measured 43% mean layout

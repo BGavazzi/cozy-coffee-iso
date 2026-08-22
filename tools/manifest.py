@@ -261,6 +261,12 @@ def check(man: dict) -> int:
             errs.append(f"floorplan: {msg}")
         for msg in check_plan_range():
             errs.append(f"floorplan: {msg}")
+        # And the rooms built from those plans. A plan is rectangles and a room
+        # is meshes; the plan checks say nothing about whether filling one
+        # produces chairs that face their tables.
+        from build_plan import check_built_rooms
+        for msg in check_built_rooms():
+            errs.append(f"plan room: {msg}")
     except Exception as exc:                       # pragma: no cover
         warns.append(f"clip cross-check skipped: {exc}")
 

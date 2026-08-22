@@ -297,7 +297,7 @@ def build_room():
 FOCAL_BOX = ((2.0, 8.0), (0.06, 1.30), (0.0, 1.50))
 
 
-def focal_report(px, target, cam, centre, span):
+def focal_report(px, target, cam, centre, span, box=None):
     """Does the interaction zone actually read as the focal point?
 
     Measured against the frame, not in the abstract: a focal zone has to be
@@ -308,7 +308,7 @@ def focal_report(px, target, cam, centre, span):
     corner.
     """
     from oklab import srgb_to_oklab
-    (ax, bx), (ay, by), (az, bz) = FOCAL_BOX
+    (ax, bx), (ay, by), (az, bz) = box or FOCAL_BOX
     us, vs = [], []
     for x in (ax, bx):
         for y in (ay, by):
@@ -404,29 +404,45 @@ def main() -> int:
             print(f"    {h}")
     else:
         print("  nothing is buried behind anything")
+    render(L, light_rig(), args.target, Path(args.out),
+           factor=args.factor, azimuth=args.azimuth,
+           shadows=not args.no_shadows)
+    return 0
+
+
+def render(L, rig, target: int, out: Path, factor: int = 3,
+           azimuth: float = 45.0, shadows: bool = True, wear=None,
+           focal=None) -> None:
+    """Rasterize a laid-out room and write the sprite.
+
+    Extracted from `main` when `build_plan.py` needed the same path. It had to
+    be the same path rather than a similar one: the material-id mapping, the
+    outline pass and the crop between them are three places where a second copy
+    would drift, and a proof image rendered through a near-copy of the shipping
+    pipeline is not proof of anything.
+    """
     mesh = L.mesh()
     print(f"room mesh: {len(mesh.verts)} verts, {len(mesh.faces)} tris")
+    cam = DimetricCamera(azimuth)
+    cam.span, centre = frame(mesh, cam, target)
+    print(f"camera span {cam.span:.2f}, azimuth {azimuth}")
 
-    cam = DimetricCamera(args.azimuth)
-    cam.span, centre = frame(mesh, cam, args.target)
-    print(f"camera span {cam.span:.2f}, azimuth {args.azimuth}")
-
-    size = args.target * args.factor
+    size = target * factor
     ramps = load_palette()
-    print(f"rasterizing {size}x{size} -> {args.target}x{args.target} ...")
+    print(f"rasterizing {size}x{size} -> {target}x{target} ...")
     sm = None
-    if not args.no_shadows:
+    if shadows:
         print("building shadow map ...")
         sm = ShadowMap(mesh, camera_light(cam), res=768)
     mat, lam, _ = rasterize(mesh, cam, size, target=centre, shadows=sm,
-                            fill=0.0 if args.no_shadows else 0.20,
-                            bounce=0.26, rig=light_rig(),
+                            fill=0.20 if shadows else 0.0,
+                            bounce=0.26, rig=rig,
                             ambient=0.05, key_gain=0.60,
                             haze=0.30, grain=1.0, ramps=ramps,
-                            wear=L.wear_field())
+                            wear=L.wear_field() if wear is None else wear)
 
     px = downsample_modal(shade_toon(mat, lam, size, ramps, dither=True),
-                          size, args.factor)
+                          size, factor)
     # Material ids by SORTED INDEX, never by hash. `hash(m) % 251` collides
     # among ~30 materials by the birthday bound, and Python randomises string
     # hashing per process, so which materials collided changed every run: the
@@ -438,26 +454,24 @@ def main() -> int:
            for i, m in enumerate(sorted(m for m in set(mat) if m is not None))}
     back = {v: k for k, v in ids.items()}
     small = downsample_modal([ids[m] if m is not None else None for m in mat],
-                             size, args.factor)
+                             size, factor)
     px = apply_outline(px, [back.get(c) if c is not None else None for c in small],
-                       args.target, ramps)
+                       target, ramps)
 
     bg = (26, 23, 31)
-    img = Image.new("RGB", (args.target, args.target), bg)
+    img = Image.new("RGB", (target, target), bg)
     img.putdata([c if c is not None else bg for c in px])
 
     # crop to content, then scale for viewing
-    solid = [(i % args.target, i // args.target) for i, c in enumerate(px) if c]
-    x0 = min(p[0] for p in solid); x1 = max(p[0] for p in solid)
-    y0 = min(p[1] for p in solid); y1 = max(p[1] for p in solid)
+    solid = [(i % target, i // target) for i, c in enumerate(px) if c]
+    x0 = min(q[0] for q in solid); x1 = max(q[0] for q in solid)
+    y0 = min(q[1] for q in solid); y1 = max(q[1] for q in solid)
     img = img.crop((x0, y0, x1 + 1, y1 + 1))
-    focal_report(px, args.target, cam, centre, cam.span)
+    focal_report(px, target, cam, centre, cam.span, focal)
 
-    out = Path(args.out)
-    out.parent.mkdir(exist_ok=True)
+    out.parent.mkdir(parents=True, exist_ok=True)
     img.resize((img.width * 2, img.height * 2), Image.NEAREST).save(out)
     print(f"wrote {out}  ({img.width}x{img.height} native)")
-    return 0
 
 
 if __name__ == "__main__":

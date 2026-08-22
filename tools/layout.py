@@ -54,6 +54,16 @@ TUCK_OK = {
 }
 
 
+# How far an object's underside may sit off the surface below it. One constant,
+# used by `grounded` and by the support test inside `_conflicts`, because they
+# were 0.03 and 0.06: the solver accepted a placement its own validator then
+# rejected. `build_plan` hit it the first time it ran -- two vases scattered
+# onto tables, accepted at proposal time and reported as floating afterwards. A
+# solver whose predicate is looser than the check it exists to satisfy is not a
+# solver, it is a source of warnings.
+SUPPORT_TOL = 0.03
+
+
 @dataclass
 class Layout:
     items: list[Placed] = field(default_factory=list)
@@ -175,7 +185,7 @@ class Layout:
                 out.append(f"{p.name}: back points toward the table it serves")
         return out
 
-    def grounded(self, tol: float = 0.03) -> list[str]:
+    def grounded(self, tol: float = SUPPORT_TOL) -> list[str]:
         """Every object must rest on the floor or on something beneath it.
 
         Floating and sunk props have been the most repeated defect in this
@@ -375,7 +385,7 @@ class Layout:
         # afterwards can check it before, and then the rule never has to fire.
         if cand.z0 > 0.03:
             for a in self.items:
-                if abs(a.z1 - cand.z0) > 0.06:
+                if abs(a.z1 - cand.z0) > SUPPORT_TOL:
                     continue
                 if (min(a.x1, cand.x1) - max(a.x0, cand.x0) > 0.04
                         and min(a.y1, cand.y1) - max(a.y0, cand.y0) > 0.04):
