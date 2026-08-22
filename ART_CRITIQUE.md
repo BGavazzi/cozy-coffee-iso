@@ -2278,3 +2278,233 @@ stools for the symmetric rule to trip on. The two fixes overlap and either
 alone suffices. What was verified against shipped code is that the failure path
 executes: at a floor of 0.45 it reports *7 of 18 stools occupied across 8 rooms
 (39%)*. A check whose failure path has never run is not a check.
+
+# Eighth pass — the instrument was averaging in the thing it was excluding
+
+## The focal region was a box drawn around a diamond
+
+`focal_report` takes a world-space box, projects its eight corners, and grades
+the pixels inside. Inside *what*, though: the eight corners of an axis-aligned
+box project to a **hexagon** in a 2:1 dimetric, and the code was taking their
+axis-aligned bounding box in pixel space.
+
+How much that matters, measured rather than assumed — hull area over bounding
+box area, per room:
+
+| | fill |
+|---|---|
+| twelve generated rooms | **51% – 64%** |
+| the reference room | 52% |
+
+So between a third and a half of every focal reading was the floor in front of
+the counter and the wall behind it: the exact *elsewhere* the focal zone is
+supposed to be brighter and busier than. Clipping the region to the projected
+convex hull, at 480, without touching a single room:
+
+| plan | topology | bbox L | hull L | bbox C | hull C |
+|---|---|---|---|---|---|
+| 1 | wall run | +0.025 | +0.030 | **−0.014** | **+0.101** |
+| 2 | peninsula | +0.037 | +0.075 | +0.040 | +0.087 |
+| 3 | island | +0.066 | +0.064 | +0.087 | +0.062 |
+| 4 | wall run | +0.020 | +0.020 | +0.039 | +0.101 |
+| 5 | peninsula | +0.078 | +0.048 | +0.107 | +0.101 |
+| 6 | peninsula | +0.054 | +0.072 | +0.094 | +0.087 |
+| 7 | wall run | +0.107 | +0.116 | +0.062 | +0.101 |
+| 8 | L run | +0.057 | +0.065 | +0.099 | +0.101 |
+| 9 | L run | +0.029 | +0.031 | **+0.000** | +0.053 |
+| 10 | wall run | +0.026 | +0.026 | +0.039 | +0.101 |
+| 11 | wall run | +0.020 | +0.018 | **−0.054** | **+0.047** |
+| 12 | island | −0.015 | **−0.033** | +0.045 | +0.146 |
+
+Lowest contrast in twelve rooms: **−0.054 → +0.047**.
+
+**This is why six structural hypotheses came back clean.** The seventh pass
+measured occupancy, prop density, back-wall dressing, counter dressing, kit
+size and three lighting variants against the wall run that read +0.000, and
+recorded that the cause was unfound. Every one of those hypotheses was about
+the room. None of them was about the rectangle.
+
+And the reference room is the reason it survived so long. Its fill is 52% — no
+better than anyone's — yet clipping moves its reading by nothing at all:
+contrast **+0.133 either way**, brightness +0.024 → +0.019. The instrument was
+calibrated on the one room where it happened to be accurate.
+
+### The hull test, and reading the winding instead of assuming it
+
+First version hard-coded the sign of the edge cross product and reported *only
+0 px inside the projected hull* — the whole frame classified as outside. Pixel
+coordinates flip y, so a chain wound counter-clockwise in world space comes out
+clockwise here. The winding is now read off the hull's own signed area, which
+costs one shoelace sum per frame and cannot be got wrong by a coordinate
+convention.
+
+## The contrast check had been working for the wrong reason
+
+The floors are bracketed against a deliberately broken light rig — the old
+per-zone lamp scheme that lights every seating area and takes light out of only
+two corners. At 320, under the hull clip:
+
+| plan | good L | broken L | good C | broken C |
+|---|---|---|---|---|
+| 1 wall run | +0.032 | +0.014 | +0.101 | +0.047 |
+| 2 peninsula | +0.074 | +0.054 | +0.101 | +0.047 |
+| 3 island | +0.051 | +0.032 | +0.146 | +0.047 |
+| 4 wall run | +0.018 | −0.001 | +0.146 | +0.086 |
+| 9 L run | +0.028 | +0.011 | +0.053 | −0.001 |
+| 11 wall run | +0.018 | −0.004 | +0.079 | +0.039 |
+| 12 island | −0.031 | −0.045 | +0.138 | +0.079 |
+| reference | +0.019 | — | +0.133 | — |
+
+Brightness drops in **every** room when the rig breaks, by a consistent 0.017
+to 0.022. Contrast drops too, but from a good range of 0.053–0.146 to a broken
+range of −0.001–0.086, which overlaps: a single floor catches **1 of 7**.
+
+It used to catch most of them, and that is the finding rather than a
+regression. The broken rig's whole defect is that it lights the **periphery**.
+A focal box stuffed with a third to a half periphery pixels moved when the
+periphery moved. *The check was detecting the regression by measuring the very
+pixels it existed to exclude.*
+
+So the floor is **+0.030** — positive for the first time, bracketed between the
+broken rig at −0.001 and the weakest good room at +0.047 — and it is a floor,
+not the instrument. Brightness carries the detection.
+
+## Counter orientation, which the sixth pass had already rejected
+
+Sorting the twelve hull readings by which way the run faces:
+
+| run facing | brightness lead |
+|---|---|
+| 90° — long face points **+x** | +0.064, +0.065, +0.072, +0.075, +0.116 |
+| 0° — long face points **+y** | −0.033, +0.018, +0.020, +0.026, +0.030, +0.031, +0.048 |
+
+**No overlap.** Twelve rooms, four topologies, two clean groups.
+
+The cause is one line of the lighting model. `LIGHT_CAM` resolves at azimuth 45
+to a world key of **(0.874, −0.116, 0.471)**, and the counter's front is its
+single largest visible surface:
+
+| run | visible long face | N·L |
+|---|---|---|
+| facing 90 | +x | **+0.874** |
+| facing 0 | +y | **−0.116** |
+
+One counter is lit head-on and the other is raked at grazing incidence, and the
+floor plan flips a coin between them and compensates for neither.
+
+Not fixed, and deliberately. The **reference room's own counter is a facing-0
+run** and reads +0.019, sitting in the middle of the weak group — so facing 0
+is *weak, not broken*, and a rig that boosted it would be tuning the lighting
+until the metric agreed rather than fixing a room. It goes on the open list
+with a number attached, where "counter orientation: no effect" used to sit on
+the rejected list without one. It was rejected through the blurred instrument.
+
+## The island had a back bar zone and nothing in it
+
+`on_wall` excludes islands and peninsulas from tall shelving, on the grounds
+that a 1.9 stack standing free is a partition between the barista and the room.
+That is right about shelving and was wrong to leave the zone empty: **a back
+bar is a counter before it is a shelf**, and a run with nothing behind it loses
+the vertical mass a wall run gets for free.
+
+| plan | before | after |
+|---|---|---|
+| 2 peninsula | +0.074 | +0.124 |
+| 3 island | +0.051 | +0.123 |
+| 5 peninsula | — | +0.080 |
+| 6 peninsula | — | +0.120 |
+| 12 island | **−0.031** | **+0.017** |
+
+### The height was chosen for the wrong reason and kept for the right one
+
+At the service counter's own 0.92 the back bar reads 52–55% hidden behind the
+run, and `screen_occlusion` calls that an error. Raising it looked like the
+fix. The projection says it cannot be: the run sits 1.1 nearer in depth, which
+lifts it 0.39 up the screen, so the back bar's top only clears the run's above
+**h = 1.37** — past chest height and into the partition an island exists not to
+be. Swept 1.10 to 1.32, the hidden share moved 49% to 44%. What the back bar
+actually shows is its **end**, because the same depth offset shifts it 0.78
+sideways.
+
+So the occlusion is exempted for what it is, and the height is chosen on the
+focal reading instead — where it turns out to matter for a different reason
+than the one it was proposed for, the exposed end being taller:
+
+| | worst island | best island |
+|---|---|---|
+| h = 0.92 | +0.017 | +0.123 |
+| h = 1.24 | **+0.037** | +0.136 |
+
+**The occlusion rule has now objected to a correct relationship twice** — first
+a customer standing in front of a plant, now a back bar standing behind the
+counter it serves. Both are cases where the overlap is a property of a fixed
+pair rather than of anyone's placement, which is exactly what the existing
+furniture-group exemption already says about the four chairs of a table set. So
+the run and its back bar are named into that group (`counter#bar_*`) rather
+than given a new special case. A rule that needs a third exemption of the same
+shape is a rule that is missing a concept, and the concept is "these two were
+placed as one thing".
+
+Adding `h` to `A.counter` changed every counter in the library, on a parameter
+whose default was supposed to change nothing: `0.92 - 0.10` is
+`0.8200000000000001` and the literal it replaced was `0.82`. Rounded, and the
+five counter variants hash identical to their committed selves again.
+
+## Where this leaves it
+
+`--focal-scan 12`, at 320 — the same resolution the suite check uses, which it
+was not before; the flag defaulted to 480 and the escape rate in its own
+docstring was measured against floors calibrated elsewhere:
+
+```
+  plan  1  wall run   L +0.032  C +0.101   ok
+  plan  2  peninsula  L +0.138  C +0.101   ok
+  plan  3  island     L +0.136  C +0.146   ok
+  plan  4  wall run   L +0.018  C +0.146   ok
+  plan  5  peninsula  L +0.093  C +0.101   ok
+  plan  6  peninsula  L +0.125  C +0.101   ok
+  plan  7  wall run   L +0.109  C +0.101   ok
+  plan  8  L run      L +0.059  C +0.101   ok
+  plan  9  L run      L +0.028  C +0.053   ok
+  plan 10  wall run   L +0.026  C +0.101   ok
+  plan 11  wall run   L +0.018  C +0.079   ok
+  plan 12  island     L +0.037  C +0.146   ok
+
+  0 of 12 rooms fail the focal floors (0%)
+```
+
+**2 of 12 to 0 of 12**, and the two failures had nothing in common. Plan 11 was
+an instrument error and no room changed. Plan 12 was a real defect and one room
+changed. Reporting them together as "the escape rate is closed" would hide
+that.
+
+Two rooms clear the brightness floor by 0.003 — plans 4 and 11, both facing-0
+wall runs, both in the group the orientation section leaves open. That is where
+the next failure will come from, and it is written down before it happens
+rather than after.
+
+## Still open
+
+- **Stages 1–3** (SDXL concept → TRELLIS 2 mesh → UniRig rig) need a GPU and
+  model weights. The seam (`ingest.py`) is built and checked; nothing feeds it.
+- **Counter orientation costs the focal lead 0.04 and nothing compensates.**
+  A run whose long face points +y is raked by the key at N·L = −0.116; one
+  pointing +x gets +0.874. Over twelve rooms the two groups do not overlap.
+  Left open rather than fixed because the reference room is itself a facing-0
+  run reading +0.019, so the orientation is weak and not broken, and a rig
+  boosted until the metric agreed would be a knob rather than a cause. The two
+  rooms nearest the floor (+0.018, against 0.015) are both in this group.
+- The **focal reading still falls with render resolution** in generated rooms
+  and holds in the reference one, because contrast is a percentile spread over
+  37 quantized lightness levels. The scan and the suite check now at least
+  grade at the same 320; the delivered render is 480 and the gap is stated
+  rather than tuned away.
+- **Furniture screen spread** now has an owner for its *closest pair* (0.045,
+  bracketed by measurement) but the mean-spread floor of 0.15 is still close to
+  the original guess. It has never rejected anything the closest-pair floor did
+  not also reject, which is either redundancy or a floor set too low to fire.
+- **The edge-density table in the seventh pass was read through the old focal
+  region** — the bounding box that is half floor and wall. Its conclusion, that
+  the failing wall run's focal zone is under-detailed in material variety, has
+  not been re-measured under the hull clip. It drove the counter-dressing work,
+  which helped; that does not make the number right.

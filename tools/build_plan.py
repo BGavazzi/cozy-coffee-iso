@@ -908,11 +908,21 @@ def _focal_scan(n: int, target: int) -> int:
 
     Exists because the suite check samples ONE ROOM PER TOPOLOGY -- four
     renders, about a minute -- and that sample was measured to be optimistic.
-    Over twelve consecutive plans two fail, and neither of the two is one the
-    suite check looks at. A 17% escape rate is worth knowing about and worth
-    stating; hiding it behind a green check would be worse than the escape.
+    Over twelve consecutive plans two failed, and neither of the two was one
+    the suite check looked at. A 17% escape rate is worth knowing about and
+    worth stating; hiding it behind a green check would be worse.
 
-    Not folded into the suite because twelve rooms is three minutes, and a
+    It reads 0 of 12 now, and the two it caught had nothing in common. One was
+    an INSTRUMENT error -- the focal region was the bounding box of a
+    projected parallelogram, half of it floor and wall -- and no room changed
+    to fix it. The other was a real defect, an island whose back bar zone was
+    empty, and one room changed. Saying "the escape rate is closed" would hide
+    which was which.
+
+    Graded at FOCAL_TARGET, like the suite check. It used to default to 480
+    while the check ran at 320, so the two gates disagreed by construction.
+
+    Not folded into the suite because twelve rooms is several minutes, and a
     check nobody runs protects nothing.
     """
     import io as _io

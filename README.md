@@ -37,7 +37,8 @@ which is the point.
 
     # the gates
     python tools/manifest.py --check     # runs all twenty-four checks
-    python tools/build_plan.py --focal-scan 12   # slower gate: 12 whole rooms
+    python tools/build_plan.py --focal-scan 12   # slower gate: 12 whole rooms,
+                                                 # currently 0 of 12 failing
     python tools/character.py            # hair contrast, palette spread, silhouette floor
     python tools/fx.py                   # loop seams
 
