@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -46,6 +47,16 @@ PAINTS = ("wood", "foliage-3", "rose-3", "wood", "wood-2", "wood")
 # How much of the run the espresso machine takes, including its lead-in gap.
 MACHINE_SPAN = 2.9
 
+# Square metres of floor per ceiling lamp, from the reference room: three over
+# 14.0 x 9.6.
+LAMP_AREA = 45.0
+
+# Focal check. `target` is the render size the reading is taken at: 160 gives
+# the same contrast as 240 to within 0.003 and takes half as long, which
+# matters for a check that renders whole rooms.
+FOCAL_TARGET = 160
+MIN_FOCAL_CONTRAST = 0.060
+
 
 def light_rig(plan: F.Plan) -> LightRig:
     """Daylight at each window, a core over the till, and dark corners.
@@ -64,15 +75,28 @@ def light_rig(plan: F.Plan) -> LightRig:
         pools.append(Pool((t + 0.5, 0.30, 0.95), 3.0, 0.40))
     for t in plan.win_y:
         pools.append(Pool((0.30, t + 0.5, 0.95), 3.0, 0.40))
-    for z in plan.of("cafe") + plan.of("lounge"):
-        if z.area > 8.0:
-            pools.append(Pool(((z.x0 + z.x1) / 2, (z.y0 + z.y1) / 2, 1.24),
-                              3.6, 0.62))
+    # One lamp per zone was a lamp per 36 square metres in the rooms with the
+    # most zones, against the reference room's three lamps over 134 -- one per
+    # 45. That is not a lighting preference, it is the focal measurement: the
+    # two seeds with the most lamps were the two weakest, +0.093 and +0.039
+    # contrast against a reference of +0.133, because every lamp lifts the
+    # periphery the negatives are there to sink. So the count comes from the
+    # floor's area and the biggest zones get them, rather than every zone
+    # getting one because it happens to clear a fixed threshold. A room does
+    # not light itself more brightly for having been divided more finely.
+    lit = sorted((z for z in plan.of("cafe") + plan.of("lounge")
+                  if z.area > 8.0), key=lambda z: -z.area)
+    for z in lit[:max(1, round(plan.w * plan.d / LAMP_AREA))]:
+        pools.append(Pool(((z.x0 + z.x1) / 2, (z.y0 + z.y1) / 2, 1.24),
+                          3.6, 0.62))
     corners = sorted(((0.4, 0.4), (plan.w - 0.4, 0.4),
                       (0.4, plan.d - 0.4), (plan.w - 0.4, plan.d - 0.4)),
                      key=lambda c: -((c[0] - cx) ** 2 + (c[1] - cy) ** 2))
-    for k, (px, py) in enumerate(corners[:2]):
-        pools.append(Pool((px, py, 0.5), 6.0 - k * 1.2, -0.34 + k * 0.06))
+    # Three, not two. The reference room takes light out of three of its four
+    # corners and the generated rig only did two, which leaves one corner as
+    # bright as the counter and gives the eye a second place to land.
+    for k, (px, py) in enumerate(corners[:3]):
+        pools.append(Pool((px, py, 0.5), 6.0 - k * 1.0, -0.36 + k * 0.07))
     return LightRig(pools)
 
 
@@ -447,6 +471,62 @@ def _people(L: Layout, plan: F.Plan, n: int = 7, seed: int = 1,
 
 
 
+def focal_box(plan: F.Plan) -> tuple:
+    """The service area, as the run and the back bar together."""
+    run = plan.of("service")[0]
+    back = plan.of("backbar")[0]
+    return ((min(run.x0, back.x0), max(run.x1, back.x1)),
+            (min(run.y0, back.y0), max(run.y1, back.y1)), (0.0, 1.50))
+
+
+def check_focal_contrast(n: int = 3, seed: int = 1,
+                         target: int = FOCAL_TARGET,
+                         floor: float = MIN_FOCAL_CONTRAST) -> list[str]:
+    """A generated room's counter must still read as the place to look.
+
+    The last of the composition questions to survive being measured. Depth
+    staging, ramp balance and accent spread were all tested against the
+    reference room and all three came back matching -- the generated rooms put
+    nothing tall in the foreground, sat within four points of the reference on
+    every ramp by rendered pixel, and spread their accent over the same share
+    of the frame. Writing checks for those would have been writing checks for
+    things that were not broken.
+
+    Focal contrast was the one that did not match, and it is the one a room
+    cannot fake: a cafe whose counter reads no differently from its corners is
+    a floor plan, not a scene. Measured on the render rather than the rig,
+    because the rig is a set of intentions and the frame is the result.
+
+    The floor sits between the two measurements that bracket it: 0.039, from a
+    room whose lamps had lifted the periphery level with the counter, and
+    0.084, the weakest room once they were capped. Setting it at the reference
+    room's own 0.146 would read as strict and behave as blind, since the
+    reference is a hand-composed exemplar and not a minimum.
+    """
+    import io as _io
+    import contextlib
+    import re as _re
+    from render_room import render
+    out = []
+    for k in range(seed, seed + n):
+        plan = F.generate(k)
+        L = build(plan)
+        buf = _io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            render(L, light_rig(plan), target, Path(tempfile.gettempdir())
+                   / "_focal_check.png", wear=L.wear_field(),
+                   focal=focal_box(plan))
+        hits = _re.findall(r"([+-]\d\.\d\d\d)", buf.getvalue())
+        if len(hits) < 2:
+            out.append(f"plan {k}: render reported no focal contrast")
+            continue
+        got = float(hits[1])
+        if got < floor:
+            out.append(f"plan {k}: counter leads by only {got:+.3f} contrast, "
+                       f"floor {floor:+.3f} -- nowhere for the eye to land")
+    return out
+
+
 def check_built_rooms(n: int = 6, seed: int = 1) -> list[str]:
     """Every room built from a generated plan must satisfy the room checks.
 
@@ -501,11 +581,16 @@ def main() -> int:
     # a box that covers most of the frame makes "inside" and "outside" the same
     # sample, and two identical readings are the tell, the same way a
     # too-perfect one is.
+    # Taken from the run and the back bar together rather than from the run and
+    # the wall behind it. The wall version was a peninsula bug of the same
+    # family as the shelving: it assumed the counter backs onto y=0, so on a
+    # peninsula the box swept a strip of empty floor into the focal region.
+    # Changed because the old box was wrong, not because the new one scores
+    # better -- an instrument chosen for its reading is not an instrument.
     run = plan.of("service")[0]
-    if run.facing == 0.0:
-        focal = ((run.x0, run.x1), (0.06, run.y0 + 0.50), (0.0, 1.50))
-    else:
-        focal = ((0.06, run.x0 + 0.50), (run.y0, run.y1), (0.0, 1.50))
+    back = plan.of("backbar")[0]
+    focal = ((min(run.x0, back.x0), max(run.x1, back.x1)),
+             (min(run.y0, back.y0), max(run.y1, back.y1)), (0.0, 1.50))
     from render_room import render
     render(L, light_rig(plan), args.target, Path(args.out),
            wear=L.wear_field(), focal=focal)

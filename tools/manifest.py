@@ -264,9 +264,17 @@ def check(man: dict) -> int:
         # And the rooms built from those plans. A plan is rectangles and a room
         # is meshes; the plan checks say nothing about whether filling one
         # produces chairs that face their tables.
-        from build_plan import check_built_rooms
+        from build_plan import check_built_rooms, check_focal_contrast
         for msg in check_built_rooms():
             errs.append(f"plan room: {msg}")
+        # And whether the room that comes out is composed, not merely legal.
+        # Every other check here asks whether something is wrong with an
+        # object or a pair of them; this one renders the whole frame and asks
+        # whether the eye has anywhere to land. It is the slowest check in the
+        # suite by a wide margin, and it is the only one that looks at the
+        # picture instead of the geometry.
+        for msg in check_focal_contrast():
+            errs.append(f"composition: {msg}")
     except Exception as exc:                       # pragma: no cover
         warns.append(f"clip cross-check skipped: {exc}")
 

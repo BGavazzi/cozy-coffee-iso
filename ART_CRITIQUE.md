@@ -1643,3 +1643,78 @@ search, which is where this stops paying.
   not obviously wrong — a cafe buys chairs from a catalogue and a greenhouse
   does not — but nobody has decided what the target is, and an unowned number
   drifts.
+
+---
+
+# Sixth pass — three composition questions that came back clean, and the one that did not
+
+The open note said generated rooms were *dressed but not composed*: nothing
+decided that crates belong against the far wall, or that a bench wants a
+different ramp from the chairs beside it. That is a claim, and it had never
+been measured. Four ways of measuring it, three of which said the claim was
+wrong.
+
+## Depth staging: already there
+
+Tall things belong upstage. Measured as the height of every prop against its
+screen depth, in thirds of the floor:
+
+| | far third | middle | near third |
+|---|---|---|---|
+| reference room | mean top 1.09, max 1.93 | 0.83, max 1.49 | 0.80, **max 1.14** |
+| 12 generated rooms | 0.92, max 1.93 | 0.86, max 1.93 | 0.70, **max 1.23** |
+
+Both stage the same way and the generated rooms actually keep the foreground
+*lower*. Three props in twelve rooms broke the reference's 1.14 ceiling. The
+one apparent difference — a 1.93 prop mid-room, where the reference tops out at
+1.49 — turned out to be the espresso machine and the back bar of a peninsula,
+which are mid-room because a peninsula is mid-room. No check written.
+
+## Ramp balance: a proxy that lied
+
+By face count the generated rooms looked badly off: **43–47% foliage** against
+the reference's 30%, with cream collapsing 13% → 6%. That is a real number and
+it means nothing. Plants are high-poly and low-pixel; a fern is a hundred faces
+you can barely see.
+
+By rendered pixel, classified to the nearest palette entry:
+
+| | neutral | wood | cream | foliage | rose | sky |
+|---|---|---|---|---|---|---|
+| reference | 43 | 35 | 13 | 4 | 2 | 2 |
+| strip room | 44 | 38 | 11 | 3 | 3 | 1 |
+| peninsula | 43 | 38 | 11 | 4 | 2 | 2 |
+| perimeter | 43 | 39 | 10 | 3 | 2 | 2 |
+
+Within four points everywhere. This is the same lesson the silhouette key
+taught — *measure the render, not the proxy* — arriving from the opposite
+direction: there the proxy said everything was fine when it was not, here it
+said everything was broken when it was not.
+
+## Accent distribution: also there
+
+An accent that clumps in one corner is decoration; an accent spread across the
+frame is composition. Counting eighth-of-frame cells containing any rose,
+foliage or sky pixel: reference **59%** of occupied cells, generated rooms
+53%, 58%, 61%. No difference to find.
+
+## Focal contrast: the one real gap
+
+The counter did read as the centre, but by less than the reference did, and the
+two weakest rooms were the two with the most ceiling lamps. The rig gave every
+seating zone over 8 m² its own lamp, which in a finely-divided room is a lamp
+per 36 m² against the reference room's one per 45. Every one of them lifts the
+periphery that the negative pools exist to sink. **A room does not light itself
+more brightly for having been divided more finely.**
+
+Lamp count now comes from the floor's area and goes to the biggest zones, and
+the rig takes light out of three corners rather than two, as the reference
+does. Contrast over five seeds **+0.098 → +0.110** on the old focal box and
+**+0.103 → +0.114** on the new one — the same +0.012 either way, which is what
+makes it the rig and not the instrument.
+
+The focal box itself was wrong for a peninsula, for the same reason the
+shelving was: it assumed the counter backs onto a wall, so it swept a strip of
+empty floor into the focal region. It now comes from the run and the back bar
+together. Changed because the old box was wrong, not because the new one reads
+higher — an instrument chosen for its reading is not an instrument.
