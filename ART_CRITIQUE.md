@@ -1966,3 +1966,35 @@ other end.
 correct instinct with no evidence behind it. The evidence is now in: contrast is
 quantized by construction and mean L is not, and that is a property of the
 instrument rather than a preference for its reading.
+
+### What the check became
+
+Both metrics, both floors low. That is a retreat from the first version and it
+is the honest one:
+
+| | good L / C | broken L / C |
+|---|---|---|
+| seed 1 | +0.118 / +0.146 | +0.109 / +0.087 |
+| seed 2 | +0.032 / +0.093 | +0.023 / +0.039 |
+| seed 3 | +0.042 / +0.045 | +0.024 / **−0.054** |
+| seed 4 | +0.080 / +0.099 | +0.069 / +0.048 |
+| **reference** | **+0.024** / +0.133 | — |
+
+Neither column supports an absolute floor that *ranks* composition. The
+reference room has the lowest mean L of anything measured, below every broken
+room — it builds its centre out of contrast, a dark machine against a lit
+counter, not out of brightness. And a good room's contrast (+0.045) sits below
+a broken room's (+0.087), because these are different rooms and not two
+readings of one.
+
+The first version put the floor at 0.060 on contrast alone, calibrated on three
+samples, and it was grading *how well* the counter leads. The check now grades
+*whether* it leads — mean L above 0.015 and contrast above 0.010 — which is the
+most this instrument can carry. It passes all four rooms and the reference, and
+still fires on the one whose counter is **less** contrasty than its own
+periphery.
+
+What both metrics agree on is direction: every room got worse on both under the
+broken rig. A check that only ever sees one version of a room cannot use that.
+**Asking the weaker question honestly beats asking the stronger one
+unreliably.**

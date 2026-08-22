@@ -76,7 +76,11 @@ LAMP_AREA = 45.0
 # checking that instead would have been choosing the metric that agreed with
 # the answer already written down.
 FOCAL_TARGET = 320
-MIN_FOCAL_CONTRAST = 0.060
+MIN_FOCAL_CONTRAST = 0.010
+
+# The counter must also be brighter than its room, if only a little. Both
+# floors say "leads", not "leads well" -- see `check_focal_contrast`.
+MIN_FOCAL_L = 0.015
 
 
 def light_rig(plan: F.Plan) -> LightRig:
@@ -612,27 +616,50 @@ def focal_box(plan: F.Plan) -> tuple:
 
 def check_focal_contrast(n: int = 3, seed: int = 1,
                          target: int = FOCAL_TARGET,
-                         floor: float = MIN_FOCAL_CONTRAST) -> list[str]:
+                         l_floor: float = MIN_FOCAL_L,
+                         c_floor: float = MIN_FOCAL_CONTRAST) -> list[str]:
     """A generated room's counter must still read as the place to look.
 
     The last of the composition questions to survive being measured. Depth
     staging, ramp balance and accent spread were all tested against the
-    reference room and all three came back matching -- the generated rooms put
-    nothing tall in the foreground, sat within four points of the reference on
-    every ramp by rendered pixel, and spread their accent over the same share
-    of the frame. Writing checks for those would have been writing checks for
-    things that were not broken.
+    reference room and all three came back matching, so no checks were written
+    for them; a suite that grades what is not broken is decoration.
 
-    Focal contrast was the one that did not match, and it is the one a room
-    cannot fake: a cafe whose counter reads no differently from its corners is
-    a floor plan, not a scene. Measured on the render rather than the rig,
-    because the rig is a set of intentions and the frame is the result.
+    BOTH metrics, and both floors are low. That is a retreat from the first
+    version of this check and it is the honest one. Measured across four rooms
+    under a good rig and a deliberately broken one, plus the reference room:
 
-    The floor sits between the two measurements that bracket it: 0.039, from a
-    room whose lamps had lifted the periphery level with the counter, and
-    0.084, the weakest room once they were capped. Setting it at the reference
-    room's own 0.146 would read as strict and behave as blind, since the
-    reference is a hand-composed exemplar and not a minimum.
+                     good            broken
+        seed 1    L +.118 C +.146   L +.109 C +.087
+        seed 2    L +.032 C +.093   L +.023 C +.039
+        seed 3    L +.042 C +.045   L +.024 C -.054
+        seed 4    L +.080 C +.099   L +.069 C +.048
+        reference L +.024 C +.133
+
+    Neither column supports an absolute floor that ranks composition. The
+    REFERENCE ROOM has the lowest mean L of anything here, below every broken
+    room -- it builds its centre out of contrast, a dark machine against a lit
+    counter, rather than out of brightness. And a good room's contrast (+.045)
+    sits below a broken room's (+.087), because these are different rooms and
+    not two readings of one.
+
+    The first version put the floor at 0.060 on contrast alone, calibrated on
+    three samples, and it was grading how WELL the counter leads. This grades
+    whether it leads at all, which is the most the instrument can carry:
+
+    - contrast is a 5-95 percentile spread over a frame containing 37 distinct
+      lightness values, because quantizing light to palette ramps is the whole
+      pipeline. It is a step function, and four separate changes that visibly
+      altered a room left it at exactly +0.045, inside 0.546 and outside 0.502
+      to the thousandth. That is the same tell as a degenerate box.
+    - mean L is a first moment over ~50 000 pixels and moves with everything,
+      but it does not separate composed from broken, as the reference room's
+      own +0.024 shows.
+
+    What both agree on is direction: every room got worse on both under the
+    broken rig. A check that only ever sees one version of a room cannot use
+    that, so it asks the weaker question honestly rather than the stronger one
+    unreliably.
     """
     import io as _io
     import contextlib
@@ -649,12 +676,16 @@ def check_focal_contrast(n: int = 3, seed: int = 1,
                    focal=focal_box(plan))
         hits = _re.findall(r"([+-]\d\.\d\d\d)", buf.getvalue())
         if len(hits) < 2:
-            out.append(f"plan {k}: render reported no focal contrast")
+            out.append(f"plan {k}: render reported no focal reading")
             continue
-        got = float(hits[1])
-        if got < floor:
-            out.append(f"plan {k}: counter leads by only {got:+.3f} contrast, "
-                       f"floor {floor:+.3f} -- nowhere for the eye to land")
+        lead, con = float(hits[0]), float(hits[1])
+        if lead < l_floor:
+            out.append(f"plan {k}: counter is only {lead:+.3f} brighter than "
+                       f"its room (floor {l_floor:+.3f}) -- no centre")
+        if con < c_floor:
+            out.append(f"plan {k}: counter is {con:+.3f} in contrast against "
+                       f"its room (floor {c_floor:+.3f}) -- the periphery has "
+                       f"as much to look at")
     return out
 
 
