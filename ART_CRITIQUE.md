@@ -1904,3 +1904,65 @@ meant to tile flush and two identical ones are the point.
 
 Every unseeded mesh is byte-identical to before, so existing sprite sheets are
 untouched.
+
+## The counter was under-dressed, and the contrast metric could not tell me
+
+The focal check went red after the generator work, on one room, at +0.045
+against a floor of 0.060. Finding out why took four wrong answers and then a
+discovery about the instrument.
+
+**Where the gap actually was.** The reference room carries **eleven** clutter
+items within 3.5 tiles of its till — cups, a cake stand, vases, a clutter
+cluster — and the generated rooms carried **none**. A bare counter has nothing
+for the eye to land *on* once the light has sent it there. Generated focal zones
+went from 14–20 props to 19–29 against the reference's 30.
+
+Three hypotheses were measured and discarded first, and the discarding is the
+point:
+
+- **prop density per square metre** does not predict contrast — the room with
+  the densest periphery relative to its centre reads *strongest*;
+- **a mid-field negative pool**, aimed at rooms whose counter is far from any
+  corner, moved the reading by **0.000** in three variants. It would have been
+  a knob, and it was tested before it was shipped;
+- **counter orientation** looked like a signal at n=2 and dissolved at n=4.
+
+**A rule in two copies, for the third time in this file.** Reserving counter
+length for dressing changed nothing, because the kit was tallied in one loop
+and re-decided in another, both carrying the same `length - 0.3`. The tally
+dropped the grinder and the placement loop put it back. After the support test
+and the shelving span, this is the third instance, and the fix was the same
+each time: decide once.
+
+**A transcription slip, visible in the frame long before the numbers.** The
+counter's core light pool sat at `cy + 0.35` where the reference room's
+hand-placed pools sit at their run's centre — so a 2.6-radius core was half a
+tile off the counter, over the queue. And the offset was in `y` regardless of
+orientation, so it slid *along* a vertical run instead of across it, which is
+why vertical-run rooms looked fine and hid it. Side by side, one room's counter
+is a warm pool and the other's is a dim corner; the numbers said +0.107 and
++0.045 without saying why.
+
+### Why none of it moved the reading: the metric is quantized
+
+Every intervention left the weak room at **exactly +0.045** — inside 0.546,
+outside 0.502, to the thousandth, four times running. A number that will not
+move under changes that visibly alter the frame is the same tell as a
+degenerate box.
+
+The frame contains **37 distinct lightness values**. It has to: the whole point
+of this pipeline is that lighting is quantized to palette ramps. Contrast here
+is a 5–95 *percentile spread* — a tail statistic over 37 discrete levels — so it
+is a step function whose steps are about as wide as the margin the floor was
+sitting in. Mean L is a first moment over ~50 000 pixels and moved with every
+change (0.603 → 0.591).
+
+This is also the real explanation for the earlier resolution sweep, where
+contrast collapsed from 320 to 480 and mean L held. Same cause, found from the
+other end.
+
+**Rejecting mean L earlier was right for the wrong reason.** It was rejected as
+"the metric that agreed with the answer already written down", which was the
+correct instinct with no evidence behind it. The evidence is now in: contrast is
+quantized by construction and mean L is not, and that is a property of the
+instrument rather than a preference for its reading.

@@ -47,6 +47,9 @@ PAINTS = ("wood", "foliage-3", "rose-3", "wood", "wood-2", "wood")
 # How much of the run the espresso machine takes, including its lead-in gap.
 MACHINE_SPAN = 2.9
 
+# Counter length kept clear of the kit, for cups and cake stands to stand in.
+DRESSING_RESERVE = 1.5
+
 # Square metres of floor per ceiling lamp, from the reference room: three over
 # 14.0 x 9.6.
 LAMP_AREA = 45.0
@@ -87,8 +90,25 @@ def light_rig(plan: F.Plan) -> LightRig:
     """
     run = plan.of("service")[0]
     cx, cy = (run.x0 + run.x1) / 2, (run.y0 + run.y1) / 2
-    pools = [Pool((cx, cy + 0.35, 1.26), 2.6, 0.66),
-             Pool((cx, cy + 0.50, 1.05), 4.6, 0.30)]
+    # ON the counter, not half a tile in front of it. The reference room's two
+    # hand-placed pools sit at y 1.20 and 1.35 over a run spanning 0.85 to
+    # 1.85 -- that is its centre and a touch behind. Generalising them picked
+    # up a `+0.35` and a `+0.50` from somewhere, which pushed a 2.6-radius core
+    # off the counter and over the queue, and cost the counter 0.08 of mean L
+    # against the rooms whose run happens to lie along the offset instead of
+    # across it. Visible in the frame long before it was visible in the
+    # numbers: one room's counter is a warm pool and the other's is a dim
+    # corner, and the numbers said +0.107 and +0.045 without saying why.
+    #
+    # Perpendicular to the run, too. A vertical run's customer side is +x, and
+    # a fixed +y offset slid the pool ALONG such a counter rather than across
+    # it -- which is why the vertical-run rooms looked fine and hid the bug.
+    if run.facing == 0.0:
+        core, wash = (cx, cy - 0.15), (cx, cy)
+    else:
+        core, wash = (cx - 0.15, cy), (cx, cy)
+    pools = [Pool((core[0], core[1], 1.26), 2.6, 0.66),
+             Pool((wash[0], wash[1], 1.05), 4.6, 0.30)]
     for t in plan.win_x:
         pools.append(Pool((t + 0.5, 0.30, 0.95), 3.0, 0.40))
     for t in plan.win_y:
@@ -166,11 +186,34 @@ def build(plan: F.Plan) -> Layout:
     # behind the grinder 37%.
     kit = [(A.espresso_machine, 2.0, "espresso"), (A.grinder, 0.8, "grinder"),
            (A.register, 0.9, "register")]
-    kit_extent, used = 0.35, 0.35
-    for _, width, _ in kit:
-        if kit_extent + width > length - 0.3:
+    # The kit stops short of the end of the run by DRESSING_RESERVE rather
+    # than by a token 0.3, because the kit and the clutter compete for the same
+    # counter and the kit is the low-contrast half of it. The machine's own
+    # docstring records that a plain one is "a single featureless grey mass";
+    # three grey boxes in a row is that argument three times.
+    #
+    # Measured: the one room in eight that fitted all three fitted only three
+    # clutter items against the others' five to seven, and it is the one room
+    # whose counter fails to lead the frame. The reference room, which holds
+    # +0.133 at every render size, runs two kit items and ELEVEN pieces of
+    # clutter. A cafe with a short counter owns a machine and a till, not a
+    # machine and a till and a grinder.
+    #
+    # Decided ONCE, into `kit`, rather than tallied here and re-decided at
+    # placement time. Those were two loops with the same `length - 0.3` in
+    # them, and changing the reserve in one of them changed nothing: the tally
+    # dropped the grinder and the placement loop put it down anyway. That is
+    # the third time in this file that two copies of a rule have behaved as one
+    # rule and one bug -- after the support test and the shelving span -- and
+    # the fix is the same each time.
+    kit_extent = 0.35
+    fits = []
+    for entry in kit:
+        if kit_extent + entry[1] > length - DRESSING_RESERVE:
             break
-        kit_extent += width + 0.55
+        fits.append(entry)
+        kit_extent += entry[1] + 0.55
+    kit = fits
 
     # --- the service run, as one-tile modules tiled flush along the zone
     n = max(1, int(round(run.w if horizontal else run.d)))
@@ -192,9 +235,8 @@ def build(plan: F.Plan) -> Layout:
     # before the thing it constrains is a check that always passes.
     # --- the kit itself, spaced along the run rather than at coordinates
     top = run.y0 + 0.10 if horizontal else run.x0 + 0.10
+    used = 0.35
     for factory, width, tag in kit:
-        if used + width > length - 0.3:
-            break
         pos = (run.x0 + used, top + 0.05, 0.92) if horizontal else (
             top + 0.05, run.y0 + used, 0.92)
         try:
@@ -290,6 +332,42 @@ def build(plan: F.Plan) -> Layout:
         add(A.menu_board(), at=at, rot=0 if horizontal else 270,
             name=f"decor#menu{bi}")
 
+    # --- the counter top. The reference room carries ELEVEN clutter items
+    # within 3.5 tiles of its till -- cups, a cake stand, vases, a clutter
+    # cluster -- and the generated rooms carried none. That is where the focal
+    # gap actually was, and it took three wrong answers to find: depth staging,
+    # ramp balance and accent spread all came back matching, prop density per
+    # square metre did not predict contrast either (the room with the densest
+    # periphery reads strongest), and a mid-field negative pool would have been
+    # a knob rather than a cause. The counter was simply bare, and a bare
+    # counter has nothing for the eye to land ON once it has been sent there.
+    #
+    # Placed by the solver, in the gaps the kit leaves, so nothing lands behind
+    # the machine or on top of the till.
+    top_z = 0.92
+    on_bar = 0
+    dress = (lambda k: A.cake_stand(), lambda k: A.cup_and_saucer(),
+             lambda k: A.flower_vase(seed=190 + k),
+             lambda k: A.table_clutter("counter"),
+             lambda k: A.cup_and_saucer())
+    step, di = 0.42, 0
+    reach = length - 0.35
+    off = 0.35
+    while off < reach and di < 7:
+        along = run.x0 + off if horizontal else run.y0 + off
+        at = ((along, run.y0 + 0.42, top_z) if horizontal
+              else (run.x0 + 0.42, along, top_z))
+        nm = f"clutter#bar{di}"
+        L.add(dress[di % len(dress)](di), at=at, name=nm, centre=True)
+        cand = L.items.pop()
+        if L._conflicts(cand, 45.0, 0.35):
+            L.rots.pop(nm, None)
+        else:
+            L.items.append(cand)
+            on_bar += 1
+            di += 1
+        off += step
+
     # --- window bar: a run of stools facing the glass
     for bi, z in enumerate(plan.of("window_bar")):
         along_x = z.w >= z.d
@@ -310,7 +388,7 @@ def build(plan: F.Plan) -> Layout:
 
     # --- seating. Tables with chairs on all four sides in the cafe blocks,
     # armchairs and benches in the lounges, both placed by the solver.
-    made = 0
+    made = on_bar
     for zi, z in enumerate(plan.of("cafe")):
         made += L.scatter(
             lambda i, zi=zi: A.table_4top(seed=6 + zi * 5 + i)
