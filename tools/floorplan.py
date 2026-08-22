@@ -85,6 +85,15 @@ class Plan:
     win_y: tuple = ()        # window tiles on the x=0 wall
     door: tuple = (0.0, 0.0)
     zones: list = field(default_factory=list)
+    # Which counter arrangement the generator chose. Recorded rather than
+    # re-derived: `build_plan` was reading `backbar.y0 < 0.05` to decide
+    # whether the run hugs a wall, the proof sheet had its own version, and a
+    # sweep written to count the three topologies used a third that was simply
+    # wrong -- it reported zero peninsulas out of sixty and the peninsulas were
+    # there. Three readers reconstructing one decision from its consequences
+    # will get three answers, and the one that is wrong looks exactly like a
+    # regression in the generator.
+    topology: str = "wall run"
 
     def of(self, kind: str) -> list:
         return [z for z in self.zones if z.kind == kind]
@@ -98,7 +107,8 @@ class Plan:
         floor, which is most of them.
         """
         return [z for z in self.zones
-                if z.kind in ("service", "backbar", "window_bar")]
+                if z.kind in ("service", "service_return", "backbar",
+                              "window_bar")]
 
 
 def _mix(seed: int) -> int:
@@ -338,6 +348,7 @@ def generate(seed: int = 1, tries: int = 120) -> Plan:
         w = 12 + int(rnd() * 5)
         d = 9 + int(rnd() * 4)
         run_len = 4.0 + rnd() * 3.0
+        ret = None
         # A peninsula juts into the room from the far wall instead of running
         # along it. It is the one counter arrangement here that changes the
         # circulation problem rather than the furniture arrangement: the floor
@@ -398,6 +409,51 @@ def generate(seed: int = 1, tries: int = 120) -> Plan:
             blocked_x, blocked_y = None, (back.y0, back.y1)
         zones += [run, back, queue]
 
+        # An L: a short return at one end of the run, turning into the room.
+        # It is modelled as its own kind rather than as a second `service`
+        # zone, and that is not a dodge of the "a cafe has one service run"
+        # rule -- it is what an L actually is. A cafe has one counter with a
+        # short arm at the till end, not two counters. Modelling it as two
+        # would also have been the expensive kind of wrong: seven places in
+        # `build_plan` read `plan.of("service")[0]`, and every one of them
+        # would have quietly served the first arm and ignored the second,
+        # which is a fallback that succeeds.
+        #
+        # Nothing here checks that the return leaves room to walk round. It
+        # does not need to: `blocking()` selects by kind, so adding the kind
+        # puts the arm in the erosion grid and the flood fill judges it on the
+        # same terms as everything else. A generator that has to be taught each
+        # new obstacle separately is a generator with a list; this one has a
+        # rule.
+        if not peninsula and rnd() < 0.30:
+            arm = 1.4 + rnd() * 1.1
+            near = rnd() < 0.5          # which end of the run it turns at
+            if horizontal:
+                ax = run.x0 if near else run.x1 - SERVICE_DEPTH
+                ret = Zone("service_return", ax, run.y1,
+                           ax + SERVICE_DEPTH, run.y1 + arm, 0.0)
+                q = Zone("queue", ret.x1 + 0.3 if near else queue.x0,
+                         queue.y0, queue.x1 if near else ret.x0 - 0.3,
+                         queue.y1, 0.0)
+            else:
+                ay = run.y0 if near else run.y1 - SERVICE_DEPTH
+                ret = Zone("service_return", run.x1, ay,
+                           run.x1 + arm, ay + SERVICE_DEPTH, 90.0)
+                q = Zone("queue", queue.x0,
+                         ret.y1 + 0.3 if near else queue.y0, queue.x1,
+                         queue.y1 if near else ret.y0 - 0.3, 90.0)
+            # The queue steps aside for the arm rather than the checker
+            # rejecting the pair. Left alone this was 9 of 20 L proposals
+            # failing on "service_return zone stands in the queue" -- which is
+            # true, and is also the proposal describing a cafe where the line
+            # forms inside the counter. An L's queue runs along the long arm.
+            if q.w < 1.2 or q.d < 1.2:
+                ret = None              # no room left to queue in: not an L
+            else:
+                zones[zones.index(queue)] = q
+                queue = q
+                zones.append(ret)
+
         # Windows in runs of two, not scattered: a wall with single-tile
         # openings a tile apart is a colonnade, and the piers the wall
         # generator draws between them vanish at 27 px per tile.
@@ -428,11 +484,17 @@ def generate(seed: int = 1, tries: int = 120) -> Plan:
         if peninsula:
             pass
         elif horizontal:
-            main = (0.5, queue.y1 + 0.4, w - 0.5, d - 0.5)
+            # The seating floor starts past the deeper of the queue and the
+            # arm. Cutting it from the queue alone put 8 of 20 L proposals
+            # under a cafe block -- the service band had grown and the
+            # rectangle that describes it had not.
+            deep = max(queue.y1, ret.y1 if ret else 0.0)
+            main = (0.5, deep + 0.4, w - 0.5, d - 0.5)
             side = (back.x1 + 0.6, 0.5, w - 0.5, queue.y1 - 0.1)
             door = (min(w - 0.5, back.x1 + 1.8), d - 0.4)
         else:
-            main = (queue.x1 + 0.4, 0.5, w - 0.5, d - 0.5)
+            deep = max(queue.x1, ret.x1 if ret else 0.0)
+            main = (deep + 0.4, 0.5, w - 0.5, d - 0.5)
             side = (0.5, back.y1 + 0.6, queue.x1 - 0.1, d - 0.5)
             door = (w - 0.4, min(d - 0.5, back.y1 + 1.8))
         sx0, sy0, sx1, sy1 = main
@@ -464,7 +526,9 @@ def generate(seed: int = 1, tries: int = 120) -> Plan:
         if side[2] - side[0] > 3.0 and side[3] - side[1] > 2.4:
             zones += _seating_blocks(*side, rnd)
 
-        plan = Plan(w, d, win_x, win_y, door, zones)
+        plan = Plan(w, d, win_x, win_y, door, zones,
+                    "peninsula" if peninsula else
+                    ("L run" if ret is not None else "wall run"))
         bad = check_plan(plan)
         if not bad:
             return plan

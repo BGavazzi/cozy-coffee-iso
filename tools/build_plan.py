@@ -158,8 +158,7 @@ def build(plan: F.Plan) -> Layout:
     # the only reason nothing complained is that `add_seeded` found the spot
     # empty and took it. A fallback that succeeds is the hardest kind of bug to
     # see.
-    back0 = plan.of("backbar")[0]
-    on_wall = (back0.y0 < 0.05) if horizontal else (back0.x0 < 0.05)
+    on_wall = plan.topology != "peninsula"
     length = run.w if horizontal else run.d
     # What stands on the counter, and how much of the run it eats. Tallied
     # before the back bar goes in rather than after, because the back bar has
@@ -204,6 +203,19 @@ def build(plan: F.Plan) -> Layout:
         except TypeError:
             add(factory(), at=pos, name=f"prop#{tag}")
         used += width + 0.55
+
+    # --- the return arm of an L, tiled the same way the run is. Built from
+    # the zone rather than inferred from the run's end, because the plan
+    # already decided which end it turns at and inferring it here would be a
+    # second copy of that decision.
+    for ri, z in enumerate(plan.of("service_return")):
+        along_x = z.w >= z.d
+        n_ret = max(1, int(round(z.w if along_x else z.d)))
+        for i in range(n_ret):
+            at = (z.x0 + i, z.y0, 0) if along_x else (z.x0, z.y0 + i, 0)
+            add(A.counter(seed=40 + ri * 5 + i,
+                          front="y" if along_x else "x"),
+                at=at, name=f"counter#ret{ri}_{i}")
 
     # --- back bar: shelving against the wall behind the run
     back = plan.of("backbar")
@@ -515,10 +527,9 @@ def _people(L: Layout, plan: F.Plan, n: int = 7, seed: int = 1,
 
 def focal_box(plan: F.Plan) -> tuple:
     """The service area, as the run and the back bar together."""
-    run = plan.of("service")[0]
-    back = plan.of("backbar")[0]
-    return ((min(run.x0, back.x0), max(run.x1, back.x1)),
-            (min(run.y0, back.y0), max(run.y1, back.y1)), (0.0, 1.50))
+    zs = plan.of("service") + plan.of("backbar") + plan.of("service_return")
+    return ((min(z.x0 for z in zs), max(z.x1 for z in zs)),
+            (min(z.y0 for z in zs), max(z.y1 for z in zs)), (0.0, 1.50))
 
 
 def check_focal_contrast(n: int = 3, seed: int = 1,
