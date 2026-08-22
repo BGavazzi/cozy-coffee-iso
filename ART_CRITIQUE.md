@@ -1998,3 +1998,20 @@ What both metrics agree on is direction: every room got worse on both under the
 broken rig. A check that only ever sees one version of a room cannot use that.
 **Asking the weaker question honestly beats asking the stronger one
 unreliably.**
+
+## Still open
+
+- **Stages 1–3** (SDXL concept → TRELLIS 2 mesh → UniRig rig) need a GPU and
+  model weights. The seam (`ingest.py`) is built and checked; nothing feeds it.
+- The **focal reading falls with render resolution** in generated rooms and
+  holds in the reference one, because contrast is a percentile spread over 37
+  quantized lightness levels and the generated periphery resolves as much new
+  detail as the centre. The check runs at 320 against a delivered 480. The gap
+  is measured and stated rather than tuned away.
+- **The plan generator cannot propose an island.** Three topologies exist (wall
+  run, peninsula, L run); an island is the fourth and the only one left that
+  changes circulation rather than furniture.
+- **Furniture screen spread** now has an owner for its *closest pair* (0.045,
+  bracketed by measurement) but the mean-spread floor of 0.12 is still the
+  original guess. It has never rejected anything the closest-pair floor did not
+  also reject, which is either redundancy or a floor set too low to fire.
