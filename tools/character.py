@@ -62,11 +62,18 @@ ANKLE_Z = 0.10
 SEAT_Z = 0.45          # chair seat height; assetlib.chair() must agree
 
 
-def leg(sx: float, mat: str) -> Mesh:
+def leg(sx: float, mat: str, hip: float = HIP_Z) -> Mesh:
     """Leg shaft only, hip to ankle. Built per side so a walk cycle can swing
-    them independently -- a single two-leg mesh can only ever stand still."""
+    them independently -- a single two-leg mesh can only ever stand still.
+
+    `hip` rather than the module constant, because leg length is the one
+    proportion that changes a standing figure's outline without changing any
+    of its parts. The ankle stays where it is and the hip moves, which is what
+    varies between two adults; scaling the whole figure instead would scale the
+    head, and a scaled head reads as a child rather than as a tall person.
+    """
     m = Mesh()
-    m.add_prism((sx, 0.0, ANKLE_Z), 0.100, 0.098, HIP_Z - ANKLE_Z, mat, segments=8)
+    m.add_prism((sx, 0.0, ANKLE_Z), 0.100, 0.098, hip - ANKLE_Z, mat, segments=8)
     return m
 
 
@@ -84,16 +91,17 @@ def foot(sx: float) -> Mesh:
     return m
 
 
-def _ankle_offset(sx: float, degrees: float):
+def _ankle_offset(sx: float, degrees: float, hip: float = HIP_Z):
     """Where the ankle lands once the shaft has swung, as a translation."""
     probe = Mesh()
     probe.verts = [(sx, 0.0, ANKLE_Z)]
-    moved = pivot_rot(probe, "x", -degrees, (sx, 0.0, HIP_Z))
+    moved = pivot_rot(probe, "x", -degrees, (sx, 0.0, hip))
     ax, ay, az = moved.verts[0]
     return (0.0, ay, az - ANKLE_Z)
 
 
-def legs(mat: str, spread: float = 0.105, seated: bool = False) -> Mesh:
+def legs(mat: str, spread: float = 0.105, seated: bool = False,
+         hip: float = HIP_Z) -> Mesh:
     if seated:
         # Thighs forward (+y, the side the camera sees), shins down: a standing
         # figure parked at seat height reads as standing *on* the chair.
@@ -107,7 +115,7 @@ def legs(mat: str, spread: float = 0.105, seated: bool = False) -> Mesh:
             m.add_box((sx - 0.105, 0.16, -SEAT_Z),
                       (sx + 0.105, 0.40, -SEAT_Z + 0.08), "neutral-1")
         return m
-    return merge(leg(-spread, mat), leg(spread, mat))
+    return merge(leg(-spread, mat, hip), leg(spread, mat, hip))
 
 
 def torso(mat: str, bulk: float = 1.0) -> Mesh:
@@ -258,6 +266,14 @@ class CharacterSpec:
     trousers: str = "neutral"
     hair_style: str = "short"
     hair_mat: str = "neutral"
+    # Leg length and stance width, as multipliers. Before these, `bulk` was
+    # the only continuous shape parameter a character had, and seven of the
+    # nine hand-written archetypes sit at exactly 1.0 of it -- so two extras
+    # with the same hair and accessory had almost nothing left to differ by.
+    # Both are deliberately small ranges: this is a cast of adults in a cafe,
+    # not a fantasy party.
+    leg_len: float = 1.0
+    stance: float = 1.0
     accessory_kind: str | None = None
     accessory_mat: str = "rose"
     bulk: float = 1.0
@@ -295,7 +311,9 @@ REST = Pose()
 def build(spec: CharacterSpec, seated: bool = False,
           pose: Pose | None = None) -> Mesh:
     p = pose or REST
-    spread = 0.105
+    spread = 0.105 * spec.stance
+    hip = ANKLE_Z + (HIP_Z - ANKLE_Z) * spec.leg_len
+    dz = hip - HIP_Z          # how far the whole upper body rides up or down
     x = TORSO_RX * spec.bulk + 0.052
 
     upper = [
@@ -308,18 +326,23 @@ def build(spec: CharacterSpec, seated: bool = False,
     if spec.accessory_kind and not held:
         upper.append(accessory(spec.accessory_kind, spec.accessory_mat))
     body = merge(*upper)
+    if dz:
+        body = transformed(body, at=(0.0, 0.0, dz))
     if p.turn:
-        body = pivot_rot(body, "z", p.turn, (0.0, 0.0, HIP_Z))
+        body = pivot_rot(body, "z", p.turn, (0.0, 0.0, hip))
     if p.lean:
-        body = pivot_rot(body, "x", -p.lean, (0.0, 0.0, HIP_Z))
+        body = pivot_rot(body, "x", -p.lean, (0.0, 0.0, hip))
 
     def posed_arm(sx, swing, out, carried=None):
         a = arm(sx, spec.shirt, spec.skin)
         if carried is not None:
             a = merge(a, carried)
+        if dz:
+            a = transformed(a, at=(0.0, 0.0, dz))
+        sz = SHOULDER_Z + dz
         if out:
-            a = pivot_rot(a, "y", out if sx > 0 else -out, (sx, 0.0, SHOULDER_Z))
-        return pivot_rot(a, "x", -swing, (sx, 0.0, SHOULDER_Z))
+            a = pivot_rot(a, "y", out if sx > 0 else -out, (sx, 0.0, sz))
+        return pivot_rot(a, "x", -swing, (sx, 0.0, sz))
 
     limbs = [posed_arm(-x, p.arm_l + (CARRY_SWING if held else 0.0), p.out_l,
                        accessory(spec.accessory_kind, spec.accessory_mat, -x)
@@ -332,8 +355,8 @@ def build(spec: CharacterSpec, seated: bool = False,
         # standing torso on top of folded legs and produced a seated figure
         # 2.24 tall against a standing 1.72 -- taller sitting down than up.
         drop = (0.0, 0.0, -HIP_Z)
-        out = merge(legs(spec.trousers, seated=True),
-                    transformed(body, at=drop),
+        out = merge(legs(spec.trousers, spread, seated=True),
+                    transformed(body, at=(0.0, 0.0, -HIP_Z - dz)),
                     *(transformed(l, at=drop) for l in limbs))
         # Ground-clamped like the standing rig. The seated parts are authored
         # around the hips, so the mesh hung 0.52 below the origin and every
@@ -345,8 +368,9 @@ def build(spec: CharacterSpec, seated: bool = False,
         low = min(v[2] for v in out.verts)
         return transformed(out, at=(0.0, 0.0, p.bob - low))
     for sx, ang in ((-spread, p.leg_l), (spread, p.leg_r)):
-        limbs.append(pivot_rot(leg(sx, spec.trousers), "x", -ang, (sx, 0.0, HIP_Z)))
-        limbs.append(transformed(foot(sx), at=_ankle_offset(sx, ang)))
+        limbs.append(pivot_rot(leg(sx, spec.trousers, hip), "x", -ang,
+                               (sx, 0.0, hip)))
+        limbs.append(transformed(foot(sx), at=_ankle_offset(sx, ang, hip)))
     out = merge(body, *limbs)
     # Ground-clamp. Swinging a leg about its hip arcs the foot below z=0, so a
     # posed figure sinks into the floor -- measured at -0.04 on a mid-stride
@@ -545,7 +569,14 @@ def generate_spec(seed: int, ramps=None, tries: int = 60) -> CharacterSpec:
             hair_style=pick(HAIR_STYLES), hair_mat=pick(HAIR_MATS),
             accessory_kind=acc,
             accessory_mat=pick(GARMENT_RAMPS) + pick(("", "-1", "+1")),
-            bulk=0.90 + rnd() * 0.30)
+            bulk=0.90 + rnd() * 0.30,
+            # Measured against the outline before being given a range, the way
+            # the accessories had to be. Over the eight sprite directions a
+            # leg_len of 0.88 is worth 4.5% against a default figure and a
+            # stance of 1.40 about 4%, which is the same order as an accessory
+            # and enough to separate two extras that share hair and hands.
+            leg_len=0.88 + rnd() * 0.26,
+            stance=0.82 + rnd() * 0.58)
         if not (check_contrast(ramps, [spec]) + check_palette_spread([spec])
                 + check_waistline(ramps, [spec])):
             return spec

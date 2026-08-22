@@ -1376,7 +1376,7 @@ downstream.
 | generator range | unmeasured | **measured, per generator, with a floor each** |
 | the seam stages 1–3 attach to | described | **built, and checked from both ends** |
 | automated checks in the ratchet | 11 | **18** |
-| closest pair in the cast, by outline alone | 0.0% and 4.3%, unmeasured | **8.5% and 10.0%** |
+| closest pair in the cast, by outline alone | 0.0% and 4.3%, unmeasured | **10.1% and 10.0%** |
 
 Median L, chroma and the extremes are unmoved, the checks stay clean, and the
 render is still byte-identical across processes.
@@ -1392,10 +1392,24 @@ render is still byte-identical across processes.
   style is *distinguishable* rather than merely present: the scarf went from
   0.0% to 10.7% of outline, which proves it exists, not that a player can tell
   it from a collar. That needs a different instrument.
-- Bulk is the only continuous shape parameter a generated extra has, and seven
-  of the nine hand-written archetypes sit at exactly 1.0. Height, limb length
-  and stance are all fixed, so two extras with the same hair and accessory have
-  very little left to differ by.
+### Two more numbers a character is allowed to be
+
+Bulk had been the only continuous shape parameter a character has, and seven of
+the nine archetypes sit at exactly 1.0 of it. `leg_len` and `stance` are the
+other two, both measured against the outline before being given a range rather
+than after — the discipline the accessories had to be taught: 0.88 of leg is
+worth 4.5% and a stance of 1.40 about 4%, the same order as an accessory.
+
+Leg length moves the *hip*, not the figure. Scaling the whole character would
+scale the head, and a scaled head reads as a child rather than as a tall
+person; the ankle stays on the floor and everything above the hip rides up. It
+does nothing at all when seated, which is correct — hips sit at the seat
+whatever the legs are — and the seated rig is unchanged to the vertex.
+
+The generated cast's closest pair went from 8.5% to **10.1%**, which is the
+generator's own early-exit floor, so the solver is now working right up to its
+target. Raising that floor to 14% buys 0.8 of a point for three times the
+search, which is where this stops paying.
 - `ingest.py` binds an arbitrary mesh to the palette and the tile grid, so the
   seam stages 1–3 attach to now exists and is checked. Nothing feeds it yet,
   which is exactly why it needed checks: an adapter that is never exercised is
