@@ -70,6 +70,15 @@ SEAT_Z = 0.45          # chair seat height; assetlib.chair() must agree
 # dining height, with no check in the ratchet able to see it.
 MAX_SEAT_Z = 0.58
 
+# Above MAX_SEAT_Z a figure perches instead. The rig is different in kind, not
+# in degree: sitting folds the leg into a right angle and puts the foot on the
+# floor, perching hangs the leg nearly straight and puts the foot on a rail or
+# on nothing. The tell is where the weight goes -- a seated figure carries it
+# on the thighs and a perched one on the backside, which is why a perched
+# figure's feet can be in mid-air and the pose still be correct.
+PERCH_LEG = 0.52       # hip to sole, hanging; the leg cannot reach past this
+MAX_PERCH_Z = 0.85
+
 
 def leg(sx: float, mat: str, hip: float = HIP_Z) -> Mesh:
     """Leg shaft only, hip to ankle. Built per side so a walk cycle can swing
@@ -110,7 +119,7 @@ def _ankle_offset(sx: float, degrees: float, hip: float = HIP_Z):
 
 
 def legs(mat: str, spread: float = 0.105, seated: bool = False,
-         hip: float = HIP_Z, seat: float = SEAT_Z) -> Mesh:
+         hip: float = HIP_Z, seat: float = SEAT_Z, perch=None) -> Mesh:
     if seated:
         # Thighs forward (+y, the side the camera sees), shins down: a standing
         # figure parked at seat height reads as standing *on* the chair.
@@ -128,6 +137,26 @@ def legs(mat: str, spread: float = 0.105, seated: bool = False,
                       (sx + 0.098, 0.34, -0.10), mat)
             m.add_box((sx - 0.105, 0.16, -seat),
                       (sx + 0.105, 0.40, -seat + 0.08), "neutral-1")
+        return m
+    if perch is not None:
+        # Hip at z=0, as the seated rig is. The thigh drops rather than running
+        # level, and the shin hangs from it: that steeper hip angle is the
+        # whole read, because a level thigh at 0.72 is a person sitting on air
+        # beside the stool rather than on it.
+        seat = min(perch[0], MAX_PERCH_Z)
+        rail = perch[1]
+        # Feet reach the rail if the leg is long enough, and hang at full
+        # stretch if it is not -- which is what happens on a stool with no
+        # ring, and is a pose, not a failure to find support.
+        drop = PERCH_LEG if rail is None else min(PERCH_LEG, seat - rail)
+        knee = -drop * 0.42
+        m = Mesh()
+        for sx in (-spread, spread):
+            m.add_box((sx - 0.098, -0.10, knee), (sx + 0.098, 0.22, 0.04), mat)
+            m.add_box((sx - 0.094, 0.04, -drop + 0.06),
+                      (sx + 0.094, 0.21, knee), mat)
+            m.add_box((sx - 0.102, 0.04, -drop),
+                      (sx + 0.102, 0.28, -drop + 0.08), "neutral-1")
         return m
     return merge(leg(-spread, mat, hip), leg(spread, mat, hip))
 
@@ -323,7 +352,7 @@ REST = Pose()
 
 
 def build(spec: CharacterSpec, seated: bool = False,
-          pose: Pose | None = None, seat: float = SEAT_Z) -> Mesh:
+          pose: Pose | None = None, seat: float = SEAT_Z, perch=None) -> Mesh:
     p = pose or REST
     spread = 0.105 * spec.stance
     hip = ANKLE_Z + (HIP_Z - ANKLE_Z) * spec.leg_len
@@ -362,6 +391,21 @@ def build(spec: CharacterSpec, seated: bool = False,
                        accessory(spec.accessory_kind, spec.accessory_mat, -x)
                        if held else None),
              posed_arm(x, p.arm_r, p.out_r)]
+    if perch is not None:
+        # Same assembly as the seated branch, and one deliberate difference:
+        # NO ground clamp. The seated rig lifts the figure until its lowest
+        # vertex touches z=0, which is right for feet on a floor and wrong for
+        # feet on a rail -- clamping a perched figure drags it down the stool
+        # until it is standing beside it. So the parts are authored about the
+        # hip and the whole thing is raised to the seat instead, which is the
+        # literal statement of what perching is: the hips are supported and
+        # the feet are wherever they end up.
+        top = min(perch[0], MAX_PERCH_Z)
+        drop = (0.0, 0.0, -HIP_Z)
+        out = merge(legs(spec.trousers, spread, perch=perch),
+                    transformed(body, at=(0.0, 0.0, -HIP_Z - dz)),
+                    *(transformed(l, at=drop) for l in limbs))
+        return transformed(out, at=(0.0, 0.0, top + p.bob))
     if seated:
         # Drop the upper body to the seated hip. The torso and arms are authored
         # for a standing figure whose hips sit at HIP_Z, while the seated leg rig

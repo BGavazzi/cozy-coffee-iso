@@ -825,10 +825,18 @@ def stool(seed: int | None = None, cushion=FABRIC) -> Mesh:
     m.add_cylinder((0.5, 0.5, h), r, 0.08, cushion, 14)
     m.add_cylinder((0.5, 0.5, 0.0), 0.095, h, METAL, 10)
     m.add_cylinder((0.5, 0.5, 0.0), r * 0.92, 0.03, METAL, 12)
+    m.rail_z = None
     if seed is not None and rnd() > 0.45:
         # A foot ring, on about half of them. It is four pixels of detail and
         # the only thing that distinguishes two stools of the same height.
         m.add_cylinder((0.5, 0.5, h * 0.34), 0.17, 0.028, METAL, 12)
+        m.rail_z = h * 0.34 + 0.028
+    # Published for the same reason `chair` publishes `seat_z`: the height a
+    # person meets is not the height of the bounding box, and the rail is the
+    # difference between a perched figure whose feet are on something and one
+    # whose feet are in the air. Half these stools have no rail, which is not a
+    # gap -- people do let their feet hang.
+    m.seat_z = h + 0.08
     return m
 
 

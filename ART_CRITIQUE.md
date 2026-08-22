@@ -1718,3 +1718,66 @@ shelving was: it assumed the counter backs onto a wall, so it swept a strip of
 empty floor into the focal region. It now comes from the run and the back bar
 together. Changed because the old box was wrong, not because the new one reads
 higher — an instrument chosen for its reading is not an instrument.
+
+## The focal check was measuring a picture nobody sees
+
+Committed at a render size of 160, chosen because one seed read the same there
+as at 240. Swept properly over three seeds and three sizes it does not agree at
+all:
+
+| | 160 | 320 | 480 |
+|---|---|---|---|
+| reference room | +0.146 | **+0.133** | **+0.133** |
+| seed 1 | +0.155 | +0.146 | +0.107 |
+| seed 2 | +0.093 | +0.054 | +0.048 |
+| seed 3 | +0.084 | +0.039 | **+0.014** |
+
+Contrast is a 5–95 percentile spread — a tail statistic — so it moves as more
+resolution resolves more distinct values, but *only where there is detail to
+resolve*. The reference room holds its reading and the generated rooms lose
+theirs. That is not the instrument drifting, it is the two rooms differing: the
+generated periphery is as detailed as its centre and gains contrast as fast as
+the counter does.
+
+Mean L, a first moment, is stable across all three sizes for every room. It was
+therefore available as a metric that would have kept the check green. Picking
+it would have been choosing the measurement that agreed with the answer already
+written down. The check moved to 320 instead, near the size that ships, and was
+re-verified to fire: the old rig fails 2 of 3 rooms there, one of them at
+**−0.015**, a counter *darker* than its own room.
+
+## Perching, and one rule in two copies
+
+Bar stools stand at 0.62–0.76 and the seated rig folds a leg for 0.45, so every
+stool in every generated room was furniture nobody used. Twelve rooms filled
+every chair and left the window bar empty, which is not a cafe, it is a
+showroom.
+
+Perching is a different rig, not a longer shin. The seated rig folds the leg
+into a right angle and puts the foot on the floor; the perch rig hangs it
+nearly straight and puts the foot on a stool's foot ring, or on nothing. And
+critically it does **not** ground-clamp — clamping a perched figure drags it
+down the stool until it is standing beside it. `stool()` now publishes
+`seat_z` and `rail_z` the way `chair()` publishes `seat_z`, and feet land on
+the ring to the centimetre (0.25 → 0.25, 0.24 → 0.24) or hang at full stretch
+where there is none, which is a pose and not a failure to find support.
+
+The support model had to be generalised for it, because *a perched figure is
+held up by its hips and `grounded` asks about undersides*. The new clause is
+narrow: a surface must pass **through** the figure and lie within one leg's
+length of its soles, so it excuses a person on a stool and not a person
+hovering beside a bookshelf. Verified on all four cases including both
+negatives.
+
+Then nothing perched. `_conflicts` had its own private copy of the support
+test — the same duplication that produced the 0.03/0.06 tolerance bug, fixed
+that time by unifying the *constant* and leaving the duplicated *logic* in
+place to do it again. It duly did: the check accepted perching and the solver
+still refused it, silently, so the window bar stayed empty for a second reason
+after the first was fixed. Both now call one `Layout._supported`. **Two copies
+of a rule are one rule and one bug waiting for someone to edit only one of
+them.**
+
+Occupied window bars also moved the focal numbers, which was not the point of
+the change: seed 2 from +0.054 to +0.101 and seed 3 from +0.039 to +0.084 at
+320.

@@ -51,10 +51,28 @@ MACHINE_SPAN = 2.9
 # 14.0 x 9.6.
 LAMP_AREA = 45.0
 
-# Focal check. `target` is the render size the reading is taken at: 160 gives
-# the same contrast as 240 to within 0.003 and takes half as long, which
-# matters for a check that renders whole rooms.
-FOCAL_TARGET = 160
+# Focal check. The render size matters and 160 was the wrong one, chosen from a
+# single seed where it happened to agree with 240 to within 0.003. Swept over
+# three seeds and three sizes it does not agree at all:
+#
+#                160     320     480
+#   reference   +.146   +.133   +.133      stable
+#   seed 1      +.155   +.146   +.107
+#   seed 2      +.093   +.054   +.048
+#   seed 3      +.084   +.039   +.014      collapses
+#
+# Contrast is a 5-95 percentile spread, a tail statistic, so it moves as more
+# resolution resolves more distinct values -- but only where there is detail to
+# resolve. The reference room holds its reading and the generated rooms lose
+# theirs, which is not the instrument drifting, it is the two rooms differing:
+# the generated periphery is as detailed as its centre and gains contrast as
+# fast as the counter does.
+#
+# So the check runs at 320, near the size that ships, and not at the size that
+# made it pass. Mean L, a first moment, IS stable across all three sizes -- and
+# checking that instead would have been choosing the metric that agreed with
+# the answer already written down.
+FOCAL_TARGET = 320
 MIN_FOCAL_CONTRAST = 0.060
 
 
@@ -107,6 +125,9 @@ def build(plan: F.Plan) -> Layout:
     # layout because `Placed` carries a bounding box and a seat's box tops out
     # at its backrest.
     seat_z: dict = {}
+    # A stool's foot ring, where it has one. Kept beside `seat_z` for the same
+    # reason: it is a height a person meets that a bounding box cannot report.
+    perch_rail: dict = {}
     add(A.floor(plan.w, plan.d), name="floor", track=False)
     # A rug under each substantial seating block. The reference room uses two
     # to say "this group of tables is one place to sit", and a zone is exactly
@@ -269,8 +290,11 @@ def build(plan: F.Plan) -> Layout:
                 at = (z.x0 + 0.4 + i * 0.95, z.y1 - 0.45, 0)
             else:
                 at = (z.x1 - 0.45, z.y0 + 0.4 + i * 0.95, 0)
-            add(A.stool(seed=20 + bi * 7 + i), at=at, rot=int(z.facing),
-                name=f"seat#stool{bi}_{i}", centre=True)
+            st = A.stool(seed=20 + bi * 7 + i)
+            nm = f"seat#stool{bi}_{i}"
+            add(st, at=at, rot=int(z.facing), name=nm, centre=True)
+            _remember(seat_z, nm, st)
+            perch_rail[nm] = st.rail_z
 
     # --- seating. Tables with chairs on all four sides in the cafe blocks,
     # armchairs and benches in the lounges, both placed by the solver.
@@ -372,7 +396,7 @@ def build(plan: F.Plan) -> Layout:
             add(A.pendant_lamp(), at=((z.x0 + z.x1) / 2 - 0.5,
                                       (z.y0 + z.y1) / 2 - 0.5, 0.60),
                 name=f"decor#lamp{zi}", track=False)
-    made += _people(L, plan, seat_z=seat_z)
+    made += _people(L, plan, seat_z=seat_z, perch_rail=perch_rail)
     L.generated = made
     return L
 
@@ -389,6 +413,7 @@ def _remember(table: dict, name: str, mesh):
 
 
 def _people(L: Layout, plan: F.Plan, n: int = 7, seed: int = 1,
+             perch_rail: dict | None = None,
             seat_z: dict | None = None) -> int:
     """A barista, a queue, and customers in whatever seats were placed.
 
@@ -457,14 +482,31 @@ def _people(L: Layout, plan: F.Plan, n: int = 7, seed: int = 1,
     seats = [q for q in L.items
              if q.name.startswith(("chair#", "seat#arm"))
              and seat_z.get(q.name, 9.0) <= C.MAX_SEAT_Z]
+    # And the stools, which take a different rig rather than none. The window
+    # bar used to be furniture nobody used: every seat in the room was filled
+    # and the row along the glass stayed empty in all twelve rooms, which is
+    # not a cafe, it is a showroom.
+    stools = [q for q in L.items if q.name.startswith("seat#stool")]
+    rest = list(roster[2:])
     if seats:
-        stride = max(1, len(seats) // max(1, len(roster) - 2))
-        for i, spec in enumerate(roster[2:]):
+        stride = max(1, len(seats) // max(1, len(rest) - len(stools[:2])))
+        for i, spec in enumerate(rest[:max(0, len(rest) - 2)]):
             k = (i * stride + 1) % len(seats)
             st = seats[k]
             cx, cy = (st.x0 + st.x1) / 2, (st.y0 + st.y1) / 2
             put(C.build(spec, seated=True, seat=seat_z[st.name]), (cx, cy, 0.0),
                 L.rots.get(st.name, 0.0), f"char#sit{i}")
+    # Not adjacent, because two people at a window bar who did not arrive
+    # together leave a stool between them, and because two figures one stool
+    # apart on the screen diagonal is the queue-occlusion problem again.
+    for i, spec in enumerate(rest[max(0, len(rest) - 2):]):
+        if not stools:
+            break
+        st = stools[(i * 2) % len(stools)]
+        cx, cy = (st.x0 + st.x1) / 2, (st.y0 + st.y1) / 2
+        put(C.build(spec, perch=(seat_z.get(st.name, 0.70),
+                                 perch_rail.get(st.name))),
+            (cx, cy, 0.0), L.rots.get(st.name, 0.0), f"char#perch{i}")
     return placed
 
 
