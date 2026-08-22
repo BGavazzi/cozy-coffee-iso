@@ -23,9 +23,14 @@ which is the point.
     python tools/animate.py --fx         # the deliverable: sheets + atlas.json
     python tools/render_room.py          # whole-shop composite (integration test)
 
+    # generated rooms -- the plan is proposed and checked, then filled
+    python tools/preview_plans.py                 # plans, top-down, walkable floor shaded
+    python tools/build_plan.py --seed 1           # render one, end to end
+
     # review surfaces -- what a human actually looks at
     python tools/preview_clips.py --who barista   # clip strips + looping GIFs
     python tools/preview_characters.py            # roster + 8 directions
+    python tools/preview_generators.py            # 16 generators x 8 seeds
     python tools/review_queue.py build "sprites/*.png"
     # fill verdict + reason in review/verdicts.jsonl
     python tools/review_queue.py stats            # what to automate next
@@ -34,6 +39,23 @@ which is the point.
     python tools/manifest.py --check     # runs all twenty-one checks
     python tools/character.py            # hair contrast, palette spread, silhouette floor
     python tools/fx.py                   # loop seams
+
+## What to look at
+
+| | |
+|---|---|
+| `proof/shop.png`, `proof/shop_big.png` | the hand-authored reference room |
+| `proof/plan_room.png` | a room generated end to end from a checked plan |
+| `proof/plan_room_perimeter.png` | the same, on the other seating topology |
+| `proof/floorplans.png` | six plans, top-down, with the walkable floor shaded |
+| `proof/generators.png` | every generator, eight seeds each, spread measured |
+| `proof/characters.png` | roster, eight directions, and generated extras |
+| `ART_CRITIQUE.md` | what was rejected, why, and what became a check |
+
+The reference room is still the better room. It holds six passes of judgement
+that no rule encodes — why the queue runs across the view rather than into it,
+why the crates go against the far walls. What the generator has is that it can
+make a different cafe, and that every one it makes clears twenty-one checks.
 
 ## The loop is a ratchet
 
