@@ -2195,6 +2195,90 @@ Worth naming: the first version of that `fix` string was plausible, specific,
 and wrong, and it would have shipped as guidance. Every other floor in this
 file was bracketed by measurement while its remedy was asserted.
 
+## Two of the generator's seven dimensions had one value each
+
+An audit of `generate_spec` over a hundred seeds, counting distinct values per
+dimension:
+
+| dimension | distinct values |
+|---|---|
+| shirt | 24 |
+| hair_mat | 21 |
+| trousers | 17 |
+| hair_style | 6 |
+| accessory_kind | 4 |
+| **skin** | **1** |
+| **blush** | **1** |
+
+Neither was an art-direction decision. Both were dataclass defaults that the
+proposal loop never drew from, sitting unnoticed beside five dimensions that
+were working. A hundred generated extras, all one skin tone, all blushing.
+
+Adding them to the draw is two lines. The reason it had not been done is the
+interesting part.
+
+## The eyes could not survive it, and the check that would have said so did not exist
+
+`face()` drew the eyes as `skin + "-4"` — four steps down the surface's own
+ramp, which is the idiom `pixelize.material` exists for and which is right
+almost everywhere. Rendered heads across seven skin tones, eye-to-face
+separation in OKLab:
+
+| eye material | skin−4 | −3 | −2 | −1 | skin | +1 | +2 |
+|---|---|---|---|---|---|---|---|
+| `skin + "-4"` *(shipped)* | **0.000** | **0.000** | 0.103 | 0.204 | 0.304 | 0.404 | 0.504 |
+| `neutral-3` | 0.076 | 0.076 | 0.161 | 0.256 | 0.353 | 0.450 | 0.547 |
+| **`neutral-2`** | **0.196** | 0.196 | 0.196 | 0.256 | 0.353 | 0.450 | 0.547 |
+| `neutral-1` | 0.304 | 0.304 | 0.304 | 0.304 | 0.353 | 0.450 | 0.547 |
+
+Zero at the two darkest tones. Not faint — *absent*. The head renders as one
+flat colour with a blush and no face.
+
+The mechanism is clamping, and the reason no existing check saw it is that the
+existing check is analytic. Eyes sit on the **front** facet, which the key
+already shades a step or two down, so `-4` from there hits the ramp floor —
+and so does the shaded cheek around them. At `skin-1` the palette-step gap
+computes to a comfortable 0.201 while the sprite shows a blank face, because
+both colours clamped to the same step. `check_contrast` has been comparing
+hair against a lit reference for eight passes and been right to, because hair
+is on top of the head; the same arithmetic is simply wrong for a feature on the
+shaded side.
+
+**A rig whose eyes are a skin offset cannot draw a dark-skinned face.** That is
+a property of the drawing idiom, not of the palette, and it had been quietly
+capping the cast at one complexion. The precedent for breaking the idiom was
+four lines away in the same function: blush has always been `rose+1` on a skin
+surface. An eye is a different material from a cheek in every art style there
+is.
+
+`neutral-2` over `neutral-1` because that flat 0.304 in the last row is the eye
+clamping too — it holds its gap by getting *lighter* as the skin darkens, and a
+mid-grey eye on a pale face is a weaker mark than a near-black one. `neutral-2`
+floors at 0.196 and stays dark at the light end.
+
+### The check renders, and it measures the right distance
+
+`check_eye_legibility` finds the eye pixels by difference — one head with a
+face, one without — so it does not need to know where in the frame they landed
+and keeps working if the eye line moves. Floor at **0.15**, bracketed by the
+old rule's 0.103 at `skin-2`, which renders blank, against `neutral-2`'s worst
+tone at 0.196.
+
+It measures full OKLab distance rather than lightness, and the first version
+did not. At the dark end the eye and the cheek separate on **hue** — a cool
+near-black on a warm red-brown — and the lightness-only reading called that
+0.039 and rejected art that reads perfectly well. Nine passes of this file have
+used lightness as the readability proxy and it has been right every time until
+the one case where two colours of equal value sit next to each other.
+
+Verified in both directions: clean on the shipped rig, and two failures when
+`EYE` is put back to `neutral-3`.
+
+With that in place, skin goes into the proposal with **every** offset offered
+rather than a hand-picked safe subset — the argument `HAIR_MATS` makes at
+length — and over a hundred seeds the generator now produces 7 skin tones and
+both blush states, with zero specs failing any check.
+
 ## Still open
 
 - **Stage 3** (UniRig) is unbuilt. Stages 1 and 2 run on the local RTX 4070 —

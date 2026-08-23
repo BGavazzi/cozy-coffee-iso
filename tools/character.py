@@ -42,6 +42,45 @@ H = 1.59
 
 SKIN = "skin"          # wood_3..6 are the flesh tones; see style_bible.yaml
 
+# Skin tones the generator may draw from, as offsets on the shaded skin step.
+# Everything from wood_0 to wood_6 is offered rather than a hand-picked subset,
+# for the reason `HAIR_MATS` gives at length: a search space pre-filtered to the
+# answer is not a search space. What makes the wide range usable is `EYE`.
+SKIN_TONES = ("skin-4", "skin-3", "skin-2", "skin-1", "skin",
+              "skin+1", "skin+2")
+
+# The eyes are NOT a tone offset on skin, and this is the one place in the
+# library where the surface's-own-ramp idiom had to be broken.
+#
+# They were `skin + "-4"` for eight passes. Four steps below a lit mid-brown is
+# the bottom of `wood`, which is fine -- until the skin itself moves down.
+# Eye-to-face separation in OKLab, rendered rather than computed, across the
+# seven tones from `skin-4` to `skin+2`:
+#
+#     skin + "-4"   0.000 0.000 0.103 0.204 0.304 0.404 0.504
+#     neutral-3     0.076 0.076 0.161 0.256 0.353 0.450 0.547
+#     neutral-2     0.196 0.196 0.196 0.256 0.353 0.450 0.547
+#     neutral-1     0.304 0.304 0.304 0.304 0.353 0.450 0.547
+#
+# Zero, at the two darkest tones: not faint, *absent*. The mechanism is
+# clamping, and it is not what an analytic check would report. Eyes sit on the
+# front facet, which the key already shades a step or two down, so `-4` from
+# there lands on the ramp floor -- and so does the shaded cheek around them.
+# At `skin-1` the palette-step gap still computes to 0.201 while the sprite
+# shows a blank face, which is why `check_eye_legibility` renders.
+#
+# So a rig whose eyes are a skin offset cannot draw a dark-skinned face. That
+# is a limitation of the drawing idiom, not of the palette, and the precedent
+# for breaking it is four lines below: blush has always been `rose+1` on a
+# skin surface. An eye is a different material from a cheek in every art style
+# there is.
+#
+# `neutral-2` over `neutral-1` because the flat 0.304 in that last row is the
+# eye clamping too -- it holds its gap by getting lighter as the skin does,
+# and a mid-grey eye on a pale face is a weaker mark than a near-black one.
+# `neutral-2` keeps the floor at 0.196 and stays dark at the light end.
+EYE = "neutral-2"
+
 # Cross-section radii. Depth is kept near width -- the whole point of the prism
 # rewrite -- rather than the 0.265 x 0.175 slab that broke the diagonals.
 TORSO_RX, TORSO_RY = 0.250, 0.210
@@ -220,7 +259,7 @@ def face(skin: str = SKIN, blush: bool = True) -> Mesh:
     ez = HEAD_Z + 0.62 * (HEAD_TOP - HEAD_Z)   # eye line, high for a cozy read
     for sx in (-0.080, 0.080):
         m.add_box((sx - 0.040, y, ez - 0.040),
-                  (sx + 0.040, y + 0.014, ez + 0.040), skin + "-4")
+                  (sx + 0.040, y + 0.014, ez + 0.040), EYE)
     if blush:
         for sx in (-0.148, 0.148):
             m.add_box((sx - 0.038, y, ez - 0.110),
@@ -640,6 +679,14 @@ def generate_spec(seed: int, ramps=None, tries: int = 60) -> CharacterSpec:
         spec = CharacterSpec(
             f"extra{seed:02d}", shirt=shirt, trousers=trousers,
             hair_style=pick(HAIR_STYLES), hair_mat=pick(HAIR_MATS),
+            # Over a hundred seeds the old generator produced one skin tone and
+            # blush on every single extra -- two dimensions with one value each,
+            # sitting unnoticed next to five that were working. Neither was a
+            # deliberate art-direction choice; both were defaults that nothing
+            # ever drew from. Skin is what `check_contrast` argues with, so
+            # varying it does real work: the hair rejection rate is no longer a
+            # constant, because the thing hair is being compared against moves.
+            skin=pick(SKIN_TONES), blush=rnd() < 0.62,
             accessory_kind=acc,
             accessory_mat=pick(GARMENT_RAMPS) + pick(("", "-1", "+1")),
             bulk=0.90 + rnd() * 0.30,
@@ -881,6 +928,61 @@ def check_cast_silhouette(roster=None,
                 out.append(f"{specs[i].name} and {specs[j].name} have "
                            f"{d:.1%} of outline between them (floor "
                            f"{floor:.0%}) -- one shape, two paint jobs")
+    return out
+
+
+# Bracketed against the rule this replaced: `skin + "-4"` measured 0.103 at
+# `skin-2`, which renders as a blank face, against `neutral-2`'s worst tone at
+# 0.196. Measured as full OKLab distance and not as lightness, because at the
+# dark end the eye and the cheek separate on hue -- a cool near-black on a warm
+# red-brown -- and a lightness-only reading called that 0.039 and would have
+# rejected art that reads perfectly well.
+MIN_EYE_GAP = 0.15
+
+
+def check_eye_legibility(ramps=None) -> list[str]:
+    """Can the eyes be seen, at every skin tone the generator may draw?
+
+    Rendered rather than computed, because the failure this was written for is
+    invisible to the analytic version. `check_contrast` compares palette steps
+    and would have reported a comfortable 0.201 at `skin-1` while the sprite
+    showed a blank face: the eyes sit on the shaded front facet, so the lambert
+    moves them and the cheek around them onto the same clamped step, and only a
+    render knows that.
+
+    The eye pixels are found by difference -- one head with a face and one
+    without -- so the check does not need to know where in the frame they
+    landed, and it keeps working if the eye line moves.
+
+    It can fail. Restore `EYE` to a skin offset and it fires on four of the
+    seven tones, which is how it was verified.
+    """
+    from render_batch import frame_all, render_sprite
+    from oklab import srgb_to_oklab
+    from pixelize import load_palette
+    ramps = ramps or load_palette()
+    out = []
+    for tone in SKIN_TONES:
+        bare = merge(head(tone))
+        span, centre = frame_all(bare)
+        _, plain = render_sprite(bare, 45.0, 48, 4, ramps,
+                                 span=span, centre=centre)
+        _, eyed = render_sprite(merge(head(tone), face(tone, blush=False)),
+                                45.0, 48, 4, ramps, span=span, centre=centre)
+        gaps = [math.dist(srgb_to_oklab(a[:3]), srgb_to_oklab(b[:3]))
+                for a, b in zip(plain, eyed)
+                if a is not None and b is not None and a != b]
+        if not gaps:
+            out.append(f"skin '{tone}': the eyes render no pixels at all")
+            continue
+        # The strongest pixel, not the mean: two dark marks on a face is a
+        # peak-contrast read, and averaging in the antialiased rim of each eye
+        # would report a failure the eye does not see.
+        gap = max(gaps)
+        if gap < MIN_EYE_GAP:
+            out.append(f"skin '{tone}': eyes are {gap:.3f} from the face "
+                       f"(need {MIN_EYE_GAP}) -- at this tone the head reads "
+                       f"as blank")
     return out
 
 

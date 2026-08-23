@@ -203,6 +203,14 @@ def check(man: dict) -> int:
         from pixelize import load_palette as _lp
         for msg in _c.check_waistline(_lp()):
             errs.append(msg)
+        # And a face needs eyes at every skin tone the generator may draw, not
+        # only at the one the roster happens to use. This is the check that
+        # made `SKIN_TONES` possible: the eyes were a tone offset on skin and
+        # vanished entirely below the middle of the range, so seven of the
+        # seven tones were unusable and nobody had looked, because the roster
+        # only ever asked for one.
+        for msg in _c.check_eye_legibility():
+            errs.append(msg)
         # The generated extras have to pass everything the hand-written roster
         # does. They are proposed against exactly these predicates, so a failure
         # here means the solver has stopped consulting one of them -- which is

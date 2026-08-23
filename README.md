@@ -36,7 +36,7 @@ which is the point.
     python tools/review_queue.py stats            # what to automate next
 
     # the gates
-    python tools/manifest.py --check     # runs all twenty-four checks
+    python tools/manifest.py --check     # runs all twenty-five checks
     python tools/build_plan.py --focal-scan 12   # slower gate: 12 whole rooms,
                                                  # currently 0 of 12 failing
     python tools/character.py            # hair contrast, palette spread, silhouette floor
@@ -60,7 +60,7 @@ which is the point.
 The reference room is still the better room. It holds seven passes of judgement
 that no rule encodes — why the queue runs across the view rather than into it,
 why the crates go against the far walls. What the generator has is that it can
-make a different cafe, and that every one it makes clears twenty-four checks.
+make a different cafe, and that every one it makes clears twenty-five checks.
 
 ## The loop is a ratchet
 
