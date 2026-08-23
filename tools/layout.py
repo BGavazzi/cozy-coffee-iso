@@ -51,7 +51,27 @@ TUCK_OK = {
     frozenset({"char", "counter"}), frozenset({"clutter", "counter"}),
     frozenset({"prop", "wall"}), frozenset({"decor", "wall"}),
     frozenset({"chair", "clutter"}), frozenset({"char", "clutter"}),
+    # An armchair is named `seat#arm...` and a bench `seat#bench...`, and a
+    # character sitting in one interpenetrates it exactly as a character on a
+    # `chair` does. The reference room never needed this because it seats
+    # everyone on dining chairs.
+    frozenset({"char", "seat"}),
 }
+
+
+# How far an object's underside may sit off the surface below it. One constant,
+# used by `grounded` and by the support test inside `_conflicts`, because they
+# were 0.03 and 0.06: the solver accepted a placement its own validator then
+# rejected. `build_plan` hit it the first time it ran -- two vases scattered
+# onto tables, accepted at proposal time and reported as floating afterwards. A
+# solver whose predicate is looser than the check it exists to satisfy is not a
+# solver, it is a source of warnings.
+SUPPORT_TOL = 0.03
+
+# How far a perched figure's soles may hang below the surface holding its hips.
+# Matches `character.PERCH_LEG`; a figure further from its seat than one leg is
+# not perched on it, it is floating above it.
+PERCH_REACH = 0.52
 
 
 @dataclass
@@ -100,6 +120,44 @@ class Layout:
                                  min(zs), max(zs)) if track else
                           Placed("_untracked", m, 0, 0, 0, 0, 0, 0))
 
+    def add_seeded(self, factory, seeds, at=(0.0, 0.0, 0.0), rot: float = 0.0,
+                   name: str = "prop", azimuth: float = 45.0,
+                   occlude: float = 0.35, **kw) -> int:
+        """Place the first seed whose result breaks no rule already enforced.
+
+        `scatter` solves for a *position* with the seed fixed; this solves for a
+        seed with the position fixed, which is the case a fitted prop actually
+        has -- an espresso machine goes where the counter is, and what is free
+        to move is which machine it is.
+
+        Written after the third time a hand-picked constant had to dodge a
+        check. Seeding the pastry case made it taller, the taller case covered
+        39% of a crate two tiles behind it, and the fix was to read a table of
+        eight measurements and type the seed that passed. That is a person
+        doing a search, and a search is the thing this file is for. Note that
+        the two props involved were BOTH hand-placed: `scatter` has tested
+        occlusion at proposal time for two passes, and neither of these went
+        through it.
+
+        Falls back to the first seed if none pass, for the reason `scatter`
+        returns short rather than raising -- a room with one warning is worth
+        more than no room.
+        """
+        seeds = list(seeds)
+        for k in seeds:
+            before = len(self.items)
+            self.add(factory(k), at=at, rot=rot, name=name, **kw)
+            if len(self.items) == before:
+                return k                       # empty mesh, nothing placed
+            cand = self.items[-1]
+            self.items.pop()
+            if not self._conflicts(cand, azimuth, occlude):
+                self.items.append(cand)
+                return k
+            self.rots.pop(name, None)
+        self.add(factory(seeds[0]), at=at, rot=rot, name=name, **kw)
+        return seeds[0]
+
     def mesh(self) -> Mesh:
         return merge(*(p.mesh for p in self.items))
 
@@ -137,7 +195,48 @@ class Layout:
                 out.append(f"{p.name}: back points toward the table it serves")
         return out
 
-    def grounded(self, tol: float = 0.03) -> list[str]:
+    def _supported(self, p, tol: float = SUPPORT_TOL, skip=None):
+        """Does `p` rest on something? The one answer both callers use.
+
+        `grounded` and `_conflicts` each had their own version of this. They
+        disagreed once already, on the tolerance, and accepted placements that
+        the check then rejected; unifying the constant fixed that instance and
+        left the duplication in place to do it again. It duly did: teaching
+        `grounded` about perched figures left `_conflicts` still asking only
+        about undersides, so the solver refused every perch that the check
+        would have accepted -- and refused it silently, so the window bar was
+        simply never occupied. Two copies of a rule are one rule and one bug
+        waiting for someone to edit only one of them.
+        """
+        kind = p.name.split("#")[0]
+        tag = p.name.split("#")[-1]
+        if kind in WALL_MOUNTED or any(w in tag for w in WALL_MOUNTED):
+            return True                               # hangs on a wall
+        if abs(p.z0) <= tol:
+            return True                               # on the floor
+        under = None
+        for q in self.items:
+            if q is p or q is skip or q.name == "_untracked":
+                continue
+            if (min(p.x1, q.x1) - max(p.x0, q.x0) <= 0
+                    or min(p.y1, q.y1) - max(p.y0, q.y0) <= 0):
+                continue
+            if q.z1 <= p.z0 + tol and (under is None or q.z1 > under):
+                under = q.z1
+            # A perched figure is held up by its hips, not its underside, so
+            # the underside question has no answer it can give: its feet are
+            # on a stool's foot ring or on nothing, and both are correct.
+            # Narrow on purpose -- the surface has to pass THROUGH the figure
+            # and be within one leg of the soles, which excuses a person on a
+            # stool and not a person hovering beside a bookshelf.
+            if (kind == "char" and p.z0 - tol <= q.z1 <= p.z1
+                    and q.z1 - p.z0 <= PERCH_REACH + tol
+                    and min(p.x1, q.x1) - max(p.x0, q.x0) > 0.05
+                    and min(p.y1, q.y1) - max(p.y0, q.y0) > 0.05):
+                return True
+        return under is not None and p.z0 - under <= tol
+
+    def grounded(self, tol: float = SUPPORT_TOL) -> list[str]:
         """Every object must rest on the floor or on something beneath it.
 
         Floating and sunk props have been the most repeated defect in this
@@ -149,31 +248,24 @@ class Layout:
         """
         out = []
         for p in self.items:
-            if p.name == "_untracked":
+            if p.name == "_untracked" or self._supported(p, tol):
                 continue
-            kind = p.name.split("#")[0]
-            tag = p.name.split("#")[-1]
-            if kind in WALL_MOUNTED or any(w in tag for w in WALL_MOUNTED):
-                continue                              # hangs on a wall
-            if abs(p.z0) <= tol:
-                continue                              # on the floor
-            best = None
+            under = None
             for q in self.items:
                 if q is p or q.name == "_untracked":
                     continue
-                ox = min(p.x1, q.x1) - max(p.x0, q.x0)
-                oy = min(p.y1, q.y1) - max(p.y0, q.y0)
-                if ox <= 0 or oy <= 0 or q.z1 > p.z0 + tol:
-                    continue
-                if best is None or q.z1 > best:
-                    best = q.z1
-            if best is None:
+                if (min(p.x1, q.x1) - max(p.x0, q.x0) > 0
+                        and min(p.y1, q.y1) - max(p.y0, q.y0) > 0
+                        and q.z1 <= p.z0 + tol
+                        and (under is None or q.z1 > under)):
+                    under = q.z1
+            if under is None:
                 out.append(f"{p.name}: underside at z={p.z0:.2f} with nothing "
                            f"beneath it - floats")
-            elif p.z0 - best > tol:
+            else:
                 out.append(f"{p.name}: underside at z={p.z0:.2f} sits "
-                           f"{p.z0 - best:.2f} above the surface below "
-                           f"(z={best:.2f}) - floats")
+                           f"{p.z0 - under:.2f} above the surface below "
+                           f"(z={under:.2f}) - floats")
         return out
 
     def collisions(self, share: float = 0.34) -> list[str]:
@@ -304,6 +396,27 @@ class Layout:
                 # the case this check exists for, and the message said "hides
                 # 33% of the chair" while reporting 33% of the coat rack.
                 near, far = (a, b) if ad > bd else (b, a)
+                # A person in front of a plant is a scene; a plant in front of
+                # a person is a problem. The rule was symmetric, so whichever
+                # was placed second lost -- and characters are placed last, so
+                # they lost to scatter decor every time. That is not a
+                # near-miss in the calibration, it is the wrong hierarchy: the
+                # check exists so that MODELLED GEOMETRY is not invisible, and
+                # a fern behind a customer has not been wasted, it has been
+                # stood behind.
+                #
+                # It cost the whole perching feature to find. Stools went from
+                # ten occupants across twelve rooms to one when a change
+                # elsewhere moved the plants; the solver rejected every
+                # perched figure to protect the greenery, silently, because a
+                # rejected placement looks exactly like a room with nobody at
+                # the window bar.
+                #
+                # Asymmetric on purpose, and one direction only: decor hiding a
+                # character still fires.
+                if (near.name.split("#")[0] == "char"
+                        and far.name.split("#")[0] == "decor"):
+                    continue
                 fu0, fu1, fv0, fv1, _ = boxes[far.name]
                 far_area = (fu1 - fu0) * (fv1 - fv0) or 1e-9
                 frac = (ou * ov) / far_area
@@ -335,15 +448,8 @@ class Layout:
         # pass put a vase 0.82 up in clear air just past the end of the bar run,
         # and `grounded` caught it after the fact; a solver that can check a rule
         # afterwards can check it before, and then the rule never has to fire.
-        if cand.z0 > 0.03:
-            for a in self.items:
-                if abs(a.z1 - cand.z0) > 0.06:
-                    continue
-                if (min(a.x1, cand.x1) - max(a.x0, cand.x0) > 0.04
-                        and min(a.y1, cand.y1) - max(a.y0, cand.y0) > 0.04):
-                    break
-            else:
-                return True
+        if not self._supported(cand):
+            return True
         if occlude > 0.0:
             self.items.append(cand)
             try:

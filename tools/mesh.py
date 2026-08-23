@@ -27,6 +27,11 @@ Vec = tuple[float, float, float]
 class Mesh:
     verts: list[Vec] = field(default_factory=list)
     normals: list[Vec] = field(default_factory=list)
+    # Optional per-vertex sRGB, parallel to `verts`. Empty for everything this
+    # repo builds, because its meshes carry palette tokens on faces and have no
+    # use for colour on a point. Generators are the other way round: TripoSR
+    # writes `v x y z r g b` and no MTL at all.
+    vcolors: list[tuple] = field(default_factory=list)
     # (vertex indices, normal indices or None, material)
     faces: list[tuple[tuple[int, int, int], tuple[int, int, int] | None, str]] = \
         field(default_factory=list)
@@ -139,7 +144,16 @@ class Mesh:
 # --- OBJ ---------------------------------------------------------------------
 
 def load_obj(path: Path | str, default_material: str = "wood") -> Mesh:
-    """Minimal OBJ reader: v, vn, f, usemtl. Triangulates n-gons as a fan."""
+    """Minimal OBJ reader: v, vn, f, usemtl. Triangulates n-gons as a fan.
+
+    `v` lines may carry three extra floats of vertex colour. The reader used to
+    slice `parts[1:4]` and drop them silently, which is fine for meshes this
+    repo writes and wrong for every mesh a generator produces: stage 2's OBJ
+    has no MTL and no `usemtl`, so the whole model arrived as one default
+    material and `ingest` bound a teapot, its lid and its wooden handle to a
+    single palette token. Reading geometry and discarding colour is not a
+    parse error, which is why it took a real generated mesh to notice.
+    """
     m = Mesh()
     material = default_material
     for line in Path(path).read_text(encoding="utf-8").splitlines():
@@ -149,6 +163,10 @@ def load_obj(path: Path | str, default_material: str = "wood") -> Mesh:
         tag = parts[0]
         if tag == "v":
             m.verts.append(tuple(float(x) for x in parts[1:4]))
+            if len(parts) >= 7:
+                m.vcolors.append(tuple(
+                    max(0, min(255, round(float(c) * 255.0)))
+                    for c in parts[4:7]))
         elif tag == "vn":
             m.normals.append(norm(tuple(float(x) for x in parts[1:4])))
         elif tag in ("usemtl", "o", "g") and len(parts) > 1:
@@ -166,6 +184,44 @@ def load_obj(path: Path | str, default_material: str = "wood") -> Mesh:
                 nrm = (ni[0], ni[k], ni[k + 1]) if len(ni) == len(vi) else None
                 m.faces.append((tri, nrm, material))
     return m
+
+
+def compute_vertex_normals(mesh: Mesh) -> None:
+    """Area-weighted vertex normals, computed and wired in place.
+
+    `--smooth` has been a dead flag for every mesh this repo has ever
+    rendered, authored or generated. `rasterize`'s smooth branch only fires
+    when a face's stored normal-index tuple (`nidx`) is not `None` and
+    `mesh.normals` is non-empty -- and `add_box`/`add_quad`/`add_prism` never
+    set `nidx` (every authored mesh renders on flat per-face normals by
+    construction), while `load_obj` only sets it by parsing `vn` lines and
+    `v//vn` face syntax, which no OBJ this pipeline produces contains: trimesh's
+    default export write no `vn` for the TripoSR meshes, and `save_obj` here
+    never wrote them either. So the flag existed and had literally nothing to
+    interpolate, on either kind of mesh, since the day it was added.
+
+    This fills that in for a mesh already loaded into memory, without touching
+    the OBJ format on disk: `mesh.normals` gets one normal per vertex, and each
+    face's `nidx` is set to reuse its own `tri` indices, which is exact because
+    they are aligned 1:1 with `mesh.verts`.
+
+    Un-normalized face normals are used as the per-corner contribution before
+    the final normalize, so a large triangle naturally outweighs a sliver
+    meeting it at the same vertex -- the standard area-weighting, done without
+    a second pass to compute areas explicitly.
+    """
+    from isorender import add, cross, norm, sub
+    acc = [(0.0, 0.0, 0.0)] * len(mesh.verts)
+    acc = [list(v) for v in acc]
+    for tri, _, _ in mesh.faces:
+        a, b, c = (mesh.verts[i] for i in tri)
+        fn = cross(sub(b, a), sub(c, a))
+        for i in tri:
+            acc[i][0] += fn[0]
+            acc[i][1] += fn[1]
+            acc[i][2] += fn[2]
+    mesh.normals = [norm(tuple(v)) if any(v) else (0.0, 0.0, 1.0) for v in acc]
+    mesh.faces = [(tri, tri, mat) for tri, _, mat in mesh.faces]
 
 
 def save_obj(mesh: Mesh, path: Path | str) -> None:

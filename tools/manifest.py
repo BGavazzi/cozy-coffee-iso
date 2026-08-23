@@ -196,6 +196,59 @@ def check(man: dict) -> int:
         # brown smear has only proved the rules were incomplete.
         for msg in _c.check_palette_spread():
             errs.append(msg)
+        # And a figure needs a waist. `check_palette_spread` counts ramps, not
+        # values, so two different ramps landing on the same step slip past it:
+        # `elder` shipped with a wood shirt 0.004 in value from neutral
+        # trousers and rendered as one column.
+        from pixelize import load_palette as _lp
+        for msg in _c.check_waistline(_lp()):
+            errs.append(msg)
+        # And a face needs eyes at every skin tone the generator may draw, not
+        # only at the one the roster happens to use. This is the check that
+        # made `SKIN_TONES` possible: the eyes were a tone offset on skin and
+        # vanished entirely below the middle of the range, so seven of the
+        # seven tones were unusable and nobody had looked, because the roster
+        # only ever asked for one.
+        for msg in _c.check_eye_legibility():
+            errs.append(msg)
+        # And every dimension of the generator has to be drawn from. The two
+        # that were not sat unremarked for eight passes beside five that were
+        # producing seventeen to twenty-four values each, because a dimension
+        # nobody varies is invisible in every downstream metric -- a cast can
+        # differ in shirt and trousers and hair and still be one face.
+        for msg in _c.check_spec_coverage():
+            errs.append(msg)
+        # The generated extras have to pass everything the hand-written roster
+        # does. They are proposed against exactly these predicates, so a failure
+        # here means the solver has stopped consulting one of them -- which is
+        # invisible on the sheet, because the sheet only shows what was
+        # accepted.
+        _ramps = _lp()
+        _extras = _c.generate_roster(12, seed=1, ramps=_ramps)
+        for msg in (_c.check_contrast(_ramps, _extras)
+                    + _c.check_palette_spread(_extras)
+                    + _c.check_waistline(_ramps, _extras)):
+            errs.append(f"generated: {msg}")
+        # And no two members of a cast may be the same person. The three checks
+        # above are predicates on ONE spec; a generator can satisfy all three
+        # forty times and return forty variations of one person, each
+        # individually legal and collectively a crowd with one extra in it.
+        for msg in _c.check_roster_variety() + [
+                f"generated: {m}" for m in _c.check_roster_variety(_extras)]:
+            errs.append(msg)
+        # Same question asked of the shape alone. Variety compares materials
+        # too, so two identical figures in different shirts clear it easily --
+        # and did, while the cast contained a pair whose outlines matched to
+        # the pixel. Colour is noticed first; shape is what survives being one
+        # of eight figures at 46 px.
+        for msg in _c.check_cast_silhouette() + [
+                f"generated: {m}" for m in _c.check_cast_silhouette(_extras)]:
+            errs.append(msg)
+        # And the accessories on their own. The cast check holds whole people
+        # apart, which lets an accessory that changes nothing ride along behind
+        # whatever else separates the pair wearing it.
+        for msg in _c.check_accessory_distinct():
+            errs.append(f"accessory: {msg}")
         from animate import check_direction_labels
         for msg in check_direction_labels():
             errs.append(msg)
@@ -203,7 +256,8 @@ def check(man: dict) -> int:
         room = build_room()
         for msg in room.screen_occlusion():
             warns.append(f"reference room: {msg}")
-        from art_review import check_generator_range, review_library
+        from art_review import (check_generator_range,
+                               check_spread_floor_regression, review_library)
         for msg in review_library():
             warns.append(msg)
         # A generator that has quietly become a fixed mesh renders a room that
@@ -211,14 +265,58 @@ def check(man: dict) -> int:
         # eye on a contact sheet.
         for msg in check_generator_range():
             warns.append(msg)
+        # Neither spread floor has ever fired on the current library, which
+        # says the library is healthy and says nothing about whether the mean
+        # floor is redundant with the closest-pair floor. This settles that on
+        # a synthetic case built to separate them, so the answer does not rest
+        # on a real generator regressing first.
+        for msg in check_spread_floor_regression():
+            errs.append(msg)
         # The stage 1-3 seam. Nothing feeds it yet, which is exactly why it
         # needs a check: an adapter that is never exercised is an adapter that
         # is wrong by the time something arrives.
-        from ingest import check_roundtrip, check_transform
+        from ingest import (check_albedo_regression, check_roundtrip,
+                           check_transform)
         for msg in check_roundtrip():
             errs.append(f"ingest: {msg}")
         for msg in check_transform():
             errs.append(f"ingest: {msg}")
+        # check_albedo_centre runs inside ingest() on every real call and
+        # nothing here had ever driven it into failing -- check_roundtrip and
+        # check_transform both feed it library geometry that was already
+        # correctly exposed. This is the fixture that actually breaks it, on
+        # both of ingest's two paths, since delight makes the vertex-colour
+        # path near-unbreakable and the MTL path has no such protection.
+        for msg in check_albedo_regression():
+            errs.append(f"ingest: {msg}")
+        # Floor plans. The room itself was the last authored asset in the
+        # pipeline, and these are the two questions asked of every other
+        # generator here: does what it returns satisfy the rules it solved
+        # against, and do consecutive seeds actually produce different rooms.
+        from floorplan import check_generated_plans, check_plan_range
+        for msg in check_generated_plans():
+            errs.append(f"floorplan: {msg}")
+        for msg in check_plan_range():
+            errs.append(f"floorplan: {msg}")
+        # And the rooms built from those plans. A plan is rectangles and a room
+        # is meshes; the plan checks say nothing about whether filling one
+        # produces chairs that face their tables.
+        from build_plan import check_built_rooms, check_focal_contrast
+        for msg in check_built_rooms():
+            errs.append(f"plan room: {msg}")
+        # And whether the room that comes out is composed, not merely legal.
+        # Every other check here asks whether something is wrong with an
+        # object or a pair of them; this one renders the whole frame and asks
+        # whether the eye has anywhere to land. It is the slowest check in the
+        # suite by a wide margin, and it is the only one that looks at the
+        # picture instead of the geometry.
+        for msg in check_focal_contrast():
+            errs.append(f"composition: {msg}")
+        # And whether the furniture is used. Everything above asks whether the
+        # room is correct; this asks whether it is inhabited.
+        from build_plan import check_stool_occupancy
+        for msg in check_stool_occupancy():
+            errs.append(f"occupancy: {msg}")
     except Exception as exc:                       # pragma: no cover
         warns.append(f"clip cross-check skipped: {exc}")
 

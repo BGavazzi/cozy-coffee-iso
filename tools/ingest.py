@@ -26,7 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from mesh import Mesh, load_obj, save_obj  # noqa: E402
-from oklab import lab_to_lch, srgb_to_oklab  # noqa: E402
+from oklab import oklab_to_srgb255, srgb_to_oklab  # noqa: E402
 from pixelize import load_palette, material as split_material  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -40,10 +40,6 @@ MAX_BIND_DE = 0.16
 # they are 1-step emissive ramps meaning "this thing is a light source", and
 # nothing should acquire that by being coincidentally the right yellow.
 BINDABLE = ("wood", "cream", "foliage", "rose", "sky", "neutral")
-
-
-def _lch(rgb) -> tuple[float, float, float]:
-    return lab_to_lch(*srgb_to_oklab(tuple(int(c) for c in rgb)))
 
 
 def _to_segment(p, a, b) -> float:
@@ -154,6 +150,7 @@ def orient(mesh: Mesh, up: str = "z") -> Mesh:
     out.verts = [(v[0], -v[2], v[1]) for v in mesh.verts]
     out.normals = [(n[0], -n[2], n[1]) for n in mesh.normals]
     out.faces = list(mesh.faces)
+    out.vcolors = list(mesh.vcolors)
     return out
 
 
@@ -188,7 +185,22 @@ def fit(mesh: Mesh, height: float | None = None,
                  for v in mesh.verts]
     out.normals = list(mesh.normals)
     out.faces = list(mesh.faces)
-    return out, {"scale": s, "height": tall * s, "footprint": wide * s}
+    # Carried through every rebuild. Both of these functions construct a fresh
+    # Mesh and copied three of its four fields, so the vertex colours survived
+    # the reader and were dropped in transit -- the ingest path then fell
+    # through to the MTL branch and bound an entire teapot to `neutral`
+    # without a word. Adding a field to a dataclass adds it to every place
+    # that reconstructs one.
+    out.vcolors = list(mesh.vcolors)
+    fx, fy = (max(xs) - min(xs)) * s, (max(ys) - min(ys)) * s
+    # `footprint` stays the single scalar callers already read (the CLI
+    # printout, `assets.yaml`'s convention of one number for round objects).
+    # `footprint_xy` is the pair `Layout` actually needs: a mesh scaled by
+    # HEIGHT is not generally square in plan, and collapsing an oval basket's
+    # 0.34 x 0.23 footprint to one number of either value is a placement bug
+    # waiting for a long thin object.
+    return out, {"scale": s, "height": tall * s, "footprint": wide * s,
+                "footprint_xy": [fx, fy]}
 
 
 def _is_palette(mat: str) -> bool:
@@ -309,6 +321,67 @@ def signed_volume(mesh: Mesh) -> float:
     return tot
 
 
+def check_albedo_regression(ramps=None) -> list[str]:
+    """Exercise `check_albedo_centre` on both of `ingest`'s two paths.
+
+    It runs inside `ingest()` today and nothing in the suite calls `ingest()`
+    with a mesh built to actually trip it -- `check_roundtrip` and
+    `check_transform` both use library geometry, which is already correctly
+    exposed. A check that only ever sees clean input is unverified in the
+    direction that matters.
+
+    The two paths turn out to need very different fixtures. `bind_vertex_colours`
+    runs `delight` first, and `delight`'s shift targets the field's own MEDIAN
+    -- which by definition of a median lands within a hair of the target for
+    ANY distribution, skewed or bimodal, because clamping can only ever affect
+    the tail on one side of the median rank, never the rank itself. Searched
+    for a vertex-colour field that survives delight and still trips the check
+    -- 90/10, 10/90 and 50/50 splits between near-black and near-white -- and
+    none did. That is not a gap in the search; it is what "shift the median"
+    means, and it is the honest reason this fixture targets `rebind` instead.
+
+    `rebind` -- the MTL path, for a mesh that already names its materials with
+    arbitrary RGB rather than per-vertex colour -- has no such protection.
+    Nothing shifts an MTL's declared colours before binding them, so this is
+    where an under- or over-exposed source actually reaches the check.
+    """
+    from mesh import Mesh
+    ramps = ramps or load_palette()
+    out = []
+
+    def rebind_case(rgb):
+        m = Mesh()
+        m.verts = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)]
+        m.faces = [((0, 1, 2), None, "Solid")]
+        bound, _table, _warns = rebind(m, {"Solid": rgb}, ramps)
+        return check_albedo_centre(bound, ramps)
+
+    # A photographed-then-quantized dark source, well below the 0.596 floor.
+    if not rebind_case((40, 34, 30)):
+        out.append("regression: an MTL bound at albedo L ~0.16 did not trip "
+                   "check_albedo_centre -- the rebind path has lost its "
+                   "coverage")
+    # A colour already living on the library's own middle step.
+    if rebind_case((169, 113, 81)):
+        out.append("regression: check_albedo_centre fired on wood-3, a "
+                   "colour the palette authors directly -- false positive")
+
+    # The vertex-colour path, run against the real defect this check was
+    # written for rather than a constructed one: the first teapot, field
+    # median L 0.408, would have failed before `delight` existed and has to
+    # stay silent now that it does not.
+    m = Mesh()
+    m.verts = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)]
+    m.faces = [((0, 1, 2), None, "x")]
+    dark = oklab_to_srgb255(0.408, 0.01, 0.005)
+    m.vcolors = [dark, dark, dark]
+    bound, _hist, _worst = bind_vertex_colours(m, ramps)
+    if check_albedo_centre(bound, ramps):
+        out.append("regression: delight left a uniform L-0.408 field bound "
+                   "outside the authored range -- the shift regressed")
+    return out
+
+
 def check_transform(ramps=None) -> list[str]:
     """A full pass over a mesh that looks like something a generator emitted.
 
@@ -384,6 +457,164 @@ def check_transform(ramps=None) -> list[str]:
     return out
 
 
+# How coarsely vertex colours are grouped before binding. A generated mesh has
+# one colour per vertex and no two are alike, so binding each face's average
+# independently is a hundred thousand ramp searches. Rounding to a 5-bit cube
+# collapses that to a few thousand distinct keys with a quantization error of
+# about 0.004 in sRGB -- an order of magnitude below `MAX_BIND_DE`, and the
+# result is going onto a 37-colour palette regardless.
+COLOUR_BUCKET = 8
+
+# Every one of the thirty meshes in `assetlib` has an albedo median lightness
+# between 0.596 and 0.845 in OKLab L. Not most of them -- all of them, and
+# seventeen of the thirty sit on 0.600 exactly, because the library is authored
+# out of ramp middles. That is not a coincidence to be preserved for its own
+# sake; it is what "the renderer supplies the shading" means in numbers.
+ALBEDO_L_FLOOR = 0.596
+ALBEDO_L_CEIL = 0.845
+# The modal authored value, and the middle step of both `wood` and `neutral`.
+ALBEDO_L_TARGET = 0.600
+
+
+def delight(vcolors, target: float = ALBEDO_L_TARGET):
+    """Shift a reconstructed colour field back to albedo. Returns (colours, before).
+
+    A photograph is albedo times lighting and a reconstructor cannot separate
+    them, so TripoSR's vertex colours arrive with the concept image's key light
+    already multiplied in. Binding those to the palette and then rendering runs
+    the lighting twice: `bind_colour` picks the ramp step nearest the source's
+    lightness, so a lit ceramic pot is bound at the pot's *lit* value and then
+    lambert-shaded again on top. The first teapot through this seam came out a
+    near-black blob with the right silhouette.
+
+    What is corrected is the median and nothing else, because measurement says
+    only the median is wrong:
+
+        teapot field   L p50 0.408   p05-p95 band 0.481
+        authored props L p50 0.596-0.845  band 0.000-0.585
+
+    The band is comfortably inside the range thirty authored props occupy -- an
+    espresso machine is busier -- so compressing it would be destroying real
+    two-tone structure to fix a problem it does not have. The median is 0.188
+    below a floor that no authored prop goes near. So this is a shift, not a
+    normalisation, and the internal contrast the reconstructor recovered
+    survives it intact.
+
+    Clamping at the ends is the one nonlinearity, and it costs something: a
+    field whose top already sits near white loses separation up there. Measured
+    on the teapot the shift is +0.192 and p95 lands at 0.911, under the
+    palette's own 0.969 ceiling, so nothing clips. A field that does clip will
+    say so through `check_albedo_centre`, which reads the result rather than
+    the intent.
+    """
+    labs = [srgb_to_oklab(c) for c in vcolors]
+    Ls = sorted(l[0] for l in labs)
+    before = Ls[len(Ls) // 2]
+    shift = target - before
+    out = [oklab_to_srgb255(min(1.0, max(0.0, L + shift)), a, b)
+           for L, a, b in labs]
+    return out, before
+
+
+def check_albedo_centre(mesh: Mesh, ramps: dict) -> list[str]:
+    """Is the bound albedo where authored albedo lives?
+
+    Reads the materials a mesh actually ended up with, so it catches a bad
+    `delight` and a bad MTL by the same route, and it is the reading that turns
+    "the sprite looks wrong" into a number. The bracket is wide and measured:
+    a defect at 0.408 against a weakest known-good at 0.596.
+    """
+    Ls = []
+    for _, _, mat in mesh.faces:
+        if _is_palette(mat):
+            Ls.append(srgb_to_oklab(palette_rgb(mat, ramps))[0])
+    if not Ls:
+        return []
+    Ls.sort()
+    p50 = Ls[len(Ls) // 2]
+    if ALBEDO_L_FLOOR <= p50 <= ALBEDO_L_CEIL:
+        return []
+    side = "dark" if p50 < ALBEDO_L_FLOOR else "light"
+    return [f"bound albedo median L {p50:.3f} is too {side}; every authored "
+            f"prop lands in {ALBEDO_L_FLOOR:.3f}-{ALBEDO_L_CEIL:.3f}. A "
+            f"reconstructed colour field carries the concept image's lighting "
+            f"and has to be de-lit before binding, or the renderer shades it "
+            f"twice."]
+
+
+def bind_vertex_colours(mesh: Mesh, ramps: dict):
+    """Per-vertex colour -> a palette material per face.
+
+    This is the half of the seam that had never met a real generator. `ingest`
+    was written against an MTL full of arbitrary RGB, because that is what the
+    docstring predicted TRELLIS would emit. TripoSR emits neither MTL nor
+    `usemtl`: it writes colour on the vertices, and a reader that takes only
+    the first three floats of a `v` line turns a two-tone teapot into one
+    uniform material without failing anything.
+
+    A face gets the mean of its three vertices, which is what the rasteriser
+    would show at this scale anyway -- the pipeline flattens each triangle to
+    one ramp step, so per-vertex interpolation has nowhere to go.
+    """
+    cache, worst, table = {}, 0.0, {}
+    vcolors, before = delight(mesh.vcolors)
+    if abs(before - ALBEDO_L_TARGET) >= 0.02:
+        print(f"  de-lit: albedo median L {before:.3f} -> "
+              f"{ALBEDO_L_TARGET:.3f}")
+    out = Mesh()
+    out.verts = list(mesh.verts)
+    out.normals = list(mesh.normals)
+    out.vcolors = list(vcolors)
+    for tri, nrm, _ in mesh.faces:
+        rgb = tuple(sum(vcolors[i][k] for i in tri) // 3
+                    for k in range(3))
+        key = tuple(c // COLOUR_BUCKET for c in rgb)
+        if key not in cache:
+            cache[key] = bind_colour(rgb, ramps)
+        mat, de = cache[key]
+        worst = max(worst, de)
+        n, d = table.get(mat, (0, 0.0))
+        table[mat] = (n + 1, max(d, de))
+        out.faces.append((tri, nrm, mat))
+    return out, table, worst
+
+
+def mesh_geometry(mesh: Mesh) -> dict:
+    """Read footprint, height and anchor off an already-fit mesh's own bounds.
+
+    `fit()` returns this dict for the mesh it just built, in the same process.
+    A render happening later -- `render_batch --mesh out/mesh/teapot_bound.obj`
+    is a separate invocation loading a file off disk -- has no way to see that
+    dict, and re-deriving it from the mesh's bounds is exact rather than
+    approximate: `fit` centres a mesh on (0.5, 0.5) and rests it on z=0 by
+    construction, so those numbers are recoverable from any mesh that went
+    through it, not just the one still in memory.
+    """
+    xs = [v[0] for v in mesh.verts]
+    ys = [v[1] for v in mesh.verts]
+    zs = [v[2] for v in mesh.verts]
+    if not xs:
+        return {"height": 0.0, "footprint": 0.0, "footprint_xy": [0.0, 0.0],
+                "anchor": [0.5, 0.5, 0.0], "walkable": False}
+    fx, fy = max(xs) - min(xs), max(ys) - min(ys)
+    return {
+        "height": max(zs) - min(zs),
+        "footprint": max(fx, fy),
+        "footprint_xy": [fx, fy],
+        # Fixed by `fit()`'s own construction, not measured -- every ingested
+        # mesh is centred on its tile and rests on z=0, so this is the same
+        # tuple for anything that came through the seam.
+        "anchor": [0.5, 0.5, 0.0],
+        # Not a measurable geometric fact. Every subject this factory has
+        # produced is a physical object a customer would walk around, and
+        # `assets.yaml`'s own convention reserves `walkable` for the `floor`
+        # category (h: 0) exclusively -- so `False` is the correct default for
+        # every prop this seam has ever seen, not a placeholder standing in
+        # for a computation that belongs here later.
+        "walkable": False,
+    }
+
+
 def ingest(obj: Path | str, mtl: Path | str | None = None, up: str = "z",
            height: float | None = None, footprint: float | None = None):
     ramps = load_palette()
@@ -395,7 +626,26 @@ def ingest(obj: Path | str, mtl: Path | str | None = None, up: str = "z",
             colours = read_mtl(beside)
     mesh = orient(mesh, up)
     mesh, geom = fit(mesh, height, footprint)
+    geom["anchor"] = [0.5, 0.5, 0.0]
+    geom["walkable"] = False
+
+    # Vertex colours only when there is nothing better. An MTL names materials,
+    # and a name survives a rebind in a way an averaged triangle colour does
+    # not, so it wins wherever both exist.
+    if not colours and mesh.vcolors and len(mesh.vcolors) == len(mesh.verts):
+        mesh, hist, worst = bind_vertex_colours(mesh, ramps)
+        warns = []
+        if worst > MAX_BIND_DE:
+            warns.append(f"worst vertex-colour bind is dE {worst:.3f} "
+                         f"(limit {MAX_BIND_DE:.2f}) -- the palette does not "
+                         f"contain some of this mesh's colour, so that part "
+                         f"is replacement rather than representation")
+        table = sorted((m, f"{n} faces", d) for m, (n, d) in hist.items())
+        warns += check_albedo_centre(mesh, ramps)
+        return mesh, {"geometry": geom, "bindings": table, "warnings": warns}
+
     mesh, table, warns = rebind(mesh, colours, ramps)
+    warns += check_albedo_centre(mesh, ramps)
     return mesh, {"geometry": geom, "bindings": table, "warnings": warns}
 
 

@@ -247,6 +247,13 @@ def main() -> int:
     ap.add_argument("--only", default=None, help="one character by name")
     ap.add_argument("--fx", action="store_true", help="also render effects")
     ap.add_argument("--fx-only", action="store_true", help="effects only")
+    # The point of the whole pipeline, expressed as an integer. Extras are not
+    # written down anywhere: `generate_spec` proposes one and tests it against
+    # the promoted character checks until it passes, so `--extras 40` costs
+    # exactly as much thought as `--extras 0` and forty times the render.
+    ap.add_argument("--extras", type=int, default=0,
+                    help="also emit N generated extras")
+    ap.add_argument("--extras-seed", type=int, default=1)
     args = ap.parse_args()
 
     ramps = load_palette()
@@ -264,6 +271,9 @@ def main() -> int:
                      ("leave", 8)],
     }
     roster = [(C.BARISTA, "barista")] + [(s, "customer") for s in C.CUSTOMERS]
+    if args.extras:
+        roster += [(s, "customer") for s in
+                   C.generate_roster(args.extras, args.extras_seed, ramps)]
     if args.fx_only:
         roster = []
     if args.only:

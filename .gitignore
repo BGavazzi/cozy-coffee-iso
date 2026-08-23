@@ -7,3 +7,6 @@ __pycache__/
 .venv/
 venv/
 sprites/
+
+# vendored upstream checkouts (see tools/lift.py)
+vendor/

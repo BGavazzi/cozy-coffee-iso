@@ -247,6 +247,72 @@ def check_silhouette(px, w, h) -> list[Finding]:
     return out
 
 
+# Bracketed on measurement, and the bracket is unusually comfortable. Over ten
+# authored props at eight directions each, isolated-pixel share runs 0.0002 to
+# 0.0201 by median and never exceeds 0.0615 on a single frame -- the worst
+# offender being a pastry case, whose glass is meant to be busy. Three props
+# lifted through TripoSR read 0.045 (kettle, good), 0.078 (teapot, acceptable)
+# and 0.153 (basket, rejected on sight: a salt-and-pepper storm where a weave
+# texture was reconstructed as per-vertex colour noise).
+#
+# So the floor sits between the weakest thing worth keeping, at 0.084, and the
+# best frame of the thing that is not, at 0.127. Authored art is an order of
+# magnitude below it and cannot trip it.
+MAX_ISOLATED = 0.105
+
+
+def check_speckle(px, w, h) -> list[Finding]:
+    """Pixels that match none of their four neighbours.
+
+    A reconstructor hands back per-vertex colour that carries the concept
+    image's *texture* as well as its albedo, and texture at 64 px is noise.
+    Quantizing it to a 37-colour palette does not average it away -- it sharpens
+    it, because every noisy sample snaps to some step and neighbouring samples
+    snap to different ones.
+
+    Measured on colour rather than on lightness, because the failure is
+    cross-ramp: the basket's speckle alternates dark `wood` and pale `cream`,
+    which a lightness metric would report as ordinary contrast.
+
+    This is deliberately not `check_grid` run backwards. `check_grid` asks
+    whether the art is secretly upscaled, which is a question about block
+    structure; this asks whether any structure survived at all.
+    """
+    tot = iso = 0
+    for y in range(h):
+        row = y * w
+        for x in range(w):
+            c = px[row + x]
+            if c[3] == 0:
+                continue
+            tot += 1
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                u, v = x + dx, y + dy
+                if 0 <= u < w and 0 <= v < h:
+                    o = px[v * w + u]
+                    if o[3] and o[:3] == c[:3]:
+                        break
+            else:
+                iso += 1
+    if not tot:
+        return []
+    share = iso / tot
+    if share <= MAX_ISOLATED:
+        return []
+    return [Finding(
+        BLOCKER, "speckle",
+        f"{share:.1%} of opaque pixels match none of their four neighbours "
+        f"(authored art measures under 6.2% on its busiest frame)",
+        "Nothing at this resolution is legible as single scattered pixels. "
+        "The cause is sub-pixel detail in the source -- a reconstructor turns "
+        "a woven or grained surface into displaced geometry and noisy "
+        "per-vertex colour, and one 64px pixel covers hundreds of triangles "
+        "of it. There is no render setting that fixes this: three were "
+        "measured and none moved the number. Reject the mesh, or ask stage 1 "
+        "for a subject whose surface is smooth at this scale.",
+    )]
+
+
 CHECKS_NEEDING_PALETTE = True
 
 
@@ -262,6 +328,7 @@ def review(path: Path, by_rgb, ramps, entries) -> list[Finding]:
     findings += check_extremes(px)
     findings += check_light_direction(px, w, h)
     findings += check_silhouette(px, w, h)
+    findings += check_speckle(px, w, h)
     findings.sort(key=lambda f: ORDER[f["severity"]])
     return findings
 
@@ -372,7 +439,60 @@ def check_member_thickness(mesh, name="asset", ppu=ROOM_PX_PER_UNIT,
 # Every relaxed floor carries the reason it is relaxed, the same role
 # `ACCEPTED_BURIAL` plays for occlusion -- an unexplained loosened threshold is
 # how a ratchet turns back into decoration.
-DEFAULT_SPREAD_FLOOR = 0.12
+# The SECONDARY of the two range floors, and it was blind at 0.12. Degrading a
+# bookshelf to emit only N distinct meshes from eight seeds:
+#
+#     distinct   mean    closest    floor .12   floor .15   pair floor
+#         1      0.0%     0.0%        fail        fail        fail
+#         2     10.8%     0.0%        fail        fail        fail
+#         3     14.1%     0.0%        PASS        fail        fail
+#         4     16.3%     0.0%        PASS        PASS        fail
+#         8     18.4%    15.9%        PASS        PASS        PASS
+#
+# A generator that has lost HALF its range sails through both mean floors and
+# is caught only by the closest pair, which has been reporting 0.0% since the
+# second row. For the realistic failure mode -- a generator repeating itself --
+# the mean is strictly the weaker instrument, and at 0.12 it did not fire until
+# six of eight seeds collided.
+#
+# It is kept rather than deleted because it catches the OTHER mode, which the
+# closest pair cannot see: a generator whose every instance differs a little
+# and none differs much. Retuned to 0.15, three points under the weakest real
+# generator (bookshelf, 18%), so that it is at least able to fire.
+#
+# NEXT.md B3 asked whether this floor has ever rejected anything the closest
+# pair did not also reject, on the theory that "never fired" might mean
+# "redundant" rather than "the library is healthy." It has never fired on any
+# library member -- true, and not the same question. Constructed instead: 2000
+# synthetic pixels, 8 seeds, each an independent 7% random flip from a shared
+# base (uniform noise, no near-duplicates, no clustering -- exactly the
+# "differs a little, none differs much" failure this floor was written for).
+# Measured mean 13.0%, closest pair 12.3%: the mean floor fires, the closest-
+# pair floor does not. That is the two floors disagreeing on a case built to
+# separate them, which a redundant floor cannot do by definition. The current
+# library has never tripped it because nothing in it is that regression, which
+# is the outcome a working floor is supposed to produce, not a case against it.
+DEFAULT_SPREAD_FLOOR = 0.15
+
+# How different the two most similar instances of one generator must be.
+# Bracketed by measurement, as the cast floor is: the defects it was calibrated
+# against were 0.000 (espresso_machine), 0.003 (table_4top) and 0.029
+# (table_round), and the weakest generator once those were fixed is 5.2%.
+# Generators with their own `own` floor are exempt -- the counter's modules are
+# meant to tile flush and two identical ones are the point.
+CLOSEST_PAIR_FLOOR = 0.045
+
+
+def _pair_disagreement(a, b) -> float:
+    """Share of covered pixels where two frames resolve to different materials."""
+    union = differ = 0
+    for x, y in zip(a, b):
+        if x is None and y is None:
+            continue
+        union += 1
+        if x != y:
+            differ += 1
+    return differ / (union or 1)
 
 GENERATORS = (
     ("table_round", lambda A, s: A.table_round(seed=s), 1.7, None, ""),
@@ -381,6 +501,14 @@ GENERATORS = (
     ("plant_large", lambda A, s: A.plant_large(seed=s), 1.7, None, ""),
     ("plant_small", lambda A, s: A.plant_small(seed=s), 1.1, None, ""),
     ("bookshelf", lambda A, s: A.bookshelf(seed=s), 1.9, None, ""),
+    ("crate", lambda A, s: A.crate(seed=s), 1.1, None, ""),
+    ("basket", lambda A, s: A.basket(seed=s), 0.9, None, ""),
+    ("flower_vase", lambda A, s: A.flower_vase(seed=s), 0.9, None, ""),
+    ("stool", lambda A, s: A.stool(seed=s), 1.0, None, ""),
+    ("armchair", lambda A, s: A.armchair(seed=s), 1.5, None, ""),
+    ("bench", lambda A, s: A.bench(2.0, seed=s), 2.6, None, ""),
+    ("espresso_machine", lambda A, s: A.espresso_machine(seed=s), 2.4, None, ""),
+    ("pastry_case", lambda A, s: A.pastry_case(seed=s), 2.4, None, ""),
     ("counter", lambda A, s: A.counter(seed=s), 1.5, 0.04,
      "a fitted module, whose front is one of three faces this camera sees and "
      "whose style table is deliberately weighted toward plain; the seed has to "
@@ -462,8 +590,54 @@ def _screen_spread(frames: list) -> float:
     return total / len(pairs)
 
 
+def check_spread_floor_regression() -> list[str]:
+    """Prove `DEFAULT_SPREAD_FLOOR` and `CLOSEST_PAIR_FLOOR` are not redundant.
+
+    Neither floor has ever fired on the current library, which raises an honest
+    question: is the mean floor doing anything the closest-pair floor is not?
+    "Never fired" is not evidence either way -- it is equally consistent with
+    "redundant" and with "the library is healthy." This settles it by
+    construction rather than by hoping a real generator eventually regresses.
+
+    A synthetic generator stands in: 2000 pixels, 8 seeds, each an independent
+    7% random flip from a shared base. No two seeds are near-duplicates and no
+    seed strays far from the rest -- uniform noise, which is exactly the
+    "differs a little, none differs much" failure the mean floor was written
+    for and the closest-pair floor structurally cannot see. Measured once,
+    off-suite: mean 13.0%, closest pair 12.3%. Fixed with `random.seed` here so
+    the assertion does not depend on redrawing that exact result.
+    """
+    import random
+    rng = random.Random(7)
+    n = 2000
+    frames = []
+    for _ in range(8):
+        f = ["wood"] * n
+        for i in rng.sample(range(n), int(n * 0.07)):
+            f[i] = "cream"
+        frames.append(f)
+    mean = _screen_spread(frames)
+    lo = min(_pair_disagreement(frames[i], frames[j])
+             for i in range(len(frames)) for j in range(i + 1, len(frames)))
+    out = []
+    if mean >= DEFAULT_SPREAD_FLOOR:
+        out.append(f"regression: uniform-noise fixture measured mean "
+                   f"{mean:.1%}, expected below the {DEFAULT_SPREAD_FLOOR:.0%} "
+                   f"floor -- the fixture drifted, re-measure it")
+    if lo < CLOSEST_PAIR_FLOOR:
+        out.append(f"regression: uniform-noise fixture measured closest pair "
+                   f"{lo:.1%}, expected above the {CLOSEST_PAIR_FLOOR:.0%} "
+                   f"floor -- the fixture drifted, re-measure it")
+    if not out and not (mean < DEFAULT_SPREAD_FLOOR and lo >= CLOSEST_PAIR_FLOOR):
+        out.append("regression: the mean and closest-pair floors no longer "
+                   "disagree on the uniform-noise case -- the mean floor may "
+                   "have become redundant")
+    return out
+
+
 def check_generator_range(seeds: int = 8, azimuth: float = 45.0,
-                          floor: float = DEFAULT_SPREAD_FLOOR) -> list[str]:
+                          floor: float = DEFAULT_SPREAD_FLOOR,
+                          pair_floor: float = CLOSEST_PAIR_FLOOR) -> list[str]:
     """Do the seeded generators actually generate different shapes?
 
     A generator can rot in a way nothing else here notices. Add a base style
@@ -488,12 +662,30 @@ def check_generator_range(seeds: int = 8, azimuth: float = 45.0,
     out = []
     for name, factory, span, own, why in GENERATORS:
         bar = floor if own is None else own
-        spread = _screen_spread([screen_materials(factory(A, s + 1), azimuth,
-                                                  span) for s in range(seeds)])
+        frames = [screen_materials(factory(A, s + 1), azimuth, span)
+                  for s in range(seeds)]
+        spread = _screen_spread(frames)
         if spread < bar:
             out.append(f"{name}: screen spread {spread:.0%} over {seeds} seeds "
                        f"(floor {bar:.0%}{'; ' + why if why else ''}) -- the "
                        f"seed is barely changing the shape")
+        # And the CLOSEST pair, which is the question the mean cannot answer.
+        # `check_cast_silhouette` has graded people this way from the start --
+        # a cast is only as varied as its most similar two -- and the
+        # generators were still being graded on an average. The average hid
+        # exactly what it exists to catch: `espresso_machine` averaged 33%
+        # spread while two of its eight seeds rendered PIXEL-IDENTICAL, and
+        # `table_4top` averaged 30% with a closest pair of 0.3%. Those are the
+        # instances a player actually compares, because four chairs round one
+        # table come from four consecutive seeds.
+        if pair_floor > 0.0 and own is None:
+            lo = min(_pair_disagreement(frames[i], frames[j])
+                     for i in range(len(frames))
+                     for j in range(i + 1, len(frames)))
+            if lo < pair_floor:
+                out.append(f"{name}: closest pair of {seeds} seeds differs by "
+                           f"only {lo:.1%} (floor {pair_floor:.0%}) -- the "
+                           f"generator moves on average and repeats itself")
     return out
 
 

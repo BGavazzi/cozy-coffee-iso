@@ -23,17 +23,44 @@ which is the point.
     python tools/animate.py --fx         # the deliverable: sheets + atlas.json
     python tools/render_room.py          # whole-shop composite (integration test)
 
+    # generated rooms -- the plan is proposed and checked, then filled
+    python tools/preview_plans.py                 # plans, top-down, walkable floor shaded
+    python tools/build_plan.py --seed 1           # render one, end to end
+
     # review surfaces -- what a human actually looks at
     python tools/preview_clips.py --who barista   # clip strips + looping GIFs
     python tools/preview_characters.py            # roster + 8 directions
+    python tools/preview_generators.py            # 16 generators x 8 seeds
     python tools/review_queue.py build "sprites/*.png"
     # fill verdict + reason in review/verdicts.jsonl
     python tools/review_queue.py stats            # what to automate next
 
     # the gates
-    python tools/manifest.py --check     # runs all fourteen checks
+    python tools/manifest.py --check     # runs all twenty-six checks
+    python tools/build_plan.py --focal-scan 12   # slower gate: 12 whole rooms,
+                                                 # currently 0 of 12 failing
     python tools/character.py            # hair contrast, palette spread, silhouette floor
     python tools/fx.py                   # loop seams
+
+## What to look at
+
+| | |
+|---|---|
+| `proof/shop.png`, `proof/shop_big.png` | the hand-authored reference room |
+| `proof/plan_room.png` | a room generated end to end from a checked plan |
+| `proof/plan_room_lrun.png` | the same, with an L-shaped counter |
+| `proof/plan_room_peninsula.png` | the same, counter jutting in from a wall |
+| `proof/plan_room_island.png` | the same, counter free-standing, walls all glass |
+| `proof/plan_room_stools.png` | a window bar with people perched at it |
+| `proof/floorplans.png` | twelve plans, top-down, walkable floor shaded, topology labelled |
+| `proof/generators.png` | every generator, eight seeds each, spread measured |
+| `proof/characters.png` | roster, eight directions, and generated extras |
+| `ART_CRITIQUE.md` | what was rejected, why, and what became a check |
+
+The reference room is still the better room. It holds seven passes of judgement
+that no rule encodes — why the queue runs across the view rather than into it,
+why the crates go against the far walls. What the generator has is that it can
+make a different cafe, and that every one it makes clears twenty-six checks.
 
 ## The loop is a ratchet
 
@@ -41,11 +68,30 @@ Every human rejection carries a reason. Reasons that recur get promoted into the
 automated tier, so **human review volume falls as the factory matures**. `stats`
 names the next check to write rather than leaving it to guesswork.
 
-Fourteen checks have been promoted so far: camera-space key light, hair/skin
-contrast, per-character palette spread, silhouette pixel floor, seating
-orientation, member thickness, grounding, declared-symmetry verification,
-screen-space occlusion, buried detail, derived direction labels, generator
-range, palette-binding round trip, and ingest transform. Most found a bug the moment they were written — floating counters,
+Twenty-four checks have been promoted so far: camera-space key light, hair/skin
+contrast, per-character palette spread, waistline separation, silhouette pixel
+floor, seating orientation, member thickness, grounding, declared-symmetry
+verification, screen-space occlusion, buried detail, derived direction labels,
+generator range, generated-spec conformance, roster variety, cast silhouette,
+accessory distinguishability, palette-binding round trip, ingest transform,
+floor-plan conformance, floor-plan range, built-room conformance, focal
+contrast, and window-bar occupancy.
+
+The last one asks something none of the others do: not whether the room is
+correct but whether it is *inhabited*. It exists because perching switched
+itself off for several commits without failing anything — the stools were
+placed, the rig worked, and the rooms just had nobody at the bar. A feature
+that silently switches off looks identical to a feature that had nothing to do.
+
+Focal contrast is the only check that looks at the picture rather than the
+geometry: it renders whole rooms and asks whether the counter still owns the
+frame. It is also the one that caught the instrument being tuned to the answer.
+Committed at a render size of 160 because one seed read the same there as at
+240, it turned out that no other seed did — the reference room holds +0.133
+from 320 to 480 while a generated room fell from +0.084 to +0.014. Mean
+brightness was stable at every size and would have kept the check green;
+picking it would have been choosing the measurement that agreed with the
+conclusion already written down. Most found a bug the moment they were written — floating counters,
 back-to-front chairs, five wrong symmetry claims costing 31% of the effects
 budget, a queue of customers stacked into a single smear, an espresso machine
 whose entire mechanism was modelled inside its own carcass, and eight sprite
@@ -61,13 +107,56 @@ different silhouettes. Its first version counted *distinct* silhouettes and
 scored a perfect 8 of 8 for generators the eye read as a single object, because
 distinctness is a threshold at one pixel. It measures distance now.
 
-The last two guard the seam where stages 1–3 will attach — `ingest.py`, which
-binds an arbitrary mesh to the palette and the tile grid. Nothing feeds it yet,
-which is precisely why it needs checks: an adapter that is never exercised is an
-adapter that is wrong by the time something arrives. Both were verified to fail
-before being trusted, and one of them needed an instrument the other four
-assertions could not provide, because a mirrored mesh has the same bounds, the
-same height and the same materials as the original.
+The last two guard the seam where stages 1–3 attach — `ingest.py`, which binds
+an arbitrary mesh to the palette and the tile grid. They were written while
+nothing fed it, which is precisely why it needed checks: an adapter that is
+never exercised is an adapter that is wrong by the time something arrives. Both
+were verified to fail before being trusted, and one of them needed an
+instrument the other four assertions could not provide, because a mirrored mesh
+has the same bounds, the same height and the same materials as the original.
+
+**Something feeds it now.** `tools/concept.py` runs SDXL on the local card and
+gates the result on segmentation fitness; `tools/lift.py` reconstructs a mesh
+from it. Three subjects have gone end to end — concept, mesh, palette bind,
+eight sprites, auto-review — and the seam paid for itself immediately. The
+first mesh through it rendered as a nine-pixel dot (caught) and then as a
+near-black blob (not caught, and now `check_albedo_centre`), because a
+reconstructed colour field carries the concept image's lighting and the
+renderer was applying the key twice. See `PIPELINE.md` and the ninth pass of
+`ART_CRITIQUE.md`.
+
+The newest one came from the machine rather than from a person, which is the
+loop closing. `generate_spec` proposes a character and tests it against the
+checks until it passes — the same move `Layout.scatter` made with the placement
+checks, applied to what this factory actually exists to produce. Looking at the
+first sheet of generated extras showed one whose shirt and trousers landed on
+the same value, so the figure had no waist. `check_palette_spread` counts
+*ramps* and cannot see that; `check_waistline` was written, and it immediately
+failed two of the nine hand-written archetypes. `elder` had shipped with a wood
+shirt 0.004 in value from neutral trousers.
+
+Then the same argument one level up. Those three checks are all predicates on
+*one* spec, and a generator satisfying all three forty times can still return
+forty variations of one person — each individually legal, collectively a crowd
+with one extra in it. `check_roster_variety` measures the **minimum** pairwise
+distance, not the mean, because the mean is dominated by the pairs that are
+already fine and a player notices the two that collide. Its floor was guessed
+at 20% and would never have fired; measured, the hand roster's closest pair is
+45% and twenty generated extras' is 48%, so it sits at 38% — under the evidence
+rather than at it. The generated cast turned out to be *more* varied at its
+closest pair than the one a person wrote.
+
+The sprite factory takes them directly:
+
+    python tools/animate.py --extras 40
+
+Forty extras cost exactly as much thought as zero and forty times the render —
+12,800 additional frames, none of them written down anywhere. That sentence is
+the entire claim this repo makes, and it is now a flag rather than a plan.
+
+`sprites/` is generated output and is not in the repo — run `animate.py` to
+build it. The default is the nine-character roster the reference room uses;
+`--extras` is additive on top.
 
 Its floor is per-generator, and every relaxed one carries the reason it is
 relaxed. A single number is the wrong shape here: the default catches a

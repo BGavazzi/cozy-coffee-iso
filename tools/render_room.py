@@ -101,12 +101,10 @@ def build_room():
         # which reads as a showroom. The generator is right either
         # way; choosing where a run starts is the room's job.
         add(A.counter(seed=4 + i), at=(2.0 + i, 0.85, 0), name=f"counter#{i}")
-    add(A.espresso_machine(), at=(2.3, 0.95, 0.92), name="prop#espresso")
     add(A.grinder(),          at=(4.4, 0.95, 0.92), name="prop#grinder")
     add(A.register(),         at=(6.3, 0.95, 0.92), name="prop#register")
     add(A.plant_small(seed=21), at=(7.15, 0.95, 0.92), name="prop#plant")
     add(A.table_clutter("counter"), at=(5.35, 0.95, 0.92), name="clutter#counter")
-    add(A.pastry_case(), at=(2.2, 2.05, 0), name="prop#pastry")
     # Menu boards hang ABOVE the counter-top props, not level with them. At
     # z=0 the board spans 0.55-1.30 and the espresso machine on the counter
     # spans 0.92-1.52 -- the same screen band, one tile apart in depth, so the
@@ -118,6 +116,14 @@ def build_room():
     # Tiles 2 and 3 are solid and sit directly above the counter run.
     for mx in (2.15, 3.05):
         add(A.menu_board(), at=(mx, 0.04, 0.62), name=f"decor#menu{mx}")
+    # And the machine goes in after the boards it hangs beneath, for the same
+    # reason the pastry case goes in after the crates: `add_seeded` can only
+    # solve against what is already in the room. Seeding the machine gave it an
+    # optional raised back panel, and the first seed with one covered 41% of a
+    # menu board -- caught by the check, then avoided by the solver rather than
+    # by a person reading the check's output and typing a different number.
+    L.add_seeded(lambda k: A.espresso_machine(seed=k), range(1, 12),
+                 at=(2.3, 0.95, 0.92), name="prop#espresso")
 
     # --- cafe tables, chairs on all four sides
     # Painted seating, cycling through the ramps that were starved of frame.
@@ -157,16 +163,29 @@ def build_room():
     for i in range(3):
         add(A.counter(kick=False, seed=1 + i, front="x"),
             at=(0.45, 5.3 + i * 1.5, 0), name=f"bar#{i}")
-        add(A.stool(), at=(1.70, 5.3 + i * 1.5, 0), name=f"stool#{i}")
+        add(A.stool(seed=91 + i), at=(1.70, 5.3 + i * 1.5, 0), name=f"stool#{i}")
 
     # --- dressing
     add(A.plant_large(seed=3), at=(0.5, 3.2, 0),  name="decor#plant1")
     add(A.plant_large(seed=8), at=(12.5, 1.0, 0), name="decor#plant2")
     add(A.plant_large(seed=15), at=(7.1, 4.2, 0),  name="decor#plant3")
     add(A.bookshelf(seed=4), at=(9.9, 0.25, 0), name="decor#shelf")
-    add(A.crate(), at=(0.55, 1.15, 0),      name="decor#crate1")
-    add(A.crate(), at=(0.55, 1.15, 0.52),   name="decor#crate2")
-    add(A.crate(), at=(13.15, 1.9, 0),      name="decor#crate3")
+    add(A.crate(seed=11), at=(0.55, 1.15, 0),   name="decor#crate1")
+    add(A.crate(seed=12), at=(0.55, 1.15, A.crate(seed=11).top_z),
+        name="decor#crate2")
+    add(A.crate(seed=13), at=(13.15, 1.9, 0),   name="decor#crate3")
+    # The case is placed HERE, after the crates, and not up with the counter
+    # props it belongs to. `add_seeded` solves against what is already in the
+    # room, so a prop that has to clear its neighbours has to be added after
+    # them -- the same reason `scatter` runs last. Placed with the counter it
+    # would have found an empty corner and taken the first seed.
+    #
+    # Nudged left by 0.3 when `reader`'s scarf grew: the scarf had been
+    # measuring zero pixels of silhouette, so widening it to something a person
+    # is actually wearing pushed the seated figure over the 35% occlusion floor
+    # against the case two tiles behind it.
+    L.add_seeded(lambda k: A.pastry_case(seed=k), range(1, 12),
+                 at=(1.9, 2.05, 0), name="prop#pastry")
     for lx, ly in ((4.6, 5.0), (6.6, 7.6), (9.9, 4.5)):
         add(A.pendant_lamp(), at=(lx - 0.5, ly - 0.5, 0.60), name=f"decor#lamp{lx}",
             track=False)
@@ -184,15 +203,19 @@ def build_room():
     # smaller voids at x3-4/y7-9 and x8-9/y7-9. Each cluster below targets one
     # of them; a room reads as under-dressed long before it reads as under-lit.
     add(A.rug(3.0, 2.3, "wood"), at=(3.6, 7.1, 0), name="floor#rug3", track=False)
-    add(A.armchair(),   at=(4.4, 7.6, 0), rot=205, name="seat#arm1", centre=True)
-    add(A.armchair(),   at=(4.7, 9.0, 0), rot=25,  name="seat#arm2", centre=True)
+    L.add_seeded(lambda k: A.armchair(seed=k), range(5, 16), at=(4.4, 7.6, 0),
+                 rot=205, name="seat#arm1", centre=True)
+    L.add_seeded(lambda k: A.armchair(seed=k), range(9, 20), at=(4.7, 9.0, 0),
+                 rot=25, name="seat#arm2", centre=True)
     add(A.side_table(), at=(3.4, 9.1, 0),          name="table#side1", centre=True)
-    add(A.flower_vase(), at=(3.4, 9.1, 0.53),      name="clutter#vase1", centre=True)
+    add(A.flower_vase(seed=21), at=(3.4, 9.1, 0.53), name="clutter#vase1", centre=True)
 
-    add(A.bench(2.0),   at=(12.6, 3.6, 0), rot=0,  name="seat#bench1", centre=True)
+    L.add_seeded(lambda k: A.bench(2.0, seed=k), range(4, 15), at=(12.6, 3.6, 0),
+                 rot=0, name="seat#bench1", centre=True)
     add(A.side_table(), at=(12.5, 4.8, 0),         name="table#side2", centre=True)
-    add(A.armchair(),   at=(12.5, 5.9, 0), rot=180, name="seat#arm3", centre=True)
-    add(A.basket("foliage"), at=(13.3, 5.6, 0),    name="decor#basket1", centre=True)
+    L.add_seeded(lambda k: A.armchair(seed=k), range(2, 13), at=(12.5, 5.9, 0),
+                 rot=180, name="seat#arm3", centre=True)
+    add(A.basket("foliage", seed=31), at=(13.3, 5.6, 0), name="decor#basket1", centre=True)
 
     # Against the left wall, not mid-floor. A free-standing rack at (8.5, 8.4)
     # projected straight over a chair 1.9 tiles behind it and hid 67% of it --
@@ -213,7 +236,7 @@ def build_room():
     add(A.cake_stand(), at=(5.55, 0.95, 0.92), name="clutter#cake", centre=True)
     add(A.cup_and_saucer(), at=(5.6, 0.72, 0.92), name="clutter#cup1")
     add(A.cup_and_saucer(), at=(5.05, 1.15, 0.92), name="clutter#cup2")
-    add(A.flower_vase(),    at=(7.6, 0.95, 0.92), name="clutter#vase2", centre=True)
+    add(A.flower_vase(seed=22), at=(7.6, 0.95, 0.92), name="clutter#vase2", centre=True)
 
     # --- generated dressing
     #
@@ -234,19 +257,20 @@ def build_room():
     # count is small and the regions are tight. The small props carry the
     # density instead.
     made = 0
-    made += L.scatter(lambda i: A.crate(), (0.55, 1.7, 1.35, 4.4), 3,
+    made += L.scatter(lambda i: A.crate(seed=140 + i), (0.55, 1.7, 1.35, 4.4), 3,
                       "decor#gcrate", seed=11)
-    made += L.scatter(lambda i: A.basket("foliage"), (8.7, 0.35, 11.2, 1.15), 4,
+    made += L.scatter(lambda i: A.basket("foliage", seed=150 + i),
+                      (8.7, 0.35, 11.2, 1.15), 4,
                       "decor#gbasket", seed=12)
     made += L.scatter(lambda i: A.plant_small(seed=40 + i), (0.5, 0.45, 13.4, 1.55), 6,
                       "decor#gplantN", seed=13)
     made += L.scatter(lambda i: A.plant_small(seed=70 + i), (0.45, 1.6, 1.55, 9.3), 5,
                       "decor#gplantW", seed=18)
-    made += L.scatter(lambda i: A.basket("rose"), (11.8, 1.6, 13.3, 3.6), 3,
+    made += L.scatter(lambda i: A.basket("rose", seed=160 + i), (11.8, 1.6, 13.3, 3.6), 3,
                       "decor#gbasket2", seed=14)
     made += L.scatter(lambda i: A.cup_and_saucer(), (2.1, 0.6, 7.9, 1.3), 6,
                       "clutter#gcup", z=0.92, seed=16)
-    made += L.scatter(lambda i: A.flower_vase(), (0.5, 5.2, 1.4, 8.5), 3,
+    made += L.scatter(lambda i: A.flower_vase(seed=170 + i), (0.5, 5.2, 1.4, 8.5), 3,
                       "clutter#gvase", z=0.82, seed=17)
     print(f"  generated dressing: {made} props placed by constraint")
 
@@ -273,7 +297,55 @@ def build_room():
 FOCAL_BOX = ((2.0, 8.0), (0.06, 1.30), (0.0, 1.50))
 
 
-def focal_report(px, target, cam, centre, span):
+def _convex_hull(pts):
+    """Monotone chain, counter-clockwise in pixel coordinates."""
+    P = sorted(set(pts))
+    if len(P) < 3:
+        return P
+
+    def half(P):
+        h = []
+        for q in P:
+            while len(h) >= 2 and ((h[-1][0] - h[-2][0]) * (q[1] - h[-2][1])
+                                   - (h[-1][1] - h[-2][1])
+                                   * (q[0] - h[-2][0])) <= 0:
+                h.pop()
+            h.append(q)
+        return h
+
+    return half(P)[:-1] + half(P[::-1])[:-1]
+
+
+def _in_hull(hull):
+    """A point-in-convex-polygon test, precomputed into edge half-planes.
+
+    Called once per pixel of the frame, so the edges are hoisted out and the
+    sign test is a bare cross product.
+
+    The winding is read off the hull's own signed area rather than assumed.
+    Pixel coordinates flip y, so a chain that is counter-clockwise in world
+    space comes out clockwise here, and hard-coding the sign reported "only 0
+    px inside the projected hull" -- the whole frame classified as outside.
+    """
+    edges = [(hull[i][0], hull[i][1],
+              hull[(i + 1) % len(hull)][0] - hull[i][0],
+              hull[(i + 1) % len(hull)][1] - hull[i][1])
+             for i in range(len(hull))]
+    area2 = sum(hull[i][0] * hull[(i + 1) % len(hull)][1]
+                - hull[(i + 1) % len(hull)][0] * hull[i][1]
+                for i in range(len(hull)))
+    sign = 1.0 if area2 >= 0 else -1.0
+
+    def inside(x, y):
+        for ex, ey, dx, dy in edges:
+            if sign * (dx * (y - ey) - dy * (x - ex)) < 0:
+                return False
+        return True
+
+    return inside
+
+
+def focal_report(px, target, cam, centre, span, box=None):
     """Does the interaction zone actually read as the focal point?
 
     Measured against the frame, not in the abstract: a focal zone has to be
@@ -284,7 +356,7 @@ def focal_report(px, target, cam, centre, span):
     corner.
     """
     from oklab import srgb_to_oklab
-    (ax, bx), (ay, by), (az, bz) = FOCAL_BOX
+    (ax, bx), (ay, by), (az, bz) = box or FOCAL_BOX
     us, vs = [], []
     for x in (ax, bx):
         for y in (ay, by):
@@ -300,10 +372,17 @@ def focal_report(px, target, cam, centre, span):
         return ((u / span * 0.5 + 0.5) * target,
                 (0.5 - v / span * 0.5) * target)
     pts = [to_px(u, v) for u, v in zip(us, vs)]
-    fx0 = int(max(0, min(p[0] for p in pts)))
-    fx1 = int(min(target, max(p[0] for p in pts)))
-    fy0 = int(max(0, min(p[1] for p in pts)))
-    fy1 = int(min(target, max(p[1] for p in pts)))
+
+    # The eight corners of a world-space box project to a HEXAGON, not to a
+    # rectangle, and taking their axis-aligned bounding box was grading a
+    # region that is only 51-64% counter -- measured, per plan, over twelve
+    # rooms. The rest is floor in front and wall behind, which is exactly the
+    # "elsewhere" the focal zone is supposed to be brighter than. Averaging a
+    # third of the background into the foreground reading does not bias the
+    # answer in a known direction; it just makes the instrument deaf, and the
+    # first sign of that was a contrast floor that had to be set NEGATIVE to
+    # let real rooms through.
+    hull = _convex_hull(pts)
 
     w = target
     def stats(pred):
@@ -315,12 +394,12 @@ def focal_report(px, target, cam, centre, span):
         return (sum(Ls) / len(Ls),
                 Ls[int(len(Ls) * 0.95)] - Ls[int(len(Ls) * 0.05)])
 
-    inside = lambda x, y: fx0 <= x <= fx1 and fy0 <= y <= fy1   # noqa: E731
+    inside = _in_hull(hull)
     n_in = sum(1 for i, c in enumerate(px)
                if c is not None and inside(i % w, i // w))
     if n_in < 200:
-        print(f"  focal zone: only {n_in} px in the box "
-              f"({fx0}..{fx1}, {fy0}..{fy1}) - projection is wrong")
+        print(f"  focal zone: only {n_in} px inside the projected hull "
+              f"- projection is wrong")
         return
     cm, cc = stats(inside)
     om, oc = stats(lambda x, y: not inside(x, y))
@@ -329,6 +408,30 @@ def focal_report(px, target, cam, centre, span):
           f"({cm - om:+.3f})")
     print(f"                                contrast {cc:.3f} vs {oc:.3f} "
           f"({cc - oc:+.3f})   {'reads as the centre' if ok else 'DOES NOT lead the eye'}")
+
+    # Detail, as material transitions per horizontal pixel pair. Reported from
+    # the same buffer as the two above because it answers a question neither
+    # of them can: brightness and percentile spread both move when the LIGHT
+    # moves, and this does not -- a deliberately broken rig shifts it by at
+    # most 0.012 in any room. So it grades the composition rather than the
+    # exposure, and it is continuous over ~50 000 pixels where contrast is a
+    # percentile over 37 quantized levels.
+    ein = etot = eout = eotot = 0
+    for i, c in enumerate(px):
+        if c is None or (i % w) + 1 >= w:
+            continue
+        r = px[i + 1]
+        if r is None:
+            continue
+        if inside(i % w, i // w):
+            etot += 1
+            ein += (c != r)
+        else:
+            eotot += 1
+            eout += (c != r)
+    di, do = ein / max(1, etot), eout / max(1, eotot)
+    print(f"                                detail {di:.3f} vs {do:.3f} "
+          f"({di - do:+.3f})")
 
 
 def frame(mesh, cam, target_px, margin=0.04):
@@ -380,29 +483,45 @@ def main() -> int:
             print(f"    {h}")
     else:
         print("  nothing is buried behind anything")
+    render(L, light_rig(), args.target, Path(args.out),
+           factor=args.factor, azimuth=args.azimuth,
+           shadows=not args.no_shadows)
+    return 0
+
+
+def render(L, rig, target: int, out: Path, factor: int = 3,
+           azimuth: float = 45.0, shadows: bool = True, wear=None,
+           focal=None) -> None:
+    """Rasterize a laid-out room and write the sprite.
+
+    Extracted from `main` when `build_plan.py` needed the same path. It had to
+    be the same path rather than a similar one: the material-id mapping, the
+    outline pass and the crop between them are three places where a second copy
+    would drift, and a proof image rendered through a near-copy of the shipping
+    pipeline is not proof of anything.
+    """
     mesh = L.mesh()
     print(f"room mesh: {len(mesh.verts)} verts, {len(mesh.faces)} tris")
+    cam = DimetricCamera(azimuth)
+    cam.span, centre = frame(mesh, cam, target)
+    print(f"camera span {cam.span:.2f}, azimuth {azimuth}")
 
-    cam = DimetricCamera(args.azimuth)
-    cam.span, centre = frame(mesh, cam, args.target)
-    print(f"camera span {cam.span:.2f}, azimuth {args.azimuth}")
-
-    size = args.target * args.factor
+    size = target * factor
     ramps = load_palette()
-    print(f"rasterizing {size}x{size} -> {args.target}x{args.target} ...")
+    print(f"rasterizing {size}x{size} -> {target}x{target} ...")
     sm = None
-    if not args.no_shadows:
+    if shadows:
         print("building shadow map ...")
         sm = ShadowMap(mesh, camera_light(cam), res=768)
     mat, lam, _ = rasterize(mesh, cam, size, target=centre, shadows=sm,
-                            fill=0.0 if args.no_shadows else 0.20,
-                            bounce=0.26, rig=light_rig(),
+                            fill=0.20 if shadows else 0.0,
+                            bounce=0.26, rig=rig,
                             ambient=0.05, key_gain=0.60,
                             haze=0.30, grain=1.0, ramps=ramps,
-                            wear=L.wear_field())
+                            wear=L.wear_field() if wear is None else wear)
 
     px = downsample_modal(shade_toon(mat, lam, size, ramps, dither=True),
-                          size, args.factor)
+                          size, factor)
     # Material ids by SORTED INDEX, never by hash. `hash(m) % 251` collides
     # among ~30 materials by the birthday bound, and Python randomises string
     # hashing per process, so which materials collided changed every run: the
@@ -414,26 +533,24 @@ def main() -> int:
            for i, m in enumerate(sorted(m for m in set(mat) if m is not None))}
     back = {v: k for k, v in ids.items()}
     small = downsample_modal([ids[m] if m is not None else None for m in mat],
-                             size, args.factor)
+                             size, factor)
     px = apply_outline(px, [back.get(c) if c is not None else None for c in small],
-                       args.target, ramps)
+                       target, ramps)
 
     bg = (26, 23, 31)
-    img = Image.new("RGB", (args.target, args.target), bg)
+    img = Image.new("RGB", (target, target), bg)
     img.putdata([c if c is not None else bg for c in px])
 
     # crop to content, then scale for viewing
-    solid = [(i % args.target, i // args.target) for i, c in enumerate(px) if c]
-    x0 = min(p[0] for p in solid); x1 = max(p[0] for p in solid)
-    y0 = min(p[1] for p in solid); y1 = max(p[1] for p in solid)
+    solid = [(i % target, i // target) for i, c in enumerate(px) if c]
+    x0 = min(q[0] for q in solid); x1 = max(q[0] for q in solid)
+    y0 = min(q[1] for q in solid); y1 = max(q[1] for q in solid)
     img = img.crop((x0, y0, x1 + 1, y1 + 1))
-    focal_report(px, args.target, cam, centre, cam.span)
+    focal_report(px, target, cam, centre, cam.span, focal)
 
-    out = Path(args.out)
-    out.parent.mkdir(exist_ok=True)
+    out.parent.mkdir(parents=True, exist_ok=True)
     img.resize((img.width * 2, img.height * 2), Image.NEAREST).save(out)
     print(f"wrote {out}  ({img.width}x{img.height} native)")
-    return 0
 
 
 if __name__ == "__main__":

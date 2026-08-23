@@ -32,7 +32,7 @@ quarter of total height so the character reads at a glance.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as _replace
 
 from assetlib import merge, pivot_rot, transformed
 from mesh import Mesh
@@ -41,6 +41,45 @@ from mesh import Mesh
 H = 1.59
 
 SKIN = "skin"          # wood_3..6 are the flesh tones; see style_bible.yaml
+
+# Skin tones the generator may draw from, as offsets on the shaded skin step.
+# Everything from wood_0 to wood_6 is offered rather than a hand-picked subset,
+# for the reason `HAIR_MATS` gives at length: a search space pre-filtered to the
+# answer is not a search space. What makes the wide range usable is `EYE`.
+SKIN_TONES = ("skin-4", "skin-3", "skin-2", "skin-1", "skin",
+              "skin+1", "skin+2")
+
+# The eyes are NOT a tone offset on skin, and this is the one place in the
+# library where the surface's-own-ramp idiom had to be broken.
+#
+# They were `skin + "-4"` for eight passes. Four steps below a lit mid-brown is
+# the bottom of `wood`, which is fine -- until the skin itself moves down.
+# Eye-to-face separation in OKLab, rendered rather than computed, across the
+# seven tones from `skin-4` to `skin+2`:
+#
+#     skin + "-4"   0.000 0.000 0.103 0.204 0.304 0.404 0.504
+#     neutral-3     0.076 0.076 0.161 0.256 0.353 0.450 0.547
+#     neutral-2     0.196 0.196 0.196 0.256 0.353 0.450 0.547
+#     neutral-1     0.304 0.304 0.304 0.304 0.353 0.450 0.547
+#
+# Zero, at the two darkest tones: not faint, *absent*. The mechanism is
+# clamping, and it is not what an analytic check would report. Eyes sit on the
+# front facet, which the key already shades a step or two down, so `-4` from
+# there lands on the ramp floor -- and so does the shaded cheek around them.
+# At `skin-1` the palette-step gap still computes to 0.201 while the sprite
+# shows a blank face, which is why `check_eye_legibility` renders.
+#
+# So a rig whose eyes are a skin offset cannot draw a dark-skinned face. That
+# is a limitation of the drawing idiom, not of the palette, and the precedent
+# for breaking it is four lines below: blush has always been `rose+1` on a
+# skin surface. An eye is a different material from a cheek in every art style
+# there is.
+#
+# `neutral-2` over `neutral-1` because the flat 0.304 in that last row is the
+# eye clamping too -- it holds its gap by getting lighter as the skin does,
+# and a mid-grey eye on a pale face is a weaker mark than a near-black one.
+# `neutral-2` keeps the floor at 0.196 and stays dark at the light end.
+EYE = "neutral-2"
 
 # Cross-section radii. Depth is kept near width -- the whole point of the prism
 # rewrite -- rather than the 0.265 x 0.175 slab that broke the diagonals.
@@ -61,12 +100,37 @@ HIP_Z, SHOULDER_Z = 0.46, 0.92     # limb pivots, for posing
 ANKLE_Z = 0.10
 SEAT_Z = 0.45          # chair seat height; assetlib.chair() must agree
 
+# The tallest seat this rig can sit on with its feet on the floor. Above it a
+# person perches -- feet on a rail, weight on the hips -- and that is a
+# different rig and a different support model, not a longer shin. `grounded`
+# asks whether an object's underside meets a surface, which is the wrong
+# question for a figure held up by its backside: a customer put on a 0.70 bar
+# stool is ground-clamped, does not float, and sits in mid-air beside it at
+# dining height, with no check in the ratchet able to see it.
+MAX_SEAT_Z = 0.58
 
-def leg(sx: float, mat: str) -> Mesh:
+# Above MAX_SEAT_Z a figure perches instead. The rig is different in kind, not
+# in degree: sitting folds the leg into a right angle and puts the foot on the
+# floor, perching hangs the leg nearly straight and puts the foot on a rail or
+# on nothing. The tell is where the weight goes -- a seated figure carries it
+# on the thighs and a perched one on the backside, which is why a perched
+# figure's feet can be in mid-air and the pose still be correct.
+PERCH_LEG = 0.52       # hip to sole, hanging; the leg cannot reach past this
+MAX_PERCH_Z = 0.85
+
+
+def leg(sx: float, mat: str, hip: float = HIP_Z) -> Mesh:
     """Leg shaft only, hip to ankle. Built per side so a walk cycle can swing
-    them independently -- a single two-leg mesh can only ever stand still."""
+    them independently -- a single two-leg mesh can only ever stand still.
+
+    `hip` rather than the module constant, because leg length is the one
+    proportion that changes a standing figure's outline without changing any
+    of its parts. The ankle stays where it is and the hip moves, which is what
+    varies between two adults; scaling the whole figure instead would scale the
+    head, and a scaled head reads as a child rather than as a tall person.
+    """
     m = Mesh()
-    m.add_prism((sx, 0.0, ANKLE_Z), 0.100, 0.098, HIP_Z - ANKLE_Z, mat, segments=8)
+    m.add_prism((sx, 0.0, ANKLE_Z), 0.100, 0.098, hip - ANKLE_Z, mat, segments=8)
     return m
 
 
@@ -84,30 +148,56 @@ def foot(sx: float) -> Mesh:
     return m
 
 
-def _ankle_offset(sx: float, degrees: float):
+def _ankle_offset(sx: float, degrees: float, hip: float = HIP_Z):
     """Where the ankle lands once the shaft has swung, as a translation."""
     probe = Mesh()
     probe.verts = [(sx, 0.0, ANKLE_Z)]
-    moved = pivot_rot(probe, "x", -degrees, (sx, 0.0, HIP_Z))
+    moved = pivot_rot(probe, "x", -degrees, (sx, 0.0, hip))
     ax, ay, az = moved.verts[0]
     return (0.0, ay, az - ANKLE_Z)
 
 
-def legs(mat: str, spread: float = 0.105, seated: bool = False) -> Mesh:
+def legs(mat: str, spread: float = 0.105, seated: bool = False,
+         hip: float = HIP_Z, seat: float = SEAT_Z, perch=None) -> Mesh:
     if seated:
         # Thighs forward (+y, the side the camera sees), shins down: a standing
         # figure parked at seat height reads as standing *on* the chair.
         # Authored about the HIP at z=0, with the shins reaching down to
         # -SEAT_Z so the feet land on the floor when a chair seat is at SEAT_Z.
+        # Shins reach the seat height they are sitting on, rather than the
+        # one dining chairs happen to have. An armchair's cushion lands
+        # anywhere from 0.46 to 0.52 once its base style and seat jitter are
+        # applied, so a figure authored for 0.45 sat up to 0.07 inside it.
+        seat = min(seat, MAX_SEAT_Z)
         m = Mesh()
         for sx in (-spread, spread):
             m.add_box((sx - 0.098, -0.10, -0.10), (sx + 0.098, 0.34, 0.04), mat)
-            m.add_box((sx - 0.098, 0.16, -SEAT_Z + 0.06),
+            m.add_box((sx - 0.098, 0.16, -seat + 0.06),
                       (sx + 0.098, 0.34, -0.10), mat)
-            m.add_box((sx - 0.105, 0.16, -SEAT_Z),
-                      (sx + 0.105, 0.40, -SEAT_Z + 0.08), "neutral-1")
+            m.add_box((sx - 0.105, 0.16, -seat),
+                      (sx + 0.105, 0.40, -seat + 0.08), "neutral-1")
         return m
-    return merge(leg(-spread, mat), leg(spread, mat))
+    if perch is not None:
+        # Hip at z=0, as the seated rig is. The thigh drops rather than running
+        # level, and the shin hangs from it: that steeper hip angle is the
+        # whole read, because a level thigh at 0.72 is a person sitting on air
+        # beside the stool rather than on it.
+        seat = min(perch[0], MAX_PERCH_Z)
+        rail = perch[1]
+        # Feet reach the rail if the leg is long enough, and hang at full
+        # stretch if it is not -- which is what happens on a stool with no
+        # ring, and is a pose, not a failure to find support.
+        drop = PERCH_LEG if rail is None else min(PERCH_LEG, seat - rail)
+        knee = -drop * 0.42
+        m = Mesh()
+        for sx in (-spread, spread):
+            m.add_box((sx - 0.098, -0.10, knee), (sx + 0.098, 0.22, 0.04), mat)
+            m.add_box((sx - 0.094, 0.04, -drop + 0.06),
+                      (sx + 0.094, 0.21, knee), mat)
+            m.add_box((sx - 0.102, 0.04, -drop),
+                      (sx + 0.102, 0.28, -drop + 0.08), "neutral-1")
+        return m
+    return merge(leg(-spread, mat, hip), leg(spread, mat, hip))
 
 
 def torso(mat: str, bulk: float = 1.0) -> Mesh:
@@ -169,7 +259,7 @@ def face(skin: str = SKIN, blush: bool = True) -> Mesh:
     ez = HEAD_Z + 0.62 * (HEAD_TOP - HEAD_Z)   # eye line, high for a cozy read
     for sx in (-0.080, 0.080):
         m.add_box((sx - 0.040, y, ez - 0.040),
-                  (sx + 0.040, y + 0.014, ez + 0.040), skin + "-4")
+                  (sx + 0.040, y + 0.014, ez + 0.040), EYE)
     if blush:
         for sx in (-0.148, 0.148):
             m.add_box((sx - 0.038, y, ez - 0.110),
@@ -209,24 +299,60 @@ def hair(style: str, mat: str) -> Mesh:
     return m
 
 
-def accessory(kind: str, mat: str) -> Mesh:
+def accessory(kind: str, mat: str, sx: float = 0.0) -> Mesh:
     m = Mesh()
     if kind == "apron":
+        # The scarf's lesson, applied to the accessory that still had not
+        # learned it. Measured against a bare body the apron was worth 3.2% of
+        # outline over eight views -- a flat panel between the shoulders, which
+        # is inside the widest part of the figure at every azimuth and so is a
+        # colour swatch, exactly what the scarf was before it was widened. That
+        # it went unnoticed is the point: the scarf was fixed and the same test
+        # was never re-run on the other three.
+        #
+        # An apron's real outline is its skirt flaring past the hips and its
+        # ties standing out at the waist, so that is what it is now: 0.285 at
+        # the hem against the 0.2475 shoulder, and tie ends that clear it.
         f = TORSO_RY * FACET
-        m.add_box((-0.235, f - 0.020, 0.30), (0.235, f + 0.015, 0.86), mat)
+        m.add_box((-0.235, f - 0.020, 0.52), (0.235, f + 0.015, 0.86), mat)
+        m.add_box((-0.285, f - 0.026, 0.30), (0.285, f + 0.018, 0.52), mat)
         m.add_box((-0.10, f - 0.015, 0.86), (0.10, f + 0.015, 0.95), mat)  # bib
         m.add_box((-0.235, f + 0.008, 0.56),
                   (0.235, f + 0.018, 0.59), mat + "-2")                    # tie
+        for sx in (-1.0, 1.0):
+            m.add_box((sx * 0.212, f - 0.055, 0.50),
+                      (sx * 0.300, f + 0.010, 0.585), mat + "-2")       # tie end
     elif kind == "scarf":
-        m.add_prism((0, 0, 0.87), TORSO_RX * 0.86, TORSO_RY * 0.90, 0.12, mat,
-                    segments=8)
+        # Drawn at 0.86 of the torso this was inside the body at all eight
+        # azimuths -- zero pixels of silhouette, a colour swatch rather than a
+        # thing worn. Filling the neck notch is not enough either: a collar at
+        # 0.202 still measured 0.0%, because the head above and the shoulder
+        # cap below already close that gap at every angle. An accessory only
+        # exists in outline once it beats the widest part of the figure, so the
+        # collar runs past the 0.2475 shoulder and reads as a knitted wrap.
+        m.add_prism((0, 0, 0.88), 0.295, 0.272, 0.13, mat, segments=8)
+        f = TORSO_RY * FACET
+        m.add_box((0.045, f - 0.03, 0.54), (0.155, f + 0.075, 0.95),
+                  mat + "-1")                                            # tail
     elif kind == "bag":
         m.add_box((0.27, -0.08, 0.50), (0.42, 0.12, 0.78), mat)
         m.add_box((0.27, -0.02, 0.78), (0.42, 0.02, 0.96), mat + "-2")   # strap
     elif kind == "cup":
-        m.add_prism((-0.36, 0.05, 0.52), 0.062, 0.062, 0.13, mat, segments=8)
+        # Authored in arm-local space around the hand, because `build` merges
+        # held accessories into the arm before posing it. Sitting in the body
+        # mesh, the cup stayed at the hip through every frame of a walk while
+        # the hand that was supposedly holding it swung away.
+        m.add_prism((sx, 0.092, 0.455), 0.072, 0.072, 0.155, mat, segments=8)
+        m.add_prism((sx, 0.092, 0.610), 0.085, 0.085, 0.030, mat + "-2",
+                    segments=8)                                          # lid
     return m
 
+
+# Accessories a hand carries rather than a body wears. These are merged into
+# the arm mesh and posed with it, and the arm takes a standing forward swing so
+# the object is held in front of the chest instead of buried against the hip.
+HELD_ACCESSORIES = ("cup",)
+CARRY_SWING = -34.0     # degrees; negative is forward, see Pose
 
 # --- assembly ----------------------------------------------------------------
 
@@ -237,6 +363,14 @@ class CharacterSpec:
     trousers: str = "neutral"
     hair_style: str = "short"
     hair_mat: str = "neutral"
+    # Leg length and stance width, as multipliers. Before these, `bulk` was
+    # the only continuous shape parameter a character had, and seven of the
+    # nine hand-written archetypes sit at exactly 1.0 of it -- so two extras
+    # with the same hair and accessory had almost nothing left to differ by.
+    # Both are deliberately small ranges: this is a cast of adults in a cafe,
+    # not a fantasy party.
+    leg_len: float = 1.0
+    stance: float = 1.0
     accessory_kind: str | None = None
     accessory_mat: str = "rose"
     bulk: float = 1.0
@@ -253,9 +387,13 @@ class Pose:
     from joint articulation -- an elbow is one pixel. Adding a spine chain would
     cost render time and change nothing on screen.
     """
-    leg_l: float = 0.0      # degrees, + swings the limb forward (+y)
+    # Sign convention, measured rather than assumed: *negative* swings the
+    # limb forward (+y, toward the camera at azimuth 45). Legs, arms and the
+    # foot offset all agree; only this comment used to say the opposite, and no
+    # clip caught it because a walk cycle swings symmetrically.
+    leg_l: float = 0.0      # degrees, - swings the limb forward (+y)
     leg_r: float = 0.0
-    arm_l: float = 0.0
+    arm_l: float = 0.0      # - forward, as above
     arm_r: float = 0.0
     bob: float = 0.0        # vertical offset of everything above the hips
     lean: float = 0.0       # forward tilt of the upper body, degrees
@@ -268,9 +406,11 @@ REST = Pose()
 
 
 def build(spec: CharacterSpec, seated: bool = False,
-          pose: Pose | None = None) -> Mesh:
+          pose: Pose | None = None, seat: float = SEAT_Z, perch=None) -> Mesh:
     p = pose or REST
-    spread = 0.105
+    spread = 0.105 * spec.stance
+    hip = ANKLE_Z + (HIP_Z - ANKLE_Z) * spec.leg_len
+    dz = hip - HIP_Z          # how far the whole upper body rides up or down
     x = TORSO_RX * spec.bulk + 0.052
 
     upper = [
@@ -279,21 +419,47 @@ def build(spec: CharacterSpec, seated: bool = False,
         face(spec.skin, spec.blush),
         hair(spec.hair_style, spec.hair_mat),
     ]
-    if spec.accessory_kind:
+    held = spec.accessory_kind in HELD_ACCESSORIES
+    if spec.accessory_kind and not held:
         upper.append(accessory(spec.accessory_kind, spec.accessory_mat))
     body = merge(*upper)
+    if dz:
+        body = transformed(body, at=(0.0, 0.0, dz))
     if p.turn:
-        body = pivot_rot(body, "z", p.turn, (0.0, 0.0, HIP_Z))
+        body = pivot_rot(body, "z", p.turn, (0.0, 0.0, hip))
     if p.lean:
-        body = pivot_rot(body, "x", -p.lean, (0.0, 0.0, HIP_Z))
+        body = pivot_rot(body, "x", -p.lean, (0.0, 0.0, hip))
 
-    def posed_arm(sx, swing, out):
+    def posed_arm(sx, swing, out, carried=None):
         a = arm(sx, spec.shirt, spec.skin)
+        if carried is not None:
+            a = merge(a, carried)
+        if dz:
+            a = transformed(a, at=(0.0, 0.0, dz))
+        sz = SHOULDER_Z + dz
         if out:
-            a = pivot_rot(a, "y", out if sx > 0 else -out, (sx, 0.0, SHOULDER_Z))
-        return pivot_rot(a, "x", -swing, (sx, 0.0, SHOULDER_Z))
+            a = pivot_rot(a, "y", out if sx > 0 else -out, (sx, 0.0, sz))
+        return pivot_rot(a, "x", -swing, (sx, 0.0, sz))
 
-    limbs = [posed_arm(-x, p.arm_l, p.out_l), posed_arm(x, p.arm_r, p.out_r)]
+    limbs = [posed_arm(-x, p.arm_l + (CARRY_SWING if held else 0.0), p.out_l,
+                       accessory(spec.accessory_kind, spec.accessory_mat, -x)
+                       if held else None),
+             posed_arm(x, p.arm_r, p.out_r)]
+    if perch is not None:
+        # Same assembly as the seated branch, and one deliberate difference:
+        # NO ground clamp. The seated rig lifts the figure until its lowest
+        # vertex touches z=0, which is right for feet on a floor and wrong for
+        # feet on a rail -- clamping a perched figure drags it down the stool
+        # until it is standing beside it. So the parts are authored about the
+        # hip and the whole thing is raised to the seat instead, which is the
+        # literal statement of what perching is: the hips are supported and
+        # the feet are wherever they end up.
+        top = min(perch[0], MAX_PERCH_Z)
+        drop = (0.0, 0.0, -HIP_Z)
+        out = merge(legs(spec.trousers, spread, perch=perch),
+                    transformed(body, at=(0.0, 0.0, -HIP_Z - dz)),
+                    *(transformed(l, at=drop) for l in limbs))
+        return transformed(out, at=(0.0, 0.0, top + p.bob))
     if seated:
         # Drop the upper body to the seated hip. The torso and arms are authored
         # for a standing figure whose hips sit at HIP_Z, while the seated leg rig
@@ -301,8 +467,8 @@ def build(spec: CharacterSpec, seated: bool = False,
         # standing torso on top of folded legs and produced a seated figure
         # 2.24 tall against a standing 1.72 -- taller sitting down than up.
         drop = (0.0, 0.0, -HIP_Z)
-        out = merge(legs(spec.trousers, seated=True),
-                    transformed(body, at=drop),
+        out = merge(legs(spec.trousers, spread, seated=True, seat=seat),
+                    transformed(body, at=(0.0, 0.0, -HIP_Z - dz)),
                     *(transformed(l, at=drop) for l in limbs))
         # Ground-clamped like the standing rig. The seated parts are authored
         # around the hips, so the mesh hung 0.52 below the origin and every
@@ -314,8 +480,9 @@ def build(spec: CharacterSpec, seated: bool = False,
         low = min(v[2] for v in out.verts)
         return transformed(out, at=(0.0, 0.0, p.bob - low))
     for sx, ang in ((-spread, p.leg_l), (spread, p.leg_r)):
-        limbs.append(pivot_rot(leg(sx, spec.trousers), "x", -ang, (sx, 0.0, HIP_Z)))
-        limbs.append(transformed(foot(sx), at=_ankle_offset(sx, ang)))
+        limbs.append(pivot_rot(leg(sx, spec.trousers, hip), "x", -ang,
+                               (sx, 0.0, hip)))
+        limbs.append(transformed(foot(sx), at=_ankle_offset(sx, ang, hip)))
     out = merge(body, *limbs)
     # Ground-clamp. Swinging a leg about its hip arcs the foot below z=0, so a
     # posed figure sinks into the floor -- measured at -0.04 on a mid-stride
@@ -359,15 +526,225 @@ CUSTOMERS = [
                   bulk=1.12),
     CharacterSpec("artist",   shirt="cream",   trousers="sky",     hair_style="curly",
                   hair_mat="neutral-2", accessory_kind="scarf", accessory_mat="foliage"),
-    CharacterSpec("elder",    shirt="wood",    trousers="neutral", hair_style="short",
+    # Trousers were plain `neutral`, which sits 0.004 in value from a plain
+    # `wood` shirt: two legal, well-separated ramps landing on the same step,
+    # so the figure rendered as one column with no waist. Found by
+    # `check_waistline`, which was itself promoted off the generated-extras
+    # sheet -- the generator turned up a defect in the hand-written roster.
+    CharacterSpec("elder",    shirt="wood",    trousers="neutral-2", hair_style="short",
                   hair_mat="cream+1", accessory_kind=None,     bulk=1.08),
     CharacterSpec("writer",   shirt="sky",     trousers="wood",    hair_style="bun",
                   hair_mat="wood-4",  accessory_kind="cup",    accessory_mat="cream"),
-    CharacterSpec("friend",   shirt="foliage", trousers="rose",    hair_style="bob",
-                  hair_mat="wood-3",  accessory_kind=None),
+    # As `elder`: foliage over rose was 0.020 apart in value. And `friend` was
+    # a bob at bulk 1.0 with no accessory, which is `reader` without the scarf:
+    # 4.3% of outline apart over the eight sprite directions, against a roster
+    # median of 19%. A slighter build under a cap puts it at 14.2%.
+    CharacterSpec("friend",   shirt="foliage", trousers="rose-2",  hair_style="cap",
+                  hair_mat="wood-3",  accessory_kind=None, bulk=0.90),
 ]
 
 ROSTER = [BARISTA] + CUSTOMERS
+
+
+# --- generated characters ----------------------------------------------------
+
+# The parts library, as the generator sees it. Kept beside the roster rather
+# than derived from `hair()` and `accessory()` by regex, because a list that
+# reads itself out of an implementation silently loses an option the day
+# somebody renames a branch.
+HAIR_STYLES = ("short", "bob", "long", "bun", "cap", "curly")
+ACCESSORIES = (None, "scarf", "bag", "cup", None)
+
+# Shirts and trousers may take any ramp; hair may not. Hair on `sky` or
+# `foliage` is a costume choice this art direction does not make.
+GARMENT_RAMPS = ("wood", "cream", "foliage", "rose", "sky", "neutral")
+
+# Three ramps, every offset. The ramps are an art-direction choice -- black,
+# grey, brown, blonde and white are hair; pink is a costume, and the generator
+# put pink hair on an extra the first time `rose` was in this list. The
+# OFFSETS deliberately are not filtered.
+#
+# That distinction is the whole point. An earlier version listed seven hair
+# tones hand-picked to pass `check_contrast` against a mid-wood skin, and
+# across 200 generated specs the contrast check fired exactly zero times: the
+# constraint had been solved by hand and the check was decoration hanging off a
+# random draw. A solver whose search space is pre-filtered to the answer is not
+# solving anything. Offering every offset -- including the mid browns that
+# vanish into a face -- makes the check reject 47% of proposals, and it is the
+# check rather than a person that decides which tones are usable.
+HAIR_MATS = tuple(f"{r}{o:+d}" if o else r
+                  for r in ("neutral", "wood", "cream")
+                  for o in (-4, -3, -2, -1, 0, 1, 2))
+
+
+MIN_SILHOUETTE = 0.10
+
+
+SPRITE_AZIMUTHS = (0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0)
+
+
+def silhouette(spec: CharacterSpec, azimuths=SPRITE_AZIMUTHS) -> tuple:
+    """The screen pixels a character covers in each sprite direction, materials
+    ignored.
+
+    Shirt colour is what a viewer notices first and the last thing that
+    survives being one figure among eight in a room -- at 46 px a crowd is read
+    as shapes, and two extras with the same build are the same person in a
+    different jumper.
+
+    This started life as `silhouette_key`, a tuple of the parameters believed
+    to change the outline: hair style, accessory, and bulk in 0.06 buckets. It
+    did nothing. Twenty extras produced twenty distinct keys, so the rejection
+    never fired once, while the rendered cast still contained a pair whose
+    outlines matched to the pixel -- they differed by an accessory, and the
+    accessory turned out to be invisible in silhouette at every azimuth.
+
+    The key was not mistuned, it was the wrong kind of thing: a guess at which
+    parameters reach the outline, standing in for the outline. At 3.6 ms a view
+    there is no reason to guess. `screen_materials` already renders the figure
+    the checks are going to grade, so the generator grades the same render.
+
+    All eight directions, not the canonical one. The sheet turns the character
+    rather than the camera, so those azimuths are the eight frames a player
+    actually sees, and judging a cast from azimuth 45 alone grades one of them.
+    That is not a hypothetical: `reader` and `friend` differ by a scarf, which
+    at azimuth 45 is worth 1.3% and over the eight views is worth 4.3%.
+    """
+    from art_review import screen_materials
+    m = build(spec)
+    return tuple(frozenset(i for i, x in enumerate(screen_materials(m, a, 2.0)) if x)
+                 for a in azimuths)
+
+
+def silhouette_distance(a: tuple, b: tuple) -> float:
+    """Mean Jaccard distance over the sprite directions: 0 is the same figure."""
+    v = [len(x ^ y) / max(1, len(x | y)) for x, y in zip(a, b)]
+    return sum(v) / len(v)
+
+
+def generate_spec(seed: int, ramps=None, tries: int = 60) -> CharacterSpec:
+    """A character built by proposing and testing, not by being typed out.
+
+    The roster is nine hand-written specs, and characters are what this factory
+    exists to produce -- so it is the largest remaining piece of the library
+    that is an *asset* rather than a tool. A game wants forty extras and no
+    person should be choosing forty pairs of trousers.
+
+    What makes this more than a random draw is that the checks come first.
+    `check_contrast` and `check_palette_spread` were both promoted from human
+    rejections -- hair vanishing into a face, and a customer built entirely
+    from one ramp reading as a silhouette-shaped hole at the till -- and both
+    are predicates on a finished spec. Run them *before* accepting a proposal
+    rather than after, and they stop being graders and become a solver. That is
+    the same move `Layout.scatter` made with `collisions` and `grounded`, and
+    it is the strongest argument this repo has that the checks were worth
+    writing.
+
+    `taken` carries the silhouette keys already used by this cast, so a
+    proposal that would be shape-identical to an accepted one is rejected
+    before it is accepted rather than after. That makes the solver
+    order-dependent, which is the same property `Layout.scatter` has and for
+    the same reason: a cast is a set, and whether a member fits is a question
+    about the members already in it.
+
+    Raising `tries` cannot make an unsatisfiable palette satisfiable, so a
+    proposal that never passes falls back to the last one tried and is left for
+    the checks to report. Silently returning something invalid would be worse
+    than the hand-written roster it replaces.
+    """
+    ramps = ramps or _palette()
+    st = (seed * 2654435761 + 1013904223) & 0xFFFFFFFF
+
+    def rnd():
+        nonlocal st
+        st ^= st >> 16
+        st = (st * 2246822519) & 0xFFFFFFFF
+        st ^= st >> 13
+        st = (st * 3266489917) & 0xFFFFFFFF
+        st = (st ^ (st >> 16)) & 0xFFFFFFFF
+        return st / 0xFFFFFFFF
+
+    def pick(seq):
+        return seq[int(rnd() * len(seq)) % len(seq)]
+
+    spec = None
+    for _ in range(tries):
+        shirt = pick(GARMENT_RAMPS)
+        # Offsets on garments, because two characters in flat `sky` and flat
+        # `rose` still read as two poster-paint blocks. A step either way is
+        # what separates a shirt from a swatch.
+        shirt += pick(("", "", "+1", "-1", "-2"))
+        trousers = pick(GARMENT_RAMPS) + pick(("", "-1", "-2", "-2"))
+        acc = pick(ACCESSORIES)
+        spec = CharacterSpec(
+            f"extra{seed:02d}", shirt=shirt, trousers=trousers,
+            hair_style=pick(HAIR_STYLES), hair_mat=pick(HAIR_MATS),
+            # Over a hundred seeds the old generator produced one skin tone and
+            # blush on every single extra -- two dimensions with one value each,
+            # sitting unnoticed next to five that were working. Neither was a
+            # deliberate art-direction choice; both were defaults that nothing
+            # ever drew from. Skin is what `check_contrast` argues with, so
+            # varying it does real work: the hair rejection rate is no longer a
+            # constant, because the thing hair is being compared against moves.
+            skin=pick(SKIN_TONES), blush=rnd() < 0.62,
+            accessory_kind=acc,
+            accessory_mat=pick(GARMENT_RAMPS) + pick(("", "-1", "+1")),
+            bulk=0.90 + rnd() * 0.30,
+            # Measured against the outline before being given a range, the way
+            # the accessories had to be. Over the eight sprite directions a
+            # leg_len of 0.88 is worth 4.5% against a default figure and a
+            # stance of 1.40 about 4%, which is the same order as an accessory
+            # and enough to separate two extras that share hair and hands.
+            leg_len=0.88 + rnd() * 0.26,
+            stance=0.82 + rnd() * 0.58)
+        if not (check_contrast(ramps, [spec]) + check_palette_spread([spec])
+                + check_waistline(ramps, [spec])):
+            return spec
+    return spec
+
+
+def generate_roster(n: int = 8, seed: int = 1, ramps=None,
+                    distinct_shapes: bool = True,
+                    floor: float = MIN_SILHOUETTE, tries: int = 6) -> list:
+    """`n` extras from consecutive seeds, no two of them the same shape.
+
+    Built incrementally rather than independently, because "is this character
+    already in the cast?" cannot be answered by a function that has only seen
+    one character.
+
+    Each slot draws up to `tries` candidates and keeps the one whose outline is
+    furthest from every extra already cast, stopping early once a candidate
+    clears `floor`. Keeping the best rather than looping until one passes means
+    a saturated cast degrades instead of hanging -- the same bargain
+    `Layout.scatter` makes when a region runs out of room.
+    """
+    ramps = ramps or _palette()
+    out: list = []
+    seen: list = []
+    for i in range(n):
+        if not distinct_shapes:
+            out.append(generate_spec(seed + i, ramps))
+            continue
+        best = best_sil = None
+        best_score = -1.0
+        for k in range(tries):
+            # 977 is coprime with the stride, so a retry cannot collide with
+            # the seed of another slot and hand two extras the same draw.
+            spec = generate_spec(seed + i + 977 * k, ramps)
+            sil = silhouette(spec)
+            score = min((silhouette_distance(sil, s) for s in seen), default=1.0)
+            if score > best_score:
+                best, best_sil, best_score = spec, sil, score
+            if score >= floor:
+                break
+        seen.append(best_sil)
+        out.append(_replace(best, name=f"extra{seed + i:02d}"))
+    return out
+
+
+def _palette():
+    from pixelize import load_palette
+    return load_palette()
 
 
 # --- promoted checks ---------------------------------------------------------
@@ -401,6 +778,295 @@ def check_contrast(ramps, roster=None) -> list[str]:
         if gap < MIN_HAIR_SKIN_GAP:
             out.append(f"{s.name}: hair '{s.hair_mat}' is {gap:.3f} from skin "
                        f"(need {MIN_HAIR_SKIN_GAP}) -- head reads as one lump")
+    return out
+
+
+# A shirt and trousers this close in lightness give a figure no waistline.
+# Measured in OKLab L, and set at one ramp step: the palette's ramps run about
+# 0.10 apart, so anything under that is the two garments landing on the same or
+# adjacent steps.
+MIN_WAIST_GAP = 0.085
+
+
+# Two characters closer than this on screen are the same person twice.
+#
+# Calibrated, not guessed. The first number here was 0.20, which would never
+# have fired: the nine hand-written archetypes have a closest pair at 45%
+# (reader/friend) and twenty generated extras at 48%, with both medians at 80%.
+# A threshold at less than half the observed minimum is a check that cannot
+# fail, which is the mistake the occlusion thresholds made two passes ago --
+# defaults set looser than the scan that found the defect left the check blind.
+# 0.38 sits under the evidence rather than at it, and still catches a collision
+# the eye would.
+#
+# Worth recording that the generated cast came out *more* varied at its closest
+# pair than the hand-written one. Nine archetypes written by a person include
+# two that are nearly the same person, and nobody noticed across five passes.
+MIN_PAIR_SPREAD = 0.38
+
+
+def check_roster_variety(roster=None, azimuth: float = 45.0,
+                         floor: float = MIN_PAIR_SPREAD) -> list[str]:
+    """Are any two characters in this cast the same person?
+
+    `check_contrast`, `check_palette_spread` and `check_waistline` are all
+    predicates on ONE spec, and a generator that satisfies all three forty times
+    can still return forty variations of one person -- each individually legal,
+    and collectively a crowd the player reads as a single repeated extra. That
+    is the character version of the failure `check_generator_range` catches in
+    the furniture, and it needs the same instrument: a distance, applied
+    pairwise.
+
+    The MINIMUM pair, not the mean. A mean is dominated by the pairs that are
+    already fine and says nothing about the two that collide, and it is exactly
+    those two that a player notices -- forty extras of whom two are twins reads
+    as a bug, whatever the average says.
+    """
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent))
+    from art_review import _screen_spread, screen_materials
+
+    specs = list(roster or ROSTER)
+    if len(specs) < 2:
+        return []
+    frames = [screen_materials(build(s), azimuth, 2.0) for s in specs]
+    out = []
+    for i, a in enumerate(frames):
+        for j in range(i + 1, len(frames)):
+            d = _screen_spread([a, frames[j]])
+            if d < floor:
+                out.append(f"{specs[i].name} and {specs[j].name} are "
+                           f"{d:.0%} apart on screen (floor {floor:.0%}) -- "
+                           f"the same person twice")
+    return out
+
+
+# Two characters whose OUTLINES are this close read as one figure recoloured.
+#
+# `check_roster_variety` sits at 0.38 and passed both casts comfortably while
+# this was broken, because it compares materials as well as coverage: two
+# identical shapes in different shirts disagree on most of their pixels and
+# score as different people. Stripping the materials out drops the same casts
+# by a factor of four, which is the measurement that mattered -- colour is what
+# a viewer notices first and shape is what survives the downsample.
+#
+# Calibrated against the defects it was written for: a generated pair at 0.0%,
+# `reader`/`friend` at 4.3%, and an accessory that moved zero pixels of outline
+# at any azimuth. With those fixed the casts sit at 10.0% (hand) and 8.5%
+# (generated), so 0.07 sits under the evidence rather than at it.
+MIN_CAST_SILHOUETTE = 0.07
+
+# How far apart two accessories must be in outline, measured on the same body.
+MIN_ACCESSORY_DISTINCT = 0.055
+
+
+ACCESSORY_KINDS = (None, "apron", "scarf", "bag", "cup")
+
+
+def check_accessory_distinct(floor: float = MIN_ACCESSORY_DISTINCT) -> list[str]:
+    """Every accessory must read as a different thing from every other one.
+
+    `check_cast_silhouette` asks whether two *people* are distinguishable, and
+    the accessories rode along inside that: as long as some other parameter
+    separated a pair, an accessory that changed nothing was never charged for
+    it. This holds the body fixed and swaps only the accessory, which is the
+    only way to see what the accessory is worth on its own.
+
+    Presence was already measured -- the scarf went from 0.0% of outline to
+    10.7%. Presence is not legibility. What was never measured is whether two
+    accessories differ from *each other*, and the answer was that the apron did
+    not differ from wearing nothing: 3.2% over eight views, a flat panel
+    between the shoulders that is inside the widest part of the figure at every
+    azimuth. The scarf had been fixed for exactly this and the same test was
+    never re-run on the other three. A fix applied to the instance rather than
+    to the class leaves the rest of the class broken and the log saying it was
+    handled.
+
+    None is in the matrix on purpose: "does this accessory differ from no
+    accessory" is the same question as "does it exist", so one test covers both
+    and there is no way to pass by being merely unlike the other accessories.
+
+    Floor 0.055, between the 0.032 of the flat apron and the 0.074 of the
+    weakest pair once it was given a hem and ties.
+    """
+    from itertools import combinations
+    from dataclasses import replace
+    base = replace(BARISTA, accessory_kind=None)
+    seen = {k: silhouette(replace(base, accessory_kind=k,
+                                  accessory_mat="rose"))
+            for k in ACCESSORY_KINDS}
+    out = []
+    for a, b in combinations(ACCESSORY_KINDS, 2):
+        d = silhouette_distance(seen[a], seen[b])
+        if d < floor:
+            out.append(f"{a or 'no accessory'} and {b or 'no accessory'} "
+                       f"differ by only {d * 100:.1f}% of outline "
+                       f"(floor {floor * 100:.1f}%) - not distinguishable")
+    return out
+
+
+def check_cast_silhouette(roster=None,
+                          floor: float = MIN_CAST_SILHOUETTE) -> list[str]:
+    """Are any two characters in this cast the same SHAPE?
+
+    The shape-only half of `check_roster_variety`, and the half that turned out
+    to be doing the work. Run over the eight sprite directions rather than the
+    canonical one, because the sheet turns the character under a fixed camera:
+    those eight azimuths are the frames a player sees, and a pair that separates
+    at 45 and collapses at 0 is a pair that collapses one frame in eight.
+    """
+    specs = list(roster or ROSTER)
+    if len(specs) < 2:
+        return []
+    sils = [silhouette(s) for s in specs]
+    out = []
+    for i in range(len(sils)):
+        for j in range(i + 1, len(sils)):
+            d = silhouette_distance(sils[i], sils[j])
+            if d < floor:
+                out.append(f"{specs[i].name} and {specs[j].name} have "
+                           f"{d:.1%} of outline between them (floor "
+                           f"{floor:.0%}) -- one shape, two paint jobs")
+    return out
+
+
+# Bracketed against the rule this replaced: `skin + "-4"` measured 0.103 at
+# `skin-2`, which renders as a blank face, against `neutral-2`'s worst tone at
+# 0.196. Measured as full OKLab distance and not as lightness, because at the
+# dark end the eye and the cheek separate on hue -- a cool near-black on a warm
+# red-brown -- and a lightness-only reading called that 0.039 and would have
+# rejected art that reads perfectly well.
+MIN_EYE_GAP = 0.15
+
+
+def check_eye_legibility(ramps=None) -> list[str]:
+    """Can the eyes be seen, at every skin tone the generator may draw?
+
+    Rendered rather than computed, because the failure this was written for is
+    invisible to the analytic version. `check_contrast` compares palette steps
+    and would have reported a comfortable 0.201 at `skin-1` while the sprite
+    showed a blank face: the eyes sit on the shaded front facet, so the lambert
+    moves them and the cheek around them onto the same clamped step, and only a
+    render knows that.
+
+    The eye pixels are found by difference -- one head with a face and one
+    without -- so the check does not need to know where in the frame they
+    landed, and it keeps working if the eye line moves.
+
+    It can fail. Restore `EYE` to a skin offset and it fires on four of the
+    seven tones, which is how it was verified.
+    """
+    from render_batch import frame_all, render_sprite
+    from oklab import srgb_to_oklab
+    from pixelize import load_palette
+    ramps = ramps or load_palette()
+    out = []
+    for tone in SKIN_TONES:
+        bare = merge(head(tone))
+        span, centre = frame_all(bare)
+        _, plain = render_sprite(bare, 45.0, 48, 4, ramps,
+                                 span=span, centre=centre)
+        _, eyed = render_sprite(merge(head(tone), face(tone, blush=False)),
+                                45.0, 48, 4, ramps, span=span, centre=centre)
+        gaps = [math.dist(srgb_to_oklab(a[:3]), srgb_to_oklab(b[:3]))
+                for a, b in zip(plain, eyed)
+                if a is not None and b is not None and a != b]
+        if not gaps:
+            out.append(f"skin '{tone}': the eyes render no pixels at all")
+            continue
+        # The strongest pixel, not the mean: two dark marks on a face is a
+        # peak-contrast read, and averaging in the antialiased rim of each eye
+        # would report a failure the eye does not see.
+        gap = max(gaps)
+        if gap < MIN_EYE_GAP:
+            out.append(f"skin '{tone}': eyes are {gap:.3f} from the face "
+                       f"(need {MIN_EYE_GAP}) -- at this tone the head reads "
+                       f"as blank")
+    return out
+
+
+# Bracketed against the two dimensions this check was written after: `skin` and
+# `blush` each took ONE value across a hundred seeds -- 100% on their modal
+# value -- while the five dimensions that were working peaked at 59% (`blush`
+# now), 38% (`accessory_kind`, whose vocabulary is a quarter `None` by design)
+# and 24% (`hair_style`). The gap between 59 and 100 is where this sits.
+MAX_MODAL_SHARE = 0.80
+COVERAGE_SEEDS = 100
+
+
+def check_spec_coverage(seeds: int = COVERAGE_SEEDS, ramps=None) -> list[str]:
+    """Does every dimension of the generator actually vary?
+
+    Written because two of them did not, and nothing noticed for eight passes.
+    `skin` and `blush` were dataclass defaults that the proposal loop never
+    drew from, so a hundred generated extras shared one complexion and all of
+    them blushed -- sitting unremarked beside five dimensions producing
+    seventeen to twenty-four distinct values each.
+
+    This is the audit itself, promoted. `check_generator_range` already asks
+    the outcome-level question for the asset library -- do consecutive seeds
+    produce different silhouettes -- and it would never have caught this,
+    because a cast can differ in shirt and trousers and hair and still be one
+    face repeated. A dimension that is never drawn from is invisible in every
+    downstream metric; the only place it shows is in the spec.
+
+    Measured as modal share rather than distinct count, so a dimension that
+    varies once in a hundred seeds is caught too. Booleans are the tight case
+    by construction -- two values is all there is -- which is why the cap is
+    where it is rather than anywhere near the 24% the roomiest dimension
+    reaches.
+    """
+    from dataclasses import fields
+    specs = [generate_spec(i, ramps) for i in range(1, seeds + 1)]
+    out = []
+    for f in fields(CharacterSpec):
+        # `name` is seed-derived and unique by construction, so it would report
+        # perfect coverage while telling us nothing.
+        if f.name == "name":
+            continue
+        vals = [getattr(s, f.name) for s in specs]
+        top, n = max(((v, vals.count(v)) for v in set(vals)),
+                     key=lambda kv: kv[1])
+        share = n / len(vals)
+        if share > MAX_MODAL_SHARE:
+            out.append(
+                f"generator: '{f.name}' is {top!r} on {share:.0%} of "
+                f"{seeds} seeds -- that dimension is not being drawn from")
+    return out
+
+
+def check_waistline(ramps, roster=None) -> list[str]:
+    """A shirt and trousers that resolve to the same value have no edge between them.
+
+    Promoted from the generated-extras sheet, which is what the sheet is for.
+    `check_palette_spread` allows two of four parts on one ramp, and that is
+    the right rule -- it exists to stop a figure being built entirely from one
+    ramp. But it counts *ramps*, not values, so a rose shirt over rose trousers
+    passes it at exactly the 50% limit and renders as a single pink column with
+    no waist. At 46 px of figure the waist is one edge, and losing it costs
+    more than any of the detail this pipeline spends triangles on.
+
+    This is the same shape of gap as the one `check_palette_spread` itself
+    filled: `check_contrast` was already comparing two parts for value
+    separation, just the wrong two.
+    """
+    from oklab import srgb_to_oklab
+    from pixelize import material
+
+    out = []
+    for s in roster or ROSTER:
+        vals = []
+        for part in (s.shirt, s.trousers):
+            ramp, tone = material(part)
+            steps = ramps[ramp]
+            vals.append(srgb_to_oklab(
+                steps[_clamp(len(steps) // 2 + tone, steps)])[0])
+        gap = abs(vals[0] - vals[1])
+        if gap < MIN_WAIST_GAP:
+            out.append(f"{s.name}: shirt {s.shirt!r} and trousers "
+                       f"{s.trousers!r} are {gap:.3f} apart in value "
+                       f"(need {MIN_WAIST_GAP}) -- no waistline")
     return out
 
 
@@ -489,6 +1155,7 @@ if __name__ == "__main__":
     from pixelize import load_palette
     ramps = load_palette()
     problems = (check_contrast(ramps) + check_palette_spread()
+                + check_waistline(ramps)
                 + check_direction_stability())
     for p in problems:
         print(f"  BLOCKER  {p}")
