@@ -2400,6 +2400,456 @@ The floor stays at 0.15, unchanged. What changed is that "it has never fired"
 is now known to mean the library has never regressed this way, not that the
 check has nothing to catch.
 
+## Counter orientation: the accepted population is 66% worse-lit, and the coin is not why
+
+NEXT.md B5 asked for a measurement before touching anything -- the light rig
+and any per-pixel fill are repo-wide changes, and the eighth pass already
+established the mechanism: a counter facing +x reads at N.L = +0.874, one
+facing +y at N.L = -0.116, from the fixed camera-space key at azimuth 45.
+What was never measured is how much of the generated population actually
+lands in the dark orientation, or why.
+
+`Zone.facing` looked, on a first read, like a dead field -- every keyword-form
+`Zone(...)` call in `floorplan.py` omits it, which is what a `grep "facing="`
+finds. It is not dead: every one of those calls sets it *positionally*, as a
+sixth argument on the next line down. Worth recording only because it is
+exactly the kind of false lead this file has warned about before, and this
+time it was caught before being written down as a finding rather than after.
+
+With `facing` read correctly, 600 generated plans split by which of the two
+key-light dot products their counter's front face gets:
+
+| topology | better-lit (+0.874) | worse-lit (-0.116) |
+|---|---|---|
+| wall run | 105 | 144 |
+| L run | 34 | 66 |
+| island | 35 | 53 |
+| peninsula | 31 | 132 |
+| **overall** | **205 (34%)** | **395 (66%)** |
+
+Two-thirds of generated rooms put the counter in the dark orientation. The
+proposal loop draws one shared coin, `horizontal = rnd() < 0.62`, and for wall
+run / L run / island `horizontal=True` maps to the WORSE facing while for
+peninsula it maps to the BETTER one -- so a naive reading of the 62% coin
+predicts wall-run-family rooms skewing 62% worse (close to the measured
+58-66%) and peninsula skewing 62% BETTER. Peninsula measures the opposite:
+81% worse. Checked whether a downstream `continue` was rejecting proposals
+asymmetrically by comparing accepted `run_len` distributions between the two
+facings at n=600 -- means within 0.15 of each other, same range, no signal.
+Peninsula's skew is real and confirmed larger than the coin bias predicts, and
+its specific rejection path was not traced to a single line; it is buried in
+the later seating-rectangle checks (`main`/`side`, `MIN_SEAT_RECT_W/D`), which
+is where a follow-up should look.
+
+**Not fixed, for the reason NEXT.md flagged in advance.** Rebalancing the coin
+would help wall-run/L-run/island roughly in line with prediction and would
+need a SEPARATE, opposite change for peninsula given its inverted mapping --
+a per-topology probability, not a shared one, which is a real change to the
+generator's acceptance-rate behaviour and not a one-line flip. Untraced
+peninsula-specific rejection mechanism means a naive per-topology rebalance
+could easily just move the skew rather than close it. Given every wall-run/
+L-run/island room in the twelve-plan sample already passes the focal floors
+(see the widened B4 measurement below, which complicates this further), the
+population skew costs SCORE, not PASS/FAIL -- and spending a repo-wide-risk
+change to move a score that already clears its gate is the wrong trade this
+session.
+
+## The basket's crescent frames: stage 2, not stage 5
+
+NEXT.md C3 asked where the basket's two flat, crescent-shaped frames (dir1 and
+dir5, 90 degrees and 270 degrees) come from -- framing, rasteriser, or the
+reconstruction itself. The mesh reports watertight with positive volume, so
+it was not obvious which.
+
+Ruled out by measurement before looking at a single pixel: the basket's
+projected silhouette width and its depth extent along the camera axis are
+both LARGEST at dir1/dir5 of all eight directions (0.348 and 0.341 against a
+mean of about 0.29 elsewhere). Whatever is wrong is not the object going thin
+edge-on to the camera, which was the obvious first guess.
+
+Settled by rendering the raw lambert buffer directly -- full resolution, no
+pixelization, no palette, greyscale shading only -- at dir0, dir1 and dir5.
+Dir0 shows a basket: visible weave, a rim, a body with real volume. Dir1 and
+dir5 show an honest crescent, a scooped shell shape, present in the geometry
+itself before a single downstream stage touches it. **This is stage 2, not
+stage 5 or stage 7.** The rasteriser and the framing are exonerated by the
+same evidence that would have convicted them: if this were a rendering
+artifact it would not appear in an unquantized buffer with no palette
+involved.
+
+This is the same limitation the ninth pass named -- a single-view
+reconstructor invents what it cannot see, and nothing downstream can verify
+the invention -- with a second, now visually confirmed, data point. The
+basket's photograph showed roughly a 3/4 front view; the profile at 90/270 is
+close to the least-constrained angle TripoSR had to guess, and here it guessed
+a concave scoop instead of a rounded body. Consistent with the "Still open"
+note directly below, which is why no new check is proposed: a check that
+could catch this would have to know what a basket's side looks like, which is
+exactly the information a single photograph does not carry.
+
+## Auto-uprighting: the objective is not well-defined, not just object-specific
+
+NEXT.md C4 asked to re-run the base-flatness pitch/roll search across more
+objects and decide whether the correction it finds is a systematic camera
+offset (adopt it) or per-object noise (leave it). The eighth pass's teapot
+result -- pitch 2, roll 12, spread 0.0081 against 0.0235 level -- was found
+with roll searched only to +-20 degrees in steps of 4.
+
+Widening the search to +-30 degrees in steps of 2 was meant to add resolution.
+It found a BETTER-scoring optimum at pitch 46, roll -24 -- spread 0.0068,
+lower than the original -- entirely outside the box the original search
+covered. Restricting the wider search back to the original bounds reproduces
+0.0081 at (2, 12) exactly, so this is not a bug in the search; it is a second,
+deeper optimum the narrower box never saw.
+
+Both optima are real flat patches, not degenerate artifacts: the lowest-1%
+vertex cluster at (2, 12) spans x -0.22..0.09, y -0.20..0.21; at (46, -24) it
+spans x -0.03..0.20, y -0.27..-0.17. Both are extended regions consistent with
+"a base," not a pinpoint on the spout or a handle. **The teapot has two
+comparably flat surfaces at very different orientations, and the objective
+cannot tell them apart.** The likely source: a single-view reconstructor with
+weak priors often fills in the unseen side as a roughly planar continuation of
+the visible silhouette rather than inventing real curvature back there --
+which produces a broad, genuinely flat, entirely spurious surface that scores
+just as well as the true bottom.
+
+Basket and kettle, same wide search:
+
+| | baseline spread | best pitch/roll | best spread |
+|---|---|---|---|
+| teapot | 0.0235 | +46 / -24 | 0.0068 |
+| basket | 0.0177 | +28 / +30 | 0.0055 |
+| kettle | 0.0048 | -2 / -2 | 0.0027 |
+
+Kettle's correction is small and near zero in both axes -- consistent with a
+mesh that does not have this ambiguity, or with a genuine near-upright
+reconstruction. Teapot and basket both land far from zero in directions that
+were never checked against a second local optimum for basket specifically,
+because by this point the shape of the problem was already clear: the search
+is not robust to its own bounds on the object it was originally calibrated
+against, which is a stronger reason to leave it unadopted than "it varies
+between objects" -- it is not stable for a single object either.
+
+**Left undone**, more firmly than before. Fitting a rotation to whichever
+optimum a search box happens to include is not a systematic camera offset; it
+is a coin flip between the real base and an artifact this pipeline already
+knows to expect on the unseen side of every single-view reconstruction.
+
+## Stage 3 (UniRig): same blocker as TRELLIS, before any GPU time is spent
+
+NEXT.md D1 asked to check UniRig's dependency list for compiled CUDA
+extensions before investing in rigging, on the theory that if it needs `nvcc`
+the same way TRELLIS 2 does, that finding alone is the deliverable.
+
+It does. `requirements.txt` pulls in `flash_attn` directly, and the README's
+install steps additionally require `spconv` (built from source against the
+local CUDA toolkit) and `torch_scatter` / `torch_cluster` from PyTorch
+Geometric's wheel index -- wheels that only exist for specific
+torch/CUDA/Python combinations and fall back to source compilation otherwise.
+The README's own words on the flash-attention step: "installation errors are
+common here," pointing users at the upstream repo's install guide rather than
+giving one itself.
+
+This machine has no `nvcc` (`where nvcc` / `nvcc --version` both fail) --
+already the reason TRELLIS 2 is blocked, recorded under "Not tasks" below.
+UniRig's dependency list hits the identical wall before a single rig is
+attempted: three packages that want to compile CUDA code against a toolkit
+that was never installed, on top of `bpy==4.2` (Blender as a Python module,
+a large and separately fragile dependency for Python-version compatibility).
+
+Also worth weighing before revisiting: characters in this repo are already
+analytic meshes with hand-authored clips that read well. UniRig would buy
+variety in body shape, not motion quality -- the README's 8GB VRAM floor for
+generation is itself tight against the 8.6GB card once SDXL or TripoSR is
+also resident, so even unblocked, batch use alongside stage 1/2 would be
+close to the wire.
+
+**Left undone**, same category as TRELLIS 2: blocked on admin-level system
+installs (CUDA toolkit + MSVC host compiler), not rejected on merit. Revisit
+together with TRELLIS if the workstation ever changes.
+
+## The concept fitness gate at 31 subjects: two thresholds real, two false-rejection classes found
+
+NEXT.md C1 asked to run 25-30 café-appropriate subjects through `concept.py`
+and bracket its four thresholds, which had only ever seen four subjects, three
+of them passing. `subjects_c1.yaml` (teapot, basket, kettle plus 28 new props)
+went through `factory.py` end to end: 31 attempted, 22 reached stage 5 clean,
+9 gated, all 9 at the concept stage -- nothing that cleared concept was later
+lost to lift, ingest or render.
+
+`MAX_FILL 0.72` and `MAX_SECOND_BLOB 0.15` fired zero times across 31
+subjects. Still effectively unbracketed on the defect side; loosening them is
+not indicated by this sample, but neither is confidence that 0.72 or 0.15 are
+the right numbers rather than merely numbers nothing here reached.
+
+`MIN_FILL 0.12` fired three times, all within 1.1 points of the floor:
+wine_glass 11.7%, cake_slice 11.2%, wooden_spoon 10.9%. This is a real bracket
+now on the defect side. The passing side isn't logged per-subject by
+`factory.py` (it records failure readings, not every threshold's value on a
+pass), so the weakest known-good fill percentage is still unmeasured --
+logging fitness readings on every subject, not just gated ones, is the
+natural follow-up before this floor can be called fully bracketed.
+
+`MAX_SOFT_ALPHA 0.10` fired six times, from 12% to 67%, and looking at the
+actual images splits them into three causes the single threshold cannot tell
+apart:
+
+- **Genuine bad generations.** bread_loaf (67%) and croissant (42%) are both
+  SDXL producing multiple overlapping instances, several of them barely
+  distinguishable from the background (near-black loaves on black, near-white
+  croissants on white) -- real segmentation confusion over a real generation
+  defect. The gate is correct to reject these.
+- **A genuine segmentation problem on a clean single subject.** book (15%)
+  is one object, plainly generated, on a near-white background with a soft
+  drop shadow -- low subject/background contrast defeats the matte. Also a
+  correct rejection, different cause.
+- **Legitimately hard silhouettes, false rejections.** fern (12%, the case
+  NEXT.md named to re-examine) and bicycle (16%) are both clean, usable
+  generations whose subjects are inherently made of many thin edges -- fern
+  fronds, bicycle spokes -- each edge contributing its own ring of
+  antialiased partial-alpha pixels. More perimeter, more soft-alpha area, at
+  the same generation quality. The gate is measuring the geometry of the
+  silhouette, not the quality of the segmentation.
+- **A fourth pattern the sample surfaced that C1 didn't ask about:**
+  bottle (13%) is not thin-edged or badly generated -- it is glass, and glass
+  is supposed to be partially transparent. `MAX_SOFT_ALPHA` cannot distinguish
+  "the matte is unsure where the object stops" from "the object is see-through
+  by design," and that will recur for every jar, glass or bottle this factory
+  is ever asked to make, which is a real fraction of a café's prop list.
+
+**Verdict:** `MIN_FILL` is bracketed and should stay. `MAX_FILL` and
+`MAX_SECOND_BLOB` are unexercised, not validated -- leave them, flag them as
+still resting on nothing. `MAX_SOFT_ALPHA` is doing two jobs at one number:
+catching real defects (bread_loaf, croissant, book) while also rejecting
+subjects whose correctness looks like the same signal (fern, bicycle,
+bottle). Not loosening it blind -- that would let bread_loaf-class failures
+through -- but it is now a named, evidenced case for a second check (edge
+density from the matte's own alpha gradient, or a material/transparency
+allowance) rather than one scalar cap standing in for three different
+questions.
+
+## The speckle floor at 22 lifted objects: still one basket's problem, now confirmed to be seven objects' problem
+
+NEXT.md C2 asked to feed C1's output through to sprites and re-measure
+`MAX_ISOLATED = 0.105`, which rested on three lifted objects with the defect
+side represented by one basket. C1's batch produced 22 lifted, rendered
+objects (176 sprite frames). Running `check_speckle` on every frame:
+
+7 of 22 objects have at least one frame over the floor -- basket (12.7-16.3%,
+all 8 frames), cutting_board (11.5-14.8%, 7 of 8), stack_of_books (13.0-15.9%,
+3 of 8), newspaper (11.3-12.9%, 3 of 8), flower_pot (12.4-12.8%, 2 of 8),
+rolling_pin (11.1-13.0%, 3 of 8), potted_plant (one frame, 11.7%). The other
+15 sit well clear, worst case coffee_cup at 9.9% on its single busiest frame.
+
+Looked at all seven by eye, none were false positives. Two mechanisms:
+
+- **Fine printed or woven surface detail**, the same cause already named for
+  basket's weave: cutting_board's wood grain, newspaper's print texture,
+  stack_of_books's page and cover detail all show the identical salt-and-
+  pepper pattern basket did, cross-ramp (dark against cream) and visibly
+  wrong at 4x zoom.
+- **Foliage.** flower_pot and potted_plant both speckle on the leaves --
+  green and white/cream alternating per-vertex, the same noise mechanism
+  applied to thin high-frequency plant geometry instead of a flat textured
+  surface. This is a new-to-this-measurement cause, not previously named.
+
+rolling_pin is the closest call: the fluctuation is within-ramp (wood shade
+against wood shade) rather than cross-ramp, so it reads far more subtly than
+basket at a glance, but the scattered pale highlight fragments on 3 of 8
+frames are the same failure at lower contrast, not a different one -- kept
+on the defect side.
+
+**Re-stated bracket:** weakest known-good is coffee_cup at 9.9% (its single
+worst frame); weakest genuine defect is potted_plant's one failing frame at
+11.7%. Narrower than the original 8.4-12.7% gap, but the floor at 10.5% still
+sits inside it, and the extra volume resolves C2's actual question: the
+defect side was never one basket, it is a real and now-multi-cause
+population, and 15 of 22 real lifted props clear it with margin.
+
+**Floor unchanged.** Every new failure was confirmed by eye as a genuine
+defect, so there is no case for loosening it, and the closest good/bad pair
+(coffee_cup / potted_plant) does not argue for moving it either direction --
+it argues the floor was already close to correctly placed on three objects,
+which the original bracket's honesty (`ART_CRITIQUE.md`'s prior entry) rather
+undersold.
+
+## Parameter-coverage audit for assetlib: no dead draws found, one design note
+
+NEXT.md D3 asked whether `assetlib`'s seeded generators have the character
+generator's bug -- randomized parameters that are drawn but never actually
+move the output, the same shape of thing `check_generator_range` catches at
+the silhouette level but cannot localize to a specific dimension. The named
+obstacle was that these generators do not expose their draws the way the
+character generator's spec dict does.
+
+They do not, but every one of them funnels its randomness through one shared
+helper, `_mix()`, called from an identically-named local closure `rnd()` in
+every generator. That is a single patch point: wrap `_mix`, walk the call
+stack past the `rnd` frame to whichever line actually consumed the float, and
+every draw in the library is now visible without touching a single generator.
+
+13 seeded generators exist. 12 call `_mix`/`rnd()`; `leafy_plant` rolls its
+own separate LCG inline (different constants, same shape) -- an
+inconsistency worth flattening later, not a bug: all 8 of its draws feed
+visibly into stem angle, lean, rise and leaf radius.
+
+Across the 12 instrumented generators, 40 seeds each: 53 distinct RNG
+consumption sites, and at every one of them the drawn float differs across
+all 40 seeds. No dead sites -- nothing reproduces the character generator's
+failure at the input level.
+
+Outcome-level cross-check, because varying inputs proving nothing was C1's
+whole point: geometry signature (vertex count, face count, bounding box)
+across 40 seeds. 10 of 12 generators land at 39 or 40 distinct signatures --
+essentially every seed a different mesh. Two came back suspicious at first
+pass -- counter at 3 signatures, bookshelf at 1 -- until re-reading their own
+docstrings: both are explicitly built to draw *value, not geometry* (counter:
+"All of them are drawn as value, never as geometry"; bookshelf's spines are
+flat quads at different ramp steps inside a fixed carcass). Geometry
+signature is the wrong instrument for a generator that varies material, not
+shape. Re-measured on the material set each mesh actually uses: counter shows
+4 distinct sets (matching its small number of front styles, one of which --
+plain -- is deliberately listed twice in `FRONT_STYLES`), bookshelf shows 36
+of 40 distinct, spanning nine ramp families. Both genuinely vary; the first
+metric just wasn't the one their own design promised to move.
+
+**Verdict:** no dead parameters found in `assetlib` at either the input or
+the output layer, across 53 draw sites and 12 generators. The obstacle D3
+named -- draws that don't expose themselves -- is fixed by the `_mix` wrap
+above cheaply enough to leave as a standing instrument (rerun the same script
+after touching any generator's RNG-driven branch, before trusting the change
+did what it was meant to). `leafy_plant`'s separate RNG implementation is the
+one loose end: harmless today, worth unifying if a fourteenth generator is
+ever added copy-pasted from it instead of from the `_mix` pattern the rest of
+the file agreed on.
+
+## The detail floor at 40 plans: the margin got thinner, not wider
+
+NEXT.md B4 flagged `MIN_FOCAL_DETAIL` as the tightest floor in the suite --
+three measured defects at -0.005 to -0.009 against a weakest good room at
++0.005, on a 12-plan sample -- and asked whether a wider sample separates the
+distribution or shows the floor sitting inside the noise.
+
+`MIN_FOCAL_DETAIL = 0.0` exactly (`tools/build_plan.py:121`). Widened to 40
+plans: 5 fail (12.5%), all wall run / L run / island, never peninsula (0 of
+12). Same shape as the 12-plan sample. But the actual margin, read off the
+full 40:
+
+- Weakest fail: plan 10 (wall run), detail -0.002.
+- Weakest pass: plan 24 (L run), detail **-0.000** -- prints negative, is
+  `>= 0.0`, passes only because IEEE754 signed zero compares equal to
+  positive zero. The next strictly-positive pass is plan 6 at +0.004.
+
+That is a 0.002-0.006 gap, not the 0.010 the 12-plan sample reported. More
+data did not separate the distribution -- it found a room sitting exactly on
+the floor's own threshold and closed the margin from the good side.
+
+Rendered the two closest cases side by side (`plan10` fail vs `plan24` pass,
+both cluttered, busy service-counter rooms) to see whether the number tracks
+anything visible. It does not, at this margin: neither reads as flatter or
+less detailed than the other by eye. The floor's own comment already says as
+much for the frame it was built on -- this confirms it is not an artifact of
+that one frame.
+
+**Topology concentration, new in the wider sample:** L run fails at 3 of 8
+(37.5%), island 1 of 5 (20%), wall run 1 of 15 (6.7%), peninsula 0 of 12
+(0%). L run is 20% of the sample and 60% of the failures.
+
+Two hypotheses chased and closed:
+
+- **Back-wall dressing structure.** Compared item lists between failing and
+  passing island rooms of identical topology (failing plan 18 vs passing
+  plans 3/12/15/32) -- identical dressing (sign, menu, shelf, counter/bar).
+  Ruled out; not a missing-prop bug.
+- **Shelf count.** Correlated `wshelf` count against detail lead across 60
+  seeds, wall-run/L-run only: 0 shelves -> +0.0154 mean, 2/5 fail; 1 shelf ->
+  +0.0383 mean, 2/26 fail; 2 shelves -> +0.0597 mean, 0/3 fail. Suggestive --
+  zero-shelf rooms fail more often -- but `n=5` and `n=3` at the extremes are
+  too small to call it, and more shelves tracking *higher* mean detail (not
+  lower) argues against shelf count being what drags L run down specifically.
+
+**Verdict:** the floor is real -- it is not tripping on noise alone, the
+failing rooms are a consistent, repeatable topology-skewed population across
+three independent samples now (12, 40, and the 60-seed correlation run) --
+but its margin does not support the confidence a 0.0 threshold implies. Left
+at 0.0, since nothing here argues for a different number and the failures
+are genuine rather than false positives. Recorded rather than re-bracketed:
+the honest statement NEXT.md asked for is that 40 plans narrowed the gap
+instead of widening it, the L-run concentration is real and unexplained, and
+neither dressing content nor shelf count is the mechanism.
+
+## No style LoRA: the before-baseline is now measured, training one is not this session's job
+
+NEXT.md D2 asked for a before/after on worst bind dE and albedo median shift,
+with and without a style LoRA on stage 1's SDXL. Training or sourcing a LoRA
+matched to this repo's house look is a separate project -- a curated
+reference set, a training run, and its own evaluation loop -- not a
+measurement task, and doing it inside this pass would mean shipping an
+untested model into a pipeline whose entire discipline is measure-before-
+trusting. Scoped down to the half that is a measurement: the before-baseline,
+so a future LoRA has a real number to beat instead of a vague "SDXL fights
+the palette."
+
+C1's batch logged `delight()`'s correction for every subject that needed
+one -- 17 of 22, the ones whose raw albedo median landed off 0.600 by enough
+to trigger it. Read off those logs directly:
+
+- Mean correction: 0.111 of L.
+- Worst: wall_clock, raw median 0.294 -> corrected to 0.600, a shift of
+  0.306 -- close to half the entire visible lightness range, on a single
+  object, from prompt and lighting alone.
+- Everything else sits between 0.023 (creamer) and 0.170 (flower_pot); the
+  wall_clock case is a clear outlier at more than 3x the mean, not
+  representative of the typical correction.
+
+This is the number a style LoRA would be judged against: a working LoRA
+should pull the mean well under 0.111 and the wall_clock-class worst case
+well under 0.306. Bind dE was not pulled this pass -- it is not logged by
+the current pipeline the way the albedo shift is, and adding that
+instrumentation is a smaller, separable task worth doing before the LoRA
+question is revisited, not with it.
+
+**Left undone**, correctly scoped rather than attempted: not blocked like
+UniRig or TRELLIS, just sized for a different, dedicated pass.
+
+## A fifth topology: scoped, not built
+
+NEXT.md D4 asked whether a fifth floor-plan topology would test the focal and
+detail checks' generality or expose that they were fitted to wall run,
+peninsula, L run and island. Read `floorplan.generate()` (`tools/floorplan.py:314`)
+to size the work before attempting it.
+
+Every existing topology is the same three-`Zone` skeleton --  service run,
+back bar, queue -- placed differently, each branch hand-tuned against
+`check_plan` with its own clearance constants (`ISLAND_CLEAR`,
+`BACKBAR_DEPTH`, `MIN_SEAT_RECT_W/D`) and its own `blocked_x`/`blocked_y`
+span so `_windows` routes glass around the run instead of through it. The
+function's own docstring records what happens when this is rushed: the first
+version of this generator passed 6 of 2157 proposals (0.3%) because two
+branches didn't know about each other's constraints. That is the real cost
+of a fifth branch written without the same iteration the first four got --
+not a syntax risk, an acceptance-rate risk that would burn `generate()`'s
+120-try budget silently and either starve the factory of that topology or
+quietly fall back to a worse plan, the exact failure mode the docstring
+warns a rejection-heavy proposal invites.
+
+That is a multi-hour design-and-tune task on its own, with the same
+measure-before-shipping discipline the rest of this file has been applying
+all session -- not something to improvise inside a pass already carrying
+thirteen other tasks. Scoped down to naming the candidate rather than
+building it: a **double run** (galley) layout, two parallel service runs
+facing each other across the main aisle, is a real café floor plan the
+current four don't cover and reuses every piece already in hand (two
+run/back/queue triples instead of one, windows blocked on whichever axis
+both runs share). It is also the topology most likely to stress the
+checks that matter here -- B5's counter-orientation gap and B4's L-run-
+skewed detail floor are both about which way a service run faces the camera,
+and a double run is the one layout where two runs face opposite directions
+in the same room.
+
+**Left undone.** Recorded so the next pass building it starts from a named
+target and a stated cost, not from "topologies: four."
+
 ## Still open
 
 - **Stage 3** (UniRig) is unbuilt. Stages 1 and 2 run on the local RTX 4070 —

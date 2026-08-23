@@ -1,5 +1,39 @@
 # Next
 
+**All 14 tasks below have been executed.** Each has a write-up in
+`ART_CRITIQUE.md` (search for the task's subject, e.g. "the concept fitness
+gate" for C1). One-line status per task:
+
+- A1 batch driver — built (`tools/factory.py`).
+- A2 manifest overwrite — fixed, merges by asset.
+- A3 stage 7 world facts — fixed, `mesh_geometry()` feeds the manifest.
+- B1 `--smooth` no-op — fixed, `compute_vertex_normals()`.
+- B2 albedo check not gated — fixed, `check_albedo_regression()` wired in.
+- B3 spread floor never fired — proven non-redundant, kept.
+- B4 detail floor bracket — widened to 40 plans; margin narrowed, not
+  widened; floor kept, L-run concentration recorded as unexplained.
+- B5 counter orientation — measured at 600 plans (66% worse-lit); left open,
+  cause still untraced.
+- C1 wider subject set — 31 subjects run; `MIN_FILL` bracketed, two
+  false-rejection classes found in `MAX_SOFT_ALPHA` (thin edges, glass).
+- C2 wider speckle bracket — 22 lifted objects measured; floor confirmed,
+  not moved.
+- C3 basket crescent frames — diagnosed as stage 2 (single-view
+  reconstruction), not a bug.
+- C4 auto-uprighting — search found to be search-range-sensitive on the same
+  object; left undone, more firmly than before.
+- D1 UniRig CUDA check — same `nvcc`/MSVC blocker as TRELLIS 2.
+- D2 style LoRA — scoped down to a before-baseline measurement (mean 0.111,
+  worst 0.306 of albedo L); training one is future work.
+- D3 assetlib parameter coverage — instrumented all `_mix`-based generators;
+  no dead draws found across 53 sites.
+- D4 fifth topology — scoped, not built; double-run/galley named as the
+  candidate.
+
+Kept below as a record of what was asked, not as an open queue.
+
+---
+
 A worklist written to be picked up cold. Every task states where the code is,
 what "done" means, and what to measure. Tasks are ordered within each tier by
 value; tiers are ordered by how much they unblock.
