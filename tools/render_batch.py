@@ -128,19 +128,47 @@ def main() -> int:
         print(f"  framed at span {span:.3f}, centre "
               f"({centre[0]:.2f}, {centre[1]:.2f}, {centre[2]:.2f})")
 
-    manifest = []
+    # Stage 7. `ingest.fit()` already computed these once, in the process that
+    # wrote the OBJ this run loaded -- but that was a different invocation, so
+    # they are re-derived here from the mesh's own bounds via `mesh_geometry`,
+    # which is exact rather than approximate: `fit` centres every mesh on
+    # (0.5, 0.5) and rests it on z=0 by construction, so the numbers are
+    # recoverable from the file alone. The analytic scene has no single
+    # footprint -- it is a whole room -- so it is left out rather than given a
+    # placeholder that looks like a measurement.
+    world = None
+    if args.mesh:
+        from ingest import mesh_geometry
+        world = mesh_geometry(source)
+        print(f"  world: height {world['height']:.3f}  footprint "
+              f"{world['footprint_xy'][0]:.3f}x{world['footprint_xy'][1]:.3f} "
+              f"tiles")
+
+    entries = []
     for k in range(8):
         az = 45.0 + k * AZIMUTH_STEP
         img, px = render_sprite(source, az, args.target, args.factor, ramps,
                                 smooth=args.smooth, span=span, centre=centre)
         name = f"{asset}_dir{k}.png"
         img.save(out / name)
-        manifest.append({"asset": asset, "direction": k, "azimuth": az,
-                         "file": name, **(footprint(px, args.target) or {})})
+        row = {"asset": asset, "direction": k, "azimuth": az, "file": name,
+              **(footprint(px, args.target) or {})}
+        if world:
+            row["world"] = world
+        entries.append(row)
         print(f"  dir{k}  az={az:5.1f}  {name}")
 
-    (out / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    print(f"\n{len(manifest)} sprites -> {out}/")
+    # Merged by (asset, direction) rather than overwritten. A batch that
+    # renders three assets one call at a time used to leave manifest.json
+    # describing only the last one -- verified: three renders in a row left
+    # 8 entries naming one asset, not 24 naming three.
+    path = out / "manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+    manifest = [m for m in manifest if m.get("asset") != asset]
+    manifest.extend(entries)
+    path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    print(f"\n{len(entries)} sprites -> {out}/  ({len(manifest)} total across "
+          f"{len({m['asset'] for m in manifest})} assets)")
     return 0
 
 

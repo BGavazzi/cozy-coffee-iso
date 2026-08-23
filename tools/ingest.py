@@ -192,7 +192,15 @@ def fit(mesh: Mesh, height: float | None = None,
     # without a word. Adding a field to a dataclass adds it to every place
     # that reconstructs one.
     out.vcolors = list(mesh.vcolors)
-    return out, {"scale": s, "height": tall * s, "footprint": wide * s}
+    fx, fy = (max(xs) - min(xs)) * s, (max(ys) - min(ys)) * s
+    # `footprint` stays the single scalar callers already read (the CLI
+    # printout, `assets.yaml`'s convention of one number for round objects).
+    # `footprint_xy` is the pair `Layout` actually needs: a mesh scaled by
+    # HEIGHT is not generally square in plan, and collapsing an oval basket's
+    # 0.34 x 0.23 footprint to one number of either value is a placement bug
+    # waiting for a long thin object.
+    return out, {"scale": s, "height": tall * s, "footprint": wide * s,
+                "footprint_xy": [fx, fy]}
 
 
 def _is_palette(mat: str) -> bool:
@@ -510,6 +518,42 @@ def bind_vertex_colours(mesh: Mesh, ramps: dict):
     return out, table, worst
 
 
+def mesh_geometry(mesh: Mesh) -> dict:
+    """Read footprint, height and anchor off an already-fit mesh's own bounds.
+
+    `fit()` returns this dict for the mesh it just built, in the same process.
+    A render happening later -- `render_batch --mesh out/mesh/teapot_bound.obj`
+    is a separate invocation loading a file off disk -- has no way to see that
+    dict, and re-deriving it from the mesh's bounds is exact rather than
+    approximate: `fit` centres a mesh on (0.5, 0.5) and rests it on z=0 by
+    construction, so those numbers are recoverable from any mesh that went
+    through it, not just the one still in memory.
+    """
+    xs = [v[0] for v in mesh.verts]
+    ys = [v[1] for v in mesh.verts]
+    zs = [v[2] for v in mesh.verts]
+    if not xs:
+        return {"height": 0.0, "footprint": 0.0, "footprint_xy": [0.0, 0.0],
+                "anchor": [0.5, 0.5, 0.0], "walkable": False}
+    fx, fy = max(xs) - min(xs), max(ys) - min(ys)
+    return {
+        "height": max(zs) - min(zs),
+        "footprint": max(fx, fy),
+        "footprint_xy": [fx, fy],
+        # Fixed by `fit()`'s own construction, not measured -- every ingested
+        # mesh is centred on its tile and rests on z=0, so this is the same
+        # tuple for anything that came through the seam.
+        "anchor": [0.5, 0.5, 0.0],
+        # Not a measurable geometric fact. Every subject this factory has
+        # produced is a physical object a customer would walk around, and
+        # `assets.yaml`'s own convention reserves `walkable` for the `floor`
+        # category (h: 0) exclusively -- so `False` is the correct default for
+        # every prop this seam has ever seen, not a placeholder standing in
+        # for a computation that belongs here later.
+        "walkable": False,
+    }
+
+
 def ingest(obj: Path | str, mtl: Path | str | None = None, up: str = "z",
            height: float | None = None, footprint: float | None = None):
     ramps = load_palette()
@@ -521,6 +565,8 @@ def ingest(obj: Path | str, mtl: Path | str | None = None, up: str = "z",
             colours = read_mtl(beside)
     mesh = orient(mesh, up)
     mesh, geom = fit(mesh, height, footprint)
+    geom["anchor"] = [0.5, 0.5, 0.0]
+    geom["walkable"] = False
 
     # Vertex colours only when there is nothing better. An MTL names materials,
     # and a name survives a rebind in a way an averaged triangle colour does
