@@ -109,6 +109,7 @@ def run_subject(spec: dict, pipe, model, ramps) -> dict:
             mesh, report = I.ingest(raw_obj, height=spec["height"])
             for w in report["warnings"]:
                 result["detail"] += w + "; "
+            result["worst_bind_de"] = report["worst_bind_de"]
             save_obj(mesh, bound_obj)
     except Exception as e:
         result.update(stage="ingest", detail=f"{type(e).__name__}: {e}")

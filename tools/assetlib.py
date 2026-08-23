@@ -987,12 +987,12 @@ def leafy_plant(height: float = 0.85, seed: int = 1, stems: int = 5,
     """
     import math
 
-    st = (seed * 2654435761 + 1013904223) & 0x7FFFFFFF
+    st = _mix(seed)
 
     def rnd():
         nonlocal st
-        st = (st * 1103515245 + 12345) & 0x7FFFFFFF
-        return (st >> 8) / (0x7FFFFFFF >> 8)
+        st = _mix(st)
+        return st / 0x7FFFFFFF
 
     m = Mesh()
     pot_h = height * 0.30
