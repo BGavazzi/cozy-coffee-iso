@@ -47,7 +47,39 @@ def check_direction_set(records) -> list[str]:
     to any per-sprite check, since each frame is individually valid.
 
     This is the ratchet working: a recurring human rejection becomes a cheap
-    automated check, and never needs a human again.
+    automated check, and never needs a human again -- except this one still
+    needs one, and the reason is worth recording so nobody re-fixes the bug
+    that isn't there.
+
+    Run against the 22-object lifted library, this fires on 19 of 22 --
+    `mesh.rasterize()` was re-read line by line to check: `light =
+    camera_light(cam)` is called fresh inside `rasterize()`, and
+    `render_batch.render_sprite()` builds a fresh `DimetricCamera(azimuth)`
+    per direction, so the key genuinely is re-resolved into world space per
+    azimuth. The world-fixed-light bug this check was built for is not back.
+
+    The three objects that DO pass -- kettle, candle, french_press -- are the
+    three closest to a body of revolution: round in plan, so their lit region
+    barely moves in screen space as they turn. Every failure inspected by eye
+    (wall_clock, picture_frame) has an off-axis bright material patch instead
+    -- a clock face, a photo inset -- whose position on screen moves with
+    azimuth for a completely different reason than the key light does. "top
+    20% brightest pixels" cannot tell a specular highlight apart from a
+    patch of pale albedo, and most objects in a café have one.
+
+    Tried and discarded: restricting the brightest-pixel pool to each frame's
+    dominant palette ramp before measuring, to filter out cross-material
+    jumps. Measured before/after on all 22 -- it fixed 2 (teapot, roughly
+    cutting_board) and broke a clean pass (candle, 3.4x16.2 vs the original
+    5.1x3.9), because narrowing the pool made the centroid noisier than the
+    cross-material signal it was removing. Not shipped. A real fix needs the
+    raw per-pixel material id from `rasterize()`, not the quantized PNG this
+    check only ever sees -- `review_queue.py` doesn't have that buffer today.
+
+    Left firing as a regression guard on the three round objects it can
+    actually speak to; treat a "drifts" verdict on anything else as an
+    albedo-shape question first, a lighting-bug question only if a
+    rotationally-symmetric object starts failing too.
     """
     from art_review import srgb_to_oklab
 
@@ -80,10 +112,12 @@ def check_direction_set(records) -> list[str]:
         spread_y = max(o[1] for o in offsets) - min(o[1] for o in offsets)
         if spread_x > 6.0 or spread_y > 6.0:
             out.append(
-                f"{asset}: key light drifts across the direction set "
-                f"(highlight centroid spread {spread_x:.1f}x{spread_y:.1f}px). "
-                f"Anchor the light to the camera basis, not world space -- in an "
-                f"isometric game the camera is fixed and the object rotates.")
+                f"{asset}: brightest-region centroid drifts across the direction "
+                f"set (spread {spread_x:.1f}x{spread_y:.1f}px). Re-verify "
+                f"`camera_light()` is called fresh per azimuth before assuming a "
+                f"lighting bug -- as of this check's last audit it was, and the "
+                f"drift on most objects is an off-axis bright material patch "
+                f"(a face, a photo, a lid) moving in screen space, not the key.")
         else:
             out.append(f"{asset}: key light consistent across {len(offsets)} "
                        f"directions (spread {spread_x:.1f}x{spread_y:.1f}px) [ok]")

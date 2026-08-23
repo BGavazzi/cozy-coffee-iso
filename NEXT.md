@@ -60,15 +60,26 @@ but the most recent entries (search for "31 subjects", "22 lifted objects",
 **Gates — both must be clean before any commit**
 
 ```
-.venv/Scripts/python.exe tools/manifest.py --check            # 26 checks, takes ~4 min
+.venv/Scripts/python.exe tools/manifest.py --check            # 26 checks, takes ~4 min, 1 currently fails
 .venv/Scripts/python.exe tools/build_plan.py --focal-scan 12  # slower, 1 of 12 currently fails
 ```
 
-The 12-plan scan is not clean right now — plan 10 fails the detail floor by
--0.002, a real, documented, accepted case (`ART_CRITIQUE.md`, "The detail
-floor at 40 plans"). That is not a regression to chase; it is the known state.
-Don't treat a *new* failure in the same run as equally acceptable without
-checking whether it's plan 10 or something else.
+Neither is clean right now, and both are the same underlying story: the
+detail floor sits at exactly 0.0 with a measured 0.002-0.006 margin
+(`ART_CRITIQUE.md`, "The detail floor at 40 plans"), thin enough that small,
+unrelated changes flip a borderline room across it.
+
+- `build_plan.py --focal-scan 12` fails plan 10 by -0.002 — a real,
+  documented, accepted case.
+- `manifest.py --check`'s `check_focal_contrast` fails plan 1 (wall run) by
+  -0.002 — this one is new as of the RNG-unification pass (`ART_CRITIQUE.md`,
+  "`leafy_plant` unified onto `_mix`"): a different draw from `leafy_plant`'s
+  now-shared RNG stream shifted plan 1's detail reading across the same
+  floor. Verified by isolating the change with `git stash`; not a bug in the
+  RNG swap, a demonstration of how thin the floor's margin really is.
+
+Don't treat a *new* failure in either run as equally acceptable without
+checking whether it's one of these two known cases or something else.
 
 Stage-8 review on generated sprites:
 

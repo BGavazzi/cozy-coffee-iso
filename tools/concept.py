@@ -102,6 +102,13 @@ MAX_FILL = 0.72
 EDGE_MARGIN = 0.02       # clear border, as a fraction of the short side
 MAX_SECOND_BLOB = 0.15   # runner-up mass, relative to the object itself
 MAX_SOFT_ALPHA = 0.10    # share of the matte that is neither in nor out
+DETACHED_SOFT_FLOOR = 0.65  # of the soft pixels that trip MAX_SOFT_ALPHA,
+# the share with no confident pixel nearby. Bracketed against the 31-subject
+# C1 set: fern and bicycle (thin fronds / spokes, real generations, false
+# rejections) measured 36-47%; bottle (glass, also a false rejection) 54%;
+# bread_loaf, croissant and book (duplicate ghost instances, a genuine
+# segmentation failure) measured 73-89%. 65% sits in the 19-point gap between
+# the worst false rejection and the best genuine defect.
 
 _SESSION = None
 
@@ -232,12 +239,40 @@ def check_concept_fitness(png: Path | str) -> list[str]:
     # pixels and hedges on a thin rim; a wide band of hedging means it never
     # found an object, and every hedged pixel becomes a fringe of
     # backdrop-coloured geometry once stage 2 lifts it.
-    soft = sum(1 for v in a if 24 < v < 232)
+    #
+    # That is one cause of a wide hedge band, not the only one. C1 (31
+    # subjects) found the same ratio tripped by fern and bicycle -- legitimate
+    # generations whose subject is made of many thin edges, each contributing
+    # its own ring of antialiased soft-alpha -- and by bottle, which is glass
+    # and is supposed to be partly see-through. Ratio alone can't tell those
+    # apart from bread_loaf and croissant, where SDXL drew a faint duplicate
+    # instance the matte model couldn't commit to either way.
+    #
+    # The two causes have different SHAPES. A rim of soft pixels tracing a
+    # fine silhouette stays close to the confident interior everywhere along
+    # its length. A duplicate ghost or a low-contrast failure is its own
+    # region, mostly far from anything the matte was ever sure about. Soft
+    # pixels with no confident pixel within a few px of them are "detached";
+    # the detached share separates the two causes cleanly on the 31-subject
+    # set (see DETACHED_SOFT_FLOOR).
+    soft_pts = [(i % w, i // w) for i, v in enumerate(a) if 24 < v < 232]
     inside = sum(1 for v in a if v >= 232)
-    if inside and soft / inside > MAX_SOFT_ALPHA:
-        out.append(f"{Path(png).name}: {soft / inside:.0%} of the matte is "
-                   f"half-transparent (cap {MAX_SOFT_ALPHA:.0%}) -- the "
-                   f"segmentation is unsure where the object stops")
+    if inside and len(soft_pts) / inside > MAX_SOFT_ALPHA:
+        interior = {(i % w, i // w) for i, v in enumerate(a) if v >= 232}
+        rad = 3
+        detached = 0
+        for x, y in soft_pts:
+            if not any((x + dx, y + dy) in interior
+                      for dy in range(-rad, rad + 1)
+                      for dx in range(-rad, rad + 1)):
+                detached += 1
+        frac = detached / len(soft_pts)
+        if frac > DETACHED_SOFT_FLOOR:
+            out.append(f"{Path(png).name}: {len(soft_pts) / inside:.0%} of "
+                       f"the matte is half-transparent (cap "
+                       f"{MAX_SOFT_ALPHA:.0%}), and {frac:.0%} of that has no "
+                       f"confident pixel nearby (floor {DETACHED_SOFT_FLOOR:.0%}) "
+                       f"-- a second, unresolved shape, not a fine edge")
 
     fg = bytearray(1 if v >= 128 else 0 for v in a)
     blobs = _blobs(fg, w, h)

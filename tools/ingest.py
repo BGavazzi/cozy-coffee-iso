@@ -642,11 +642,14 @@ def ingest(obj: Path | str, mtl: Path | str | None = None, up: str = "z",
                          f"is replacement rather than representation")
         table = sorted((m, f"{n} faces", d) for m, (n, d) in hist.items())
         warns += check_albedo_centre(mesh, ramps)
-        return mesh, {"geometry": geom, "bindings": table, "warnings": warns}
+        return mesh, {"geometry": geom, "bindings": table, "warnings": warns,
+                      "worst_bind_de": worst}
 
     mesh, table, warns = rebind(mesh, colours, ramps)
     warns += check_albedo_centre(mesh, ramps)
-    return mesh, {"geometry": geom, "bindings": table, "warnings": warns}
+    worst = max((d for _, _, d in table), default=0.0)
+    return mesh, {"geometry": geom, "bindings": table, "warnings": warns,
+                  "worst_bind_de": worst}
 
 
 def main() -> int:

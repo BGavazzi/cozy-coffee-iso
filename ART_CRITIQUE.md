@@ -3503,3 +3503,196 @@ through two separate implementations.
   −0.005 to −0.009 against a weakest good room at +0.005. It is the tightest
   floor in the suite and the first one whose margin is smaller than the
   difference between two adjacent rooms.
+
+---
+
+## The key-light-drift check was right about the drift and wrong about the cause
+
+The refreshed worklist's one item nobody had triaged: `review_queue.py`'s
+set-level check (`check_direction_set`) compares a sprite's brightest-region
+centroid across its 8 directions and, if it moves more than 6px, says the
+key light is anchored to world space instead of the camera. Run against the
+current 22-object lifted library instead of the 3 it was last checked
+against: 19 of 22 fire.
+
+That is not 19 lighting bugs. Re-read `mesh.rasterize()` and
+`render_batch.render_sprite()` line by line: `light = camera_light(cam)` is
+called fresh inside `rasterize()`, and `render_sprite()` builds a fresh
+`DimetricCamera(azimuth)` per direction before calling it. The key is
+genuinely re-resolved into world space every azimuth. The bug this check was
+built to catch -- a world-fixed light, from the first batch, per its own
+docstring -- is not back.
+
+The three passes are the tell: kettle, candle, french_press are the three
+objects in the library closest to a body of revolution -- round in plan, so
+almost nothing about their lit region moves in screen space as they turn.
+Rendered wall_clock's and picture_frame's full 8-direction sheets to check
+the failures by eye: wall_clock is a thin disc whose two bright frames show
+its cream face and whose other six show a plain grey back or a dark edge --
+the object's own geometry alternates between showing its one bright material
+and not showing it, which a body of revolution never does. picture_frame's
+pale photo inset is off-centre on the object and simply changes screen
+position as the camera orbits it. Neither is the key light moving; both are
+"top 20% brightest pixels" picking up albedo, which most objects in a café
+have more of than a kettle does.
+
+Tried the obvious fix -- restrict the brightest-pixel pool to each frame's
+dominant palette ramp before measuring, so a cream face can't out-compete a
+grey edge for the centroid. Measured before/after on all 22: fixed 2
+(teapot; cutting_board close), and broke a clean pass -- candle went from
+5.1x3.9 (ok) to 3.4x16.2 (fail), because narrowing the pool to one ramp left
+too few pixels and the centroid got noisier than the cross-material signal
+it removed. Not shipped, per this repo's own rule about testing a remedy
+before a check recommends it. A fix that actually separates the two signals
+needs the raw per-pixel material id `rasterize()` already computes and
+`review_queue.py` never receives -- it only ever sees the final quantized
+PNG.
+
+**Shipped instead:** the check's own fix message, which was flatly wrong
+(asserting an unfixed world-space bug that isn't there), rewritten to name
+the real, evidenced cause and point at the three round objects as the ones
+whose failure would actually mean something. The measurement itself is
+unchanged -- still fires on the same 19, because no tested fix reduced that
+number without costing a false negative elsewhere. This is the same shape of
+result as C4's auto-uprighting: the diagnosis was worth writing down more
+than the number was worth moving.
+
+---
+
+## `MAX_SOFT_ALPHA`, split by shape instead of by number
+
+The prior pass's finding: one threshold, three causes. Genuine bad
+generations (bread_loaf, croissant -- duplicate ghost instances), a real
+segmentation failure on a clean subject (book -- low contrast against a
+near-white background), and legitimately hard subjects that are false
+rejections (fern's fronds, bicycle's spokes, bottle's glass). Fixing the
+ratio's cap would have let the first two back in; leaving it alone kept
+rejecting the third.
+
+The three causes turned out to have different SHAPES, not just different
+ratios. A fine silhouette's soft-alpha pixels form a rim: every one of them
+sits within a few pixels of a confident interior pixel, because they're
+tracing an edge. A duplicate ghost or a low-contrast failure is its own
+region, mostly far from anything the matte was ever sure about. Built a
+second signal on exactly that difference -- of the pixels that are soft, what
+share have no confident (alpha >= 232) pixel within a 3px box -- and measured
+it against the same 31-subject set:
+
+| | detached share |
+|---|---|
+| bread_loaf, croissant, book (genuine defects) | 73-89% |
+| fern, bicycle, bottle (false rejections) | 36-54% |
+| coffee_cup, sugar_bowl, creamer, cheese_wheel (clean passes) | 19-27% |
+
+A 19-point gap between the worst false rejection and the best genuine
+defect. `DETACHED_SOFT_FLOOR = 0.65` sits in it. Wired into
+`check_concept_fitness` (`tools/concept.py`) as a second condition: the ratio
+cap still has to fire first (unchanged, still the cheap common case), and
+only then does the detached-share check decide whether it's a rim or a
+region.
+
+Verified in both directions on the same 31 subjects: fern, bicycle and
+bottle now pass; bread_loaf, croissant and book still fail, with the same
+message plus the detached-share reading; every subject that passed before
+still passes (the new condition only ever removes a failure, it cannot add
+one, since it's a stricter AND on top of the existing cap). 23 of 29 subjects
+pass now, up from 20 -- and the 3 that flipped are exactly the 3 named as
+false rejections, nothing else moved.
+
+---
+
+## Bind dE, logged the way albedo shift already was
+
+Small, mechanical, named in the prior pass: `ingest.rebind()` and
+`bind_vertex_colours()` (`tools/ingest.py`) already compute a worst-case
+vertex-colour bind dE; it only ever reached a human as a conditional warning
+string, never as a number `factory.py` could log unconditionally the way
+`delight()`'s albedo correction already is.
+
+Added `worst_bind_de` to `ingest()`'s report dict on both binding paths (the
+vertex-colour path already computed `worst`; the MTL/`rebind()` path gets it
+as `max(d for _, _, d in table)`), and `factory.py` now copies it into each
+subject's result. Verified directly against an existing raw mesh rather than
+through a full GPU re-run -- a 31-subject re-generation hung partway through
+this session on GPU memory pressure unrelated to this change (see below) --
+`ingest('out/mesh/teapot.obj', height=0.28)` returns `worst_bind_de: 0.128`
+in the report, confirming the field is populated on the path every lifted
+object takes.
+
+This is the second half of the prior pass's before-baseline for a style
+LoRA: albedo shift was already logged (mean 0.111, worst 0.306), bind dE was
+not. Now both are, for whenever that question comes back.
+
+**Operational note, not a code finding:** the verification run stalled on
+`mug` after `teapot` succeeded -- GPU memory at 7.6/8.2GB with the process
+reporting 0% CPU for a sustained period (confirmed via two `Get-Process`
+samples 5s apart, identical CPU time). Killed and GPU memory recovered to
+0.9GB. Twenty-five stale PIDs showed up in `nvidia-smi --query-compute-apps`
+at the time, suggesting Windows CUDA context cleanup lags process exit
+across a long session that has loaded and unloaded SDXL/TripoSR many times.
+Not chased further -- worth knowing if a future multi-subject GPU run hangs
+the same way.
+
+---
+
+## `leafy_plant` unified onto `_mix`
+
+Mechanical: the one generator with its own inline LCG (`tools/assetlib.py`)
+now calls the shared `_mix()` every other seeded generator uses, in place of
+its own `(seed * 2654435761 + 1013904223)` / `(st * 1103515245 + 12345)`
+pair. Verified both ways -- the plant is still a plant (checked vertex/face
+counts and bounding box across two seeds, both reasonable and different from
+each other), and re-running D3's instrumentation script against it now
+reports 8 real draw sites with 0 dead, the same shape of result the other 12
+generators already had, where before it reported 0 sites because the
+instrument had nothing to see.
+
+One side effect, caught by re-running `manifest.py --check` after all of
+this pass's edits: `check_focal_contrast` now fails on plan 1 (wall run),
+"counter carries -0.002 detail against its room (floor +0.000)" -- a check
+that was clean before this pass. Isolated with `git stash push --
+tools/assetlib.py`: reverting only the RNG change makes it pass again, so
+this is that change and nothing else. Plan 1's dressing draws a potted
+plant; a different draw from `leafy_plant`'s new RNG stream shifted the
+room's detail composition by enough to cross a floor B4 already measured at
+0.000 with a 0.002-0.006 margin on either side.
+
+This is not a new defect -- it is B4's own finding (the detail floor's
+margin is thinner than a single generator's RNG stream) confirmed from a
+completely unrelated direction. Kept the RNG fix rather than reverting it:
+a real cleanup should not be held hostage to a floor already on record as
+too thin to bear this kind of weight, and reverting it to keep one borderline
+room passing would be exactly the "tune until the metric agrees" move C4
+already rejected for a different check. `NEXT.md`'s gate note is updated to
+name both known-thin-margin cases -- `build_plan.py --focal-scan 12`'s plan
+10 and `manifest.py --check`'s plan 1 -- so neither reads as a surprise to
+whoever hits it next.
+
+---
+
+## The double-run topology: scoped wrong the first time
+
+D4 called this "shovel-ready" -- reuse the run/back/queue triple a second
+time, mirrored on the far wall. Read `build_plan.py` before writing a second
+generator branch: eight places consume `plan.of("service")` or
+`plan.of("backbar")`, and four of them do it as `[0]` -- a single, hard-coded
+index, not a loop. `light_rig()` is one of them, and its own comment already
+records the cost of getting this wrong once: a fixed offset generalized from
+the reference room's one counter pushed the light pool off a *different*
+counter's face entirely, and the fix was measured in points of mean L on the
+counter, not noticed by eye until it was.
+
+Adding a second `Zone("service", ...)` under that pattern doesn't fail
+loudly. It renders a room with one lit, dressed counter and a second, bare
+one sitting in relative dark -- the exact defect class this repo has already
+found and fixed twice (`light_rig`'s own history, and the "counter was
+under-dressed" entry earlier in this file). A topology whose entire promised
+value is stress-testing which way a counter faces is not worth shipping in
+the one shape that silently produces an under-lit counter.
+
+**Not built this pass.** The real cost is a `build_plan.py` audit across all
+eight touch points -- deciding per site whether the second run should be
+treated identically to the first (lit, dressed, walkable) or is a
+lower-fidelity display counter that only needs blocking/collision -- not the
+`floorplan.py` branch alone. Left for a pass that can give `build_plan.py`
+the same attention `floorplan.py` got.
