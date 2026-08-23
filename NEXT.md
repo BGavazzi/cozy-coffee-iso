@@ -1,46 +1,15 @@
 # Next
 
-**All 14 tasks below have been executed.** Each has a write-up in
-`ART_CRITIQUE.md` (search for the task's subject, e.g. "the concept fitness
-gate" for C1). One-line status per task:
+The previous worklist (14 tasks, A1–D4) is done and archived in git history
+(commit `5dc6644` and earlier on this branch) and written up in
+`ART_CRITIQUE.md`. This is a fresh list, drawn from what that pass surfaced
+but didn't chase down. Same format as before: file, done-means, what to
+measure.
 
-- A1 batch driver — built (`tools/factory.py`).
-- A2 manifest overwrite — fixed, merges by asset.
-- A3 stage 7 world facts — fixed, `mesh_geometry()` feeds the manifest.
-- B1 `--smooth` no-op — fixed, `compute_vertex_normals()`.
-- B2 albedo check not gated — fixed, `check_albedo_regression()` wired in.
-- B3 spread floor never fired — proven non-redundant, kept.
-- B4 detail floor bracket — widened to 40 plans; margin narrowed, not
-  widened; floor kept, L-run concentration recorded as unexplained.
-- B5 counter orientation — measured at 600 plans (66% worse-lit); left open,
-  cause still untraced.
-- C1 wider subject set — 31 subjects run; `MIN_FILL` bracketed, two
-  false-rejection classes found in `MAX_SOFT_ALPHA` (thin edges, glass).
-- C2 wider speckle bracket — 22 lifted objects measured; floor confirmed,
-  not moved.
-- C3 basket crescent frames — diagnosed as stage 2 (single-view
-  reconstruction), not a bug.
-- C4 auto-uprighting — search found to be search-range-sensitive on the same
-  object; left undone, more firmly than before.
-- D1 UniRig CUDA check — same `nvcc`/MSVC blocker as TRELLIS 2.
-- D2 style LoRA — scoped down to a before-baseline measurement (mean 0.111,
-  worst 0.306 of albedo L); training one is future work.
-- D3 assetlib parameter coverage — instrumented all `_mix`-based generators;
-  no dead draws found across 53 sites.
-- D4 fifth topology — scoped, not built; double-run/galley named as the
-  candidate.
-
-Kept below as a record of what was asked, not as an open queue.
-
----
-
-A worklist written to be picked up cold. Every task states where the code is,
-what "done" means, and what to measure. Tasks are ordered within each tier by
-value; tiers are ordered by how much they unblock.
-
-Read `ART_CRITIQUE.md` before touching anything that produces art — the
-"Still open" section at the end is the live list of known weaknesses, and most
-of these tasks are drawn from it.
+Read `ART_CRITIQUE.md`'s final "Still open" section before touching anything
+that produces art — it is a pass-by-pass historical log, not a live tracker,
+but the most recent entries (search for "31 subjects", "22 lifted objects",
+"40 plans") are this list's source material.
 
 ---
 
@@ -56,6 +25,9 @@ of these tasks are drawn from it.
   (gitignored — `git clone --depth 1 https://github.com/VAST-AI-Research/TripoSR vendor/TripoSR` if missing).
 - `sprites/`, `out/`, `.venv/`, `vendor/` are gitignored. Anything meant to be
   reviewed goes in `proof/`.
+- `tools/factory.py subjects_c1.yaml` reproduces the 22-object lifted library
+  most of these tasks measure against; it resumes (skips finished stages), so
+  re-running it after `git pull` is cheap.
 
 **Windows gotchas that have cost time before**
 
@@ -64,6 +36,10 @@ of these tasks are drawn from it.
 - Background commands piped through `grep`/`tail` buffer their output. Use
   `python -u` redirected to a file.
 - Foreground `sleep` is blocked. Poll with `until <check>; do sleep N; done`.
+- **Check `git fetch origin main` before branching.** The last pass spent two
+  extra days of work on a branch whose PR had already been merged upstream,
+  because local `main` was never re-fetched. Confirm `git log main..origin/main`
+  is empty before starting, not after.
 
 **Discipline (this is not optional — it is the thing the repo is about)**
 
@@ -78,14 +54,21 @@ of these tasks are drawn from it.
    Three of the four remedies later measured did nothing.
 4. **Record negative results.** Things that did not work are the most valuable
    half of `ART_CRITIQUE.md`.
-5. **Branch and PR, never commit to the default branch.**
+5. **Branch and PR, never commit to the default branch — and confirm the PR
+   actually merged before building on top of the branch again.**
 
 **Gates — both must be clean before any commit**
 
 ```
 .venv/Scripts/python.exe tools/manifest.py --check            # 26 checks, takes ~4 min
-.venv/Scripts/python.exe tools/build_plan.py --focal-scan 12  # slower, 0 of 12 must fail
+.venv/Scripts/python.exe tools/build_plan.py --focal-scan 12  # slower, 1 of 12 currently fails
 ```
+
+The 12-plan scan is not clean right now — plan 10 fails the detail floor by
+-0.002, a real, documented, accepted case (`ART_CRITIQUE.md`, "The detail
+floor at 40 plans"). That is not a regression to chase; it is the known state.
+Don't treat a *new* failure in the same run as equally acceptable without
+checking whether it's plan 10 or something else.
 
 Stage-8 review on generated sprites:
 
@@ -95,236 +78,151 @@ Stage-8 review on generated sprites:
 
 ---
 
-## Tier A — the factory has no front door
+## Tier A — one finding nobody has looked at yet
 
-Everything works and nothing is wired together. This is the biggest gap
-between what the repo claims and what it does.
+### A1. Key light drifts across the direction set, and it's never been triaged
 
-### A1. A batch driver: subject list in, reviewed sprites out
+`review_queue.py`'s set-level check (`tools/review_queue.py:~65-87`) measures
+how much a sprite's brightest-pixel centroid moves across its 8 directions.
+During A1's original smoke test — back when only 3 lifted objects existed —
+it flagged teapot (8.4×12.7px spread) and basket (10.9×5.9px), and passed
+kettle (3.5×4.5px). Nobody has looked at it since; it has never been run
+against the 22-object library `factory.py` now produces, and the check's own
+fix message names a specific, testable hypothesis: *"Anchor the light to the
+camera basis, not world space — in an isometric game the camera is fixed and
+the object rotates."*
 
-Right now producing one prop is five manual commands, and the state between
-them is undocumented. There is no way to say "make me these forty things."
-
-Build `tools/factory.py` taking a YAML or JSON subject list:
-
-```yaml
-- name: teapot
-  prompt: a ceramic teapot
-  height: 0.28
-- name: stool
-  prompt: a small wooden stool
-  height: 0.45
-```
-
-and running concept → lift → ingest → render → review for each, skipping any
-stage whose output already exists (so a failed run resumes), and writing a
-single summary of what passed, what was gated at which stage, and why.
-
-- **Files:** new `tools/factory.py`; calls into `concept.py`, `lift.py`,
-  `ingest.py`, `render_batch.py`, `review_queue.py`.
-- **Load the TripoSR model once** for the whole batch, not per subject —
-  `lift.lift()` already accepts a `model=` argument for this.
-- **Acceptance:** `factory.py subjects.yaml` produces sprites and a report for
-  a ten-subject list without manual intervention, and re-running it is a no-op.
-- **[GPU]**
-
-### A2. `manifest.json` is overwritten by every render
-
-`render_batch.py` writes `out/sprites/manifest.json` fresh each run, so after
-rendering teapot, basket and kettle the file describes only the kettle.
-Verified: 8 entries, one asset.
-
-- **File:** `tools/render_batch.py:142`.
-- Merge by asset name instead of overwriting, or have A1 own the manifest and
-  make `render_batch` return its rows.
-- **Acceptance:** three consecutive renders leave 24 rows covering 3 assets.
-
-### A3. Stage 7 is half-built
-
-The sprite manifest carries `bbox`, `pivot` and `coverage` in pixels. It does
-not carry the world-space facts a game needs: footprint in tiles, height,
-whether the asset is walkable, its anchor in tile coordinates. `ingest()`
-already computes most of this into its `geometry` report and then throws it
-away.
-
-- **Files:** `tools/ingest.py` (`ingest` returns `report["geometry"]`),
-  `tools/render_batch.py`.
-- **Acceptance:** the manifest for a lifted prop states footprint and height in
-  tile units, and those numbers match `assets.yaml` conventions for an
-  equivalent authored prop.
+- Run `review_queue.py build` against all 22 lifted objects' sprite sets and
+  read the drift number for each, not just pass/fail.
+- If most lifted objects fail and authored `assetlib` props don't, that
+  points at something specific to the lift/render path for reconstructed
+  meshes (`render_batch.py` or `mesh.py`), not a per-object fluke.
+- Test the camera-basis hypothesis directly: is the key light's direction
+  computed once in world space and reused across all 8 azimuths, when it
+  should be recomputed per-azimuth the way `camera_light()` already does for
+  the shading pass? Read `render_batch.py` and `isorender.py`'s light setup
+  before assuming the fix is where the check's message guesses it is.
+- **Acceptance:** a stated pass/fail count across all 22 objects, a named
+  cause (not just a repeated guess), and either a fix with before/after
+  drift numbers or a written argument for why the drift is acceptable.
+- **[GPU not required]** — this only touches already-lifted meshes.
 
 ---
 
-## Tier B — known defects, each with a measurement waiting
+## Tier B — scoped last pass, ready to build
 
-### B1. `--smooth` is a silent no-op on every lifted mesh
+### B1. Split `MAX_SOFT_ALPHA` into what it's actually catching
 
-`rasterize` only interpolates normals when `mesh.normals` is populated
-(`tools/mesh.py:~560`). TripoSR writes no `vn` lines — verified, zero in
-`out/mesh/teapot.obj` — so `render_batch --smooth` changed nothing on all three
-lifted props, identical to four decimal places. A flag that silently does
-nothing is exactly the class of bug this repo has caught three times already.
+C1 (31 subjects) found this single threshold conflating three unrelated
+causes: genuine bad generations (bread_loaf, croissant — SDXL producing
+overlapping ghost instances), a real segmentation failure on a clean subject
+(book — low subject/background contrast), and legitimately-thin-or-
+transparent subjects that are false rejections (fern, bicycle, bottle).
+One scalar cap cannot separate these, and loosening it blind would let the
+first class back in.
 
-Two acceptable fixes, and the choice should be measured not assumed:
+- Read the soft-alpha computation in `tools/concept.py` (`check_concept_fitness`
+  or wherever `MAX_SOFT_ALPHA` is evaluated) and add a second signal: edge
+  perimeter density (soft-alpha pixels per unit of silhouette boundary length,
+  which should be high for fern/bicycle without the matte itself being wrong)
+  or a duplicate-instance detector (connected-component count on the alpha
+  channel — bread_loaf and croissant both show multiple disconnected blobs).
+- Verify the new check clears fern and bicycle while still rejecting
+  bread_loaf, croissant and book, per this repo's own discipline of testing
+  in both directions.
+- **Acceptance:** fern and bicycle pass; bread_loaf, croissant and book still
+  fail; bottle's transparency case is handled explicitly (allowed, or flagged
+  differently from a segmentation failure) rather than accidentally.
+- **[GPU]** — needs `concept.py`'s SDXL pipeline to regenerate or re-score
+  the existing 31-subject set.
 
-- compute area-weighted vertex normals in `ingest.fit()` so `--smooth` works, or
-- have `--smooth` report loudly when the mesh has no normals to interpolate.
+### B2. Build the double-run (galley) topology
 
-Prefer the first if smoothing measurably improves any reading; the second if
-it does not. Measure with the speckle metric and by eye on the kettle.
+D4 scoped this and deliberately didn't build it: two parallel service runs
+facing each other across the main aisle, reusing the existing run/back/queue
+`Zone` triple twice instead of once. `ART_CRITIQUE.md`'s "A fifth topology"
+entry has the full reasoning, including why it's the topology most likely to
+stress B5's counter-orientation gap and B4's L-run-skewed detail floor (it's
+the one layout where two runs face opposite directions in the same room).
 
-- **Acceptance:** either `--smooth` changes output, or it says why it cannot.
-
-### B2. `check_albedo_centre` is not in the gate
-
-It runs inside `ingest()` and its findings land in `report["warnings"]`, which
-only the CLI prints. `manifest.py --check` exercises `ingest` through
-`check_roundtrip` and `check_transform` on synthetic meshes, so the albedo
-check never runs in the suite.
-
-- **Files:** `tools/ingest.py`, `tools/manifest.py:~204`.
-- Add a synthetic case: build a mesh with a deliberately under-exposed vertex
-  colour field, run it through `ingest`, assert the warning fires; and a
-  correctly-lit one, assert silence.
-- **Acceptance:** the check is reachable from `manifest.py --check` and
-  verified in both directions.
-
-### B3. The mean furniture-spread floor has never fired
-
-`DEFAULT_SPREAD_FLOOR = 0.15` (`tools/art_review.py:462`) has never rejected anything the
-closest-pair floor (0.045, properly bracketed) did not also reject. It is
-either redundant or set too low to matter. Both are worth knowing.
-
-- Sweep it upward across the twelve-plan scan until it rejects something the
-  closest-pair floor does not, and see whether that room is actually bad.
-- **Acceptance:** either the floor is re-bracketed against a real defect, or it
-  is deleted with the measurement recorded in `ART_CRITIQUE.md`.
-
-### B4. The detail floor's bracket is 0.010 wide
-
-Three measured defects at −0.005 to −0.009 against a weakest good room at
-+0.005. It is the tightest floor in the suite and its margin is smaller than
-the difference between two adjacent rooms.
-
-- Widen the sample: run `--focal-scan` over 40+ plans instead of 12 and see
-  whether the distribution separates or the floor is inside the noise.
-- **Acceptance:** a stated bracket over a larger sample, or an honest note that
-  the metric cannot support a floor at this resolution.
-
-### B5. Counter orientation costs 0.04 of focal lead
-
-A run whose long face points +y is raked by the key at N·L = −0.116; +x gets
-+0.874. Over twelve rooms the two groups do not overlap. Left open because the
-reference room is itself a facing-0 run that reads fine, so the orientation is
-weak rather than broken.
-
-- Candidate fixes: a fill light, a per-face ambient floor, or biasing the
-  floor-plan generator toward +x-facing runs. The first two change every
-  rendered pixel in the repo, so measure before touching.
-- **Acceptance:** either the gap closes with a cause rather than a knob, or a
-  written argument for why facing-0 runs are acceptable as they are.
+- Add the branch to `floorplan.generate()` (`tools/floorplan.py:~314`)
+  following the existing four branches' pattern: own clearance constants,
+  own `blocked_x`/`blocked_y` for window routing, guarded early `continue`s
+  on infeasible geometry.
+- **Do not skip the acceptance-rate check.** The function's own docstring
+  records a branch that passed 0.3% of proposals because two constraints
+  didn't know about each other. Run `check_plan_range` and confirm the new
+  topology's rejection rate is in the same range as the other four before
+  calling it done.
+- Run it through the standard 12-plan and a widened 40-plan focal scan
+  alongside the other four topologies — this is the direct test of whether
+  the focal/detail checks generalise or were fitted to the sample, which is
+  the question D4 was originally asked to answer.
+- **Acceptance:** the topology appears in `generate()`'s output at a
+  reasonable rate, passes `check_plan`, and the focal/detail scan results for
+  it are reported next to the other four's, not folded in silently.
 
 ---
 
-## Tier C — calibration, because most floors rest on three samples
+## Tier C — small, well-scoped instrumentation
 
-### C1. Widen the stage-1 subject set [GPU]
+### C1. Log bind dE per subject, the same way albedo shift already is
 
-Four subjects have ever been through `concept.py`; three passed. The fitness
-gate's thresholds (`MIN_FILL 0.12`, `MAX_FILL 0.72`, `MAX_SOFT_ALPHA 0.10`,
-`MAX_SECOND_BLOB 0.15`) are bracketed by almost nothing.
+D2's before-baseline used `delight()`'s already-logged albedo correction
+(`"de-lit: albedo median L X -> 0.600"`) because it's the only per-subject
+number `factory.py` currently captures. `ingest.rebind()` and
+`bind_vertex_colours()` already compute a worst-vertex-colour-bind dE
+(`tools/ingest.py:639`, `:669`) — it's just never surfaced past a CLI print.
 
-- Run 25–30 café-appropriate subjects: mugs, chairs, plants, signage, crates,
-  pastry cases, lamps, bottles, books, a bicycle.
-- Record pass/fail and the reading that decided each.
-- **Acceptance:** each of the four thresholds has a stated bracket — a measured
-  defect on one side, a weakest known-good on the other — or is loosened with
-  the false rejection named. The fern rejected at 12% soft alpha is the first
-  case to re-examine: fronds may be a legitimately hard subject rather than a
-  bad generation.
+- Have `factory.py`'s `run_subject()` capture that dE the same way it already
+  captures the albedo-shift detail string, and write it into
+  `out/factory_report.json`.
+- **Acceptance:** re-running `factory.py subjects_c1.yaml --force <name>` on
+  a few subjects shows a bind-dE number in the report, and the worst case
+  across the 22-object library is stated — this is the second half of D2's
+  before-baseline, the half that wasn't measured last pass.
 
-### C2. Widen the speckle bracket [GPU]
+### C2. Unify `leafy_plant`'s RNG with the rest of `assetlib`
 
-`MAX_ISOLATED = 0.105` rests on three lifted objects: kettle 0.037–0.057,
-teapot 0.066–0.084, basket 0.127–0.163. The authored side is solid (ten props,
-eight directions each) but the defect side is one basket.
+D3's instrumentation found `leafy_plant` is the one generator using its own
+inline LCG (`tools/assetlib.py:~989`, glibc-style constants) instead of the
+shared `_mix()` every other seeded generator uses. Not a bug — all 8 of its
+draws were confirmed to vary and feed real geometry — but it means the
+`_mix`-wrapping instrument built for D3 can't see into it, and the next
+generator copy-pasted from `leafy_plant` inherits the inconsistency.
 
-- Feed C1's output through to sprites and re-measure.
-- **Acceptance:** at least six lifted objects on each side of the floor, and a
-  re-stated bracket. Expect the floor to move.
-
-### C3. The basket's crescent frames were never diagnosed
-
-In `proof/lifted_props.png`, basket directions 1 and 5 render as flat crescents
-while the other six are volumetric. The mesh reports watertight with positive
-volume, so this is not obviously a reconstruction hole.
-
-- Determine whether it is a framing artifact, a genuine reconstruction
-  collapse, or a rasteriser edge case. Render the raw mesh from those two
-  azimuths at high resolution before pixelization to isolate the stage.
-- **Acceptance:** the stage is named. If it is the rasteriser, it is a bug
-  affecting authored art too and jumps to Tier B.
-
-### C4. Auto-uprighting was measured and left undone
-
-A search over pitch and roll scoring base flatness (lowest 1% of vertices,
-z-spread) found the teapot's best at pitch 2° / roll 12°, spread 0.0081 versus
-0.0235 at zero. Real but small, and fitting 12° of roll to one teapot's base is
-a knob.
-
-- Re-run the search across everything C1 produces. If the correction is
-  consistent in sign and magnitude it is a systematic camera offset from stage
-  1's "high three-quarter view" prompt and belongs in `ingest.orient()`. If it
-  scatters, it is per-object noise and should stay undone.
-- **Acceptance:** a table of best pitch/roll across ≥10 objects, and a decision
-  with the table as its argument.
+- Replace the inline `st = (seed * 2654435761 + 1013904223) & 0x7FFFFFFF` /
+  `st = (st * 1103515245 + 12345) & 0x7FFFFFFF` pair with a call to `_mix()`.
+- **Acceptance:** `leafy_plant`'s output changes (a new RNG stream means new
+  plants, expected and fine — confirm by eye it still looks like a plant,
+  not a regression check), and re-running D3's instrumentation script shows
+  it as a normal `_mix`-based generator with real draw sites.
 
 ---
 
-## Tier D — stages that do not exist yet
+## Tier D — one real lead, still open
 
-### D1. Stage 3, rigging [GPU]
+### D1. B4's L-run concentration is unexplained
 
-`PIPELINE.md` names UniRig. Only characters need it; props do not rig. Note
-that characters are currently analytic meshes with hand-authored clips that
-work well, so this stage buys variety in *body shape*, not motion quality —
-scope it accordingly before investing.
+The 40-plan focal scan found L run fails the detail floor at 3 of 8 (37.5%)
+against wall run's 6.7%, island's 20%, and peninsula's 0%. Two hypotheses
+were chased and ruled out this pass: back-wall dressing structure (identical
+between failing and passing rooms of the same topology) and shelf count
+(weakly correlated in the wrong direction — more shelves track *higher* mean
+detail, not lower).
 
-Check UniRig's dependency list for compiled CUDA extensions first. If it needs
-`nvcc` the same way TRELLIS does, it is blocked on the same two admin-level
-system installs, and that finding is itself the deliverable.
-
-### D2. Stage 1 has no style LoRA
-
-`PIPELINE.md` specifies "SDXL + style LoRA" and `concept.py` runs base SDXL
-with a prompt template. Every lifted prop therefore arrives in a photographic
-style that `delight` and the palette bind have to fight.
-
-- A style LoRA matched to the target look would reduce the correction each
-  downstream stage applies. Measure the reduction — the bind dE and the albedo
-  shift are both direct readings of how far the source is from the house style.
-- **Acceptance:** a before/after on worst bind dE and albedo median shift
-  across the same subject set.
-
-### D3. Parameter-coverage audit for the asset library
-
-`check_spec_coverage` audits the character generator's dimensions. `assetlib`'s
-seeded generators have no equivalent — `check_generator_range` measures
-silhouette distance, which is the outcome, not the inputs. The character bug
-proved those are different questions: a cast can differ in shirt, trousers,
-hair and hat and still be one face repeated.
-
-- The obstacle is that `assetlib` generators do not expose their draws. Either
-  return a spec alongside the mesh, or instrument the RNG.
-- **Acceptance:** every seeded generator in `assetlib` has each of its
-  randomized parameters shown to vary, or the dead ones are fixed.
-
-### D4. More floor-plan topologies
-
-Four exist: wall run, peninsula, L run, island. The focal and detail checks are
-calibrated against those four, and three of the four negative detail readings
-came from one topology. A fifth would test whether the checks generalise or
-were fitted to the sample.
+- A concrete next lead: L run is the one topology whose service run turns a
+  corner. Check whether the focal box (`focal_box()` in `build_plan.py`)
+  is measuring detail across the corner consistently, or whether the corner
+  itself dilutes the sampled region compared to a straight run.
+- Compare L run's `run_len` and corner-angle distribution against its
+  detail-lead readings across the existing 60-seed sample — the raw data
+  from the shelf-count correlation run can be re-read for this without a new
+  render pass.
+- **Acceptance:** either a mechanism named and the floor adjusted with that
+  as its argument, or a stated conclusion that the concentration is real but
+  its cause is below this metric's resolution — matching B4's own honest
+  conclusion rather than manufacturing a fix for a 0.002-wide margin.
 
 ---
 
@@ -334,13 +232,27 @@ were fitted to the sample.
   machine.** The eight frames are a consistent turnaround of geometry that is
   wrong on the back, so no image-space metric over the direction set can see
   it. A silhouette-consistency check was proposed and discarded for exactly
-  this reason: it cannot fail. Stage 9 exists for this.
-- **TRELLIS 2 is blocked on this machine**, not rejected. Three CUDA extensions
-  need `nvcc` and an MSVC host compiler; the box has the driver and the card
-  but no toolkit and no C++ workload. Roughly 10 GB of admin-level installs.
-  Revisit only if someone decides to change the workstation.
+  this reason: it cannot fail. Stage 9 exists for this. The basket's crescent
+  frames (C3, prior pass) are this limitation, not a bug.
+- **TRELLIS 2 and UniRig are both blocked on this machine**, not rejected.
+  Both need `nvcc` and an MSVC host compiler for CUDA extensions the box
+  doesn't have the toolchain for (TRELLIS: three extensions; UniRig:
+  `flash_attn`, `spconv`, `torch_scatter`/`torch_cluster`). Roughly 10 GB of
+  admin-level installs either way. Revisit only if someone decides to change
+  the workstation.
 - **Speckle has no downstream fix.** Colour-field smoothing, interpolated
   normals and supersampling at 2/4/8/12 were all measured and none moved the
   number. The downsample picks a representative sample rather than averaging,
   by design, because averaging colour is what makes cross-ramp contamination
   impossible.
+- **Auto-uprighting is not a well-posed search.** Widening the pitch/roll
+  search range on the same teapot found a second, deeper, differently-
+  oriented optimum outside the original bounds — both are genuine flat
+  surface patches, not artifacts, meaning single-view reconstructions can
+  have two comparably-flat sides (the true base and an invented flat back)
+  that the objective cannot distinguish. Left undone; don't re-attempt
+  without a different objective, not just a wider search.
+- **A style LoRA is real future work, not a task-sized item.** D2's
+  before-baseline (mean 0.111, worst 0.306 of albedo L) is measured; training
+  or sourcing a matched LoRA needs a curated reference set and its own
+  training/eval loop, out of scope for a pass alongside anything else here.
