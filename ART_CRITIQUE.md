@@ -3734,3 +3734,58 @@ eventually builds the double-run topology (B2), since that layout's focal
 box would be larger still by the same mechanism, deliberately, and would
 test whether "the box got bigger" was ever really the story or just the one
 variable this pass had a way to measure.
+
+---
+
+## Reference images: one real bug, one measured knob
+
+`concept()` gained an optional `reference` image, conditioning SDXL via
+IP-Adapter alongside the text prompt -- see `PIPELINE.md`'s "Reference
+images" for why IP-Adapter and not img2img (img2img imports the reference's
+own camera angle, which is exactly the drift the fixed `STYLE` clause exists
+to prevent).
+
+**The bug**: `load_ip_adapter()` attaches a CLIP vision encoder that did not
+exist when `_pipe()` first called `enable_model_cpu_offload()`, so it never
+got an offload hook and sat on CPU while everything else ran on CUDA. First
+call crashed inside the encoder's own first conv layer:
+`RuntimeError: Input type (torch.cuda.HalfTensor) and weight type
+(torch.HalfTensor) should be the same`. Not a guess -- read directly off the
+traceback, which named `modeling_clip.py`'s `patch_embedding` as the failing
+op. Fixed by re-running `enable_model_cpu_offload()` after
+`load_ip_adapter()`; accelerate's offload hooks attach per-module at call
+time, so a module added after the first `enable_model_cpu_offload()` call
+just never got one until a second call swept it up too.
+
+**The knob**: `--ip-scale` needed a default, and picking one meant actually
+sweeping it rather than guessing round numbers -- this repo's own rule 1
+("bracket every floor between a measured defect and the weakest known-good")
+applied even though this isn't a pass/fail gate. One reference (a matte
+ceramic teapot photo, copper handle) against a prompt naming a conflicting
+material ("a glass vase"), same seed, six points on the sweep:
+
+| ip_scale | glass vase renders as |
+|---|---|
+| 0.3 | glass, body proportions alone pull toward the reference |
+| 0.4 | glass, gains one handle + spout |
+| 0.45 | glass, gains two handles |
+| 0.5 | glass, two handles, more pronounced |
+| 0.6 | **opaque matte ceramic** -- material overridden |
+| 0.85 | near-reproduction of the reference, copper accent included |
+
+The first pass through this shipped 0.6 as the default on the strength of a
+guess ("0.3 barely shifted colour, 0.8 pulled proportions through") that
+turned out wrong in both directions once actually measured -- 0.6 already
+loses the prompt's material entirely. Default corrected to 0.45, just under
+where the transition happens for this pair. `proof/reference_image_conditioning.png`
+is the contact strip: reference, prompt-only baseline, 0.45, 0.6.
+
+One reference/prompt pair, not the swept bracket the fitness floors have.
+Recorded as a starting point and a warning against guessing constants this
+file's own discipline says to measure, not as a calibrated default -- a
+reference that doesn't fight the prompt on material should tolerate a
+higher scale before losing it.
+
+**Not done**: no subject in `subjects_c1.yaml` uses a reference yet. This
+pass built and verified the capability; pointing it at real reference photos
+is separate work.

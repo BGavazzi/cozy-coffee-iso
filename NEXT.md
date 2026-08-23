@@ -1,6 +1,33 @@
 # Next
 
-**This list (A1, B1, C1, C2, D1, B2) is done and written up in
+**Reference-image conditioning is done.** `tools/concept.py`'s `concept()`
+takes an optional `reference` image, conditioning SDXL via IP-Adapter
+alongside the text prompt -- `--reference PATH [--ip-scale N]` on the CLI,
+`reference`/`ip_scale` fields on a `factory.py` subject spec. This was the
+larger, model-side half of "prompts and examples in, engine-usable assets
+out"; the smaller, code-only half (Godot export) is done separately and
+awaiting merge as PR #5. Write-up, including a real bug found and fixed
+(the IP-Adapter image encoder isn't covered by `enable_model_cpu_offload()`'s
+hooks) and a measured `--ip-scale` sweep, in `ART_CRITIQUE.md`, "Reference
+images: one real bug, one measured knob". Proof: `proof/reference_image_conditioning.png`.
+
+**Not yet started**: no subject in `subjects_c1.yaml` (or any shipped subject
+list) actually uses a reference image yet -- this pass built and verified the
+capability, not a curated reference library to point it at. That's the
+natural next step if the factory is meant to take real product photos as
+input, not just prompts.
+
+**The calibration backlog is untouched by this pass, not forgotten** — see
+`ART_CRITIQUE.md`'s most recent "Still open" list: counter orientation
+(0.04 focal-lead cost), the focal-reading-falls-with-resolution gap,
+furniture screen spread's possibly-redundant floor, and the detail floor's
+0.010-wide bracket. Nothing in this pass touched a generator, check, or
+threshold in the sprite/room pipeline, so check these before assuming
+anything moved.
+
+---
+
+**The list below (A1, B1, C1, C2, D1, B2) is done and written up in
 `ART_CRITIQUE.md`.** One-line status:
 
 - A1 key-light drift — diagnosed: `camera_light()` is correctly per-azimuth;

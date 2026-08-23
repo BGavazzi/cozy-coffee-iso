@@ -16,10 +16,13 @@ Subject list format (YAML or JSON, a list of objects):
     - name: teapot
       prompt: a ceramic teapot
       height: 0.28
+      reference: photos/teapot.jpg   # optional -- see concept.py's
+      ip_scale: 0.45                 # "Reference images" section
 
 `prompt` defaults to `name` with underscores turned to spaces. `height` is in
 tile units and is required -- `ingest.fit()` has no other way to know a
-teapot from a table.
+teapot from a table. `reference` is optional; when given, stage 1 conditions
+on that image via IP-Adapter as well as `prompt`.
 
 Each stage is skipped when its output file already exists, so a batch that
 fails partway through resumes rather than re-spending GPU time stage 1 already
@@ -55,6 +58,8 @@ def _load_subjects(path: Path) -> list[dict]:
             "prompt": s.get("prompt", name.replace("_", " ")),
             "height": s["height"],
             "seed": s.get("seed", 1),
+            "reference": s.get("reference"),
+            "ip_scale": s.get("ip_scale"),  # None -> concept.py's own default
         })
     return subs
 
@@ -85,7 +90,11 @@ def run_subject(spec: dict, pipe, model, ramps) -> dict:
     try:
         if not png.exists():
             CONCEPT_DIR.mkdir(parents=True, exist_ok=True)
-            C.concept(spec["prompt"], spec["seed"], out=png, pipe=pipe)
+            ref_kwargs = {"reference": spec["reference"]}
+            if spec["ip_scale"] is not None:
+                ref_kwargs["ip_scale"] = spec["ip_scale"]
+            C.concept(spec["prompt"], spec["seed"], out=png, pipe=pipe,
+                      **ref_kwargs)
         fitness = C.check_concept_fitness(png)
         if fitness:
             result.update(stage="concept", detail="; ".join(fitness))

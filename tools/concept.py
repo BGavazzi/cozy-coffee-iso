@@ -48,6 +48,45 @@ setting.
 
     python tools/concept.py "a rustic stoneware teapot" --seed 1 -o out/x.png
     python tools/concept.py --check out/x.png
+
+## Reference images ("examples")
+
+`--reference PATH` conditions generation on an image as well as the prompt,
+via SDXL IP-Adapter (`h94/IP-Adapter`, ~1.2 GB, downloaded once to the same
+HF cache as the base model). This is deliberately IP-Adapter and not
+img2img: img2img denoises the reference's own layout, which imports whatever
+camera angle and framing the reference happened to have -- exactly the
+per-object drift `STYLE`'s fixed camera clause exists to prevent (see the
+module docstring above). IP-Adapter instead conditions the UNet on the
+reference's *appearance* (material, colour, silhouette language) while the
+text prompt and `STYLE` still own composition, so a reference photo shot
+head-on at eye level does not leak its camera into the render the way an
+img2img pass would.
+
+    python tools/concept.py "a ceramic mug" --reference photos/mug.jpg \
+        --ip-scale 0.45 --seed 1 -o out/x.png
+
+`--ip-scale` (0-1, default 0.45) trades off prompt vs. reference. Measured
+directly, one reference (a matte-ceramic teapot photo with a copper handle)
+against one prompt that names a conflicting material ("a glass vase"), same
+seed, sweeping the scale:
+
+| scale | result |
+|---|---|
+| 0.3 | glass preserved; body proportions alone pull toward the reference's bulbous shape |
+| 0.4-0.5 | glass still preserved; the reference's handle(s) start appearing on the vase |
+| 0.6 | material overridden -- "glass vase" renders in opaque matte ceramic |
+| 0.85 | near-reproduction of the reference, copper accent colour included; the prompt's material and object identity are both lost |
+
+The transition from "reference nudges shape" to "reference overrides the
+prompt's own material" falls between 0.5 and 0.6 for this pair, so 0.45 sits
+just under it -- visible reference influence while the prompt still wins on
+what the object *is*. This is one reference/prompt pair, not the swept
+bracket the fitness floors above have; a reference whose material doesn't
+conflict with the prompt (the common case -- most references will be roughly
+what's being asked for) will tolerate a higher scale before losing the
+prompt. Treat 0.45 as a starting point to raise or lower by eye, not a
+calibrated constant.
 """
 from __future__ import annotations
 
@@ -95,6 +134,10 @@ NEGATIVE = ("cropped, cut off, out of frame, multiple objects, group, "
 
 MODEL = "stabilityai/stable-diffusion-xl-base-1.0"
 MATTE_MODEL = "u2net"
+IP_ADAPTER_REPO = "h94/IP-Adapter"
+IP_ADAPTER_SUBFOLDER = "sdxl_models"
+IP_ADAPTER_WEIGHT = "ip-adapter_sdxl.bin"
+DEFAULT_IP_SCALE = 0.45  # see "Reference images" above for the measured sweep
 
 # Stage-2 fitness floors.
 MIN_FILL = 0.12          # object share of the frame
@@ -137,7 +180,42 @@ def _pipe(device: str = "cuda"):
     else:
         pipe = pipe.to(device)
     pipe.set_progress_bar_config(disable=True)
+    pipe._ip_loaded = False
+    pipe._cpu_offloaded = (device == "cuda")
     return pipe
+
+
+def _set_reference(pipe, reference: Path | str | None) -> None:
+    """Load or unload IP-Adapter on `pipe` so it matches whether this call has
+    a reference image.
+
+    Once loaded, diffusers' IP-Adapter cross-attention processors require an
+    `ip_adapter_image` on every call to that pipeline -- so a shared pipe
+    processing a mixed batch (some subjects with a reference, some without,
+    which is the common case) has to toggle the adapter on and off per
+    subject rather than load it once. The weight download is one-time and
+    cached; re-attaching an already-downloaded adapter to the UNet costs no
+    network time and is fast enough to do per-subject.
+
+    `load_ip_adapter()` attaches a CLIP vision encoder that did not exist
+    when `_pipe()` first called `enable_model_cpu_offload()`, so it never got
+    an offload hook and sits wherever `from_pretrained` put it -- CPU, while
+    everything else on this 8 GB card runs on CUDA. Confirmed the hard way:
+    `RuntimeError: Input type (torch.cuda.HalfTensor) and weight type
+    (torch.HalfTensor) should be the same` inside the encoder's first conv.
+    Re-running `enable_model_cpu_offload()` after `load_ip_adapter()`
+    re-attaches hooks to every current submodule, image encoder included.
+    """
+    have = getattr(pipe, "_ip_loaded", False)
+    if reference and not have:
+        pipe.load_ip_adapter(IP_ADAPTER_REPO, subfolder=IP_ADAPTER_SUBFOLDER,
+                              weight_name=IP_ADAPTER_WEIGHT)
+        if getattr(pipe, "_cpu_offloaded", False):
+            pipe.enable_model_cpu_offload()
+        pipe._ip_loaded = True
+    elif not reference and have:
+        pipe.unload_ip_adapter()
+        pipe._ip_loaded = False
 
 
 def matte(img):
@@ -156,7 +234,8 @@ def matte(img):
 
 def concept(subject: str, seed: int = 1, steps: int = 28,
             size: int = 1024, out: Path | str | None = None,
-            pipe=None) -> Path:
+            pipe=None, reference: Path | str | None = None,
+            ip_scale: float = DEFAULT_IP_SCALE) -> Path:
     """One matted concept image, deterministic in `seed`.
 
     Deterministic because every other stage of this pipeline is, and a stage
@@ -164,14 +243,25 @@ def concept(subject: str, seed: int = 1, steps: int = 28,
     downstream comes out wrong. The un-matted render is kept beside it: when a
     matte goes wrong it is the only way to tell a bad segmentation from a bad
     generation, and those have opposite fixes.
+
+    `reference`, if given, conditions generation on an image via IP-Adapter
+    in addition to `subject`'s text prompt -- see the module docstring's
+    "Reference images" section for why this is IP-Adapter rather than
+    img2img.
     """
     import torch
+    from PIL import Image
     pipe = pipe or _pipe()
+    _set_reference(pipe, reference)
+    kwargs = {}
+    if reference:
+        pipe.set_ip_adapter_scale(ip_scale)
+        kwargs["ip_adapter_image"] = Image.open(reference).convert("RGB")
     g = torch.Generator(device="cpu").manual_seed(seed)
     img = pipe(prompt=STYLE.format(subject=subject),
                negative_prompt=NEGATIVE, num_inference_steps=steps,
                guidance_scale=6.5, width=size, height=size,
-               generator=g).images[0]
+               generator=g, **kwargs).images[0]
     out = Path(out or ROOT / "out" / "concept" / f"{seed:03d}.png")
     out.parent.mkdir(parents=True, exist_ok=True)
     img.save(out.with_name(out.stem + "_raw.png"))
@@ -179,7 +269,8 @@ def concept(subject: str, seed: int = 1, steps: int = 28,
     out.with_suffix(".json").write_text(json.dumps(
         {"subject": subject, "seed": seed, "steps": steps, "size": size,
          "model": MODEL, "matte": MATTE_MODEL, "style": STYLE,
-         "negative": NEGATIVE}, indent=1))
+         "negative": NEGATIVE, "reference": str(reference) if reference else None,
+         "ip_scale": ip_scale if reference else None}, indent=1))
     return out
 
 
@@ -317,6 +408,11 @@ def main() -> int:
     ap.add_argument("--steps", type=int, default=28)
     ap.add_argument("--size", type=int, default=1024)
     ap.add_argument("-o", "--out")
+    ap.add_argument("--reference", metavar="IMG",
+                    help="condition generation on this image via IP-Adapter, "
+                         "in addition to the text prompt")
+    ap.add_argument("--ip-scale", type=float, default=DEFAULT_IP_SCALE,
+                    help=f"reference influence, 0-1 (default {DEFAULT_IP_SCALE})")
     ap.add_argument("--check", metavar="PNG", nargs="+",
                     help="grade existing images for stage-2 fitness and exit")
     args = ap.parse_args()
@@ -333,7 +429,8 @@ def main() -> int:
 
     if not args.subject:
         ap.error("a subject, or --check")
-    out = concept(args.subject, args.seed, args.steps, args.size, args.out)
+    out = concept(args.subject, args.seed, args.steps, args.size, args.out,
+                  reference=args.reference, ip_scale=args.ip_scale)
     print(f"wrote {out}")
     msgs = check_concept_fitness(out)
     for m in msgs:

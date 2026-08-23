@@ -19,6 +19,10 @@ which is the point.
 
     pip install -r tools/requirements.txt
 
+    # stage 1 -- concept art, prompt alone or prompt + a reference image
+    python tools/concept.py "a ceramic teapot" --seed 1 -o out/x.png
+    python tools/concept.py "a ceramic mug" --reference photos/mug.jpg -o out/y.png
+
     python tools/palette_forge.py        # compute + validate the 40-colour palette
     python tools/animate.py --fx         # the deliverable: sheets + atlas.json
     python tools/render_room.py          # whole-shop composite (integration test)
@@ -55,6 +59,7 @@ which is the point.
 | `proof/floorplans.png` | twelve plans, top-down, walkable floor shaded, topology labelled |
 | `proof/generators.png` | every generator, eight seeds each, spread measured |
 | `proof/characters.png` | roster, eight directions, and generated extras |
+| `proof/reference_image_conditioning.png` | reference photo, prompt-only, and two `--ip-scale` levels of the same prompt |
 | `ART_CRITIQUE.md` | what was rejected, why, and what became a check |
 
 The reference room is still the better room. It holds seven passes of judgement

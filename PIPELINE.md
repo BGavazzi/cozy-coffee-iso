@@ -162,7 +162,9 @@ foliage, fabric and skin — most of the material range a 2D game needs.
 
 | Stage | State |
 |---|---|
-| 1–3 (concept, mesh, rig) | specified, tooling verified available, not built — but **the seam they attach to is built and checked**: `ingest.py` binds an arbitrary mesh to the palette and the tile grid |
+| 1 (concept) | working — `concept.py`, SDXL + fitness gate, prompt or prompt+reference (IP-Adapter) |
+| 2 (mesh) | working — `lift.py` reconstructs a mesh via TripoSR (TRELLIS 2 blocked, see below) |
+| 3 (rig) | blocked on this workstation's toolchain (UniRig needs `nvcc` + MSVC), not rejected — but **the seam it attaches to is built and checked**: `ingest.py` binds an arbitrary mesh to the palette and the tile grid |
 | 4 (motion) | working as a **procedural rig** — `character.py` poses, `animate.py` clips. Stands in for HY-Motion the way the rasterizer stands in for Blender |
 | 5 (render) | working — exact 2:1, 8 azimuths, camera-space key. **Consumes OBJ meshes** via `mesh.py`, or analytic primitives as a fixture |
 | 6 (pixelize) | working — `pixelize.py`, ramp-quantized, zero contamination |
@@ -277,6 +279,34 @@ failures are informative:
   during diffusion, which is a property of the generator and not of the key.
   The separation check caught it at dE 0.121. The machinery was deleted rather
   than left in as a setting.
+
+**Reference images.** `concept()` takes an optional `reference` image,
+conditioning generation via SDXL IP-Adapter alongside the text prompt --
+the "examples" half of "a factory that takes prompts and examples". IP-Adapter
+rather than img2img, deliberately: img2img denoises the reference's own
+layout, importing whatever camera angle it happened to be shot at, which is
+exactly the per-object drift the fixed `STYLE` camera clause exists to
+prevent. IP-Adapter conditions on the reference's *appearance* while the
+prompt and `STYLE` keep owning composition.
+
+One real bug and one real measurement here:
+
+- **The image encoder `load_ip_adapter()` attaches isn't covered by the
+  offload hooks `enable_model_cpu_offload()` set up when the pipe was first
+  built** -- it stays on CPU while everything else runs on CUDA, and the
+  first call crashes: `RuntimeError: Input type (torch.cuda.HalfTensor) and
+  weight type (torch.HalfTensor) should be the same`. Fixed by re-running
+  `enable_model_cpu_offload()` after `load_ip_adapter()`, which re-attaches
+  hooks to every current submodule.
+- **`--ip-scale` was swept, not guessed**, one reference (a matte ceramic
+  teapot photo, copper handle) against a deliberately conflicting prompt
+  ("a glass vase"), same seed: 0.3 only nudges body proportions, 0.4-0.5
+  add the reference's handle(s) while the vase stays glass, 0.6 overrides the
+  material entirely (renders in opaque ceramic), 0.85 nearly reproduces the
+  reference outright, copper accent included. Shipped default is 0.45 -- just
+  under where the prompt starts losing. One pair, not the swept bracket the
+  fitness floors above have; a reference that doesn't fight the prompt on
+  material will tolerate a higher scale.
 
 ### Stage 2 -- `tools/lift.py`, and why it is not TRELLIS
 
