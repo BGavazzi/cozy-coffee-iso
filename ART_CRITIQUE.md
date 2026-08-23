@@ -2279,6 +2279,32 @@ rather than a hand-picked safe subset — the argument `HAIR_MATS` makes at
 length — and over a hundred seeds the generator now produces 7 skin tones and
 both blush states, with zero specs failing any check.
 
+## The audit was worth more than the fix
+
+Finding two dead dimensions by hand raises the obvious question of how many
+other audits have never been run, and the answer is to stop running audits by
+hand. `check_spec_coverage` is that table, promoted: it generates a hundred
+specs and reports any field whose modal value takes more than 80% of them.
+
+Modal share rather than distinct count, so a dimension that varies once in a
+hundred seeds is caught as well as one that never varies. The bracket is the
+measured before-and-after: `skin` and `blush` at **100%**, against `blush`
+itself at **59%** now that it is drawn — with `accessory_kind` at 38% (a
+quarter of its vocabulary is `None` on purpose) and `hair_style` at 24%. The
+cap sits in the gap between 59 and 100 rather than anywhere near 24, because
+booleans are the tight case by construction and always will be.
+
+This is the check `check_generator_range` could not be. That one asks the
+outcome-level question for the asset library — do consecutive seeds produce
+different silhouettes — and it would never have caught this, because a cast
+can differ in shirt and trousers and hair and hat and still be one face
+repeated nine times. **A dimension that is never drawn from is invisible in
+every downstream metric.** The only place it shows is in the spec, and until
+now nothing looked there.
+
+Verified in both directions, which for this check means pinning `skin` and
+`blush` back to their old defaults and watching both fire at 100%.
+
 ## Still open
 
 - **Stage 3** (UniRig) is unbuilt. Stages 1 and 2 run on the local RTX 4070 —

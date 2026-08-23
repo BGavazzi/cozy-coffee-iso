@@ -211,6 +211,13 @@ def check(man: dict) -> int:
         # only ever asked for one.
         for msg in _c.check_eye_legibility():
             errs.append(msg)
+        # And every dimension of the generator has to be drawn from. The two
+        # that were not sat unremarked for eight passes beside five that were
+        # producing seventeen to twenty-four values each, because a dimension
+        # nobody varies is invisible in every downstream metric -- a cast can
+        # differ in shirt and trousers and hair and still be one face.
+        for msg in _c.check_spec_coverage():
+            errs.append(msg)
         # The generated extras have to pass everything the hand-written roster
         # does. They are proposed against exactly these predicates, so a failure
         # here means the solver has stopped consulting one of them -- which is

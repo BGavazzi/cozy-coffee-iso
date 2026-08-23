@@ -986,6 +986,56 @@ def check_eye_legibility(ramps=None) -> list[str]:
     return out
 
 
+# Bracketed against the two dimensions this check was written after: `skin` and
+# `blush` each took ONE value across a hundred seeds -- 100% on their modal
+# value -- while the five dimensions that were working peaked at 59% (`blush`
+# now), 38% (`accessory_kind`, whose vocabulary is a quarter `None` by design)
+# and 24% (`hair_style`). The gap between 59 and 100 is where this sits.
+MAX_MODAL_SHARE = 0.80
+COVERAGE_SEEDS = 100
+
+
+def check_spec_coverage(seeds: int = COVERAGE_SEEDS, ramps=None) -> list[str]:
+    """Does every dimension of the generator actually vary?
+
+    Written because two of them did not, and nothing noticed for eight passes.
+    `skin` and `blush` were dataclass defaults that the proposal loop never
+    drew from, so a hundred generated extras shared one complexion and all of
+    them blushed -- sitting unremarked beside five dimensions producing
+    seventeen to twenty-four distinct values each.
+
+    This is the audit itself, promoted. `check_generator_range` already asks
+    the outcome-level question for the asset library -- do consecutive seeds
+    produce different silhouettes -- and it would never have caught this,
+    because a cast can differ in shirt and trousers and hair and still be one
+    face repeated. A dimension that is never drawn from is invisible in every
+    downstream metric; the only place it shows is in the spec.
+
+    Measured as modal share rather than distinct count, so a dimension that
+    varies once in a hundred seeds is caught too. Booleans are the tight case
+    by construction -- two values is all there is -- which is why the cap is
+    where it is rather than anywhere near the 24% the roomiest dimension
+    reaches.
+    """
+    from dataclasses import fields
+    specs = [generate_spec(i, ramps) for i in range(1, seeds + 1)]
+    out = []
+    for f in fields(CharacterSpec):
+        # `name` is seed-derived and unique by construction, so it would report
+        # perfect coverage while telling us nothing.
+        if f.name == "name":
+            continue
+        vals = [getattr(s, f.name) for s in specs]
+        top, n = max(((v, vals.count(v)) for v in set(vals)),
+                     key=lambda kv: kv[1])
+        share = n / len(vals)
+        if share > MAX_MODAL_SHARE:
+            out.append(
+                f"generator: '{f.name}' is {top!r} on {share:.0%} of "
+                f"{seeds} seeds -- that dimension is not being drawn from")
+    return out
+
+
 def check_waistline(ramps, roster=None) -> list[str]:
     """A shirt and trousers that resolve to the same value have no edge between them.
 
