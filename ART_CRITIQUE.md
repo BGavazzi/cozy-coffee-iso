@@ -1999,10 +1999,126 @@ broken rig. A check that only ever sees one version of a room cannot use that.
 **Asking the weaker question honestly beats asking the stronger one
 unreliably.**
 
+# Ninth pass — the generator arrived and it was shading the object twice
+
+Every pass before this one critiqued art the repo had written itself. This one
+is the first where a model outside the repo produced the geometry and the
+colour, and the first rejection was not subtle: the teapot came through
+`concept → lift → ingest → render_batch` as a **near-black blob with a correct
+silhouette**. Recognisably a teapot in outline, unrecognisable as anything in
+this palette.
+
+## Two defects, and only one of them had a check
+
+Stage 8 blocked the first eight sprites outright:
+
+    art appears to be 8x upscaled (97% of 8x8 blocks are uniform)
+
+That is `check_grid`, doing exactly its job on a bug it was never written for.
+`render_batch` was using the camera's default span of 1.25, which is sized for
+the analytic room; a 0.28 m prop rendered as a **nine-pixel dot** in a 64 px
+frame, and nine pixels of teapot in a 64 px frame is indistinguishable from an
+8× upscale. A check aimed at one failure caught a different one because both
+produce the same evidence. That is the argument for grading pixels rather than
+grading intent.
+
+The second defect had no check at all. Once framed, the sprites were the right
+size, the right shape, and the wrong colour — and every existing check passed
+them. `ramp-coherence` reported 4.9% cross-ramp adjacency on one frame and
+notes on the rest. Nothing said *this object is black*.
+
+## Why it was black, which is not a colour problem
+
+A photograph is albedo times lighting. A single-view reconstructor cannot
+separate them, so TripoSR's vertex colours arrive with the concept image's key
+light already multiplied in. `bind_colour` picks the ramp step nearest the
+source's lightness — its **lit** lightness — and then the renderer applies
+lambert on top of that. The lighting runs twice, and twice-shaded mid-grey is
+black.
+
+This is the sharpest instance yet of a principle the second pass wrote down as
+*quantize the lighting, not the image*. The seam had been built against a
+hypothetical MTL full of albedo, and the first real generator handed it
+something else.
+
+## The measurement that decided the fix
+
+The temptation is to normalise: rescale the field's lightness range to the
+palette's. Measuring first says not to.
+
+| | albedo median L | p05–p95 band |
+|---|---|---|
+| thirty `assetlib` props | **0.596 – 0.845** | 0.000 – 0.585 |
+| TripoSR teapot | **0.408** | 0.481 |
+
+Every one of the thirty authored meshes lands inside that median range. Not
+most — all of them, with seventeen sitting on 0.600 exactly, because the
+library is built out of ramp middles. That is not a coincidence worth
+preserving for its own sake; it is what *the renderer supplies the shading*
+looks like in numbers.
+
+The teapot's median is 0.188 below a floor nothing authored goes near. Its
+band is comfortably **inside** the authored range — an espresso machine is
+busier. So the median is wrong and the contrast is not, and `ingest.delight`
+shifts the one without touching the other. Compressing the band would have
+destroyed the two-tone structure the reconstructor genuinely recovered, in
+order to fix a problem it did not have.
+
+Corroboration that the shift is right rather than merely flattering: **worst
+bind distance fell from dE 0.146 to 0.071.** The palette was authored as
+albedo, so albedo binds to it better than lit colour does. Nothing in
+`delight` optimises for that number, which is what makes it evidence.
+
+## The floor is the widest in the suite, for once
+
+`check_albedo_centre` reads the materials a mesh ended up with, so a bad
+`delight` and a bad MTL fail by the same route. Its bracket is a measured
+defect at 0.408 against a weakest known-good at 0.596 — **0.188 wide**, against
+the detail floor's 0.010. Worth noting because most of this file is arguments
+about margins of a hundredth; this one was never in doubt.
+
+## Two axis bugs that neither crashed nor looked wrong
+
+The marching-cubes shim reverses vertex columns to match what TripoSR expects
+back. A reflection reverses winding, and reversed winding renders identically
+in anything that ignores facing. The tell was `ingest.signed_volume`:
+**−0.1612** before the face flip, **+0.1612** after.
+
+Separately, `load_obj` read only the first three floats of a `v` line, so
+TripoSR's per-vertex colour was discarded and the whole teapot bound to one
+material. Fixing the reader was not enough — `orient` and `fit` rebuild the
+mesh and did not carry the new field, so the vertex-colour branch in `ingest`
+never fired and everything bound to `neutral` with no warning anywhere. Three
+places, one fact, and the failure at each of them was silent.
+
+An upright search was run too, on the theory that a mesh reconstructed from a
+prompt asking for *a high three-quarter view looking down* would arrive
+pitched by that elevation. Scoring candidate rotations by the flatness of the
+lowest 1% of vertices, the best was pitch 2° roll 12° against 0° 0° — base
+spread 0.0081 versus 0.0235. Real but small, and not the tumbling that was
+suspected. Left uncorrected, because a 12° roll fitted to one teapot's base is
+a knob.
+
+## The check that was proposed and discarded
+
+A single-view reconstructor invents the far side of an object, and this
+teapot's back is invented. The obvious next check is turntable consistency —
+grade the silhouette-area sequence across the eight directions.
+
+It would measure nothing. The eight frames are a **consistent** turnaround; the
+geometry they consistently describe is wrong. Any image-space metric over the
+direction set is satisfied exactly by a rigid mesh however badly reconstructed.
+This is a property of stage 2, not a gap in stage 8, and it is precisely what
+stage 9 exists for. Recorded here because a check that cannot fail is worse
+than no check: it reports confidence it has not earned.
+
 ## Still open
 
-- **Stages 1–3** (SDXL concept → TRELLIS 2 mesh → UniRig rig) need a GPU and
-  model weights. The seam (`ingest.py`) is built and checked; nothing feeds it.
+- **Stage 3** (UniRig) is unbuilt. Stages 1 and 2 run on the local RTX 4070 —
+  see `PIPELINE.md` for why stage 2 is TripoSR and not TRELLIS 2. Rigging is
+  only needed for characters, and props do not rig.
+- **The far side of a single-view reconstruction is unverifiable by machine.**
+  Stated above; listed here so it is not mistaken for an oversight.
 - The **focal reading falls with render resolution** in generated rooms and
   holds in the reference one, because contrast is a percentile spread over 37
   quantized lightness levels and the generated periphery resolves as much new

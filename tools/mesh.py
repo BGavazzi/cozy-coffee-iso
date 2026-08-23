@@ -27,6 +27,11 @@ Vec = tuple[float, float, float]
 class Mesh:
     verts: list[Vec] = field(default_factory=list)
     normals: list[Vec] = field(default_factory=list)
+    # Optional per-vertex sRGB, parallel to `verts`. Empty for everything this
+    # repo builds, because its meshes carry palette tokens on faces and have no
+    # use for colour on a point. Generators are the other way round: TripoSR
+    # writes `v x y z r g b` and no MTL at all.
+    vcolors: list[tuple] = field(default_factory=list)
     # (vertex indices, normal indices or None, material)
     faces: list[tuple[tuple[int, int, int], tuple[int, int, int] | None, str]] = \
         field(default_factory=list)
@@ -139,7 +144,16 @@ class Mesh:
 # --- OBJ ---------------------------------------------------------------------
 
 def load_obj(path: Path | str, default_material: str = "wood") -> Mesh:
-    """Minimal OBJ reader: v, vn, f, usemtl. Triangulates n-gons as a fan."""
+    """Minimal OBJ reader: v, vn, f, usemtl. Triangulates n-gons as a fan.
+
+    `v` lines may carry three extra floats of vertex colour. The reader used to
+    slice `parts[1:4]` and drop them silently, which is fine for meshes this
+    repo writes and wrong for every mesh a generator produces: stage 2's OBJ
+    has no MTL and no `usemtl`, so the whole model arrived as one default
+    material and `ingest` bound a teapot, its lid and its wooden handle to a
+    single palette token. Reading geometry and discarding colour is not a
+    parse error, which is why it took a real generated mesh to notice.
+    """
     m = Mesh()
     material = default_material
     for line in Path(path).read_text(encoding="utf-8").splitlines():
@@ -149,6 +163,10 @@ def load_obj(path: Path | str, default_material: str = "wood") -> Mesh:
         tag = parts[0]
         if tag == "v":
             m.verts.append(tuple(float(x) for x in parts[1:4]))
+            if len(parts) >= 7:
+                m.vcolors.append(tuple(
+                    max(0, min(255, round(float(c) * 255.0)))
+                    for c in parts[4:7]))
         elif tag == "vn":
             m.normals.append(norm(tuple(float(x) for x in parts[1:4])))
         elif tag in ("usemtl", "o", "g") and len(parts) > 1:

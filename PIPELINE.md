@@ -36,7 +36,7 @@ render deterministically.
 
 ```
 STAGE 1  concept art     SDXL + style LoRA          [AI]
-STAGE 2  mesh            TRELLIS 2 (8GB @ 512^3)    [AI]
+STAGE 2  mesh            TripoSR (TRELLIS 2 blocked) [AI]
 STAGE 3  rig             UniRig (SIGGRAPH '25)      [AI]
 STAGE 4  motion          HY-Motion 1.0 / Kimodo     [AI]
 STAGE 5  render          orthographic, 8 azimuths   [CODE, deterministic]
@@ -251,6 +251,125 @@ cross-checked against the raytracer on the same scene tessellated: **99.40%
 material agreement**, 0.7% coverage difference, mean lambert error 0.014 -- the
 residual being faceted tessellation approximating analytic surfaces.
 
-Next up is stage 2. `torch 2.11.0+cu128` with working CUDA is already present in
-the ComfyUI venv and 104 GB is free on the drive; TRELLIS 2 additionally needs
-`bitsandbytes` and `gguf` for 8-bit `low_memory_mode` at 512^3.
+## Stages 1 and 2 run
+
+Both are built and both produce output on the machine this repo is developed
+on: an RTX 4070 Laptop, 8.6 GB of VRAM, driver 595.95. That is the 8 GB this
+document assumed, and the assumption held.
+
+### Stage 1 -- `tools/concept.py`
+
+SDXL base at 1024, one prompt template, then `rembg` (u2net) for the matte, then
+a fitness gate. The gate is the point. Four subjects were generated and three
+passed; the fern was rejected at 12% soft alpha against a 10% cap, because
+frond edges are exactly what a segmenter cannot commit to and a half-transparent
+edge becomes a halo of wrong-ramp pixels four stages later.
+
+Two matting approaches were tried and thrown away before `rembg`, and both
+failures are informative:
+
+- **Threshold the plain grey backdrop.** Swept tolerance from 0.055 to 0.18.
+  Below 0.11 the contact shadow joins the subject and the blob reaches the
+  frame edge; at 0.14 the teapot's lid dissolves into the background. The two
+  failures cross. There is no threshold, not a badly chosen one.
+- **Chroma key on a colour the palette does not contain** (153, 0, 255). It
+  produced a purple teapot -- the backdrop colour bleeds onto the subject
+  during diffusion, which is a property of the generator and not of the key.
+  The separation check caught it at dE 0.121. The machinery was deleted rather
+  than left in as a setting.
+
+### Stage 2 -- `tools/lift.py`, and why it is not TRELLIS
+
+TRELLIS 2 needs three CUDA extensions compiled from source: `nvdiffrast`,
+`diff-gaussian-rasterization`, and a sparse-conv backend. Compiling them needs
+`nvcc` and an MSVC host compiler. This machine has the driver and the card but
+no CUDA toolkit and no C++ workload in its Visual Studio install, and pip's
+`nvidia-cuda-nvcc-cu12` ships only `ptxas.exe` on Windows. Getting there is two
+admin-level system installs of roughly 10 GB -- a decision about somebody's
+workstation, not a decision about this repo.
+
+So stage 2 is **TripoSR**: pure PyTorch, ~1.7 GB of weights, no compiled
+extensions, no rasteriser. It is a weaker reconstructor and this document
+should say so. What it buys is that stages 1 and 2 connect to `ingest` today,
+on hardware that exists.
+
+Three things had to be worked around, and each is in the file rather than in a
+patch someone has to remember to re-apply:
+
+- **`torchmcubes` has no Windows wheel.** A `torchmcubes` module backed by
+  `skimage.measure.marching_cubes` is injected into `sys.modules` before
+  TripoSR imports. The vendor tree stays pristine. The subtlety is axis order:
+  reversing the vertex columns to match what the caller expects is a
+  reflection, so the winding has to be reversed with it. Getting that wrong
+  does not crash and does not look wrong in a viewer -- `ingest.signed_volume`
+  read **-0.1612** before the flip and **+0.1612** after.
+- **The checkpoint is transformers 4.35 and the venv is 5.15.** ViT was
+  refactored in between, so every attention weight in all twelve layers went
+  missing. Downgrading would break stage 1, so the rename is expressed as a
+  rename. Order matters: `.attention.output.dense` has to be rewritten before
+  the bare `.output.dense` rule, or an attention projection lands in `mlp.fc2`
+  with matching shapes -- silent, plausible, completely wrong.
+- **`load_obj` dropped vertex colours.** TripoSR writes colour on the `v` line
+  and emits no MTL; a reader that takes only the first three floats turns a
+  two-tone teapot into one uniform material without failing anything. `orient`
+  and `fit` then had to carry the new field, because they did not, and the
+  vertex-colour branch in `ingest` never fired -- everything bound to
+  `neutral`, silently, with no warning anywhere.
+
+### The defect the seam actually had: double shading
+
+The first teapot to survive all of that rendered as a **near-black blob with a
+correct silhouette**. Stage 8 did not catch it. The cause is structural and
+worth stating plainly: a photograph is albedo times lighting, a reconstructor
+cannot separate them, so TripoSR's vertex colours arrive with the concept
+image's key light already multiplied in. `bind_colour` then picks the ramp step
+nearest the source's lightness -- which is its *lit* lightness -- and the
+renderer applies lambert on top. The lighting runs twice.
+
+The fix is a shift, and the size of the shift was measured rather than tuned:
+
+| | albedo median L | p05-p95 band |
+|---|---|---|
+| thirty `assetlib` props | **0.596 - 0.845** | 0.000 - 0.585 |
+| TripoSR teapot | **0.408** | 0.481 |
+
+Every one of the thirty authored meshes lands in that median range -- not most,
+all, with seventeen sitting on 0.600 exactly, because the library is built out
+of ramp middles. The teapot is 0.188 below a floor nothing authored goes near.
+Its *band*, meanwhile, is comfortably inside the authored range; an espresso
+machine is busier. So the median is wrong and the contrast is not, and
+`ingest.delight` shifts the one without touching the other. Compressing the
+band would have destroyed the two-tone structure the reconstructor actually
+recovered, to fix a problem it did not have.
+
+Corroboration that the shift is right rather than merely flattering: the worst
+bind distance **fell from dE 0.146 to 0.071**. The palette was authored as
+albedo, so albedo binds to it better than lit colour does. Nothing about
+`delight` optimises for that number.
+
+`check_albedo_centre` reads the bound result and reports a median outside
+0.596-0.845, so a bad `delight` and a bad MTL fail by the same route.
+
+### The framing bug underneath it
+
+`render_batch` used `DimetricCamera`'s default span of 1.25, sized for the
+analytic room scene. A 0.28 m prop came out as a nine-pixel dot -- and stage 8
+*did* catch that one, blocking all eight sprites with *"art appears to be 8x
+upscaled (97% of 8x8 blocks are uniform)"*. `frame_all` now computes one span
+as the **maximum across all eight azimuths** and one **fixed world centre**.
+Per-direction fitting would have fixed the size and broken something worse: the
+prop would breathe and drift as it turned.
+
+### What no check can do here
+
+A single-view reconstructor invents the far side of the object, and the teapot's
+back is invented. No image-space check on the direction set can catch it,
+because the mesh is genuinely rigid -- the eight frames are a consistent
+turnaround of the wrong geometry. This is a property of stage 2, not a gap in
+stage 8, and it is what stage 9 is for. A metric proposed here and discarded:
+silhouette-area consistency across directions, which would have measured
+nothing, because it is satisfied exactly by a rigid mesh however wrong.
+
+### Stage 3
+
+Unbuilt. It is only needed for characters, and props do not rig.
