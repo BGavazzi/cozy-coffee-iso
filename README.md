@@ -107,13 +107,23 @@ different silhouettes. Its first version counted *distinct* silhouettes and
 scored a perfect 8 of 8 for generators the eye read as a single object, because
 distinctness is a threshold at one pixel. It measures distance now.
 
-The last two guard the seam where stages 1–3 will attach — `ingest.py`, which
-binds an arbitrary mesh to the palette and the tile grid. Nothing feeds it yet,
-which is precisely why it needs checks: an adapter that is never exercised is an
-adapter that is wrong by the time something arrives. Both were verified to fail
-before being trusted, and one of them needed an instrument the other four
-assertions could not provide, because a mirrored mesh has the same bounds, the
-same height and the same materials as the original.
+The last two guard the seam where stages 1–3 attach — `ingest.py`, which binds
+an arbitrary mesh to the palette and the tile grid. They were written while
+nothing fed it, which is precisely why it needed checks: an adapter that is
+never exercised is an adapter that is wrong by the time something arrives. Both
+were verified to fail before being trusted, and one of them needed an
+instrument the other four assertions could not provide, because a mirrored mesh
+has the same bounds, the same height and the same materials as the original.
+
+**Something feeds it now.** `tools/concept.py` runs SDXL on the local card and
+gates the result on segmentation fitness; `tools/lift.py` reconstructs a mesh
+from it. Three subjects have gone end to end — concept, mesh, palette bind,
+eight sprites, auto-review — and the seam paid for itself immediately. The
+first mesh through it rendered as a nine-pixel dot (caught) and then as a
+near-black blob (not caught, and now `check_albedo_centre`), because a
+reconstructed colour field carries the concept image's lighting and the
+renderer was applying the key twice. See `PIPELINE.md` and the ninth pass of
+`ART_CRITIQUE.md`.
 
 The newest one came from the machine rather than from a person, which is the
 loop closing. `generate_spec` proposes a character and tests it against the

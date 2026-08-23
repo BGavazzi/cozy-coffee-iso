@@ -247,6 +247,72 @@ def check_silhouette(px, w, h) -> list[Finding]:
     return out
 
 
+# Bracketed on measurement, and the bracket is unusually comfortable. Over ten
+# authored props at eight directions each, isolated-pixel share runs 0.0002 to
+# 0.0201 by median and never exceeds 0.0615 on a single frame -- the worst
+# offender being a pastry case, whose glass is meant to be busy. Three props
+# lifted through TripoSR read 0.045 (kettle, good), 0.078 (teapot, acceptable)
+# and 0.153 (basket, rejected on sight: a salt-and-pepper storm where a weave
+# texture was reconstructed as per-vertex colour noise).
+#
+# So the floor sits between the weakest thing worth keeping, at 0.084, and the
+# best frame of the thing that is not, at 0.127. Authored art is an order of
+# magnitude below it and cannot trip it.
+MAX_ISOLATED = 0.105
+
+
+def check_speckle(px, w, h) -> list[Finding]:
+    """Pixels that match none of their four neighbours.
+
+    A reconstructor hands back per-vertex colour that carries the concept
+    image's *texture* as well as its albedo, and texture at 64 px is noise.
+    Quantizing it to a 37-colour palette does not average it away -- it sharpens
+    it, because every noisy sample snaps to some step and neighbouring samples
+    snap to different ones.
+
+    Measured on colour rather than on lightness, because the failure is
+    cross-ramp: the basket's speckle alternates dark `wood` and pale `cream`,
+    which a lightness metric would report as ordinary contrast.
+
+    This is deliberately not `check_grid` run backwards. `check_grid` asks
+    whether the art is secretly upscaled, which is a question about block
+    structure; this asks whether any structure survived at all.
+    """
+    tot = iso = 0
+    for y in range(h):
+        row = y * w
+        for x in range(w):
+            c = px[row + x]
+            if c[3] == 0:
+                continue
+            tot += 1
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                u, v = x + dx, y + dy
+                if 0 <= u < w and 0 <= v < h:
+                    o = px[v * w + u]
+                    if o[3] and o[:3] == c[:3]:
+                        break
+            else:
+                iso += 1
+    if not tot:
+        return []
+    share = iso / tot
+    if share <= MAX_ISOLATED:
+        return []
+    return [Finding(
+        BLOCKER, "speckle",
+        f"{share:.1%} of opaque pixels match none of their four neighbours "
+        f"(authored art measures under 6.2% on its busiest frame)",
+        "Nothing at this resolution is legible as single scattered pixels. "
+        "The cause is sub-pixel detail in the source -- a reconstructor turns "
+        "a woven or grained surface into displaced geometry and noisy "
+        "per-vertex colour, and one 64px pixel covers hundreds of triangles "
+        "of it. There is no render setting that fixes this: three were "
+        "measured and none moved the number. Reject the mesh, or ask stage 1 "
+        "for a subject whose surface is smooth at this scale.",
+    )]
+
+
 CHECKS_NEEDING_PALETTE = True
 
 
@@ -262,6 +328,7 @@ def review(path: Path, by_rgb, ramps, entries) -> list[Finding]:
     findings += check_extremes(px)
     findings += check_light_direction(px, w, h)
     findings += check_silhouette(px, w, h)
+    findings += check_speckle(px, w, h)
     findings.sort(key=lambda f: ORDER[f["severity"]])
     return findings
 

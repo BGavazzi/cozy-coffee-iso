@@ -2112,6 +2112,89 @@ This is a property of stage 2, not a gap in stage 8, and it is precisely what
 stage 9 exists for. Recorded here because a check that cannot fail is worse
 than no check: it reports confidence it has not earned.
 
+## Three subjects, and the shift held for all three
+
+Fitting a constant to one teapot is fitting a constant to one teapot, so the
+other two concepts that cleared stage 1 were lifted as well:
+
+| | field albedo median L | after `delight` |
+|---|---|---|
+| teapot | 0.408 | 0.600 |
+| basket | 0.494 | 0.600 |
+| kettle | 0.329 | 0.600 |
+
+All three below the authored floor, spread over 0.165 of each other. A fixed
+offset would have been wrong for two of them; a median-to-target shift is right
+for all three. Reconstructed colour fields are *systematically* under-exposed
+relative to authored albedo, by an amount that varies per object — which is
+what "the concept image's lighting is baked in" predicts, since the amount
+depends on how the generator lit that particular subject.
+
+The kettle is the best sprite this pipeline has produced from a model: clean
+silhouette at all eight directions, legible as a kettle from every one of them,
+palette-coherent. The teapot is acceptable from the front and degrades around
+the back. The basket is unusable.
+
+## The basket, and a check that had to be invented for it
+
+The basket came through as a **salt-and-pepper storm** — scattered dark and
+pale pixels across the whole surface, where a wicker weave had been
+reconstructed as surface detail. Twenty-one sprites went through stage 8 and
+every one of them passed. Nothing in the suite asks whether a sprite has any
+coherent structure at all.
+
+`check_grid` asks the opposite question — whether the art is secretly an
+upscale — so the shape of the answer was already there. The reading is the
+share of opaque pixels matching **none** of their four neighbours, on colour
+rather than lightness, because the basket's speckle alternates dark `wood` and
+pale `cream` and a lightness metric reports that as ordinary contrast.
+
+| | isolated-pixel share |
+|---|---|
+| ten authored props, eight directions each | median **0.0002 – 0.0201**, worst single frame **0.0615** |
+| kettle (good) | 0.037 – 0.057 |
+| teapot (acceptable) | 0.066 – 0.084 |
+| basket (rejected on sight) | **0.127 – 0.163** |
+
+Floor at **0.105**, bracketed by the weakest thing worth keeping at 0.084
+against the best frame of the thing that is not at 0.127 — a 0.043-wide
+bracket, four times the detail floor's. Authored art sits an order of magnitude
+below it and cannot trip it. Run against all twenty-one sprites it blocks
+exactly the eight basket frames and nothing else.
+
+The worst authored frame is a pastry case at 0.0615, whose glass is *meant* to
+be busy. That the ceiling of legitimate business sits below the floor of
+illegible noise is the reason this check can exist at all.
+
+## Four fixes, none of which worked, which is the finding
+
+The check's first `fix` text said *smooth the colour field upstream*. That was
+a guess, so it was tested, and then three more were:
+
+1. **Laplacian smoothing of the vertex colours** over the mesh's 1-ring, 2/4/8
+   passes. Basket 0.148 → 0.135. Eight passes on a 77,000-vertex mesh covers a
+   neighbourhood far smaller than one output pixel.
+2. **Interpolated vertex normals** (`--smooth`). Identical to four decimal
+   places, on all three props.
+3. **Supersampling harder** — factor 2, 4, 8, 12. Flat. The downsample picks a
+   representative sample rather than averaging, *by design*: averaging colour
+   is the one thing this architecture forbids, because it is what makes
+   cross-ramp contamination impossible.
+4. **Flat single material**, as a diagnostic rather than a fix. Basket
+   0.149/0.153 → 0.088/0.045, so about half its speckle is chromatic and half
+   is geometric. The teapot went the other way, 0.058 → 0.078: its two-tone
+   colour field is *suppressing* noise, and stripping it exposes the lambert
+   speckle underneath.
+
+So the noise is sub-pixel detail in the source, and at 64 px one pixel covers
+hundreds of triangles of it. There is no render setting. The remedy is upstream
+— a subject whose surface is smooth at this scale, or a better reconstructor —
+and the check now says so instead of offering advice that was never tested.
+
+Worth naming: the first version of that `fix` string was plausible, specific,
+and wrong, and it would have shipped as guidance. Every other floor in this
+file was bracketed by measurement while its remedy was asserted.
+
 ## Still open
 
 - **Stage 3** (UniRig) is unbuilt. Stages 1 and 2 run on the local RTX 4070 —
