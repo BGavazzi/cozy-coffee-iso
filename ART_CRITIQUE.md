@@ -2305,6 +2305,101 @@ now nothing looked there.
 Verified in both directions, which for this check means pinning `skin` and
 `blush` back to their old defaults and watching both fire at 100%.
 
+## `--smooth` had nothing to interpolate, on any mesh, ever
+
+Chasing NEXT.md's B1, the question was whether `--smooth` does anything to a
+lifted prop. It does not, and neither does it do anything to an authored one
+-- this was a dead flag from the day it was added, not a lifted-mesh
+regression.
+
+The mechanism: `rasterize`'s smooth branch fires only when a face's normal-
+index tuple is set and `mesh.normals` is non-empty. `add_box`/`add_quad`/
+`add_prism` never set that index -- every authored mesh renders on flat
+per-face normals by construction, which is correct for a low-poly look and was
+never meant to interpolate. `load_obj` sets it only by parsing `vn` lines and
+`v//vn` face syntax, and no OBJ in this pipeline has ever contained one:
+verified zero `vn` lines in TripoSR's raw export, and `save_obj` -- the writer
+`ingest.py` uses for every `_bound.obj` -- never wrote them either. Three
+supersampling factors and eight passes of this file exercised `--smooth`
+without exercising anything.
+
+`mesh.compute_vertex_normals` fills this in on a mesh already in memory,
+without touching the OBJ format on disk: one area-weighted normal per vertex,
+each face's normal-index reset to its own vertex indices (exact, since they
+are aligned 1:1). Measured on all three lifted props, median isolated-pixel
+share over eight directions:
+
+| | flat | smooth |
+|---|---|---|
+| teapot | 0.0649 | 0.0621 |
+| basket | 0.1545 | 0.1463 |
+| kettle | 0.0460 | 0.0431 |
+
+Real and consistent -- every direction moved, not just the median -- and
+small, 4-9%. It does not flip a verdict: the basket is still far above the
+speckle floor and the other two still comfortably under it. Worth keeping
+because it costs nothing and every direction improved, and worth stating
+plainly that it is not the fix for anything -- the basket's noise is still
+sub-pixel surface detail, which no amount of normal smoothing touches, and the
+measurement confirms rather than contradicts the ninth pass's finding that
+there is no render setting for that problem.
+
+## `check_albedo_centre` had never been driven into failing
+
+It runs inside `ingest()` on every real call, but nothing in the suite calls
+`ingest()` with a mesh built to actually trip it -- `check_roundtrip` and
+`check_transform` both exercise the binder with library geometry, which is
+already correctly exposed by construction. A check that has only ever seen
+clean input is unverified in the direction that matters.
+
+Writing the fixture found something about `delight` worth stating precisely.
+`bind_vertex_colours` runs `delight` before binding, and `delight` shifts by
+the field's own MEDIAN. Three deliberately adversarial vertex-colour fields
+were tried against it -- 90% near-black with a 10% near-white minority, the
+mirror of that, and a tight 50/50 split -- and every one of them came out
+clean after the shift. That is not a weak search; it is what shifting a median
+means. Clamping at [0, 1] can only ever compress the tail on one side of the
+median rank, and the rank itself is untouched unless the target is degenerate,
+which 0.600 is not. **The vertex-colour path is close to unbreakable by
+construction, and no fixture should pretend otherwise.**
+
+`rebind` -- the MTL path, for any mesh that names its own materials with
+arbitrary RGB rather than per-vertex colour, which is what `PIPELINE.md`
+originally specified for TRELLIS -- has no such protection. Nothing shifts an
+MTL's declared colours before they are bound. `check_albedo_regression` tests
+both paths honestly: a dark MTL colour (L~0.16) must trip the check, a colour
+already on the palette's own middle step must not, and the real teapot's
+field median (0.408) run through the actual `delight` path must come out
+silent. Verified failing in the direction that matters by breaking the floor
+to 0.999 and watching two of the three cases fire.
+
+## The mean spread floor: never fired is not the same question as redundant
+
+NEXT.md B3 asked whether `DEFAULT_SPREAD_FLOOR` has ever rejected anything the
+closest-pair floor did not also reject. It has never fired on the current
+library at all -- the weakest generator, bookshelf, sits at 18.4% mean spread
+against a 15% floor, a 3.4-point margin that was chosen deliberately when the
+floor was last tuned.
+
+"Never fired" does not distinguish "redundant" from "the library is healthy,"
+so a synthetic case was built to separate the two questions directly rather
+than waiting for a real generator to regress: 2000 pixels, 8 seeds, each an
+independent 7% random flip from a shared base. No two seeds are near-
+duplicates and none strays far from the rest -- uniform noise, which is
+exactly the failure mode the mean floor's docstring has claimed since the
+second pass to catch and the closest-pair floor structurally cannot see.
+
+Measured: mean 13.0%, closest pair 12.3%. The mean floor (15%) fires; the
+closest-pair floor (4%) does not. Two floors disagreeing on a case built to
+separate them is what non-redundancy looks like, and a redundant floor cannot
+produce that result by construction. `check_spread_floor_regression` promotes
+this from a one-off measurement into a permanent assertion, seeded so the
+result does not depend on redrawing it.
+
+The floor stays at 0.15, unchanged. What changed is that "it has never fired"
+is now known to mean the library has never regressed this way, not that the
+check has nothing to catch.
+
 ## Still open
 
 - **Stage 3** (UniRig) is unbuilt. Stages 1 and 2 run on the local RTX 4070 —

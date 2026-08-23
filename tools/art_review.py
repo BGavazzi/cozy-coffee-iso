@@ -459,6 +459,19 @@ def check_member_thickness(mesh, name="asset", ppu=ROOM_PX_PER_UNIT,
 # closest pair cannot see: a generator whose every instance differs a little
 # and none differs much. Retuned to 0.15, three points under the weakest real
 # generator (bookshelf, 18%), so that it is at least able to fire.
+#
+# NEXT.md B3 asked whether this floor has ever rejected anything the closest
+# pair did not also reject, on the theory that "never fired" might mean
+# "redundant" rather than "the library is healthy." It has never fired on any
+# library member -- true, and not the same question. Constructed instead: 2000
+# synthetic pixels, 8 seeds, each an independent 7% random flip from a shared
+# base (uniform noise, no near-duplicates, no clustering -- exactly the
+# "differs a little, none differs much" failure this floor was written for).
+# Measured mean 13.0%, closest pair 12.3%: the mean floor fires, the closest-
+# pair floor does not. That is the two floors disagreeing on a case built to
+# separate them, which a redundant floor cannot do by definition. The current
+# library has never tripped it because nothing in it is that regression, which
+# is the outcome a working floor is supposed to produce, not a case against it.
 DEFAULT_SPREAD_FLOOR = 0.15
 
 # How different the two most similar instances of one generator must be.
@@ -575,6 +588,51 @@ def _screen_spread(frames: list) -> float:
                 differ += 1
         total += differ / (union or 1)
     return total / len(pairs)
+
+
+def check_spread_floor_regression() -> list[str]:
+    """Prove `DEFAULT_SPREAD_FLOOR` and `CLOSEST_PAIR_FLOOR` are not redundant.
+
+    Neither floor has ever fired on the current library, which raises an honest
+    question: is the mean floor doing anything the closest-pair floor is not?
+    "Never fired" is not evidence either way -- it is equally consistent with
+    "redundant" and with "the library is healthy." This settles it by
+    construction rather than by hoping a real generator eventually regresses.
+
+    A synthetic generator stands in: 2000 pixels, 8 seeds, each an independent
+    7% random flip from a shared base. No two seeds are near-duplicates and no
+    seed strays far from the rest -- uniform noise, which is exactly the
+    "differs a little, none differs much" failure the mean floor was written
+    for and the closest-pair floor structurally cannot see. Measured once,
+    off-suite: mean 13.0%, closest pair 12.3%. Fixed with `random.seed` here so
+    the assertion does not depend on redrawing that exact result.
+    """
+    import random
+    rng = random.Random(7)
+    n = 2000
+    frames = []
+    for _ in range(8):
+        f = ["wood"] * n
+        for i in rng.sample(range(n), int(n * 0.07)):
+            f[i] = "cream"
+        frames.append(f)
+    mean = _screen_spread(frames)
+    lo = min(_pair_disagreement(frames[i], frames[j])
+             for i in range(len(frames)) for j in range(i + 1, len(frames)))
+    out = []
+    if mean >= DEFAULT_SPREAD_FLOOR:
+        out.append(f"regression: uniform-noise fixture measured mean "
+                   f"{mean:.1%}, expected below the {DEFAULT_SPREAD_FLOOR:.0%} "
+                   f"floor -- the fixture drifted, re-measure it")
+    if lo < CLOSEST_PAIR_FLOOR:
+        out.append(f"regression: uniform-noise fixture measured closest pair "
+                   f"{lo:.1%}, expected above the {CLOSEST_PAIR_FLOOR:.0%} "
+                   f"floor -- the fixture drifted, re-measure it")
+    if not out and not (mean < DEFAULT_SPREAD_FLOOR and lo >= CLOSEST_PAIR_FLOOR):
+        out.append("regression: the mean and closest-pair floors no longer "
+                   "disagree on the uniform-noise case -- the mean floor may "
+                   "have become redundant")
+    return out
 
 
 def check_generator_range(seeds: int = 8, azimuth: float = 45.0,

@@ -321,6 +321,67 @@ def signed_volume(mesh: Mesh) -> float:
     return tot
 
 
+def check_albedo_regression(ramps=None) -> list[str]:
+    """Exercise `check_albedo_centre` on both of `ingest`'s two paths.
+
+    It runs inside `ingest()` today and nothing in the suite calls `ingest()`
+    with a mesh built to actually trip it -- `check_roundtrip` and
+    `check_transform` both use library geometry, which is already correctly
+    exposed. A check that only ever sees clean input is unverified in the
+    direction that matters.
+
+    The two paths turn out to need very different fixtures. `bind_vertex_colours`
+    runs `delight` first, and `delight`'s shift targets the field's own MEDIAN
+    -- which by definition of a median lands within a hair of the target for
+    ANY distribution, skewed or bimodal, because clamping can only ever affect
+    the tail on one side of the median rank, never the rank itself. Searched
+    for a vertex-colour field that survives delight and still trips the check
+    -- 90/10, 10/90 and 50/50 splits between near-black and near-white -- and
+    none did. That is not a gap in the search; it is what "shift the median"
+    means, and it is the honest reason this fixture targets `rebind` instead.
+
+    `rebind` -- the MTL path, for a mesh that already names its materials with
+    arbitrary RGB rather than per-vertex colour -- has no such protection.
+    Nothing shifts an MTL's declared colours before binding them, so this is
+    where an under- or over-exposed source actually reaches the check.
+    """
+    from mesh import Mesh
+    ramps = ramps or load_palette()
+    out = []
+
+    def rebind_case(rgb):
+        m = Mesh()
+        m.verts = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)]
+        m.faces = [((0, 1, 2), None, "Solid")]
+        bound, _table, _warns = rebind(m, {"Solid": rgb}, ramps)
+        return check_albedo_centre(bound, ramps)
+
+    # A photographed-then-quantized dark source, well below the 0.596 floor.
+    if not rebind_case((40, 34, 30)):
+        out.append("regression: an MTL bound at albedo L ~0.16 did not trip "
+                   "check_albedo_centre -- the rebind path has lost its "
+                   "coverage")
+    # A colour already living on the library's own middle step.
+    if rebind_case((169, 113, 81)):
+        out.append("regression: check_albedo_centre fired on wood-3, a "
+                   "colour the palette authors directly -- false positive")
+
+    # The vertex-colour path, run against the real defect this check was
+    # written for rather than a constructed one: the first teapot, field
+    # median L 0.408, would have failed before `delight` existed and has to
+    # stay silent now that it does not.
+    m = Mesh()
+    m.verts = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)]
+    m.faces = [((0, 1, 2), None, "x")]
+    dark = oklab_to_srgb255(0.408, 0.01, 0.005)
+    m.vcolors = [dark, dark, dark]
+    bound, _hist, _worst = bind_vertex_colours(m, ramps)
+    if check_albedo_centre(bound, ramps):
+        out.append("regression: delight left a uniform L-0.408 field bound "
+                   "outside the authored range -- the shift regressed")
+    return out
+
+
 def check_transform(ramps=None) -> list[str]:
     """A full pass over a mesh that looks like something a generator emitted.
 

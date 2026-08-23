@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from isorender import (  # noqa: E402
     AZIMUTH_STEP, DimetricCamera, coffee_scene, dot, render,
 )
-from mesh import load_obj, rasterize  # noqa: E402
+from mesh import compute_vertex_normals, load_obj, rasterize  # noqa: E402
 from pixelize import (  # noqa: E402
     apply_outline, downsample_modal, load_palette, shade_toon,
 )
@@ -117,6 +117,12 @@ def main() -> int:
         source = load_obj(args.mesh)
         asset = args.name or Path(args.mesh).stem
         print(f"mesh: {len(source.verts)} verts, {len(source.faces)} tris")
+        # --smooth had nothing to interpolate: no OBJ this pipeline writes or
+        # loads carries `vn` lines, on either an authored or a generated mesh,
+        # so the flag was a silent no-op from the day it was added. Filled in
+        # here rather than in the file format, so nothing on disk changes.
+        if args.smooth:
+            compute_vertex_normals(source)
     else:
         source = coffee_scene()
         asset = args.name or "crate_cup"

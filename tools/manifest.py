@@ -256,7 +256,8 @@ def check(man: dict) -> int:
         room = build_room()
         for msg in room.screen_occlusion():
             warns.append(f"reference room: {msg}")
-        from art_review import check_generator_range, review_library
+        from art_review import (check_generator_range,
+                               check_spread_floor_regression, review_library)
         for msg in review_library():
             warns.append(msg)
         # A generator that has quietly become a fixed mesh renders a room that
@@ -264,13 +265,29 @@ def check(man: dict) -> int:
         # eye on a contact sheet.
         for msg in check_generator_range():
             warns.append(msg)
+        # Neither spread floor has ever fired on the current library, which
+        # says the library is healthy and says nothing about whether the mean
+        # floor is redundant with the closest-pair floor. This settles that on
+        # a synthetic case built to separate them, so the answer does not rest
+        # on a real generator regressing first.
+        for msg in check_spread_floor_regression():
+            errs.append(msg)
         # The stage 1-3 seam. Nothing feeds it yet, which is exactly why it
         # needs a check: an adapter that is never exercised is an adapter that
         # is wrong by the time something arrives.
-        from ingest import check_roundtrip, check_transform
+        from ingest import (check_albedo_regression, check_roundtrip,
+                           check_transform)
         for msg in check_roundtrip():
             errs.append(f"ingest: {msg}")
         for msg in check_transform():
+            errs.append(f"ingest: {msg}")
+        # check_albedo_centre runs inside ingest() on every real call and
+        # nothing here had ever driven it into failing -- check_roundtrip and
+        # check_transform both feed it library geometry that was already
+        # correctly exposed. This is the fixture that actually breaks it, on
+        # both of ingest's two paths, since delight makes the vertex-colour
+        # path near-unbreakable and the MTL path has no such protection.
+        for msg in check_albedo_regression():
             errs.append(f"ingest: {msg}")
         # Floor plans. The room itself was the last authored asset in the
         # pipeline, and these are the two questions asked of every other
