@@ -57,6 +57,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# SDXL and TripoSR together are ~8 GB, and the default cache
+# (%USERPROFILE%\.cache\huggingface) sits on the same drive as everything
+# else on this machine. It has failed once already -- a snapshot with a blob
+# missing from an interrupted download, `_create_symlink` raising
+# `FileNotFoundError` on a file that should have been there -- while a
+# complete, working cache sat unused one drive letter away. Set here rather
+# than left as an undocumented thing every session has to remember to export:
+# `setdefault` so an operator's own HF_HOME, if any, still wins.
+import os as _os
+_os.environ.setdefault("HF_HOME", str(ROOT.parent / ".hf-cache"))
+
 # Fixed for every prop, because the factory's argument is that consistency
 # comes from the setup rather than from the prompt. A prompt that varies per
 # object is a prompt that produces a different camera per object, which is the

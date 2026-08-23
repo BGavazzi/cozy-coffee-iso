@@ -1,0 +1,33 @@
+# NEXT.md C1: widen the stage-1 subject set. Café-appropriate objects,
+# heights guessed at realistic tile-unit scale (a person is ~1.6 tiles tall).
+- {name: teapot,        prompt: a ceramic teapot,                    height: 0.28}
+- {name: basket,        prompt: a woven wicker basket,                height: 0.30}
+- {name: kettle,        prompt: a stovetop kettle,                    height: 0.30}
+- {name: mug,           prompt: a ceramic coffee mug,                 height: 0.12}
+- {name: coffee_cup,    prompt: a paper coffee cup with a sleeve,      height: 0.16}
+- {name: sugar_bowl,    prompt: a small ceramic sugar bowl with a lid, height: 0.10}
+- {name: creamer,       prompt: a small ceramic milk creamer jug,      height: 0.11}
+- {name: french_press,  prompt: a glass french press coffee maker,     height: 0.24}
+- {name: mason_jar,     prompt: a glass mason jar,                    height: 0.16}
+- {name: bottle,        prompt: a glass bottle with a cork,            height: 0.28}
+- {name: wine_glass,    prompt: an empty wine glass,                  height: 0.20}
+- {name: candle,        prompt: a short pillar candle in a glass jar,  height: 0.14}
+- {name: table_lamp,    prompt: a small table lamp with a fabric shade, height: 0.38}
+- {name: potted_plant,  prompt: a small potted succulent plant,        height: 0.22}
+- {name: flower_pot,    prompt: an empty terracotta flower pot,        height: 0.18}
+- {name: bread_loaf,    prompt: a rustic loaf of bread,                height: 0.14}
+- {name: croissant,     prompt: a single croissant pastry,             height: 0.08}
+- {name: cake_slice,    prompt: a slice of layer cake on a small plate, height: 0.12}
+- {name: cheese_wheel,  prompt: a wheel of cheese,                    height: 0.10}
+- {name: cutting_board, prompt: a wooden cutting board,                height: 0.05}
+- {name: rolling_pin,   prompt: a wooden rolling pin,                  height: 0.08}
+- {name: wooden_spoon,  prompt: a wooden cooking spoon,                height: 0.24}
+- {name: teacup_stack,  prompt: a stack of three ceramic teacups,      height: 0.20}
+- {name: book,          prompt: a closed hardcover book,               height: 0.05}
+- {name: stack_of_books, prompt: a small stack of three books,          height: 0.16}
+- {name: newspaper,     prompt: a folded newspaper,                    height: 0.02}
+- {name: umbrella,      prompt: a closed folding umbrella,             height: 0.42}
+- {name: wall_clock,    prompt: a round analog wall clock,             height: 0.24}
+- {name: picture_frame, prompt: a small wooden picture frame,          height: 0.18}
+- {name: fern,          prompt: a leafy fern plant in a pot,           height: 0.32}
+- {name: bicycle,       prompt: a vintage bicycle with a basket,       height: 0.90}
