@@ -3696,3 +3696,41 @@ treated identically to the first (lit, dressed, walkable) or is a
 lower-fidelity display counter that only needs blocking/collision -- not the
 `floorplan.py` branch alone. Left for a pass that can give `build_plan.py`
 the same attention `floorplan.py` got.
+
+---
+
+## L run's corner is real, and it isn't the whole story
+
+D1's lead: L run turns a corner, and `focal_box()` (`tools/build_plan.py`)
+bounds the focal region as the union of `service` + `backbar` +
+`service_return` -- an L run's box necessarily includes the arm, a wall run's
+doesn't. Measured directly, filtering the 60-seed sample to wall run and L
+run and computing each plan's actual focal-box area alongside its detail
+reading:
+
+| | n | focal-box area | mean detail |
+|---|---|---|---|
+| wall run | 24 | 8.30-12.96 (mean 10.43) | +0.0401 |
+| L run | 10 | 17.92-26.80 (mean 23.41) | +0.0206 |
+
+L run's box is 2.2x wall run's on average, and its mean detail is roughly
+half. That is consistent with dilution -- a bigger region to average
+"busiest thing in frame" over pulls the mean toward whatever the arm and the
+corner contribute, which is presumably less than the run itself.
+
+Consistent is not sufficient. The correlation between area and detail
+*within* L run alone is -0.245 -- the right sign, too weak to carry the
+finding on its own -- and there is a direct counter-example: plan 38 has the
+single largest focal box in the L-run sample (26.80) and one of its best
+detail readings (+0.052), while plan 8 has the smallest box (17.92) and
+the second-best. If dilution by area were the whole mechanism, the ranking
+would run the other way.
+
+**Left as B4 left it, one layer deeper.** The corner enlarges the box, the
+box enlarging correlates weakly with worse detail, and neither claim
+survives being asked to explain plan 38 or plan 8 on its own. This is a real
+partial lead, not a found cause -- worth keeping in mind for whoever
+eventually builds the double-run topology (B2), since that layout's focal
+box would be larger still by the same mechanism, deliberately, and would
+test whether "the box got bigger" was ever really the story or just the one
+variable this pass had a way to measure.

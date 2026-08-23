@@ -1,15 +1,32 @@
 # Next
 
-The previous worklist (14 tasks, A1–D4) is done and archived in git history
-(commit `5dc6644` and earlier on this branch) and written up in
-`ART_CRITIQUE.md`. This is a fresh list, drawn from what that pass surfaced
-but didn't chase down. Same format as before: file, done-means, what to
-measure.
+**This list (A1, B1, C1, C2, D1, B2) is done and written up in
+`ART_CRITIQUE.md`.** One-line status:
 
-Read `ART_CRITIQUE.md`'s final "Still open" section before touching anything
-that produces art — it is a pass-by-pass historical log, not a live tracker,
-but the most recent entries (search for "31 subjects", "22 lifted objects",
-"40 plans") are this list's source material.
+- A1 key-light drift — diagnosed: `camera_light()` is correctly per-azimuth;
+  the check's own fix message was wrong and is now corrected. Measurement
+  unchanged (19/22 still fire) — a tried ramp-restriction fix broke a clean
+  case and wasn't shipped.
+- B1 `MAX_SOFT_ALPHA` split — built `DETACHED_SOFT_FLOOR`, bracketed on a
+  19-point gap; fern/bicycle/bottle now pass, genuine defects still fail.
+- C1 bind dE logging — `worst_bind_de` now in `ingest()`'s report and
+  `factory.py`'s per-subject result.
+- C2 `leafy_plant` RNG unification — done; flips one borderline room (plan
+  1) across the detail floor as a documented, verified side effect, not a
+  new bug (see gate note below).
+- D1 L-run detail concentration — partial lead found (focal-box area is
+  2.2x wall run's, weak -0.245 correlation with detail within L run) but a
+  direct counter-example (plan 38: largest box, near-best detail) rules it
+  out as a sufficient explanation. Left open, one layer deeper than before.
+- B2 double-run topology — scoped correctly this time and NOT built: 8
+  places in `build_plan.py` consume `plan.of("service")`/`plan.of("backbar")`,
+  4 hard-coded to `[0]`. A naive build renders one lit counter and one bare
+  one. Real cost is a `build_plan.py` audit, left for a dedicated pass.
+
+Kept below as a record, not an open queue. Read `ART_CRITIQUE.md`'s final
+"Still open" section before touching anything that produces art — it is a
+pass-by-pass historical log, not a live tracker, but the most recent entries
+are this list's source material.
 
 ---
 
