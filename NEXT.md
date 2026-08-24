@@ -1,6 +1,25 @@
 # Next
 
-**This list (A1, B1, C1, C2, D1, B2) is done and written up in
+**Godot export is done.** `tools/export_godot.py` (stage → import → build,
+`PIPELINE.md` "Stage 10") turns `out/sprites/` + `manifest.json` into 22
+Godot 4 `SpriteFrames` resources, one per asset, 8 direction frames each,
+world facts carried as metadata. Write-up: `ART_CRITIQUE.md`, "Godot export:
+the resource loader was the whole problem, and it has one fix".
+
+**Not done, and the next natural step toward "prompts and examples in, engine-
+usable assets out":** reference-image conditioning in `concept.py` — the
+factory currently takes a prompt only. Not yet scoped.
+
+**The calibration backlog is untouched by this pass, not forgotten** — see
+`ART_CRITIQUE.md`'s most recent "Still open" list: counter orientation
+(0.04 focal-lead cost), the focal-reading-falls-with-resolution gap,
+furniture screen spread's possibly-redundant floor, and the detail floor's
+0.010-wide bracket. None of the Godot export work touched a generator, check,
+or threshold, so check these before assuming anything moved.
+
+---
+
+**The list below (A1, B1, C1, C2, D1, B2) is done and written up in
 `ART_CRITIQUE.md`.** One-line status:
 
 - A1 key-light drift — diagnosed: `camera_light()` is correctly per-azimuth;

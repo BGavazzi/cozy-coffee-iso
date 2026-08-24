@@ -42,6 +42,10 @@ which is the point.
     python tools/character.py            # hair contrast, palette spread, silhouette floor
     python tools/fx.py                   # loop seams
 
+    # engine export -- Godot 4 SpriteFrames resources, one per asset, needs a
+    # local Godot 4.3 binary (see tools/export_godot.py docstring)
+    python tools/export_godot.py
+
 ## What to look at
 
 | | |
