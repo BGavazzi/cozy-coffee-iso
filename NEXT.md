@@ -11,6 +11,21 @@ awaiting merge as PR #5. Write-up, including a real bug found and fixed
 hooks) and a measured `--ip-scale` sweep, in `ART_CRITIQUE.md`, "Reference
 images: one real bug, one measured knob". Proof: `proof/reference_image_conditioning.png`.
 
+**A local UI now sits in front of it.** `tools/concept_ui.py` (Gradio,
+`pip install gradio && python tools/concept_ui.py`) wraps the same
+`concept()`/`check_concept_fitness()` calls the CLI uses, with a prompt box,
+a reference-image upload, and an `ip_scale` slider -- because the sweep
+above found there is no single right `--ip-scale`, only a per-reference one,
+and that is exactly the kind of judgement this repo puts in front of a human
+rather than automating. Verified live: launched the server, drove it through
+a real browser (Chrome via MCP), generated "a wicker basket" end to end --
+raw render, matte, and fitness gate all rendered correctly, and the gate
+correctly failed a genuinely bad generation (multiple objects) with the same
+messages the CLI would give. The reference-image upload path itself wasn't
+exercised through the browser (sandboxed file-upload permissions blocked it,
+unrelated to the app), but it calls the identical `concept()` path already
+verified directly in the sweep above.
+
 **Not yet started**: no subject in `subjects_c1.yaml` (or any shipped subject
 list) actually uses a reference image yet -- this pass built and verified the
 capability, not a curated reference library to point it at. That's the

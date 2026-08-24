@@ -3789,3 +3789,32 @@ higher scale before losing it.
 **Not done**: no subject in `subjects_c1.yaml` uses a reference yet. This
 pass built and verified the capability; pointing it at real reference photos
 is separate work.
+
+---
+
+## `--ip-scale` doesn't get one right answer, so it got a slider instead
+
+The sweep above is the argument against hard-coding a second guess at
+`--ip-scale`: the right value depends on how much a specific reference
+conflicts with a specific prompt, which is not something to automate a
+threshold for -- it's a judgement call, the kind this repo already routes to
+a human at stage 9 rather than pretending a metric could make it. `tools/
+concept_ui.py` is a small local Gradio app over the same `concept()` and
+`check_concept_fitness()` the CLI and `factory.py` call -- prompt box,
+reference upload, `ip_scale` slider, and the raw render / matte / fitness
+verdict shown for whatever just generated.
+
+Verified live rather than just import-checked: launched the server, drove it
+through an actual Chrome tab via the browser-automation MCP, typed "a wicker
+basket", hit Generate, and watched it through the real ~40s SDXL round trip
+(pipe load included, first call). It worked, and it caught something real on
+the way: this particular seed generated a 4x3 grid of baskets instead of one
+isolated object, and the fitness gate reported it correctly and specifically
+-- "a second mass 48% the size of the main one (cap 15%)", among four
+findings -- the same message the CLI would have printed, because it's the
+same function. The reference-image upload path wasn't driven through the
+browser itself (the browser session's file-upload permissions only allow
+files explicitly shared with it, unrelated to anything in this app), but
+`generate()` passes the uploaded path straight into the identical
+`concept(reference=..., ip_scale=...)` call the six-point sweep above
+already exercised directly and confirmed working.

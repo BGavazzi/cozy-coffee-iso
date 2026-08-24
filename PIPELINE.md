@@ -308,6 +308,14 @@ One real bug and one real measurement here:
   fitness floors above have; a reference that doesn't fight the prompt on
   material will tolerate a higher scale.
 
+Because there is no single right `--ip-scale`, `tools/concept_ui.py` puts a
+slider in front of a human instead of hard-coding a second guess: a small
+local Gradio app over the same `concept()`/`check_concept_fitness()` calls
+the CLI and `factory.py` use, showing the raw render, the matte, and the
+fitness gate's exact findings for whatever's just been generated. `pip
+install gradio && python tools/concept_ui.py`, opens
+`http://127.0.0.1:7860`.
+
 ### Stage 2 -- `tools/lift.py`, and why it is not TRELLIS
 
 TRELLIS 2 needs three CUDA extensions compiled from source: `nvdiffrast`,

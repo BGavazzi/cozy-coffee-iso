@@ -23,6 +23,9 @@ which is the point.
     python tools/concept.py "a ceramic teapot" --seed 1 -o out/x.png
     python tools/concept.py "a ceramic mug" --reference photos/mug.jpg -o out/y.png
 
+    # same thing, interactively -- ip_scale needs eyeballing per reference
+    pip install gradio && python tools/concept_ui.py   # http://127.0.0.1:7860
+
     python tools/palette_forge.py        # compute + validate the 40-colour palette
     python tools/animate.py --fx         # the deliverable: sheets + atlas.json
     python tools/render_room.py          # whole-shop composite (integration test)
