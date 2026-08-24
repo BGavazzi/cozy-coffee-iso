@@ -3858,3 +3858,118 @@ spread`'s possibly-redundant mean floor, and the `detail floor`'s
 exactly where they were left. Neither the Godot export work nor the
 reference-image work touched a generator, a check, or a threshold, so
 neither could have moved them either way.
+
+## The collage failure mode, and the 77-token ceiling that was already most of the way there
+
+A phone-triggered generation of "Frog character from chrono trigger" came
+back gated with three findings, all pointing at the same thing: SDXL had
+rendered a tiled sheet of roughly thirty small frogs instead of one isolated
+object, and `check_concept_fitness()` caught it correctly ("a second mass
+100% the size of the main one" among others). This is a known SDXL failure
+mode -- the model falls back on grid/collage/character-sheet training data
+when a prompt reads as "a thing with many variants" rather than "one thing"
+-- and it's more likely for named characters and generic multi-instance
+nouns (baskets, coins) than for prompts that already read as singular
+objects.
+
+The first fix attempt added roughly a dozen anti-collage terms to `NEGATIVE`
+-- "collage, grid, tiled, tiled pattern, sticker sheet, character sheet,
+reference sheet, model sheet, turnaround, multiple poses, many variations,
+repeated, pattern, array" -- and re-ran the frog prompt. It came back clean.
+Case closed, except a routine "how many tokens is this now" check turned up
+`transformers`' own warning: 105 tokens against SDXL's CLIP tokenizer,
+which hard-truncates at 77 (BOS/EOS included) with no error and no default
+warning of its own. Counting where 77 actually landed in the string showed
+only "collage, grid, tiled" -- the first three added words -- had survived;
+every other term added, including the two most specific ones ("character
+sheet", "turnaround"), was silently past the cliff and never reached the
+model. The fix had "worked" for the wrong reason: the base 68-token
+`NEGATIVE` plus those three words was the entire effective change, and the
+other nine terms were decoration. This is exactly the kind of failure this
+repo's discipline exists to catch -- bracket the floor, verify with the
+actual instrument, don't trust a fix that wasn't measured against what the
+model actually receives -- so `concept()` now checks
+`len(pipe.tokenizer(text).input_ids)` itself and prints to stderr whenever
+a prompt or negative crosses 77, for `negative_extra`/`positive_extra`/the
+override fields where a silent truncation could otherwise ship unnoticed
+again.
+
+`NEGATIVE` was trimmed back to exactly the surviving, verified addition (75
+tokens total: the original 68 plus ", collage, grid, tiled"). Re-run against
+the frog prompt at the same seed: clean, no findings. Re-run against a
+teapot at the same seed, as a regression check: unchanged, still clean.
+Re-run against a wicker basket that had independently collaged in an
+earlier pass (a different, generic-noun instance of the same failure mode,
+not the same bug as the frog's): **still fails**, and worse on the numbers
+-- 54584% soft-alpha ratio against a 5664% un-fixed baseline. This is
+recorded as a negative result rather than smoothed over: the anti-collage
+negative helps the failure mode it was measured against and is not a
+universal fix. Some collage failures are seed-specific, not prompt-specific,
+and the honest remedy there is "change the seed," which `factory.py`
+already supports per-subject.
+
+Frog's specific case -- a small, non-photoreal creature described by name --
+also raised a question the repo hadn't answered yet: `character.py` is
+fully procedural and part-based, built for original café-cast archetypes
+(barista, customer), and never takes a text prompt at all; `concept.py` was
+built around the isolated-single-prop framing. Neither covers "a specific
+named character," which pulls SDXL toward fan-art and character-sheet
+training data harder than a generic noun does -- the exact pressure that
+produces the collage failure in the first place. Rather than add a third
+generator, `concept()` gained a `kind` parameter (`prop`, the existing
+default, or `character`) that swaps in a dedicated `NEGATIVE_CHARACTER`
+string instead of adding to the same one -- it had to be a swap, not an
+addition, to stay under the same 77-token ceiling that caused the first
+problem. It drops four lower-value terms ("depth of field, bokeh,
+reflection, mirror") to make room for three targeted ones ("character
+sheet, turnaround, multiple poses"), landing at 72 tokens.
+
+Measured against three character-style prompts at seed 1, base `NEGATIVE`
+vs. `NEGATIVE_CHARACTER`: frog passes under both (the base fix already
+covered it); a knight ("a knight character with sword and shield") passes
+under both; Mario ("Mario from super mario bros" -- about as heavily
+represented in character-sheet and fan-art training data as a prompt can
+get) fails under both, but `NEGATIVE_CHARACTER` cuts the severity a real
+amount -- soft-alpha ratio 162643% down to 2156%, detached-mass fraction
+100% down to 90%. Reported as what it is: a genuine reduction, not a fix.
+Some subjects are famous enough that no negative-prompt string is going to
+out-compete their training-data weight; `--reference` (below) is the
+better lever there, or a less iconic description.
+
+All three of `concept()`'s own current numbers were re-verified end to end
+through the shipped function itself, not hand-rolled duplicates of its
+logic, immediately before shipping: frog×`kind=prop` clean, frog×
+`kind=character` clean, teapot×`kind=prop` unchanged (regression-clean),
+and a deliberately 106-token `negative_extra` confirmed to both print the
+new stderr warning and still run rather than error.
+
+**Multiple references, not one.** The same session's other open question --
+can `--reference` take more than one image -- turned out to be yes, but not
+by averaging. diffusers' IP-Adapter conditioning requires one image per
+loaded adapter *slot*: N reference images means loading the same IP-Adapter
+checkpoint N times as N independent slots
+(`subfolder=[...]*N, weight_name=[...]*N`), each conditioned on a different
+image, with the blending happening inside the UNet's cross-attention rather
+than in Python. `concept()`'s `reference` argument now accepts a single
+path or a list, `ip_scale` accordingly accepts a single value or one per
+reference, and `_set_reference()` reloads the adapter whenever the slot
+count changes between calls sharing one pipe (the same one-pipe-per-session
+model `factory.py` already uses). Verified live: a teapot and a basket as
+two simultaneous references produced one coherent object, not two
+overlaid, confirming the UNet is doing real per-slot blending and not just
+taking the last image loaded.
+
+`tools/concept_ui.py` picked up all three changes: a Prop / Character /
+Custom radio (custom exposes full positive/negative override text boxes,
+for anything that doesn't fit the isolated-single-object framing those two
+presets assume -- a flat icon, a different camera angle), a multi-file
+reference upload replacing the single-image one, and an examples panel
+showing what a good prompt looks like in each mode, including the specific
+warning that naming a source franchise pulls harder toward the collage
+failure than describing the design does. Smoke-tested for import and layout
+construction; not yet re-verified live through the browser the way the
+single-reference UI was in the previous pass -- that's the next thing to
+confirm before calling this done end to end.
+
+**The calibration backlog is still exactly where the previous entry left
+it** -- none of this touched a generator, a check, or a threshold either.

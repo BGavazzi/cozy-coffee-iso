@@ -132,9 +132,9 @@ Output: `godot_export/project/resources/<asset>.tres`, 22 resources / 92KB for
 the current library, referencing the staged PNGs by path rather than
 duplicating them.
 
-Not yet built: reference-image ("examples") conditioning in `concept.py` --
-the other half of "prompts and examples in, engine-usable assets out". Export
-packaging was the smaller, code-only gap; this is the larger, model-side one.
+Reference-image ("examples") conditioning in `concept.py` -- the other half
+of "prompts and examples in, engine-usable assets out" -- is built; see the
+"Reference images" section below.
 
 ### The loop is a ratchet
 
@@ -354,6 +354,20 @@ the CLI and `factory.py` use, showing the raw render, the matte, and the
 fitness gate's exact findings for whatever's just been generated. `pip
 install gradio && python tools/concept_ui.py`, opens
 `http://127.0.0.1:7860`.
+
+`--reference` and `--ip-scale` also take multiple values (`--reference a.jpg
+b.jpg`): each image loads as its own IP-Adapter slot rather than being
+averaged, so two references genuinely blend rather than one silently
+overriding the other. `--kind character` swaps in a dedicated negative
+prompt (`NEGATIVE_CHARACTER`) tuned for prompts naming a specific character
+or franchise, which pulls SDXL toward fan-art/character-sheet training data
+harder than a generic prop noun does -- see `ART_CRITIQUE.md`, "The collage
+failure mode, and the 77-token ceiling that was already most of the way
+there", including the measured limits (helps, doesn't universally fix
+famous-enough subjects). `--positive-override`/`--negative-override` bypass
+`STYLE`/`NEGATIVE` entirely for anything outside the isolated-single-object
+framing both presets assume; `concept_ui.py`'s "custom" kind exposes the
+same two fields with example prompts shown alongside them.
 
 ### Stage 2 -- `tools/lift.py`, and why it is not TRELLIS
 

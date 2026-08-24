@@ -18,11 +18,16 @@ Subject list format (YAML or JSON, a list of objects):
       height: 0.28
       reference: photos/teapot.jpg   # optional -- see concept.py's
       ip_scale: 0.45                 # "Reference images" section
+      kind: prop                     # prop (default) or character --
+                                      # see concept.py's NEGATIVE_CHARACTER
 
 `prompt` defaults to `name` with underscores turned to spaces. `height` is in
 tile units and is required -- `ingest.fit()` has no other way to know a
-teapot from a table. `reference` is optional; when given, stage 1 conditions
-on that image via IP-Adapter as well as `prompt`.
+teapot from a table. `reference` is optional -- a single path or a YAML list
+of paths -- and when given, stage 1 conditions on it via IP-Adapter as well
+as `prompt`. `kind: character` is for a prompt naming a specific character
+or franchise, which pulls SDXL toward fan-art/character-sheet training data
+harder than a generic prop noun does; see `concept.py`'s module docstring.
 
 Each stage is skipped when its output file already exists, so a batch that
 fails partway through resumes rather than re-spending GPU time stage 1 already
@@ -60,6 +65,7 @@ def _load_subjects(path: Path) -> list[dict]:
             "seed": s.get("seed", 1),
             "reference": s.get("reference"),
             "ip_scale": s.get("ip_scale"),  # None -> concept.py's own default
+            "kind": s.get("kind", "prop"),
         })
     return subs
 
@@ -90,7 +96,7 @@ def run_subject(spec: dict, pipe, model, ramps) -> dict:
     try:
         if not png.exists():
             CONCEPT_DIR.mkdir(parents=True, exist_ok=True)
-            ref_kwargs = {"reference": spec["reference"]}
+            ref_kwargs = {"reference": spec["reference"], "kind": spec["kind"]}
             if spec["ip_scale"] is not None:
                 ref_kwargs["ip_scale"] = spec["ip_scale"]
             C.concept(spec["prompt"], spec["seed"], out=png, pipe=pipe,

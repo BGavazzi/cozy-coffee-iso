@@ -29,18 +29,38 @@ done.** They landed as two separate PRs against roughly the same base, so:
   bad multi-object generation with the same messages the CLI gives.
   Write-up: `ART_CRITIQUE.md`, "`--ip-scale` doesn't get one right answer,
   so it got a slider instead".
+- **`kind`, multi-reference, and a custom prompt escape hatch** (same PR
+  #6, later pass). A phone-triggered failure (SDXL collaging "Frog from
+  Chrono Trigger" into ~30 tiled frogs) led to finding and fixing a real
+  bug: CLIP silently truncates any prompt past 77 tokens, so a first
+  anti-collage negative-prompt fix mostly wasn't reaching the model at all.
+  `concept()` now checks token length itself and warns on overflow.
+  `NEGATIVE` gained the three words that actually survived the ceiling;
+  `kind="character"` swaps in a separate token-budget-aware
+  `NEGATIVE_CHARACTER` for prompts naming a specific character (measured:
+  fixes frog and a knight, reduces but doesn't fix Mario-tier fame).
+  `reference`/`ip_scale` now take a list -- multiple images each load as
+  their own IP-Adapter slot, blended by the UNet, not averaged in Python;
+  verified live with two simultaneous references producing one coherent
+  object. `concept_ui.py` gained a Prop/Character/Custom selector (custom
+  exposes full positive/negative prompt override fields, for anything
+  outside the isolated-single-object framing) with an example-prompt panel,
+  and was re-verified live end to end after the rewrite. Write-up:
+  `ART_CRITIQUE.md`, "The collage failure mode, and the 77-token ceiling
+  that was already most of the way there".
 
 **Not yet started**: no subject in `subjects_c1.yaml` (or any shipped
 subject list) actually uses a reference image yet -- this built and
 verified the capability, not a curated reference library to point it at.
+`kind="character"` likewise has no subject exercising it in a shipped list.
 
-**The calibration backlog is untouched across both passes, not forgotten**
-— see `ART_CRITIQUE.md`'s most recent "Still open" list: counter
+**The calibration backlog is untouched across all three passes, not
+forgotten** — see `ART_CRITIQUE.md`'s most recent "Still open" list: counter
 orientation (0.04 focal-lead cost), the focal-reading-falls-with-resolution
 gap, furniture screen spread's possibly-redundant floor, and the detail
-floor's 0.010-wide bracket. Neither pass touched a generator, check, or
-threshold in the sprite/room pipeline, so check these before assuming
-anything moved.
+floor's 0.010-wide bracket. None of the three passes touched a generator,
+check, or threshold in the sprite/room pipeline, so check these before
+assuming anything moved.
 
 ---
 

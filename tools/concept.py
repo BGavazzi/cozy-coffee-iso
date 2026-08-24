@@ -92,6 +92,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -130,7 +131,51 @@ NEGATIVE = ("cropped, cut off, out of frame, multiple objects, group, "
             "cast shadow, drop shadow, ground plane, floor, table, "
             "vignette, gradient background, busy background, "
             "scene, room, hands, people, text, watermark, signature, "
-            "blurry, depth of field, bokeh, reflection, mirror, eye level")
+            "blurry, depth of field, bokeh, reflection, mirror, eye level, "
+            "collage, grid, tiled")
+# The last three words were added after a real failure, not guessed in: "a
+# wicker basket" and, separately, "Frog character from chrono trigger" both
+# generated a tiled sheet of a dozen-plus small variations instead of one
+# isolated object -- "multiple objects, group" above didn't cover it, because
+# a sticker-sheet layout isn't read by the model as "multiple objects" so
+# much as a graphic-design genre of its own.
+#
+# Only three words, because SDXL's CLIP text encoder hard-truncates any
+# prompt at 77 tokens and the pre-existing negative prompt already spent 68
+# of them -- an earlier, longer version of this fix (~12 extra terms) tested
+# at 105 tokens, silently lost everything past "collage, grid, tiled" to
+# truncation, and "worked" on the strength of those three words alone. Same
+# effect, now stated honestly instead of by accident. Verified: fixes "Frog
+# character from chrono trigger" (was: 3 findings, now: clean); does NOT fix
+# "a wicker basket" at the same seed (still a full collage, 54584% soft
+# alpha, slightly *worse* than the 5664% baseline) -- that one is a seed
+# problem, not a prompt problem, and stays a reseed-and-retry case; no
+# regression on the teapot baseline. See ART_CRITIQUE.md, "The collage
+# failure mode, and the 77-token ceiling that was already most of the way
+# there".
+
+# Extra negative terms for `kind="character"` -- a swap, not an addition:
+# NEGATIVE's own budget has 2 tokens of headroom at 77, nowhere near enough
+# room to add anything on top, so this drops four of the lowest-value generic
+# terms (depth of field, bokeh, reflection, mirror -- photographic-quality
+# concerns, not composition-count ones) to make room for three targeted at
+# the specific pull a *named* character/franchise prompt has toward
+# fan-art/character-sheet training data that a generic prop noun doesn't.
+# Measured against three character prompts at the same seed: fixes "Frog
+# character from chrono trigger" and "a knight character with sword and
+# shield" (both already passed on NEGATIVE alone); on "Mario from super
+# mario bros" -- the single most heavily-documented case tried -- it does not
+# fully fix the collage, but cuts the soft-alpha ratio from 162643% to 2156%
+# and the detached blob count from 100% to 90%, a real reduction in severity
+# even where it falls short of clearing the gate. Iconic, mascot-tier
+# characters may need a reseed on top of this, not instead of it.
+NEGATIVE_CHARACTER = ("cropped, cut off, out of frame, multiple objects, "
+                       "group, cast shadow, drop shadow, ground plane, "
+                       "floor, table, vignette, gradient background, "
+                       "busy background, scene, room, hands, people, text, "
+                       "watermark, signature, blurry, eye level, "
+                       "collage, grid, tiled, character sheet, turnaround, "
+                       "multiple poses")
 
 MODEL = "stabilityai/stable-diffusion-xl-base-1.0"
 MATTE_MODEL = "u2net"
@@ -180,22 +225,32 @@ def _pipe(device: str = "cuda"):
     else:
         pipe = pipe.to(device)
     pipe.set_progress_bar_config(disable=True)
-    pipe._ip_loaded = False
+    pipe._ip_count = 0
     pipe._cpu_offloaded = (device == "cuda")
     return pipe
 
 
-def _set_reference(pipe, reference: Path | str | None) -> None:
-    """Load or unload IP-Adapter on `pipe` so it matches whether this call has
-    a reference image.
+def _set_reference(pipe, count: int) -> None:
+    """Load, reload, or unload IP-Adapter slots on `pipe` so the number
+    loaded matches `count` -- the number of reference images this call has.
 
-    Once loaded, diffusers' IP-Adapter cross-attention processors require an
-    `ip_adapter_image` on every call to that pipeline -- so a shared pipe
-    processing a mixed batch (some subjects with a reference, some without,
-    which is the common case) has to toggle the adapter on and off per
-    subject rather than load it once. The weight download is one-time and
-    cached; re-attaching an already-downloaded adapter to the UNet costs no
-    network time and is fast enough to do per-subject.
+    One slot per reference, not one slot shared across references: diffusers'
+    multi-image support for a *single* IP-Adapter requires exactly one image
+    per loaded adapter (`len(ip_adapter_image)` must equal the number of
+    `image_projection_layers`), so N references means loading the same
+    checkpoint N times as N independent slots -- confirmed working this way
+    even though every slot is the same weights file, each conditioned on a
+    different image and blended by the UNet's own cross-attention, not
+    averaged in Python. A single global `ip_scale` still applies evenly
+    across slots; `concept()` expands it to one value per reference.
+
+    Once loaded, diffusers' cross-attention processors require an
+    `ip_adapter_image` (one per slot) on every call to that pipeline -- so a
+    shared pipe processing a mixed batch (references varying per subject,
+    which is the common case) has to reload the adapter whenever the count
+    changes, not just toggle it on and off. The weight download is one-time
+    and cached; re-attaching an already-downloaded adapter costs no network
+    time, so this is cheap enough to do per-subject.
 
     `load_ip_adapter()` attaches a CLIP vision encoder that did not exist
     when `_pipe()` first called `enable_model_cpu_offload()`, so it never got
@@ -206,16 +261,19 @@ def _set_reference(pipe, reference: Path | str | None) -> None:
     Re-running `enable_model_cpu_offload()` after `load_ip_adapter()`
     re-attaches hooks to every current submodule, image encoder included.
     """
-    have = getattr(pipe, "_ip_loaded", False)
-    if reference and not have:
-        pipe.load_ip_adapter(IP_ADAPTER_REPO, subfolder=IP_ADAPTER_SUBFOLDER,
-                              weight_name=IP_ADAPTER_WEIGHT)
+    have = getattr(pipe, "_ip_count", 0)
+    if count and count != have:
+        if have:
+            pipe.unload_ip_adapter()
+        pipe.load_ip_adapter(IP_ADAPTER_REPO,
+                              subfolder=[IP_ADAPTER_SUBFOLDER] * count,
+                              weight_name=[IP_ADAPTER_WEIGHT] * count)
         if getattr(pipe, "_cpu_offloaded", False):
             pipe.enable_model_cpu_offload()
-        pipe._ip_loaded = True
-    elif not reference and have:
+        pipe._ip_count = count
+    elif not count and have:
         pipe.unload_ip_adapter()
-        pipe._ip_loaded = False
+        pipe._ip_count = 0
 
 
 def matte(img):
@@ -234,8 +292,11 @@ def matte(img):
 
 def concept(subject: str, seed: int = 1, steps: int = 28,
             size: int = 1024, out: Path | str | None = None,
-            pipe=None, reference: Path | str | None = None,
-            ip_scale: float = DEFAULT_IP_SCALE) -> Path:
+            pipe=None, reference: Path | str | list[Path | str] | None = None,
+            ip_scale: float | list[float] = DEFAULT_IP_SCALE,
+            kind: str = "prop", positive_extra: str = "",
+            negative_extra: str = "", positive_override: str | None = None,
+            negative_override: str | None = None) -> Path:
     """One matted concept image, deterministic in `seed`.
 
     Deterministic because every other stage of this pipeline is, and a stage
@@ -244,33 +305,90 @@ def concept(subject: str, seed: int = 1, steps: int = 28,
     matte goes wrong it is the only way to tell a bad segmentation from a bad
     generation, and those have opposite fixes.
 
-    `reference`, if given, conditions generation on an image via IP-Adapter
-    in addition to `subject`'s text prompt -- see the module docstring's
-    "Reference images" section for why this is IP-Adapter rather than
-    img2img.
+    `reference`, if given, conditions generation on one image or a list of
+    images via IP-Adapter, in addition to `subject`'s text prompt -- see the
+    module docstring's "Reference images" section for why this is IP-Adapter
+    rather than img2img. Multiple references each get their own conditioning
+    slot (see `_set_reference`) rather than being averaged into one -- pass
+    several photos of the same kind of object and the model sees all of them,
+    not a blend. `ip_scale` is a single value applied to every reference, or
+    a list matching `reference`'s length for per-image control.
+
+    `kind` selects the negative prompt: "prop" (default) uses `NEGATIVE`;
+    "character" swaps in `NEGATIVE_CHARACTER`, aimed at the failure mode
+    where a prompt naming a specific character pulls SDXL toward
+    fan-art/character-sheet training data harder than a generic prop noun
+    does. It's a swap, not an addition -- see `NEGATIVE_CHARACTER`'s comment
+    for why: CLIP hard-truncates any prompt at 77 tokens, and `NEGATIVE`
+    alone already spends nearly all of that budget, so there's no room to
+    layer more on top without it silently falling off the end and never
+    reaching the model. `positive_extra`/`negative_extra` append ad hoc terms
+    on top of whichever base `kind` picked, at the same risk if the combined
+    length runs past 77 (a warning fires if it does).
+    `positive_override`/`negative_override` replace the prompt/negative
+    prompt entirely, for a subject that doesn't fit either preset's
+    assumptions at all (STYLE's fixed camera framing, for instance).
     """
     import torch
     from PIL import Image
+
+    refs = [] if not reference else (
+        reference if isinstance(reference, list) else [reference])
+    scales = ip_scale if isinstance(ip_scale, list) else [ip_scale] * len(refs)
+    if refs and len(scales) != len(refs):
+        raise ValueError(
+            f"ip_scale must be a single value or one per reference "
+            f"({len(refs)} references, {len(scales)} scales given)")
+
     pipe = pipe or _pipe()
-    _set_reference(pipe, reference)
+    _set_reference(pipe, len(refs))
     kwargs = {}
-    if reference:
-        pipe.set_ip_adapter_scale(ip_scale)
-        kwargs["ip_adapter_image"] = Image.open(reference).convert("RGB")
+    if refs:
+        pipe.set_ip_adapter_scale(scales)
+        kwargs["ip_adapter_image"] = [Image.open(r).convert("RGB") for r in refs]
+
+    if positive_override is not None:
+        prompt = positive_override
+    else:
+        prompt = STYLE.format(subject=subject)
+        if positive_extra:
+            prompt = prompt + ", " + positive_extra
+
+    if negative_override is not None:
+        negative = negative_override
+    else:
+        negative = NEGATIVE_CHARACTER if kind == "character" else NEGATIVE
+        if negative_extra:
+            negative = negative + ", " + negative_extra
+
+    # Both NEGATIVE and NEGATIVE_CHARACTER are already within a couple of
+    # tokens of CLIP's 77-token hard truncation (see their comments) --
+    # anything appended here past that budget is silently dropped and never
+    # reaches the model, which is exactly the bug that produced the first,
+    # accidentally-working version of this fix. Warn rather than truncate or
+    # raise: a slightly-over prompt still runs, it just doesn't do everything
+    # its text suggests.
+    if negative_extra or positive_extra or negative_override or positive_override:
+        for _label, _text in (("prompt", prompt), ("negative_prompt", negative)):
+            _n = len(pipe.tokenizer(_text).input_ids)
+            if _n > 77:
+                print(f"warning: {_label} is {_n} tokens, CLIP truncates at "
+                      f"77 -- the tail will be silently ignored", file=sys.stderr)
+
     g = torch.Generator(device="cpu").manual_seed(seed)
-    img = pipe(prompt=STYLE.format(subject=subject),
-               negative_prompt=NEGATIVE, num_inference_steps=steps,
-               guidance_scale=6.5, width=size, height=size,
-               generator=g, **kwargs).images[0]
+    img = pipe(prompt=prompt, negative_prompt=negative,
+               num_inference_steps=steps, guidance_scale=6.5,
+               width=size, height=size, generator=g, **kwargs).images[0]
     out = Path(out or ROOT / "out" / "concept" / f"{seed:03d}.png")
     out.parent.mkdir(parents=True, exist_ok=True)
     img.save(out.with_name(out.stem + "_raw.png"))
     matte(img).save(out)
     out.with_suffix(".json").write_text(json.dumps(
         {"subject": subject, "seed": seed, "steps": steps, "size": size,
-         "model": MODEL, "matte": MATTE_MODEL, "style": STYLE,
-         "negative": NEGATIVE, "reference": str(reference) if reference else None,
-         "ip_scale": ip_scale if reference else None}, indent=1))
+         "model": MODEL, "matte": MATTE_MODEL, "kind": kind,
+         "prompt": prompt, "negative": negative,
+         "reference": [str(r) for r in refs] or None,
+         "ip_scale": scales if refs else None}, indent=1))
     return out
 
 
@@ -408,11 +526,24 @@ def main() -> int:
     ap.add_argument("--steps", type=int, default=28)
     ap.add_argument("--size", type=int, default=1024)
     ap.add_argument("-o", "--out")
-    ap.add_argument("--reference", metavar="IMG",
-                    help="condition generation on this image via IP-Adapter, "
-                         "in addition to the text prompt")
-    ap.add_argument("--ip-scale", type=float, default=DEFAULT_IP_SCALE,
-                    help=f"reference influence, 0-1 (default {DEFAULT_IP_SCALE})")
+    ap.add_argument("--reference", metavar="IMG", nargs="+",
+                    help="condition generation on one or more images via "
+                         "IP-Adapter, in addition to the text prompt")
+    ap.add_argument("--ip-scale", type=float, nargs="+", default=[DEFAULT_IP_SCALE],
+                    help=f"reference influence, 0-1 (default {DEFAULT_IP_SCALE}); "
+                         "one value, or one per --reference")
+    ap.add_argument("--kind", choices=["prop", "character"], default="prop",
+                    help="prop (default) uses NEGATIVE; character swaps in "
+                         "NEGATIVE_CHARACTER, for prompts naming a specific "
+                         "character or franchise")
+    ap.add_argument("--positive-extra", default="",
+                    help="extra terms appended to the positive prompt")
+    ap.add_argument("--negative-extra", default="",
+                    help="extra terms appended to the negative prompt")
+    ap.add_argument("--positive-override",
+                     help="replace the positive prompt entirely (custom mode)")
+    ap.add_argument("--negative-override",
+                     help="replace the negative prompt entirely (custom mode)")
     ap.add_argument("--check", metavar="PNG", nargs="+",
                     help="grade existing images for stage-2 fitness and exit")
     args = ap.parse_args()
@@ -429,8 +560,19 @@ def main() -> int:
 
     if not args.subject:
         ap.error("a subject, or --check")
+    ip_scale = args.ip_scale
+    if args.reference and len(ip_scale) == 1 and len(args.reference) > 1:
+        ip_scale = ip_scale * len(args.reference)
+    if args.reference and len(ip_scale) not in (1, len(args.reference)):
+        ap.error(f"--ip-scale needs 1 value or one per --reference "
+                 f"({len(args.reference)} given)")
     out = concept(args.subject, args.seed, args.steps, args.size, args.out,
-                  reference=args.reference, ip_scale=args.ip_scale)
+                  reference=args.reference,
+                  ip_scale=ip_scale[0] if len(ip_scale) == 1 else ip_scale,
+                  kind=args.kind, positive_extra=args.positive_extra,
+                  negative_extra=args.negative_extra,
+                  positive_override=args.positive_override,
+                  negative_override=args.negative_override)
     print(f"wrote {out}")
     msgs = check_concept_fitness(out)
     for m in msgs:
