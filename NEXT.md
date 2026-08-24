@@ -1,42 +1,44 @@
 # Next
 
-**Reference-image conditioning is done.** `tools/concept.py`'s `concept()`
-takes an optional `reference` image, conditioning SDXL via IP-Adapter
-alongside the text prompt -- `--reference PATH [--ip-scale N]` on the CLI,
-`reference`/`ip_scale` fields on a `factory.py` subject spec. This was the
-larger, model-side half of "prompts and examples in, engine-usable assets
-out"; the smaller, code-only half (Godot export) is done separately and
-awaiting merge as PR #5. Write-up, including a real bug found and fixed
-(the IP-Adapter image encoder isn't covered by `enable_model_cpu_offload()`'s
-hooks) and a measured `--ip-scale` sweep, in `ART_CRITIQUE.md`, "Reference
-images: one real bug, one measured knob". Proof: `proof/reference_image_conditioning.png`.
+**Both halves of "prompts and examples in, engine-usable assets out" are
+done.** They landed as two separate PRs against roughly the same base, so:
 
-**A local UI now sits in front of it.** `tools/concept_ui.py` (Gradio,
-`pip install gradio && python tools/concept_ui.py`) wraps the same
-`concept()`/`check_concept_fitness()` calls the CLI uses, with a prompt box,
-a reference-image upload, and an `ip_scale` slider -- because the sweep
-above found there is no single right `--ip-scale`, only a per-reference one,
-and that is exactly the kind of judgement this repo puts in front of a human
-rather than automating. Verified live: launched the server, drove it through
-a real browser (Chrome via MCP), generated "a wicker basket" end to end --
-raw render, matte, and fitness gate all rendered correctly, and the gate
-correctly failed a genuinely bad generation (multiple objects) with the same
-messages the CLI would give. The reference-image upload path itself wasn't
-exercised through the browser (sandboxed file-upload permissions blocked it,
-unrelated to the app), but it calls the identical `concept()` path already
-verified directly in the sweep above.
+- **Godot export** (PR #5, merged). `tools/export_godot.py` (stage → import
+  → build, `PIPELINE.md` "Stage 10") turns `out/sprites/` + `manifest.json`
+  into 22 Godot 4 `SpriteFrames` resources, one per asset, 8 direction
+  frames each, world facts carried as metadata. Write-up:
+  `ART_CRITIQUE.md`, "Godot export: the resource loader was the whole
+  problem, and it has one fix".
+- **Reference-image conditioning** (PR #6). `tools/concept.py`'s
+  `concept()` takes an optional `reference` image, conditioning SDXL via
+  IP-Adapter alongside the text prompt -- `--reference PATH [--ip-scale N]`
+  on the CLI, `reference`/`ip_scale` fields on a `factory.py` subject spec.
+  Found and fixed a real bug along the way (the IP-Adapter image encoder
+  isn't covered by `enable_model_cpu_offload()`'s hooks) and swept
+  `--ip-scale` rather than guessing it. Write-up: `ART_CRITIQUE.md`,
+  "Reference images: one real bug, one measured knob". Proof:
+  `proof/reference_image_conditioning.png`.
+- **A local UI sits in front of the reference-image path** (same PR #6).
+  `tools/concept_ui.py` (Gradio, `pip install gradio && python
+  tools/concept_ui.py`) wraps the same `concept()`/`check_concept_fitness()`
+  calls the CLI uses -- prompt box, reference upload, `ip_scale` slider --
+  because the sweep found there's no single right `--ip-scale`, only a
+  per-reference one, which is exactly the kind of judgement this repo puts
+  in front of a human rather than automating. Verified live through a real
+  browser: generated end to end, fitness gate correctly failed a genuinely
+  bad multi-object generation with the same messages the CLI gives.
+  Write-up: `ART_CRITIQUE.md`, "`--ip-scale` doesn't get one right answer,
+  so it got a slider instead".
 
-**Not yet started**: no subject in `subjects_c1.yaml` (or any shipped subject
-list) actually uses a reference image yet -- this pass built and verified the
-capability, not a curated reference library to point it at. That's the
-natural next step if the factory is meant to take real product photos as
-input, not just prompts.
+**Not yet started**: no subject in `subjects_c1.yaml` (or any shipped
+subject list) actually uses a reference image yet -- this built and
+verified the capability, not a curated reference library to point it at.
 
-**The calibration backlog is untouched by this pass, not forgotten** — see
-`ART_CRITIQUE.md`'s most recent "Still open" list: counter orientation
-(0.04 focal-lead cost), the focal-reading-falls-with-resolution gap,
-furniture screen spread's possibly-redundant floor, and the detail floor's
-0.010-wide bracket. Nothing in this pass touched a generator, check, or
+**The calibration backlog is untouched across both passes, not forgotten**
+— see `ART_CRITIQUE.md`'s most recent "Still open" list: counter
+orientation (0.04 focal-lead cost), the focal-reading-falls-with-resolution
+gap, furniture screen spread's possibly-redundant floor, and the detail
+floor's 0.010-wide bracket. Neither pass touched a generator, check, or
 threshold in the sprite/room pipeline, so check these before assuming
 anything moved.
 

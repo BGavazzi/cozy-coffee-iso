@@ -44,6 +44,7 @@ STAGE 6  pixelize        ramp-quantize + dither     [CODE, deterministic]
 STAGE 7  metadata        pivot/footprint from mesh  [CODE, exact]
 STAGE 8  auto-review     spec conformance           [CODE]
 STAGE 9  human critique  aesthetic judgement        [HUMAN]
+STAGE 10 engine export   Godot SpriteFrames         [CODE, deterministic]
 ```
 
 | Requirement | 2D approach | 3D intermediate |
@@ -97,6 +98,43 @@ silhouette, canvas bleed, plus cross-sprite checks over a whole direction set.
 
 **Stage 9** is a contact sheet with findings already annotated. Humans judge only
 what survived, and only on aesthetics.
+
+## Stage 10: engine export
+
+The factory's own output format (loose PNGs + `manifest.json`) is not what a
+game engine consumes. `tools/export_godot.py` turns it into real Godot 4
+resources:
+
+    python tools/export_godot.py
+
+Three steps, chained because each is a real dependency of the next:
+
+1. `tools/package_godot.py` stages `out/sprites/*.png` + the per-asset world
+   facts from `manifest.json` into `godot_export/project/` (gitignored,
+   regenerated every run).
+2. `godot --headless --import` -- Godot's resource loader refuses to `load()`
+   a PNG that has never been through an import pass; this generates the
+   `.import` sidecars that make it a real, file-backed `Texture2D`. Skipping
+   this and loading raw pixels via `Image.load()` +
+   `ImageTexture.create_from_image()` "works", but every `.tres` that
+   references the result embeds the pixel data inline instead of a path --
+   confirmed empirically: a single 64x64 sprite's `.tres` came out over
+   60,000 characters that way, versus ~130 as a proper `[ext_resource]` line.
+3. `build_all.gd` reads `build_manifest.json` and builds one `SpriteFrames`
+   resource per asset -- 8 `AtlasTexture` frames, indexed by direction (game
+   code sets `.frame = direction_index` directly; there's no animation here,
+   just 8 fixed poses of a camera-fixed rig). World facts that have no native
+   `SpriteFrames` slot (height, footprint, anchor, walkable, and the
+   per-direction pivot/bbox/azimuth) ride along as resource metadata,
+   readable in GDScript via `get_meta()`.
+
+Output: `godot_export/project/resources/<asset>.tres`, 22 resources / 92KB for
+the current library, referencing the staged PNGs by path rather than
+duplicating them.
+
+Not yet built: reference-image ("examples") conditioning in `concept.py` --
+the other half of "prompts and examples in, engine-usable assets out". Export
+packaging was the smaller, code-only gap; this is the larger, model-side one.
 
 ### The loop is a ratchet
 
@@ -171,6 +209,7 @@ foliage, fabric and skin — most of the material range a 2D game needs.
 | 7 (metadata) | working — `animate.py` emits `atlas.json`: frame rects, per-clip anchors, fps, direction order |
 | 8 (auto-review) | working — `art_review.py` and friends, **21 checks**, all run by `manifest.py --check` |
 | 9 (human critique) | working — `review_queue.py`, contact sheet + ratchet |
+| 10 (engine export) | working — `export_godot.py`, 22 Godot `SpriteFrames` resources built from the current sprite library |
 
 `isorender.py` is a software raytracer and `mesh.py` an orthographic rasterizer,
 both standing in for Blender so the deterministic half runs with no GPU or DCC

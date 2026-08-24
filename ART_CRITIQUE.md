@@ -3737,6 +3737,37 @@ variable this pass had a way to measure.
 
 ---
 
+## Godot export: the resource loader was the whole problem, and it has one fix
+
+The factory produces sprites; nothing consumed them. Building
+`tools/export_godot.py` (stage → import → build, see `PIPELINE.md` "Stage 10")
+found exactly one real obstacle, and it explains a class of failure worth
+naming precisely: Godot's `load()` refuses a PNG that has never been through
+an editor import pass (`No loader found for resource`), and the obvious
+workaround -- `Image.load()` + `ImageTexture.create_from_image()` -- "works"
+in the sense that it produces a texture and `ResourceSaver.save()` returns
+`OK`. It just doesn't produce the resource you asked for: the texture isn't
+backed by a file resource, so anything referencing it (an `AtlasTexture`,
+here) has nothing to point a lightweight `[ext_resource]` at, and gets the
+raw pixel data inlined as a `[sub_resource type="Image"]` block instead.
+Measured directly on one 64x64 sprite: 61143 characters embedded inline
+versus 420 once the same sprite was properly imported first.
+
+The fix is `godot --headless --import` before anything touches `load()` --
+confirmed to work on the standard (non-export-template) 4.3 binary despite
+`--help` tagging `--import` as an editor-build capability. No GUI window
+opens; it imports every asset under the project root and exits. Full pipeline
+run across the 22-object library: 176 frames staged, imported, and built into
+22 `SpriteFrames` resources (92KB total, referencing 1.5MB of staged PNGs by
+path) with per-direction pivot/bbox/azimuth and per-asset
+height/footprint/anchor/walkable carried as resource metadata -- lossless
+relative to `manifest.json`, just reshaped into Godot's vocabulary.
+
+At the time this was written, reference-image conditioning (below) was the
+deferred "examples" half of the product goal. It's since been built.
+
+---
+
 ## Reference images: one real bug, one measured knob
 
 `concept()` gained an optional `reference` image, conditioning SDXL via
@@ -3818,3 +3849,12 @@ files explicitly shared with it, unrelated to anything in this app), but
 `generate()` passes the uploaded path straight into the identical
 `concept(reference=..., ip_scale=...)` call the six-point sweep above
 already exercised directly and confirmed working.
+
+**The calibration backlog has not moved across either of these passes and is
+not forgotten**: `counter orientation` (0.04 focal-lead cost, unresolved),
+the `focal reading falls with render resolution` gap, `furniture screen
+spread`'s possibly-redundant mean floor, and the `detail floor`'s
+0.010-wide bracket (see the "Still open" list above this entry) are all
+exactly where they were left. Neither the Godot export work nor the
+reference-image work touched a generator, a check, or a threshold, so
+neither could have moved them either way.
