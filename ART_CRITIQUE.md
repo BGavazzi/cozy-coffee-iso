@@ -3966,10 +3966,53 @@ presets assume -- a flat icon, a different camera angle), a multi-file
 reference upload replacing the single-image one, and an examples panel
 showing what a good prompt looks like in each mode, including the specific
 warning that naming a source franchise pulls harder toward the collage
-failure than describing the design does. Smoke-tested for import and layout
-construction; not yet re-verified live through the browser the way the
-single-reference UI was in the previous pass -- that's the next thing to
-confirm before calling this done end to end.
+failure than describing the design does. Verified live through the browser:
+built the layout, toggled Custom to confirm the override fields actually
+show and hide, then ran a real generation ("a brass coffee grinder") through
+the full ~40s SDXL round trip and watched the fitness gate report PASSES.
 
 **The calibration backlog is still exactly where the previous entry left
 it** -- none of this touched a generator, a check, or a threshold either.
+
+## The UI stopped at the render; a "Continue" button now carries it to a sprite sheet
+
+A concept passing the fitness gate is not a finished asset -- it is stage
+1's output, and everything a person could see of it in `concept_ui.py` was
+a raw render and a matte. Getting from there to something reviewable meant
+dropping to the CLI: `lift.py`, then `ingest.py` with a hand-typed
+`--height`, then `render_batch.py`, invoked one at a time or bundled into a
+`subjects.yaml` entry for `factory.py`. That's the right shape for a batch
+of forty; it's friction for "is this one thing worth pursuing at all,"
+which is exactly the question the UI exists to answer quickly.
+
+`concept_ui.py` gained a `height` field and a "Continue -> mesh + sprites"
+button. It does not call anything new -- `lift.lift()`, `ingest.ingest()`,
+`render_batch.py`, and `review_queue.py build` are the same four calls
+`factory.py`'s `run_subject()` makes for a batch, invoked directly instead
+of through a subject-list YAML. TripoSR loads once and stays resident the
+same way the SDXL pipe does, via the same `_pipe_holder`-style cache
+pattern.
+
+The one design decision worth recording: Generate's output
+(`out/concept_ui/current.png`) is scratch, overwritten every run, by
+existing design -- so Continue's first act is to *promote* it, copying the
+current concept into `out/concept/<slug of the subject text>.png` before
+running the later stages. Slugged names land in exactly the paths
+`factory.py` already checks for existing output
+(`out/mesh/<name>.obj`, `out/sprites/<name>_dir*.png`), so a subject worked
+up here and later added to a `subjects.yaml` under the same name is
+recognised as already done through however many stages got run in the UI --
+the two paths share state instead of silently duplicating it.
+
+Verified live and end to end, twice: once by staging a known-good matted
+concept directly and calling `continue_to_sprites()` in-process (teapot,
+height 0.28 -- produced a real bound OBJ and an 8-direction pixel contact
+sheet at `review/sheet.png`, all under the exact `factory.py` naming
+convention), and once through an actual browser session driving the real
+button -- typed "browser continue test mug", generated, passed the fitness
+gate, set height 0.12, clicked Continue, and watched TripoSR load cold and
+the sheet fill in with 8 real sprite frames of the mug, footprint 0.125,
+status text confirming all three output paths. Both runs' artifacts were
+removed afterward along with the manifest entries they added; `review/
+sheet.png` and `review/verdicts.jsonl` are tracked files and were restored
+to their prior committed state rather than left showing test output.

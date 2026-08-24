@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """A local web UI for stage 1 (`concept.py`), so `--ip-scale` and a reference
-image can be eyeballed interactively instead of round-tripping the CLI.
+image can be eyeballed interactively instead of round-tripping the CLI --
+and a "Continue" step that carries a passing concept the rest of the way
+through stages 2-5 (`lift.py`, `ingest.py`, `render_batch.py`) to a sprite
+contact sheet, so a whole subject can be taken from prompt to reviewable
+asset without leaving the browser.
 
 `PIPELINE.md`'s "Reference images" section measured that `--ip-scale`'s
 right value depends on how much the reference's own material/shape conflicts
@@ -20,15 +24,27 @@ re-invoke blind.
 
 Opens http://127.0.0.1:7860 (or the machine's LAN IP with --lan). SDXL loads
 on the first Generate click (10-20s) and stays resident for the rest of the
-session, the same one-pipe-per-session model `factory.py` uses for a batch.
-Nothing here is a new code path: every generation goes through
-`concept.concept()` and every fitness read goes through
-`concept.check_concept_fitness()`, so what this UI shows is exactly what a
-batch run would produce for the same inputs.
+session, the same one-pipe-per-session model `factory.py` uses for a batch;
+TripoSR loads the same way on the first Continue click. Nothing here is a
+new code path: every generation goes through `concept.concept()`, every
+fitness read through `concept.check_concept_fitness()`, and Continue calls
+`lift.lift()` / `ingest.ingest()` / `render_batch.py` / `review_queue.py`
+directly -- the same functions `factory.py` calls for a batch, so what this
+UI produces is exactly what a batch run would produce for the same inputs.
+
+Generate writes scratch output to `out/concept_ui/` only, overwritten each
+run. Continue is the promotion step: it copies the current scratch concept
+into `out/concept/<name>.png` and writes mesh/sprites under `out/mesh/` and
+`out/sprites/` using `factory.py`'s own naming convention, so a subject
+worked up here is recognised as already-done stage 1 (and further) if it's
+later added to a `factory.py` subject list under the same name.
 """
 from __future__ import annotations
 
 import argparse
+import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -36,8 +52,13 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "out" / "concept_ui"
+CONCEPT_DIR = ROOT / "out" / "concept"
+MESH_DIR = ROOT / "out" / "mesh"
+SPRITE_DIR = ROOT / "out" / "sprites"
+REVIEW_DIR = ROOT / "review"
 
 _pipe_holder = {}
+_lift_model_holder = {}
 
 
 def _get_pipe():
@@ -45,6 +66,18 @@ def _get_pipe():
         import concept as C
         _pipe_holder["pipe"] = C._pipe()
     return _pipe_holder["pipe"]
+
+
+def _get_lift_model():
+    if "model" not in _lift_model_holder:
+        import lift as L
+        _lift_model_holder["model"] = L._model()
+    return _lift_model_holder["model"]
+
+
+def _slug(text: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "_", (text or "").strip().lower()).strip("_")
+    return s or "untitled"
 
 
 def generate(kind, subject, reference_files, ip_scale, seed, steps, size,
@@ -86,6 +119,88 @@ def generate(kind, subject, reference_files, ip_scale, seed, steps, size,
     status = ("PASSES the stage-2 fitness gate" if not msgs
               else "FAILS the stage-2 fitness gate:\n" + "\n".join(f"- {m}" for m in msgs))
     return str(raw), str(png), status
+
+
+def continue_to_sprites(subject, height):
+    """Take the current scratch concept the rest of the way: lift -> ingest
+    -> render -> contact sheet, using the same functions `factory.py` calls
+    for a batch subject. Not gated on the fitness gate having passed --
+    `lift`/`ingest` will simply do a worse job on a concept that failed it,
+    the same way a human running the CLI by hand could choose to anyway.
+    """
+    import lift as L
+    import ingest as I
+    from mesh import save_obj
+
+    src = OUT_DIR / "current.png"
+    if not src.exists():
+        return None, "Generate a concept first."
+    if not height:
+        return None, "Set a height (in tile units -- 1.0 is roughly counter " \
+                      "height) before continuing; ingest.fit() has no other " \
+                      "way to tell a teapot from a table."
+
+    name = _slug(subject)
+    CONCEPT_DIR.mkdir(parents=True, exist_ok=True)
+    MESH_DIR.mkdir(parents=True, exist_ok=True)
+    SPRITE_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Promotes the scratch result into the layout `factory.py` expects, so a
+    # subject worked up here is recognised as already-done if it's later
+    # added to a subject list under this same name.
+    shutil.copyfile(src, CONCEPT_DIR / f"{name}.png")
+    raw_src = OUT_DIR / "current_raw.png"
+    if raw_src.exists():
+        shutil.copyfile(raw_src, CONCEPT_DIR / f"{name}_raw.png")
+    json_src = OUT_DIR / "current.json"
+    if json_src.exists():
+        shutil.copyfile(json_src, CONCEPT_DIR / f"{name}.json")
+
+    lines = []
+    try:
+        model = _get_lift_model()
+        raw_obj = MESH_DIR / f"{name}.obj"
+        L.lift(CONCEPT_DIR / f"{name}.png", out=raw_obj, model=model)
+    except Exception as e:
+        return None, f"stage 2 (lift) failed: {type(e).__name__}: {e}"
+
+    try:
+        mesh, report = I.ingest(raw_obj, height=float(height))
+    except Exception as e:
+        return None, f"stage 3 (ingest) failed: {type(e).__name__}: {e}"
+    bound_obj = MESH_DIR / f"{name}_bound.obj"
+    save_obj(mesh, bound_obj)
+    g = report["geometry"]
+    lines.append(f"lift + ingest: height {g['height']:.3f}, footprint "
+                 f"{g['footprint']:.3f}")
+    lines += [f"warning: {w}" for w in report["warnings"]]
+
+    proc = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "render_batch.py"),
+         "--mesh", str(bound_obj), "--name", name,
+         "--out", str(SPRITE_DIR), "--target", "64"],
+        capture_output=True, text=True, timeout=300, cwd=str(ROOT))
+    if proc.returncode != 0:
+        lines.append("stage 4-5 (render) failed:")
+        lines.append(proc.stderr[-1000:])
+        return None, "\n".join(lines)
+    lines.append(f"8 sprites -> {SPRITE_DIR}")
+
+    # Same contact-sheet builder `factory.py` calls at the end of a batch --
+    # writes review/sheet.png, overwriting whatever the last build put there.
+    rel_pattern = str(SPRITE_DIR.relative_to(ROOT) / f"{name}_dir*.png")
+    review_proc = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "review_queue.py"),
+         "build", rel_pattern],
+        capture_output=True, text=True, cwd=str(ROOT))
+    if review_proc.returncode != 0:
+        lines.append("review_queue.py build failed:")
+        lines.append(review_proc.stderr[-500:])
+        return None, "\n".join(lines)
+
+    sheet = REVIEW_DIR / "sheet.png"
+    lines.append(f"contact sheet -> {sheet}")
+    return str(sheet), "\n".join(lines)
 
 
 EXAMPLES_MD = """
@@ -169,10 +284,21 @@ def build_app():
                 go = gr.Button("Generate", variant="primary")
                 with gr.Accordion("Examples / prompt tips", open=False):
                     gr.Markdown(EXAMPLES_MD)
+                gr.Markdown("---\n### Stage 2-5: mesh + sprites")
+                height = gr.Number(
+                    value=0.28, label="height (tile units)",
+                    info="How tall the object is relative to a 1.0-tile "
+                         "person -- ingest.fit() scales the mesh by this, "
+                         "not by its longest axis, so a wide table doesn't "
+                         "come out short. A mug is roughly 0.12, a chair "
+                         "back roughly 0.9, a counter roughly 1.0.")
+                cont = gr.Button("Continue -> mesh + sprites")
             with gr.Column():
                 raw_out = gr.Image(label="Raw render")
                 matte_out = gr.Image(label="Matted (stage-2 input)", image_mode="RGBA")
                 status = gr.Textbox(label="Fitness gate", lines=4)
+                sheet_out = gr.Image(label="Sprite contact sheet (8 directions)")
+                sprite_status = gr.Textbox(label="Stage 2-5", lines=6)
 
         kind.change(lambda k: gr.update(visible=(k == "custom")),
                     inputs=kind, outputs=custom_group)
@@ -181,6 +307,8 @@ def build_app():
                   inputs=[kind, subject, reference, ip_scale, seed, steps, size,
                           positive_override, negative_override],
                   outputs=[raw_out, matte_out, status])
+        cont.click(continue_to_sprites, inputs=[subject, height],
+                   outputs=[sheet_out, sprite_status])
     return app
 
 

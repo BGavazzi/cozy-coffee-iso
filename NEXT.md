@@ -48,17 +48,31 @@ done.** They landed as two separate PRs against roughly the same base, so:
   and was re-verified live end to end after the rewrite. Write-up:
   `ART_CRITIQUE.md`, "The collage failure mode, and the 77-token ceiling
   that was already most of the way there".
+- **A "Continue -> mesh + sprites" button carries the UI past stage 1**
+  (same PR #6, later pass). Until now `concept_ui.py` stopped at the
+  render; getting to a sprite meant dropping to the CLI. Continue calls the
+  same `lift.lift()` / `ingest.ingest()` / `render_batch.py` /
+  `review_queue.py build` functions `factory.py` calls for a batch, adds a
+  `height` field the UI was missing, and promotes the scratch concept into
+  `out/concept/<slug>.png` under `factory.py`'s own naming convention
+  before running the later stages -- so a subject worked up in the UI is
+  recognised as already-done if it's later added to a `subjects.yaml` under
+  the same name. Verified twice: once in-process against a staged teapot
+  concept, once live through a real browser click producing an actual
+  8-direction pixel sprite sheet of a mug (footprint 0.125) at
+  `review/sheet.png`. Write-up: `ART_CRITIQUE.md`, "The UI stopped at the
+  render; a 'Continue' button now carries it to a sprite sheet".
 
 **Not yet started**: no subject in `subjects_c1.yaml` (or any shipped
 subject list) actually uses a reference image yet -- this built and
 verified the capability, not a curated reference library to point it at.
 `kind="character"` likewise has no subject exercising it in a shipped list.
 
-**The calibration backlog is untouched across all three passes, not
+**The calibration backlog is untouched across all four passes, not
 forgotten** — see `ART_CRITIQUE.md`'s most recent "Still open" list: counter
 orientation (0.04 focal-lead cost), the focal-reading-falls-with-resolution
 gap, furniture screen spread's possibly-redundant floor, and the detail
-floor's 0.010-wide bracket. None of the three passes touched a generator,
+floor's 0.010-wide bracket. None of the four passes touched a generator,
 check, or threshold in the sprite/room pipeline, so check these before
 assuming anything moved.
 

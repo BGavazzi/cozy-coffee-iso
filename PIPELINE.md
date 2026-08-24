@@ -369,6 +369,16 @@ famous-enough subjects). `--positive-override`/`--negative-override` bypass
 framing both presets assume; `concept_ui.py`'s "custom" kind exposes the
 same two fields with example prompts shown alongside them.
 
+A "Continue -> mesh + sprites" button carries a concept the rest of the
+way through stages 2-5 without leaving the browser: it takes a `height`
+typed into the UI and calls `lift.lift()` / `ingest.ingest()` /
+`render_batch.py` / `review_queue.py build` directly -- the same functions
+`factory.py` calls for a batch subject, not a new path. It also promotes
+the scratch concept into `out/concept/<name>.png` under `factory.py`'s own
+naming convention first, so a subject taken this far in the UI is
+recognised as already done if it's later added to a `subjects.yaml` under
+the same name rather than silently regenerated.
+
 ### Stage 2 -- `tools/lift.py`, and why it is not TRELLIS
 
 TRELLIS 2 needs three CUDA extensions compiled from source: `nvdiffrast`,
