@@ -21,6 +21,16 @@ Subject list format (YAML or JSON, a list of objects):
       kind: prop                     # prop (default) or character --
                                       # see concept.py's NEGATIVE_CHARACTER
 
+A subject list can be scaffolded from a folder of photographs rather than
+typed:
+
+    python tools/scaffold_subjects.py photos/ -o subjects.yaml
+
+which fills in name, prompt and reference for every image (and treats a
+subdirectory as one subject with several reference views), leaving only the
+heights to type. See that file for why heights are left null rather than
+defaulted.
+
 `prompt` defaults to `name` with underscores turned to spaces. `height` is in
 tile units and is required -- `ingest.fit()` has no other way to know a
 teapot from a table. `reference` is optional -- a single path or a YAML list
@@ -35,9 +45,10 @@ paid for. `--force` clears one subject's outputs first.
 
 A concept that fails the stage-1 fitness gate is automatically retried on the
 next seed up, twice, before the subject is given up on -- measured to rescue
-five of six gated subjects, all on the first retry. `--retry-seeds 0` restores
-the old one-shot behaviour. See `RETRY_SEEDS` for the numbers and for the
-failure class it does not rescue.
+three of four genuinely-gated subjects, all on the first retry.
+`--retry-seeds 0` restores the old one-shot behaviour. See `RETRY_SEEDS` for
+the numbers, for the failure class it does not rescue, and for the correction
+this sentence used to be on the wrong side of.
 """
 from __future__ import annotations
 
@@ -94,6 +105,21 @@ def _load_subjects(path: Path) -> list[dict]:
         data = yaml.safe_load(text)
     else:
         data = json.loads(text)
+    # A subject list scaffolded by `scaffold_subjects.py` arrives with every
+    # height null on purpose -- a filename cannot tell `ingest.fit()` a teapot
+    # from a table, and a plausible default would put a wrong number in every
+    # row rather than a missing one in a few. So the whole file is checked
+    # first and every offender named, because finding out about row 31 after
+    # thirty SDXL generations is the expensive way to learn it.
+    missing = [s.get("name", f"row {i}") for i, s in enumerate(data)
+               if s.get("height") is None]
+    if missing:
+        raise SystemExit(
+            f"{path}: {len(missing)} subject(s) have no height: "
+            + ", ".join(missing[:12]) + ("..." if len(missing) > 12 else "")
+            + "\nheight is in tile units (a person is ~1.6, a mug ~0.12) and "
+              "cannot be inferred from a name or a photo.")
+
     subs = []
     for s in data:
         name = s["name"]

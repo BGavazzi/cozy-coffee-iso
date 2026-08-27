@@ -113,6 +113,23 @@ done.** They landed as two separate PRs against roughly the same base, so:
   out of the build and only one of them was machine-visible; write-up:
   `ART_CRITIQUE.md`, "Drawing the chrome, and three things only looking
   caught".
+- **A folder of photos is now a subject list** (same PR #6, later pass).
+  `tools/scaffold_subjects.py` walks a directory and writes the
+  `factory.py` YAML: name, prompt and reference filled in per image, with a
+  *subdirectory* becoming one subject carrying several reference views —
+  which matters because `concept.py` loads N images into N independent
+  IP-Adapter slots and blends them in cross-attention, so several views
+  condition better than one. `--merge` re-scans without losing heights or
+  prompts already edited by hand. **Heights stay null on purpose**: a
+  filename cannot tell `ingest.fit()` a mug from a table, and a plausible
+  default would put a wrong number in every row where a missing one is at
+  least loud — a mug scaled to a table's height reaches stage 5 and produces
+  a sprite that is confidently the wrong size. `factory._load_subjects` now
+  checks the whole file up front and names every offender, because learning
+  about row 31 after thirty SDXL generations is the expensive way to learn
+  it. The hand-written YAML is emitted rather than `yaml.dump`'d, to keep the
+  one-flow-row-per-subject shape the existing lists have, and the emitter is
+  verified by `safe_load` round-trip rather than reasoned about.
 - **The export gap is closed — all three producers reach Godot** (same PR #6,
   later pass). `package_godot.py` read only `out/sprites/manifest.json`,
   whose shape is 8 direction frames per asset, so neither a packed animation
@@ -138,13 +155,18 @@ done.** They landed as two separate PRs against roughly the same base, so:
   the written `.tres` and compares nine-slice margins against the drawn
   insets. **Confirmed failable** — swapping left and right in the resource is
   caught and named.
-  **Not yet exercised:** the animation branch. `out/sprites/atlas.json` does
-  not exist in this working tree yet — `animate.py --fx` is a long software
-  rasterization run and was still going when this was written — so the
-  characters/FX path is written and reviewed but has produced zero resources
-  so far. It is skipped rather than failed when the atlas is absent, which
-  is why the count above is props and UI only. Run `animate.py --fx` then
-  `export_godot.py` and update this line with a real number.
+  The animation branch is exercised too, after `animate.py --fx` produced
+  3032 frames across 9 characters and 8 effects: **52 resources** total (32
+  props + 17 animation SpriteFrames + 3 styleboxes), `barista.tres` carrying
+  336 AtlasTextures across 56 named `<clip>_<dir>` animations. One real bug
+  on the way — `animate.py` writes to `sprites/` and the static factory
+  writes to `out/sprites/`, two gitignored directories one word apart, and
+  the first version of this pointed at the wrong one. Renaming either is its
+  own change, so the path carries a comment instead.
+  `check_anim_layout` guards the row arithmetic: a rect outside the packer's
+  own declared `sheet_size`, or two clips claiming the same cell. Both
+  **confirmed failable** by perturbing a resolved layout — the first reports
+  the offending clip and cell, the second names both claimants.
   **Known limit, stated rather than glossed:** headless Godot has no
   renderer, so the engine's own nine-slice stretch is never rendered and
   compared. The two implementations agree by construction and by margin, not

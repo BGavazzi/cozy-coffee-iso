@@ -46,6 +46,10 @@ authoring rather than sampling.
     # same thing, interactively -- ip_scale needs eyeballing per reference
     pip install gradio && python tools/concept_ui.py   # http://127.0.0.1:7860
 
+    # a folder of reference photos -> a subject list, heights left to type
+    python tools/scaffold_subjects.py photos/ -o subjects.yaml
+    python tools/factory.py subjects.yaml          # then the whole batch
+
     # UI: icons generated, chrome drawn, one contact sheet over both
     python tools/ui_forge.py             # the object-depicting icons
     python tools/ui_chrome.py            # frames, banners, star, coin, ticket

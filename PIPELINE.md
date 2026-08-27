@@ -168,10 +168,20 @@ only on the Python side, through `expand()` and `preview_ui.py`. The two
 implementations agree by construction and by margin, not by a compared
 render.
 
-Output: `godot_export/project/resources/`, 35 resources for the current
-library (32 props + 3 nine-slice styleboxes, plus animation resources once
-`animate.py` has run), referencing the staged PNGs by path rather than
-duplicating them.
+The sheet layout is guarded on the Python side by `check_anim_layout`, which
+catches the two ways row arithmetic fails silently: a rect that falls outside
+the packer's own declared `sheet_size` (Godot renders an out-of-bounds
+`AtlasTexture` as empty, not as an error) and two clips resolving to the same
+cell (two animations that play identical frames, which reads as a rig bug
+rather than a packing bug). Both confirmed failable against a perturbed
+layout.
+
+Output: `godot_export/project/resources/`, **52 resources** for the current
+library -- 32 prop `SpriteFrames`, 17 animation `SpriteFrames` (9 characters,
+8 effects, 3032 frames), 3 nine-slice `StyleBoxTexture` -- referencing the
+staged PNGs by path rather than duplicating them. `barista.tres` alone
+carries 336 `AtlasTexture` regions across 56 named `<clip>_<dir>`
+animations.
 
 Reference-image ("examples") conditioning in `concept.py` -- the other half
 of "prompts and examples in, engine-usable assets out" -- is built; see the

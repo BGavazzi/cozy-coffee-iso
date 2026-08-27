@@ -5,8 +5,15 @@ Reads the three things this repo actually produces and stages them into
 `godot_export/project/`:
 
   out/sprites/manifest.json   static props, 8 fixed direction frames each
-  out/sprites/atlas.json      animated characters and FX, packed sheets
+  sprites/atlas.json          animated characters and FX, packed sheets
   out/ui/                     icons (generated) and chrome (drawn)
+
+Note the first two directories: `out/sprites/` is the static prop factory's
+output and plain `sprites/` is `animate.py`'s. They are two different places
+with almost the same name, which cost a wrong path on the first run of this
+file. Both are gitignored; neither is being renamed here, because the name
+appears in `animate.py`'s `--out` default and in the docs, and a rename is
+its own change rather than a rider on this one.
 
 into
 
@@ -45,7 +52,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SPRITES_MANIFEST = ROOT / "out" / "sprites" / "manifest.json"
 SPRITES_DIR = ROOT / "out" / "sprites"
-ATLAS = ROOT / "out" / "sprites" / "atlas.json"
+ATLAS = ROOT / "sprites" / "atlas.json"   # animate.py, NOT out/sprites/
 UI_DIR = ROOT / "out" / "ui"
 PROJECT_DIR = ROOT / "godot_export" / "project"
 ASSETS_DIR = PROJECT_DIR / "assets"
@@ -143,6 +150,50 @@ def stage_anim(atlas_path: Path, atlas_dir: Path, assets_dir: Path) -> dict:
         # its row block is `azimuths` tall, not always 8.
         n = next(iter(entry["clips"].values()))["azimuths"]
         out["sheets"][name] = sheet_entry(name, entry, n, "fx")
+
+    problems = check_anim_layout(out)
+    if problems:
+        raise SystemExit("animation sheet layout is wrong:\n  "
+                         + "\n  ".join(problems))
+    return out
+
+
+def check_anim_layout(anim: dict) -> list[str]:
+    """Do the resolved rects fit the sheet, and does each one belong to one clip?
+
+    Two failures are possible in the row arithmetic above and both are
+    silent. A rect past the bottom of the sheet gives Godot an
+    `AtlasTexture` reading outside its parent, which renders as empty rather
+    than as an error. Two clips resolving to the same row gives two
+    animations that play identical frames, which looks like a rig bug rather
+    than a packing bug.
+
+    Neither needs the image to be opened -- `sheet_size` comes from
+    `animate.py`, which is the authority on how it packed. Checking against
+    the packer's own declared size is the point: if the two ever disagree,
+    that disagreement is the bug.
+    """
+    out = []
+    for name, sheet in sorted(anim["sheets"].items()):
+        sw, sh = sheet["sheet_size"]
+        seen: dict[tuple, str] = {}
+        for clip, meta in sheet["clips"].items():
+            for label, rects in meta["regions"].items():
+                for r in rects:
+                    x, y, w, h = r
+                    if x < 0 or y < 0 or x + w > sw or y + h > sh:
+                        out.append(f"{name}.{clip}.{label}: frame at "
+                                   f"({x},{y},{w},{h}) falls outside the "
+                                   f"{sw}x{sh} sheet -- the row block for "
+                                   f"this clip is wrong")
+                        break
+                    key = (x, y)
+                    prev = seen.get(key)
+                    if prev is not None and prev != f"{clip}.{label}":
+                        out.append(f"{name}: {prev} and {clip}.{label} both "
+                                   f"claim the cell at ({x},{y}) -- two "
+                                   f"clips resolved to the same row")
+                    seen[key] = f"{clip}.{label}"
     return out
 
 
