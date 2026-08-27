@@ -258,7 +258,7 @@ foliage, fabric and skin — most of the material range a 2D game needs.
 | 5 (render) | working — exact 2:1, 8 azimuths, camera-space key. **Consumes OBJ meshes** via `mesh.py`, or analytic primitives as a fixture |
 | 6 (pixelize) | working — `pixelize.py`, ramp-quantized, zero contamination |
 | 7 (metadata) | working — `animate.py` emits `atlas.json`: frame rects, per-clip anchors, fps, direction order |
-| 8 (auto-review) | working — `art_review.py` and friends, **21 checks**, all run by `manifest.py --check` |
+| 8 (auto-review) | working — `art_review.py` and friends, **22 checks**, all run by `manifest.py --check` (the newest, `check_ui`, audits the declared UI category against what is on disk — palette exactness and the same 6.2% speckle cap, as warnings rather than errors, because an incomplete library is not a wrong one) |
 | 9 (human critique) | working — `review_queue.py`, contact sheet + ratchet |
 | 10 (engine export) | working — `export_godot.py`, 22 Godot `SpriteFrames` resources built from the current sprite library |
 

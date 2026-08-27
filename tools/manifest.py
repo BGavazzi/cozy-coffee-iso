@@ -118,6 +118,74 @@ def summarise(man: dict) -> None:
     print("  Cutting a customer archetype saves more than every prop optimisation combined.")
 
 
+def check_ui(man: dict) -> list[str]:
+    """Does every declared `cat: ui` entry exist, and does it still hold up?
+
+    The UI category was declared in `assets.yaml` for a long time with
+    nothing rendered and nothing noticing, which is the failure mode a
+    manifest check exists to prevent -- a promise nobody was auditing. Now
+    that `ui_forge.py` generates the icons and `ui_chrome.py` draws the
+    chrome, the promise is auditable, so it gets audited here with everything
+    else rather than only inside the two tools that produce it.
+
+    Reported as warnings, not errors. A missing icon is a gap in the library
+    and the library is allowed to be incomplete -- `ui_icon_pastry` is
+    genuinely still gated -- whereas the errors in this suite are all
+    statements that something built is *wrong*. The two deserve different
+    weights, and inflating one into the other is how a check suite becomes
+    something people stop reading.
+    """
+    ui_dir = ROOT / "out" / "ui"
+    declared = [a["id"] for s, a in entries(man) if s == "ui" and a.get("id")]
+    if not declared:
+        return []
+    if not ui_dir.exists():
+        return [f"{len(declared)} ui entries declared and out/ui/ does not "
+                f"exist -- run tools/ui_forge.py and tools/ui_chrome.py"]
+
+    out = []
+    missing = [i for i in declared if not (ui_dir / f"{i}.png").exists()]
+    if missing:
+        out.append(f"{len(missing)} declared but not built: "
+                   + ", ".join(sorted(missing)))
+
+    # Same reading `ui_forge` and `ui_chrome` gate on, applied to whatever is
+    # actually on disk. A file can be built, pass at build time, and later be
+    # replaced by hand or by a palette change; this is the check that would
+    # notice.
+    try:
+        from PIL import Image
+        from pixelize import audit, load_palette
+        from ui_forge import MAX_ISOLATED
+        ramps = load_palette()
+    except Exception as exc:                       # pragma: no cover
+        return out + [f"pixel audit skipped: {exc}"]
+
+    for aid in sorted(set(declared) - set(missing)):
+        with Image.open(ui_dir / f"{aid}.png") as im:
+            im = im.convert("RGBA")
+            w, h = im.size
+            data = list(im.getdata())
+        px = [(p[0], p[1], p[2]) if p[3] >= 128 else None for p in data]
+        rep = audit(px, ramps)
+        if rep["off_palette"]:
+            out.append(f"{aid}: {rep['off_palette_pct']}% of pixels are "
+                       f"off-palette")
+        solid = [i for i, c in enumerate(px) if c is not None]
+        iso = 0
+        for i in solid:
+            x, y = i % w, i // w
+            if not any(0 <= x + dx < w and 0 <= y + dy < h
+                       and px[(y + dy) * w + (x + dx)] == px[i]
+                       for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+                iso += 1
+        ratio = iso / max(1, len(solid))
+        if ratio > MAX_ISOLATED:
+            out.append(f"{aid}: {ratio:.1%} isolated pixels "
+                       f"(cap {MAX_ISOLATED:.1%})")
+    return out
+
+
 def check(man: dict) -> int:
     """Validate the manifest against itself and the style bible."""
     bible = yaml.safe_load((ROOT / "style_bible.yaml").read_text(encoding="utf-8"))
@@ -319,6 +387,9 @@ def check(man: dict) -> int:
             errs.append(f"occupancy: {msg}")
     except Exception as exc:                       # pragma: no cover
         warns.append(f"clip cross-check skipped: {exc}")
+
+    for msg in check_ui(man):
+        warns.append(f"ui: {msg}")
 
     for e in errs:
         print(f"  ERROR   {e}")
