@@ -334,6 +334,18 @@ detail, not lower).
 
 ## Not tasks — accepted limitations, recorded so they are not rediscovered
 
+- **This is a prop pipeline, not a character pipeline, and the ceiling is
+  stage 2.** `kind="character"` fixes the concept *image* for a named
+  character; TripoSR then reconstructs it as a lumpy semi-fused blob. The
+  frog knight blocks on 4 of 8 frames (11-12% isolated pixels against a
+  6.2% floor) with no separable limbs or weapon. Two cheap remedies were
+  measured and both failed: `--resolution 128` was a wash (still 4/8
+  blocked), and simplifying the prompt to reduce occlusion made it **worse**
+  (8/8 blocked, 15.3% mean) because "weapon held clear of the body" gives
+  the reconstructor thin unsupported geometry, which is the thing it handles
+  worst. The lever is a better reconstructor (TRELLIS 2, blocked below), not
+  prompt engineering. Scope line: object-shaped things without articulation.
+  See `ART_CRITIQUE.md`, "The character ceiling is stage 2, not stage 1".
 - **The far side of a single-view reconstruction cannot be verified by
   machine.** The eight frames are a consistent turnaround of geometry that is
   wrong on the back, so no image-space metric over the direction set can see

@@ -4016,3 +4016,65 @@ status text confirming all three output paths. Both runs' artifacts were
 removed afterward along with the manifest entries they added; `review/
 sheet.png` and `review/verdicts.jsonl` are tracked files and were restored
 to their prior committed state rather than left showing test output.
+
+## The character ceiling is stage 2, not stage 1, and two cheap fixes both failed
+
+The `kind="character"` work above fixed the *concept image* for a named
+character. It said nothing about whether the rest of the pipeline could do
+anything with one, and the honest answer, now measured, is no.
+
+Taking the passing frog concept all the way through (`lift` → `ingest` →
+`render_batch` → `review_queue`, height 1.2) produces a sprite set that
+`art_review.py` blocks on 4 of 8 frames: 11-12% of opaque pixels match none
+of their four neighbours, against a check whose floor is "authored art
+measures under 6.2% on its busiest frame". Every frame also warns on
+cross-ramp adjacency at 17-25% against clean toon shading's ~2.5%. The
+mesh is a lumpy semi-fused blob -- no cape, no separable limbs, no rapier,
+and nothing a person would call a knight.
+
+Benchmarked against the real thing rather than against a feeling: the
+original SNES sprite sheet was looked at directly (viewed for comparison
+only; nothing copied, saved, or reproduced). Its ~60 frames are flat colour
+fields inside a dark outline, six to eight colours a frame, with limbs and
+the sword separately legible at 32px. That cleanliness is a property of
+being hand-authored -- every pixel a decision -- and it sets the bar the
+cross-ramp check is already encoding. Our frames are not a worse drawing of
+the same thing; they are a different class of object, geometric noise
+rendered faithfully.
+
+Two cheap remedies were proposed and both tested before either was
+believed:
+
+- **Coarser marching cubes** (`lift.py --resolution 128` against the default
+  256), on the theory that a coarser grid cannot represent the
+  high-frequency surface noise the blocker is catching. Result: a wash.
+  Still 4 of 8 blocked, blocker 11.5% → 10.9% mean, cross-ramp 21.5% →
+  19.7%. Both inside noise. This rules out voxel size as the cause: the
+  reconstruction is producing the wrong *shape*, not a correct shape sampled
+  too finely.
+- **Simplifying the prompt to reduce occlusion** ("arms visible at sides, no
+  cloak, weapon held clear of the body, simple silhouette"), on the theory
+  that a cloak and a held weapon are exactly the self-intersecting geometry
+  a single view cannot resolve. Result: **measurably worse, on every frame**
+  -- 8 of 8 blocked, blocker mean 15.3%, cross-ramp mean 28.2%. The reason
+  is visible in the sheet and is worth keeping: asking for the weapon *clear
+  of the body* gave TripoSR a thin unsupported protrusion to reconstruct,
+  and thin unsupported geometry is the single thing single-view
+  reconstruction is worst at, because there is no volume to anchor it
+  against. The change did partly work on the axis it targeted -- legs
+  separate into a real bipedal stance in several frames, more humanoid than
+  baseline's undifferentiated blob-bottom -- and it still lost, because the
+  floating blade cost more than the stance gained.
+
+So the character ceiling is TripoSR, and neither prompt engineering nor a
+reconstruction parameter moves it. The lever that would is a better
+reconstructor -- TRELLIS 2 -- which remains blocked on this workstation's
+toolchain for the reasons already recorded under accepted limitations, and
+which is a decision about somebody's hardware rather than about this repo.
+
+**What this does not say** is that the pipeline is broken. It says the
+pipeline is a *prop* pipeline. The same batch that cannot make a frog knight
+took 22 of 31 café props to clean sprites, and the teapot and mug taken
+through the new Continue button both came out auto-clean with no blockers at
+all. The honest scope line is object-shaped things without articulation,
+and it should be written down as such rather than discovered per-subject.

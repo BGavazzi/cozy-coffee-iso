@@ -7,6 +7,14 @@ output actually looks good.
 Art stops being the constraint once this works. Content becomes the constraint,
 which is the point.
 
+**Scope, measured rather than claimed:** this is a *prop* pipeline. Café-scale
+object-shaped things without articulation go through clean — 22 of 31 subjects
+in the last full batch reached stage 5 with no findings. Characters do not:
+stage 2's single-view reconstruction turns anything with limbs, a cape or a
+held weapon into a fused blob, and no prompt change fixes it (both attempts
+measured, one made it worse). See `NEXT.md`'s accepted-limitations list before
+pointing this at a character.
+
 ## The division of labour
 
 | | owns | why |
