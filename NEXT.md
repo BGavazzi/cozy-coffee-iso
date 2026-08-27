@@ -261,6 +261,64 @@ are this list's source material.
 
 ---
 
+## What a game still needs that this does not make
+
+Asked directly -- *what is missing from an end-to-end art pipeline for a
+small game* -- with the honest answer rather than the flattering one. The
+list is short on purpose: things this repo could plausibly produce and does
+not, not every asset any game has ever shipped.
+
+**Closed since this question was first asked**
+
+- ~~UI art~~ — 14 usable of 15 declared, split between a generative path for
+  object icons and a procedural one for chrome.
+- ~~Engine export for animations and UI~~ — all three producers now build
+  Godot resources, 52 of them.
+- ~~Hand-authoring a subject list per reference photo~~ —
+  `scaffold_subjects.py`.
+
+**Still missing, ranked by how much a small game would feel it**
+
+1. **Tilesets.** Floors, walls and their corners as a tiling set with
+   autotile/terrain metadata. This is the largest gap by a distance: a room
+   is mostly floor and wall, `render_room.py` composites them as one image,
+   and there is no per-tile output an engine could lay down or a designer
+   could paint with. It is also the gap this repo is *best* placed to close,
+   because a tile is geometry with a semantic role -- exactly the class
+   `ui_chrome.py` just demonstrated should be drawn rather than generated,
+   and `assetlib.floor()` already builds the geometry.
+2. **A character portrait / dialogue bust.** The rig renders 46px-tall
+   figures; a dialogue box wants a face. Different framing, different
+   resolution, and probably a different producer again -- generation is
+   plausible here in a way it is not for a walk cycle, since a portrait is a
+   single view of a thing.
+3. **Text.** No font, no bitmap glyph set, nothing that renders a word in
+   the palette. Every UI mockup in this repo has ruled lines where text
+   would go, including the drawn `ui_ticket`, and that is a placeholder
+   rather than a style decision.
+4. **Item/inventory icons beyond drinks.** The generative icon path works
+   and is proven; what is missing is subjects, not machinery. This is a
+   `UI_PROMPTS` list to extend, and it is item 4 rather than item 1 for
+   exactly that reason.
+5. **Cursors and pointer states.** Trivially procedural, genuinely required,
+   and nobody has written the six lines.
+6. **A palette-swap path.** One shop, several times of day or seasons, is a
+   normal thing for this genre to want, and the ramps are computed rather
+   than picked -- which is the hard half already done. Nothing exercises it.
+7. **Rigging from a generated mesh** (UniRig) and **TRELLIS 2** — both
+   blocked on this workstation's toolchain rather than on design, and both
+   already recorded below.
+
+**Deliberately not on this list**
+
+Audio, writing, level design, and anything that is not art. Also: a
+general-purpose character pipeline. Stage 2's single-view reconstruction
+fuses limbs, capes and held weapons into a blob, both prompt remedies were
+measured and one made it worse, and calling that a "gap" implies a fix is
+scheduled. It is a ceiling, and it is recorded as one.
+
+---
+
 ## How this repo expects work to be done
 
 **Environment**
