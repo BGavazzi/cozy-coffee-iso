@@ -4237,6 +4237,29 @@ a direction nobody measures, because the things it rejects leave no trace.
 `MIN_FILL` cost this library four usable assets per batch for as long as it
 has existed, and nothing anywhere reported that.
 
+**Measured at full scale afterwards rather than left as a projection: the
+batch now runs 29 of 31 clean, against 22 of 31 before.** The estimate above
+said "somewhere around 28/31", which is close enough to be worth noting and
+not close enough to have been worth trusting -- the point of running it was
+that the difference between 28 and 29 is two real assets. `bottle`,
+`wine_glass`, `cake_slice`, `wooden_spoon`, `book`, `fern` and `bicycle` all
+came through.
+
+The two survivors are worth separating. `bread_loaf` is correctly gated and
+was independently confirmed bad (5 of 8 frames blocked when forced through).
+`croissant` is gated on soft alpha and a second mass at 95% of the main one
+-- genuinely two croissants in frame -- and yet the forced run above produced
+eight clean, recognisable crescents from a croissant concept. So it may be a
+second false rejection, on a different check, and the honest position is that
+one clean run is not enough to indict `MAX_SECOND_BLOB` the way twenty
+subjects indicted `MIN_FILL`. Recorded as a lead, not a finding.
+
+One thing the batch did **not** test, and the report says so explicitly:
+`seed_used` is absent on every row, because retries only fire for a concept
+generated in that run and all 31 concepts already existed on disk. The
+29/31 is entirely the threshold correction. Auto-reseed contributed nothing
+to it and remains verified only at the six-subject scale.
+
 ## UI art, and the same wrong-check mistake made twice in one session
 
 `assets.yaml` declares fourteen `cat: ui` entries and none of them had ever
