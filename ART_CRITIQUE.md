@@ -4353,6 +4353,49 @@ reads the finished sprites, needs no proxy, and blocked `bread_loaf` twice
 without being asked. Any future attempt at this should have to clear the
 overlap table above rather than a correlation coefficient.
 
+## Icons split by whether they depict a thing, and reseeding earns its keep
+
+Running the remaining twelve `cat: ui` entries gave 9 of 12 past the speckle
+check, and this time **auto-reseed did real work**: `ui_clock_day` needed
+seed 3, `ui_heart_mood`, `ui_icon_cappuccino` and `ui_icon_latte` needed seed
+2. That is the honest counterweight to `bread_loaf` above. Speckle genuinely
+is seed-dependent -- a different draw gives flatter shapes with fewer stray
+pixels -- whereas an amorphous loaf is the same loaf at every seed. Reseeding
+works exactly where the failure is noise and fails exactly where it is
+structure, which is what it was measured to do.
+
+Looking at the twelve rendered icons rather than their scores splits them
+cleanly, and not along the axis the checks measure:
+
+    depicts an object   clock_day, heart_mood, cappuccino, cold_brew,
+                        espresso, latte, tea            -- 7, all usable
+    UI chrome           dialogue_frame, ticket, nameplate, upgrade_frame,
+                        star_rating, coin               -- 5 wrong, 1 gated
+
+Every drink and object icon works. Every piece of abstract UI *chrome*
+fails, and fails the same way: asked for a speech bubble, SDXL renders a
+photographed tablet with a picture in it; asked for a nameplate banner, a
+framed panel; asked for a torn paper ticket, a framed picture again. The
+star is an eight-pointed burst instead of a five-pointed star. None of these
+are speckle failures -- `dialogue_frame`, `ticket` and `upgrade_frame` all
+passed the isolated-pixel check comfortably. They are *wrong-shape*
+failures, which no metric in this repo can see and none should be invented
+to see, because "is this the thing I asked for" is the human tier.
+
+The pattern is the prop/character split again in a third costume: **this
+pipeline makes things, not abstractions.** A cup is a thing and SDXL has
+seen a million of them. A dialogue frame is geometry with a semantic role --
+nine-slice borders, defined corners, a fill region -- and a diffusion model
+has no reason to produce it as flat vector chrome rather than as a
+photograph of something frame-shaped. That is not a prompt to tune; it is
+the wrong tool. UI chrome belongs in `assetlib` alongside the furniture,
+authored procedurally, where a rounded rect with a two-pixel border is four
+lines of code and exactly right every time.
+
+So the honest count for the category is **7 usable of 14 declared**, not
+9 of 12 -- and the correct next move is not more seeds but moving the six
+chrome entries out of `ui_forge`'s prompt table and into procedural code.
+
 ## UI art, and the same wrong-check mistake made twice in one session
 
 `assets.yaml` declares fourteen `cat: ui` entries and none of them had ever

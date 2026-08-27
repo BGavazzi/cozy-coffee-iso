@@ -76,6 +76,26 @@ done.** They landed as two separate PRs against roughly the same base, so:
   than clean: 1 production-ready, 1 correctly gated, 1 that passes the metric
   with the wrong shape. Write-up: `ART_CRITIQUE.md`, "UI art, and the same
   wrong-check mistake made twice in one session".
+  **Full-category result, and the ceiling it found:** the remaining twelve
+  entries then ran as a batch — 9 of 12 past the speckle check, with
+  auto-reseed doing genuine work for once (`ui_clock_day` seed 3;
+  `ui_heart_mood`, `ui_icon_cappuccino`, `ui_icon_latte` seed 2), which is
+  the honest counterweight to the `bread_loaf` false positive below: speckle
+  really is seed-dependent, an amorphous loaf really is not. But looking at
+  the rendered icons rather than their scores splits them along an axis no
+  check measures: **all 7 object-depicting icons are usable (the five drinks,
+  `clock_day`, `heart_mood`) and all 6 pieces of abstract UI chrome are
+  wrong** — `dialogue_frame` and `ticket` render as photographed
+  pictures-in-frames, `nameplate` as a framed panel, `star_rating` as an
+  8-point burst, `coin` gated muddy. Three of those passed the isolated-pixel
+  check comfortably; they are wrong-*shape* failures, and no metric here can
+  see shape. Honest category count is **7 usable of 14 declared**, not 9 of
+  12. The fix is not more seeds: nine-slice frames and banners are geometry
+  with a semantic role, which belongs in `assetlib` as procedural code next
+  to the furniture, where a rounded rect with a 2px border is four lines and
+  exactly right every time. Same "things, not abstractions" ceiling as the
+  character work, in a third costume. Write-up: `ART_CRITIQUE.md`, "Icons
+  split by whether they depict a thing".
   **Known gap, stated rather than hidden:** `ui_forge` writes to `out/ui/`
   and nothing exports it. `package_godot.py` reads
   `out/sprites/manifest.json`, whose shape is 8 direction frames per asset,
