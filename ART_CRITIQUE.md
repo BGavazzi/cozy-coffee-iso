@@ -4078,3 +4078,161 @@ took 22 of 31 café props to clean sprites, and the teapot and mug taken
 through the new Continue button both came out auto-clean with no blockers at
 all. The honest scope line is object-shaped things without articulation,
 and it should be written down as such rather than discovered per-subject.
+
+## The 29% that was being thrown away, and the one kind that stays thrown away
+
+If the scope line is "props," then the number that matters for throughput is
+the prop batch's own: 22 of 31 clean, 9 gated. Worth looking at what those 9
+actually were before accepting them as the cost of doing business, because
+**every one of them failed at stage 1**, not at reconstruction -- and several
+by a hair: 11.7%, 11.2% and 10.9% against a 12% frame-fill floor. Nothing
+retried them. A human had to notice and re-run with `--force`.
+
+An earlier entry above established, while chasing the basket's collage, that
+this class of failure is *seed*-specific rather than prompt-specific, and
+concluded "the honest remedy there is reseed and retry." That was a
+conclusion drawn from one subject, so before automating it, it got measured
+on six: the three near-miss frame-fill failures and the three soft-alpha
+ones, at seeds 2, 3 and 4. Five of the six passed.
+
+**That first measurement was wrong, and finding out why matters more than
+the number did.** The end-to-end check afterwards -- force `book` through
+`factory.py` and watch the retry fire -- showed `book` passing on seed *1*,
+with no retry at all. The report those nine failures came from predates B1's
+`MAX_SOFT_ALPHA` / `DETACHED_SOFT_FLOOR` split, and `NEXT.md` says plainly
+that fern and bicycle now pass under the recalibrated check. So the sweep had
+taken its seed-1 baseline from a stale file and only ever re-run seeds 2-4:
+any subject the recalibration had already fixed looked like a reseed rescue
+while reseeding did nothing. A measurement that never re-establishes its own
+baseline is measuring the baseline's age.
+
+Re-run properly -- seed 1, all nine, current gate -- three of the nine
+(`book`, `fern`, `bicycle`) already pass and were never reseeding's to
+rescue. Every remaining soft-alpha failure is gone too; the six still gated
+now fail on frame fill or a second mass, not on alpha at all. Against that
+corrected baseline the honest tally is **three genuine rescues of four
+tested**: `wine_glass` (11.9%), `cake_slice` (10.9%) and `croissant` (2.6%)
+all pass on seed 2, and `wooden_spoon` fails at every seed. `bottle` and
+`bread_loaf` were not tested above seed 1. Three of four is still a good
+enough return to keep the feature; five of six was never real.
+
+`wooden_spoon` is the interesting failure, and it is why this is a bounded
+fix rather than a general one. It failed at **every** seed -- 7.7%, 11.9%,
+5.4% frame fill -- and the reason is not noise. A long thin object is
+systematically small in frame once `STYLE`'s "full object in frame with
+generous margin" clause has been honoured: the margin is sized to the
+spoon's length, which leaves its width occupying almost nothing. Reseeding
+cannot change the aspect ratio of a spoon. That is a framing/floor question,
+taken up separately below, and it turns out to be the more interesting one.
+
+So `RETRY_SEEDS = 2` in `factory.py`, not 3: the third attempt bought nothing
+in the sample and costs a full generation per subject. Retries apply only to
+a concept generated in the current run -- an existing `out/concept/<name>.png`
+is still respected exactly as before, because "skip what is already done" is
+what makes a half-finished batch resumable, and quietly overwriting a
+previous run's output to chase a gate would trade one surprise for another.
+When a retry does succeed it is recorded in the report (`seed_used`, plus a
+note in `detail`) rather than passing silently: a subject that needed three
+attempts has a marginal prompt, and that is worth seeing even though the
+asset came out fine.
+
+Projected against the last full batch: three of the nine already pass on the
+recalibrated gate without any of this, and reseeding should convert most of
+the remaining near-misses, leaving the spoon-shaped ones -- call it 22/31 to
+somewhere around 28/31. Projected, not measured. The full batch has not been
+re-run, and after the baseline mistake above, an unmeasured projection is
+exactly the kind of number that deserves the label.
+
+## `MIN_FILL` was rejecting better work than it was admitting
+
+Correcting the reseed baseline left every surviving stage-1 failure looking
+like the same thing: `bottle` 10.9%, `wooden_spoon` 11.1%, `wine_glass`
+11.9%, `cake_slice` 10.9% -- four of six sitting within a point and a half
+of `MIN_FILL = 0.12`. A cluster that tight against a threshold is either a
+real boundary or an arbitrary one, and `MIN_FILL`'s comment is one line
+long ("object share of the frame") with none of the bracketing every other
+floor in this file carries. That absence was the tell.
+
+Its stated reason is "too little resolution on the thing being
+reconstructed" -- a claim that fill predicts reconstruction quality. That is
+testable against work already on disk. Twenty library subjects that passed
+the floor, scored by how many of their eight frames `art_review` blocks:
+
+    14.1% rolling_pin    3/8      27.6% sugar_bowl      0/8
+    19.8% coffee_cup     0/8      28.8% french_press    0/8
+    21.8% table_lamp     0/8      28.9% book            0/8
+    22.3% umbrella       0/8      31.1% basket          8/8
+    25.8% candle         0/8      32.0% kettle          0/8
+    26.6% mason_jar      0/8      33.7% teapot          0/8
+    27.3% creamer        0/8      34.2% newspaper       3/8
+    27.4% potted_plant   1/8      35.2% teacup_stack    0/8
+    27.5% flower_pot     2/8      35.5% stack_of_books  3/8
+                                  37.5% cutting_board   7/8
+                                  40.6% cheese_wheel    0/8
+
+There is no relationship. The two worst sets in the library -- `basket` at
+8/8 and `cutting_board` at 7/8 -- are among the *best*-filling subjects
+there are, and mean blocked frames are higher above 25% fill (1.50) than
+below it (0.75). Whatever makes a sprite set bad, it is not how much of the
+concept frame the object occupied.
+
+That sample cannot speak below 14.1%, though, and the reason is a selection
+effect rather than an absence: the floor stopped anything lower from ever
+being built. So three sub-floor concepts were forced through `lift` →
+`ingest` → `render_batch` → `art_review` anyway:
+
+    11.9% wine_glass    0/8 blocked
+    10.9% bottle        0/8 blocked
+    10.9% cake_slice    2/8 blocked
+
+Two of the three are perfectly clean, and the group mean (0.67) is *better
+than the library average the floor admits* (1.35). `MIN_FILL` is not
+protecting stage 2 from anything. It is rejecting work that outperforms what
+it lets through, and it has been doing so silently -- four subjects in the
+last batch, gated on a threshold with no measurement behind it.
+
+The obvious next move was to find where the claim *does* become true, since
+an object occupying twelve pixels surely cannot be reconstructed. The two
+lowest-fill concepts in existence went through the same treatment, and the
+answer is that it does not become true anywhere measurable:
+
+     2.6% croissant    0/8 blocked
+     8.9% bread_loaf   5/8 blocked
+
+The *lowest*-fill subject there is came out clean, and the one above it came
+out bad. Looking at the frames settles what the numbers only imply:
+`croissant` is eight recognisable crescents with good silhouette and
+colour -- a genuinely usable asset that the floor had been discarding -- and
+`wine_glass` at 11.9% reads clearly as a glass, stem and base included.
+`bread_loaf` really is bad, blobby and inconsistent between directions.
+
+The mechanism, once seen, is obvious and is the whole explanation:
+`render_batch.frame_all()` refits the camera span to the mesh's own bounds
+across all eight azimuths. A small object gets framed to fill the sprite
+regardless of how much of the *concept* it occupied, so concept fill was
+never going to survive into the sprite as resolution. `bread_loaf` fails
+because a loaf is an amorphous form with no stable silhouette for TripoSR to
+recover, which has nothing to do with its size in frame.
+
+So `MIN_FILL` drops from 0.12 to 0.02 -- placed just under `croissant`, the
+weakest thing actually shown to work, rather than pretending to a bracket
+the data does not support, and left in place only to catch degenerate
+segmentation. Re-gating the nine at seed 1 under the corrected floor:
+**eight now pass, and the one still rejected is `bread_loaf`** -- the one
+that genuinely produces bad sprites. The gate went from rejecting six
+subjects of which four were good, to rejecting one that deserves it.
+
+Two things worth saying plainly about what this does to the entry above it.
+First, most of what auto-reseed was rescuing, it was rescuing from a
+threshold that should not have been there: `wine_glass`, `cake_slice` and
+`bottle` all pass on seed 1 now, no retry involved. Reseeding keeps its
+value for genuine seed noise -- collage, a stray second mass -- but it was
+treating a symptom, and the honest ordering is that the threshold was the
+bug. Second, `wooden_spoon`, whose stubbornness prompted this whole line of
+enquiry, passes too. The spoon was never the problem; the floor was.
+
+The general lesson is the one this file keeps relearning: a threshold with
+no bracket recorded is a guess, and a guess that gates work is expensive in
+a direction nobody measures, because the things it rejects leave no trace.
+`MIN_FILL` cost this library four usable assets per batch for as long as it
+has existed, and nothing anywhere reported that.

@@ -63,10 +63,37 @@ done.** They landed as two separate PRs against roughly the same base, so:
   `review/sheet.png`. Write-up: `ART_CRITIQUE.md`, "The UI stopped at the
   render; a 'Continue' button now carries it to a sprite sheet".
 
+- **`MIN_FILL` corrected, 0.12 → 0.02** (same PR #6, later pass). The
+  stage-1 frame-fill floor had no bracketing recorded and was rejecting
+  better work than it admitted. Its premise (fill predicts reconstruction
+  quality) tested against 20 library subjects at 14-41% fill: no
+  relationship — the two worst sprite sets in the library (`basket` 8/8
+  blocked, `cutting_board` 7/8) are among the best-filling. Five sub-floor
+  concepts forced through the full pipeline: 2.6% clean, 8.9% bad, 10.9%
+  clean, 10.9% mixed, 11.9% clean. The mechanism is that
+  `render_batch.frame_all()` refits the camera to the mesh, so concept fill
+  never became sprite resolution. Re-gated at seed 1 under the corrected
+  floor: **8 of 9 previously-gated subjects now pass, and the one still
+  rejected (`bread_loaf`) is the one that genuinely renders badly.**
+  Write-up: `ART_CRITIQUE.md`, "`MIN_FILL` was rejecting better work than it
+  was admitting".
+- **Auto-reseed on a gated concept** (same PR #6, later pass).
+  `factory.py`'s `RETRY_SEEDS = 2` retries a concept that fails the stage-1
+  gate on the next seed up, twice, before giving up. Measured on six of the
+  nine subjects the last full batch gated: five passed, all on the first
+  retry. The sixth (`wooden_spoon`) failed at every seed for a structural
+  reason -- a long thin object is systematically small in frame once
+  `STYLE`'s generous-margin clause is honoured -- so this is a bounded fix,
+  not a general one. `--retry-seeds 0` restores the old behaviour. Write-up:
+  `ART_CRITIQUE.md`, "The 29% that was being thrown away".
+
 **Not yet started**: no subject in `subjects_c1.yaml` (or any shipped
 subject list) actually uses a reference image yet -- this built and
 verified the capability, not a curated reference library to point it at.
 `kind="character"` likewise has no subject exercising it in a shipped list.
+**The full batch has not been re-run since auto-reseed landed**, so the
+22/31 → ~28/31 improvement is projected from a six-subject sample, not
+measured. Re-running `factory.py subjects_c1.yaml` is the way to settle it.
 
 **The calibration backlog is untouched across all four passes, not
 forgotten** — see `ART_CRITIQUE.md`'s most recent "Still open" list: counter

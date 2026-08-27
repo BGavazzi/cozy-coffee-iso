@@ -185,7 +185,44 @@ IP_ADAPTER_WEIGHT = "ip-adapter_sdxl.bin"
 DEFAULT_IP_SCALE = 0.45  # see "Reference images" above for the measured sweep
 
 # Stage-2 fitness floors.
-MIN_FILL = 0.12          # object share of the frame
+#
+# MIN_FILL was 0.12 with the comment "object share of the frame" and no
+# bracketing behind it, and it was rejecting better work than it admitted.
+# Its premise -- that frame fill predicts how well stage 2 can reconstruct
+# the object -- was tested against twenty library subjects spanning 14%-41%
+# fill and found to have no relationship at all: the two worst sprite sets
+# in the library (`basket` 8/8 frames blocked, `cutting_board` 7/8) are among
+# the BEST-filling subjects, and mean blocked frames run higher above 25%
+# fill (1.50) than below it (0.75).
+#
+# That sample could not speak below 14% -- the floor stopped anything lower
+# from ever being built, which is a selection effect rather than evidence --
+# so five sub-floor concepts were forced through lift/ingest/render/review:
+#
+#     2.6% croissant   0/8 blocked   usable, recognisable in all 8 frames
+#     8.9% bread_loaf  5/8 blocked   genuinely bad
+#    10.9% bottle      0/8 blocked   usable
+#    10.9% cake_slice  2/8 blocked
+#    11.9% wine_glass  0/8 blocked   usable, stem and base both read
+#
+# The lowest-fill subject there is came out clean and the 8.9% one came out
+# bad, which rules out a monotonic effect in the range that matters. The
+# reason fill does not matter is mechanical: `render_batch.frame_all()`
+# refits the camera span to the mesh's own bounds across all eight azimuths,
+# so a small object is framed to fill the sprite regardless of how much of
+# the *concept* it occupied. `bread_loaf` fails because a loaf is an
+# amorphous form TripoSR cannot resolve, not because it was small.
+#
+# So the floor is set to catch degenerate segmentation and nothing else.
+# Weakest known-good is croissant at 2.6%; there is no measured defect
+# attributable to low fill at any level, so 0.02 sits just under the weakest
+# thing actually shown to work rather than pretending to a bracket that the
+# data does not support. What genuinely catches a bad reconstruction is
+# `art_review`'s blocker set, downstream, reading the sprites themselves --
+# it caught `bread_loaf` correctly, which is the right place for that
+# judgement to live. Full write-up: `ART_CRITIQUE.md`, "`MIN_FILL` was
+# rejecting better work than it was admitting".
+MIN_FILL = 0.02
 MAX_FILL = 0.72
 EDGE_MARGIN = 0.02       # clear border, as a fraction of the short side
 MAX_SECOND_BLOB = 0.15   # runner-up mass, relative to the object itself
