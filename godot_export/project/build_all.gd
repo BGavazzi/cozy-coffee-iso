@@ -1,6 +1,6 @@
 extends SceneTree
 # Reads build_manifest.json (written by tools/package_godot.py) and builds one
-# Godot resource per factory asset. Three producers, three resource shapes:
+# Godot resource per factory asset. Four producers, four resource shapes:
 #
 #   "assets"  static props   -> SpriteFrames, 8 AtlasTexture frames in one
 #                               "idle" animation, indexed so game code can set
@@ -15,6 +15,11 @@ extends SceneTree
 #                               icons need no wrapper resource and are only
 #                               load-checked, because the imported PNG already
 #                               IS the Texture2D a Control wants
+#   "tiles"   ground tiles   -> one TileSet holding a TileSetAtlasSource per
+#                               tile type, isometric diamond-down, with the
+#                               tile size read from the manifest rather than
+#                               restated -- tileset.py derives it from the
+#                               camera basis and proves the tiling
 #
 # World-space facts (height, footprint, anchor, walkable) and per-direction
 # facts (pivot, bbox, azimuth) that have no native SpriteFrames slot are
@@ -47,9 +52,11 @@ func _init():
 	var n_props := _build_props(data.get("assets", {}))
 	var n_anim := _build_anim(data.get("anim", {}))
 	var n_ui := _build_ui(data.get("ui", {}))
+	var n_tiles := _build_tiles(data.get("tiles", {}))
 
 	print("built ", n_props, " prop SpriteFrames, ", n_anim,
-		" animation SpriteFrames, ", n_ui, " UI resources in res://resources")
+		" animation SpriteFrames, ", n_ui, " UI resources, ", n_tiles,
+		" tile sources in res://resources")
 	if failed.size() > 0:
 		printerr("failed: ", failed)
 		quit(1)
@@ -212,3 +219,44 @@ func _build_ui(ui: Dictionary) -> int:
 		if _save(box, "res://resources/ui/%s.tres" % id, id):
 			ok += 1
 	return ok
+
+
+# --- ground tiles ------------------------------------------------------------
+
+func _build_tiles(tiles: Dictionary) -> int:
+	if tiles.is_empty():
+		return 0
+	_mkdir("res://resources/tiles")
+	var size = tiles["tile_size"]
+	var ts := TileSet.new()
+	# Isometric, diamond-down, horizontal offset axis: the layout this repo's
+	# camera actually produces. tileset.py derives the tile size and both
+	# lattice steps from the DimetricCamera basis and proves the tiling with a
+	# 3x3 coverage count, so these are read from the manifest rather than
+	# guessed at here -- one authority for the geometry, on the Python side.
+	ts.tile_shape = TileSet.TILE_SHAPE_ISOMETRIC
+	ts.tile_layout = TileSet.TILE_LAYOUT_DIAMOND_DOWN
+	ts.tile_offset_axis = TileSet.TILE_OFFSET_AXIS_HORIZONTAL
+	ts.tile_size = Vector2i(size[0], size[1])
+
+	var n := 0
+	for type_name in tiles["tiles"].keys():
+		var info = tiles["tiles"][type_name]
+		var tex := _load_tex("res://assets/%s" % info["file"], type_name)
+		if tex == null:
+			continue
+		var src := TileSetAtlasSource.new()
+		src.texture = tex
+		src.texture_region_size = Vector2i(size[0], size[1])
+		# One tile per variant, laid out in a row. Variants exist so a floor
+		# does not repeat one image on a perfect grid -- the engine picks
+		# among them, which is why they belong to a single source rather than
+		# being separate tile types.
+		for v in range(int(info["variants"])):
+			src.create_tile(Vector2i(v, 0))
+		ts.add_source(src)
+		n += 1
+
+	if n > 0 and not _save(ts, "res://resources/tiles/ground.tres", "tileset"):
+		return 0
+	return n

@@ -127,7 +127,7 @@ Three steps, chained because each is a real dependency of the next:
 4. a round-trip check re-reads the written `.tres` files and compares the
    nine-slice margins against the insets that were drawn.
 
-**Three producers, three resource shapes.** This stage read only
+**Four producers, four resource shapes.** This stage read only
 `manifest.json` for a long time, whose shape is "8 direction frames per
 asset", and the repo's other two outputs did not fit it: a packed animation
 sheet is one image holding hundreds of frames, and a UI icon is one frame
@@ -141,6 +141,7 @@ sections instead of one.
 | `out/sprites/manifest.json` | `SpriteFrames` | one `"idle"` animation, 8 `AtlasTexture` frames; game code sets `.frame = direction_index` directly, since there is no motion, just 8 fixed poses of a camera-fixed rig |
 | `out/sprites/atlas.json` | `SpriteFrames` | one animation per *(clip, facing)*, named `"<clip>_<dir>"`, frames cut from the packed sheet as `AtlasTexture` regions at the clip's own fps |
 | `out/ui/` | `StyleBoxTexture` | nine-slice chrome only, margins from `nine_slice.json`; plain icons get no wrapper because the imported PNG already *is* the `Texture2D` a `Control` wants, and they are load-checked instead |
+| `out/tiles/` | `TileSet` | one `TileSetAtlasSource` per tile type, isometric diamond-down, tile size read from `tileset.json` rather than restated |
 
 The row arithmetic for the animation sheets is resolved in Python and shipped
 as explicit rects rather than recomputed in GDScript. `animate.py` lays clips
@@ -176,10 +177,14 @@ cell (two animations that play identical frames, which reads as a rig bug
 rather than a packing bug). Both confirmed failable against a perturbed
 layout.
 
-Output: `godot_export/project/resources/`, **52 resources** for the current
+Tiles were the test of whether that shape was right: adding a fourth
+producer cost four lines in the stager and one function in `build_all.gd`.
+
+Output: `godot_export/project/resources/`, **53 resources** for the current
 library -- 32 prop `SpriteFrames`, 17 animation `SpriteFrames` (9 characters,
-8 effects, 3032 frames), 3 nine-slice `StyleBoxTexture` -- referencing the
-staged PNGs by path rather than duplicating them. `barista.tres` alone
+8 effects, 3032 frames), 3 nine-slice `StyleBoxTexture`, and one `TileSet`
+carrying 3 atlas sources and 7 tiles -- referencing the staged PNGs by path
+rather than duplicating them. `barista.tres` alone
 carries 336 `AtlasTexture` regions across 56 named `<clip>_<dir>`
 animations.
 

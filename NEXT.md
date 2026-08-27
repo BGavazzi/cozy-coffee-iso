@@ -120,6 +120,35 @@ done.** They landed as two separate PRs against roughly the same base, so:
   out of the build and only one of them was machine-visible; write-up:
   `ART_CRITIQUE.md`, "Drawing the chrome, and three things only looking
   caught".
+- **Ground tiles, with the tiling proved rather than eyeballed** (same PR #6,
+  later pass). `tools/tileset.py` builds three tile types (plain, plank,
+  checker; 7 variants total) as isometric diamonds, the first per-tile output
+  this repo has had — `render_room.py` composites a whole shop into one
+  image, which is a proof, not a level. Ground tiles are the third case for
+  procedural authoring after furniture and UI chrome, and for the same
+  reason: a tile's silhouette is not an artistic choice, it is the projection
+  of a unit square.
+  Built by inverse-projecting each screen pixel onto the ground plane through
+  the repo's own `DimetricCamera` basis and testing the half-open unit
+  square, so coverage is exact by construction — an affine map sends every
+  point to exactly one square. That leaves one way to get it wrong and it is
+  the interesting one: **the lattice step must land on whole pixels**, which
+  at 2:1 means the tile width must be a multiple of 4. Checked
+  (`check_lattice` rejects 50 and names the fractional step), and `--proof`
+  lays a 3x3 patch and counts coverage per pixel — a seam is a pixel claimed
+  zero times, an overlap one claimed twice, and both are invisible at a
+  glance on a flat-toned floor while being fatal on a real one. All three
+  types: every interior pixel covered exactly once.
+  No outline pass, deliberately. A floor is not an object, and outlining it
+  draws the dark diamond grid `assetlib.floor()` already records hitting
+  twice by other means.
+  Exported: one Godot `TileSet`, isometric diamond-down, 3 atlas sources, 7
+  tiles. Adding this fourth producer to the export cost four lines in the
+  stager and one function in `build_all.gd`, which is the test of whether
+  the three-section manifest shape was right.
+  *(The module landed a commit early, riding along on the `ui_icon_pastry`
+  commit's `git add -A`. Noted rather than rewritten, since the branch was
+  already pushed.)*
 - **A folder of photos is now a subject list** (same PR #6, later pass).
   `tools/scaffold_subjects.py` walks a directory and writes the
   `factory.py` YAML: name, prompt and reference filled in per image, with a
@@ -286,14 +315,11 @@ not, not every asset any game has ever shipped.
 
 **Still missing, ranked by how much a small game would feel it**
 
-1. **Tilesets.** Floors, walls and their corners as a tiling set with
-   autotile/terrain metadata. This is the largest gap by a distance: a room
-   is mostly floor and wall, `render_room.py` composites them as one image,
-   and there is no per-tile output an engine could lay down or a designer
-   could paint with. It is also the gap this repo is *best* placed to close,
-   because a tile is geometry with a semantic role -- exactly the class
-   `ui_chrome.py` just demonstrated should be drawn rather than generated,
-   and `assetlib.floor()` already builds the geometry.
+1. **Wall tiles and their corners.** Floors are done (`tileset.py`, below);
+   walls are not. A wall is a vertical plane rather than a ground plane, so
+   it needs its own projection and its own tiling proof, and corners need an
+   autotile/terrain rule on top. Still the largest remaining gap, and now a
+   well-scoped one: the floor pass established the pattern and the check.
 2. **A character portrait / dialogue bust.** The rig renders 46px-tall
    figures; a dialogue box wants a face. Different framing, different
    resolution, and probably a different producer again -- generation is

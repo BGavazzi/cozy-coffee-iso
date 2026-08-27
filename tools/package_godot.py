@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Stage every kind of factory output for Godot import.
 
-Reads the three things this repo actually produces and stages them into
+Reads the four things this repo actually produces and stages them into
 `godot_export/project/`:
 
   out/sprites/manifest.json   static props, 8 fixed direction frames each
   sprites/atlas.json          animated characters and FX, packed sheets
   out/ui/                     icons (generated) and chrome (drawn)
+  out/tiles/                  ground tiles, one atlas per type
 
 Note the first two directories: `out/sprites/` is the static prop factory's
 output and plain `sprites/` is `animate.py`'s. They are two different places
@@ -20,19 +21,22 @@ into
   assets/<asset>/<asset>_dir<N>.png     one file per prop direction
   assets/anim/<name>.png                one packed sheet per character/effect
   assets/ui/<id>.png                    one file per icon or chrome piece
+  assets/tiles/<type>.png               one atlas per tile type
   build_manifest.json                   the facts `build_all.gd` needs
 
 Copied rather than referenced in place, so Godot's import cache lives outside
 the generated `out/` tree and survives a `factory.py --force` re-run without
 re-importing everything.
 
-Two of those three had no export path until now, and the gap was structural
+Three of those four had no export path until now, and the gap was structural
 rather than neglect: this file only ever read `manifest.json`, whose shape is
 "8 direction frames per asset", and neither a packed animation sheet nor a
-single-frame icon fits that. `NEXT.md` recorded them as one gap for a reason
--- forcing either into the 8-direction shape would have been worse than
-leaving it visible, and they wanted the same fix, which is for the manifest
-to have three sections instead of one.
+single-frame icon nor a tile atlas fits that. `NEXT.md` recorded the first
+two as one gap for a reason -- forcing either into the 8-direction shape
+would have been worse than leaving it visible, and they wanted the same fix,
+which is for the manifest to have a section per producer instead of one for
+all of them. Tiles then cost four lines, which is the test of whether the
+shape was right.
 
 Nine-slice chrome carries insets from `out/ui/nine_slice.json` through to a
 Godot `StyleBoxTexture`, which is the whole reason `ui_chrome.py` draws those
@@ -54,6 +58,7 @@ SPRITES_MANIFEST = ROOT / "out" / "sprites" / "manifest.json"
 SPRITES_DIR = ROOT / "out" / "sprites"
 ATLAS = ROOT / "sprites" / "atlas.json"   # animate.py, NOT out/sprites/
 UI_DIR = ROOT / "out" / "ui"
+TILES_DIR = ROOT / "out" / "tiles"
 PROJECT_DIR = ROOT / "godot_export" / "project"
 ASSETS_DIR = PROJECT_DIR / "assets"
 BUILD_MANIFEST = PROJECT_DIR / "build_manifest.json"
@@ -235,11 +240,36 @@ def stage_ui(ui_dir: Path, assets_dir: Path) -> dict:
     return {"icons": icons}
 
 
+def stage_tiles(tiles_dir: Path, assets_dir: Path) -> dict:
+    """Ground tiles: one atlas per tile type, variants in a row.
+
+    `tileset.json` already carries everything an engine needs -- tile size,
+    the two lattice steps, and the region of each variant inside its atlas --
+    because `tileset.py` computed all of it from the projection basis and
+    proved the tiling. Passing it through unchanged rather than recomputing
+    it here keeps one authority for the geometry.
+
+    `_proof_*.png` are the 3x3 tiling proofs, which are evidence rather than
+    assets and stay out of the export.
+    """
+    meta_path = tiles_dir / "tileset.json"
+    if not meta_path.exists():
+        return {}
+    meta = json.loads(meta_path.read_text())
+    dest = assets_dir / "tiles"
+    dest.mkdir(parents=True, exist_ok=True)
+    for name, info in meta["tiles"].items():
+        shutil.copyfile(tiles_dir / info["file"], dest / info["file"])
+        info["file"] = f"tiles/{info['file']}"
+    return meta
+
+
 def stage(manifest_path: Path = SPRITES_MANIFEST,
           sprites_dir: Path = SPRITES_DIR,
           project_dir: Path = PROJECT_DIR,
           atlas_path: Path = ATLAS,
-          ui_dir: Path = UI_DIR) -> dict:
+          ui_dir: Path = UI_DIR,
+          tiles_dir: Path = TILES_DIR) -> dict:
     """Clear `assets/`, stage all three producers, write the build manifest.
 
     The clear happens once, here, rather than inside each stager -- three
@@ -258,6 +288,10 @@ def stage(manifest_path: Path = SPRITES_MANIFEST,
         ui = stage_ui(ui_dir, assets_dir)
         if ui.get("icons"):
             build["ui"] = ui
+    if tiles_dir.exists():
+        tiles = stage_tiles(tiles_dir, assets_dir)
+        if tiles.get("tiles"):
+            build["tiles"] = tiles
 
     project_dir.mkdir(parents=True, exist_ok=True)
     (project_dir / "build_manifest.json").write_text(json.dumps(build, indent=2))
@@ -278,6 +312,10 @@ def summarise(build: dict) -> str:
         chars = sum(1 for s in anim.values() if s["kind"] == "character")
         lines.append(f"{chars} characters + {len(anim) - chars} effects, "
                      f"{clips} clips, {frames} frames")
+    tiles = build.get("tiles", {}).get("tiles", {})
+    if tiles:
+        lines.append(f"{len(tiles)} tile types, "
+                     f"{sum(t['variants'] for t in tiles.values())} variants")
     ui = build.get("ui", {}).get("icons", {})
     if ui:
         nine = sum(1 for i in ui.values() if "nine_slice" in i)

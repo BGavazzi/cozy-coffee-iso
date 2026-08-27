@@ -50,6 +50,9 @@ authoring rather than sampling.
     python tools/scaffold_subjects.py photos/ -o subjects.yaml
     python tools/factory.py subjects.yaml          # then the whole batch
 
+    # ground tiles, with a 3x3 coverage proof that they actually tessellate
+    python tools/tileset.py --proof
+
     # UI: icons generated, chrome drawn, one contact sheet over both
     python tools/ui_forge.py             # the object-depicting icons
     python tools/ui_chrome.py            # frames, banners, star, coin, ticket
