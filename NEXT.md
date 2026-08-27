@@ -104,6 +104,13 @@ done.** They landed as two separate PRs against roughly the same base, so:
   at 32 / 64 / 128 px (worst isolated ratio 6.1% / 3.6% / 1.6% against the
   6.2% cap), so the category is now **14 usable of 15 declared** —
   `ui_icon_pastry` still gated and `ui_coin`'s generated version retired.
+  The pastry was chased and deliberately not shipped: at `--retry-seeds 6`
+  it passed on seed 4 with an image that is not a croissant, while seeds 2
+  and 3 were recognisable croissants that failed. Deleted rather than
+  counted, and the sharpest evidence yet that the stage-1 gate is a proxy.
+  A background-clause remedy was measured and rejected — grey lifts the
+  coverage number but gets matted *in* rather than out. `ART_CRITIQUE.md`,
+  "The clearest proof yet that the stage-1 gate is a proxy".
   `tools/preview_ui.py` builds the contact sheet, labelled by producer.
   The part worth having beyond correctness is **nine-slice metadata**, which
   generation cannot produce at all: `out/ui/nine_slice.json` carries insets

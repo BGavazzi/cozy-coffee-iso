@@ -4396,6 +4396,60 @@ So the honest count for the category is **7 usable of 14 declared**, not
 9 of 12 -- and the correct next move is not more seeds but moving the six
 chrome entries out of `ui_forge`'s prompt table and into procedural code.
 
+## The clearest proof yet that the stage-1 gate is a proxy
+
+`ui_icon_pastry` was the last unbuilt entry in the UI category, so it got a
+run with `--retry-seeds 6` instead of the default 2. It passed on seed 4.
+The result is a pale cream blob with black scribbles through it, cropped at
+the frame edge, with no croissant shape anywhere in it -- and it is the best
+demonstration this repo has of what reseeding against a gate actually buys.
+
+The seeds, in order:
+
+    seed 1   0.2% frame coverage   -- the subject was matted away entirely
+    seed 2   11.4% isolated
+    seed 3   18.1% isolated
+    seed 4   PASSED
+
+Seeds 2 and 3 are *recognisable croissants*. Seed 4, the one that passed, is
+not a croissant at all. The gate did not find a better image; it found an
+image whose defects happen not to be the two defects it measures. This is
+the `bread_loaf` hazard `factory.RETRY_SEEDS` warns about, and it is much
+sharper here, because with `bread_loaf` the gate at least passed something
+that still looked like bread. **The icon was deleted rather than shipped**,
+and the category count stays at 14 of 15.
+
+Seed 1's failure was the interesting one, though, because it names a
+mechanism rather than a symptom. A golden croissant on `UI_STYLE`'s "plain
+white background" gives `matte()` almost nothing to cut against, and 99.8%
+of the frame went. So: does a pale subject want a different background
+clause? Measured, same subject, same three seeds, only that clause changed:
+
+    background    seed 1              seed 2              seed 3
+    white         0.2% cover          23.4% cover         23.3% cover
+    grey          39.2% cover         19.6% cover         23.7% cover
+
+Which looks like a win and is not. Opening the six icons shows what the
+numbers cannot: the grey background does not get matted *out*, it gets
+matted *in*. Grey seed 1's 39.2% "coverage" is a slab of background sitting
+behind a small croissant, and it is the worst of the six. The white
+background is doing its job; the failure at seed 1 was that a pale subject
+on white is a hard separation, not that the clause is wrong.
+
+The remaining defect is the subject itself. Every usable draw here is a
+croissant covered in fine dark flecks -- laminated pastry is high-frequency
+light-and-dark detail by nature, and high-frequency detail is exactly what
+quantizes to isolated pixels. That puts `ui_icon_pastry` in the same class
+as `bread_loaf` and the frog knight: not a seed problem, not a prompt
+problem, a subject whose surface fights the target resolution. Recorded as a
+ceiling, not as a task.
+
+Two things follow that are worth doing rather than noting. The gate stays
+exactly as it is -- 11.4% really is speckled, and the cap is not what went
+wrong here. And `--retry-seeds` keeps its default of 2, because the whole
+lesson of this run is that the number is not free: every extra seed is
+another chance to satisfy the proxy without satisfying the eye.
+
 ## Drawing the chrome, and three things only looking caught
 
 That move is now made: `tools/ui_chrome.py` draws the six failing pieces

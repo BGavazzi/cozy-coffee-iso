@@ -257,7 +257,15 @@ def main() -> int:
     ap.add_argument("--target", type=int, default=64,
                     help="icon size in pixels (default 64, must divide 1024)")
     ap.add_argument("--seed", type=int, default=1)
-    ap.add_argument("--retry-seeds", type=int, default=2)
+    # Deliberately 2, and deliberately not higher. Every extra seed is
+    # another chance to satisfy the gate without satisfying the eye:
+    # `ui_icon_pastry` at --retry-seeds 6 passed on seed 4 with an image that
+    # is not a croissant, while seeds 2 and 3 were recognisable croissants
+    # that failed. See ART_CRITIQUE.md, "The clearest proof yet that the
+    # stage-1 gate is a proxy".
+    ap.add_argument("--retry-seeds", type=int, default=2,
+                    help="extra seeds to try on a gated icon (default 2; "
+                         "raising it buys proxy-gaming, not quality)")
     args = ap.parse_args()
 
     wanted = dict(UI_PROMPTS)
