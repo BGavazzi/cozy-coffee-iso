@@ -4300,6 +4300,59 @@ that no longer says so. Whether stage 1 should be able to reject an
 amorphous subject on principle -- rather than being talked round by a
 retry -- is a real open question, and a better one than any number here.
 
+## Answering that question: a real signal that still should not be a gate
+
+The library now carries its own ground truth. Thirty-two subjects have
+sprites, and `art_review` scores each set 0-8 blocked frames, so "does this
+concept reconstruct well" is a label rather than an opinion. That makes the
+question testable in the way `MIN_FILL` never was before it shipped: does
+anything measurable *in the concept image* predict the blocked count?
+
+Three candidates, correlated against blocked frames across all 32:
+
+    silhouette compactness (perimeter / sqrt area)   +0.256
+    internal lightness spread (p90 - p10)            +0.077
+    internal lightness gradient (mean |dL| per px)   +0.658
+
+The first two are nothing. The third is a strong signal and it makes
+physical sense: mean adjacent-pixel lightness difference is a texture
+reading, and texture is precisely what a single-view reconstructor turns
+into noisy geometry. The ranking passes the eye test too -- `basket` 0.0396,
+`bread_loaf` 0.0340, the frog knight 0.0270 at the top; `teapot` 0.0042,
+`teacup_stack` 0.0048, `umbrella` 0.0071 at the bottom.
+
+(That number is also a lesson in checking the instrument. The first pass
+measured this at +0.011 and would have been filed as a third null result --
+because the subsample took every seventh pixel, so the "adjacent" pair it
+differenced almost never actually was adjacent, and most subjects scored a
+flat 0.0000. A metric returning suspicious zeros is a broken metric, not a
+finding. Sampling whole rows instead moved it from +0.011 to +0.658.)
+
+And it still should not become a stage-1 blocker, because the distributions
+overlap badly:
+
+    bad  (>=3 blocked, n=10)   0.0075 .. 0.0396
+    good (0 blocked,   n=18)   0.0030 .. 0.0263
+
+    cut 0.018   catches 7/10 bad, wrongly rejects 2/18 good
+    cut 0.025   catches 5/10 bad, wrongly rejects 1/18 good
+    cut 0.028   catches 3/10 bad, wrongly rejects 0/18 good
+
+There is no cut that separates them. Every setting that catches most of the
+failures also throws away good work, which is `MIN_FILL`'s exact sin in a
+more sophisticated costume -- and it would be easy to ship, because +0.658
+sounds like enough. It is not. A correlation strong enough to be interesting
+is not the same as a boundary sharp enough to gate on, and the difference is
+whether the two populations actually separate.
+
+So the answer to the open question is **no, on the evidence available**:
+stage 1 cannot reliably reject an amorphous subject, and the best predictor
+found so far is a good warning and a bad gate. That is not a failure of the
+search. It is the reason the architecture already works -- `art_review`
+reads the finished sprites, needs no proxy, and blocked `bread_loaf` twice
+without being asked. Any future attempt at this should have to clear the
+overlap table above rather than a correlation coefficient.
+
 ## UI art, and the same wrong-check mistake made twice in one session
 
 `assets.yaml` declares fourteen `cat: ui` entries and none of them had ever

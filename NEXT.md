@@ -113,7 +113,16 @@ done.** They landed as two separate PRs against roughly the same base, so:
   not to grind far; `art_review` downstream is what actually protects the
   library. Open question worth more than any number here: should stage 1 be
   able to reject an amorphous subject on principle, rather than being talked
-  round by a retry?
+  round by a retry? **Investigated, answer is no on current evidence.**
+  Three concept-image metrics correlated against `art_review`'s blocked-frame
+  count across all 32 subjects: silhouette compactness +0.256, lightness
+  spread +0.077, internal lightness gradient **+0.658**. The third is a real
+  texture signal and still cannot gate — bad spans 0.0075-0.0396, good spans
+  0.0030-0.0263, and every cut catching most failures also discards good
+  work (0.018 → 7/10 bad caught, 2/18 good lost). Shipping it would be
+  `MIN_FILL`'s error in a better disguise. Recorded as a warning-grade
+  signal; any future attempt must clear the overlap table in
+  `ART_CRITIQUE.md`, "Answering that question", not just a correlation.
 
 **Not yet started**: no subject in `subjects_c1.yaml` (or any shipped
 subject list) actually uses a reference image yet -- this built and
