@@ -120,16 +120,57 @@ Three steps, chained because each is a real dependency of the next:
    references the result embeds the pixel data inline instead of a path --
    confirmed empirically: a single 64x64 sprite's `.tres` came out over
    60,000 characters that way, versus ~130 as a proper `[ext_resource]` line.
-3. `build_all.gd` reads `build_manifest.json` and builds one `SpriteFrames`
-   resource per asset -- 8 `AtlasTexture` frames, indexed by direction (game
-   code sets `.frame = direction_index` directly; there's no animation here,
-   just 8 fixed poses of a camera-fixed rig). World facts that have no native
-   `SpriteFrames` slot (height, footprint, anchor, walkable, and the
-   per-direction pivot/bbox/azimuth) ride along as resource metadata,
-   readable in GDScript via `get_meta()`.
+3. `build_all.gd` reads `build_manifest.json` and builds one resource per
+   asset. World facts that have no native slot (height, footprint, anchor,
+   walkable, and the per-direction pivot/bbox/azimuth) ride along as resource
+   metadata, readable in GDScript via `get_meta()`.
+4. a round-trip check re-reads the written `.tres` files and compares the
+   nine-slice margins against the insets that were drawn.
 
-Output: `godot_export/project/resources/<asset>.tres`, 22 resources / 92KB for
-the current library, referencing the staged PNGs by path rather than
+**Three producers, three resource shapes.** This stage read only
+`manifest.json` for a long time, whose shape is "8 direction frames per
+asset", and the repo's other two outputs did not fit it: a packed animation
+sheet is one image holding hundreds of frames, and a UI icon is one frame
+with no direction at all. `NEXT.md` filed them as a single gap, correctly --
+forcing either into the 8-direction shape would have been worse than leaving
+it visible, and the fix they both wanted was for the manifest to have three
+sections instead of one.
+
+| producer | resource | shape |
+|---|---|---|
+| `out/sprites/manifest.json` | `SpriteFrames` | one `"idle"` animation, 8 `AtlasTexture` frames; game code sets `.frame = direction_index` directly, since there is no motion, just 8 fixed poses of a camera-fixed rig |
+| `out/sprites/atlas.json` | `SpriteFrames` | one animation per *(clip, facing)*, named `"<clip>_<dir>"`, frames cut from the packed sheet as `AtlasTexture` regions at the clip's own fps |
+| `out/ui/` | `StyleBoxTexture` | nine-slice chrome only, margins from `nine_slice.json`; plain icons get no wrapper because the imported PNG already *is* the `Texture2D` a `Control` wants, and they are load-checked instead |
+
+The row arithmetic for the animation sheets is resolved in Python and shipped
+as explicit rects rather than recomputed in GDScript. `animate.py` lays clips
+out in row-blocks -- row `clip.row + d` is direction `d` -- and a consumer
+that rederives that is a consumer that can land one row off. It has been one
+row off before, on the direction names, and that failure is invisible in
+every frame and wrong in all of them.
+
+`StyleBoxTexture` is written with `AXIS_STRETCH_MODE_TILE` rather than the
+default stretch, because `ui_chrome.expand()` repeats the centre band instead
+of interpolating it -- interpolation invents colours and would break the
+palette-exactness every earlier stage guarantees. Telling the engine to
+stretch would mean a frame verified palette-exact stops being palette-exact
+the moment a `Control` resizes it.
+
+**What the round-trip check does and does not cover.** Godot names its four
+texture margins left/top/right/bottom and `ui_chrome` names its insets in the
+same order, which is an agreement that holds right up until someone reorders
+one of them -- and the failure is silent, since a frame with the wrong corner
+pinned still loads and still renders. So the written `.tres` is re-read and
+compared. Verified failable: swapping left and right in the resource is
+caught and reported. What it does *not* cover is the engine's own stretch,
+because headless Godot has no renderer; the nine-slice is checked as pixels
+only on the Python side, through `expand()` and `preview_ui.py`. The two
+implementations agree by construction and by margin, not by a compared
+render.
+
+Output: `godot_export/project/resources/`, 35 resources for the current
+library (32 props + 3 nine-slice styleboxes, plus animation resources once
+`animate.py` has run), referencing the staged PNGs by path rather than
 duplicating them.
 
 Reference-image ("examples") conditioning in `concept.py` -- the other half

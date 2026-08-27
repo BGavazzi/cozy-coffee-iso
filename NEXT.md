@@ -113,13 +113,43 @@ done.** They landed as two separate PRs against roughly the same base, so:
   out of the build and only one of them was machine-visible; write-up:
   `ART_CRITIQUE.md`, "Drawing the chrome, and three things only looking
   caught".
-  **Known gap, stated rather than hidden:** `ui_forge` writes to `out/ui/`
-  and nothing exports it. `package_godot.py` reads
-  `out/sprites/manifest.json`, whose shape is 8 direction frames per asset,
-  and a single-frame icon does not fit that. Forcing it in would be worse
-  than leaving it visible. This is the same "the two halves don't meet"
-  problem `atlas.json` already has (animated characters and FX have no Godot
-  export either) and both want solving together, not one at a time.
+- **The export gap is closed — all three producers reach Godot** (same PR #6,
+  later pass). `package_godot.py` read only `out/sprites/manifest.json`,
+  whose shape is 8 direction frames per asset, so neither a packed animation
+  sheet nor a single-frame icon fitted and neither was exported. The entry
+  this replaces said the two halves wanted solving together rather than one
+  at a time, and that was right: the fix both needed was for the build
+  manifest to have three sections instead of one.
+  - static props → `SpriteFrames`, unchanged
+  - `atlas.json` characters and FX → `SpriteFrames` with one animation per
+    *(clip, facing)* named `"<clip>_<dir>"`, regions cut from the packed
+    sheet, at the clip's own fps. The row arithmetic is resolved in Python
+    and shipped as explicit rects, because `animate.py`'s layout has been
+    one row off before and that failure is invisible in every frame and
+    wrong in all of them.
+  - `out/ui/` → `StyleBoxTexture` for the three nine-slice pieces, with
+    `AXIS_STRETCH_MODE_TILE` so the engine repeats the centre band the way
+    `expand()` does rather than interpolating and inventing colours. Plain
+    icons get no wrapper resource — the imported PNG already *is* the
+    `Texture2D` a `Control` wants — and are load-checked instead of being
+    given output for the sake of a count.
+  Verified end to end against real Godot 4.3: 35 resources built (32 props +
+  3 styleboxes, 11 icons load-checked), and a new round-trip step re-reads
+  the written `.tres` and compares nine-slice margins against the drawn
+  insets. **Confirmed failable** — swapping left and right in the resource is
+  caught and named.
+  **Not yet exercised:** the animation branch. `out/sprites/atlas.json` does
+  not exist in this working tree yet — `animate.py --fx` is a long software
+  rasterization run and was still going when this was written — so the
+  characters/FX path is written and reviewed but has produced zero resources
+  so far. It is skipped rather than failed when the atlas is absent, which
+  is why the count above is props and UI only. Run `animate.py --fx` then
+  `export_godot.py` and update this line with a real number.
+  **Known limit, stated rather than glossed:** headless Godot has no
+  renderer, so the engine's own nine-slice stretch is never rendered and
+  compared. The two implementations agree by construction and by margin, not
+  by a compared render; the pixels are verified only on the Python side via
+  `expand()` and `preview_ui.py`.
 - **`MIN_FILL` corrected, 0.12 → 0.02** (same PR #6, later pass). The
   stage-1 frame-fill floor had no bracketing recorded and was rejecting
   better work than it admitted. Its premise (fill predicts reconstruction
