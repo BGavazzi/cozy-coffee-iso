@@ -106,6 +106,14 @@ done.** They landed as two separate PRs against roughly the same base, so:
   `STYLE`'s generous-margin clause is honoured -- so this is a bounded fix,
   not a general one. `--retry-seeds 0` restores the old behaviour. Write-up:
   `ART_CRITIQUE.md`, "The 29% that was being thrown away".
+  **Known hazard:** reseeding optimises against the gate, and the gate is a
+  proxy. `bread_loaf` gated on seed 1, passed on seed 2, and its sprites are
+  still 5-of-8 blocked — identical to before. Enough retries find a concept
+  that satisfies stage 1 without reconstructing better. 2 is modest enough
+  not to grind far; `art_review` downstream is what actually protects the
+  library. Open question worth more than any number here: should stage 1 be
+  able to reject an amorphous subject on principle, rather than being talked
+  round by a retry?
 
 **Not yet started**: no subject in `subjects_c1.yaml` (or any shipped
 subject list) actually uses a reference image yet -- this built and

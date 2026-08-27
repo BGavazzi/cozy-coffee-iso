@@ -75,6 +75,15 @@ SPRITE_DIR = ROOT / "out" / "sprites"
 # reseeding changes the shape of a spoon. Reseeding rescues seed-specific
 # noise -- collage, a bad matte, a near-miss crop -- not a subject whose
 # geometry fights the framing.
+#
+# And the hazard, which is worth knowing before raising this number:
+# reseeding optimises against the GATE, and the gate is a proxy. `bread_loaf`
+# gated on seed 1, passed on seed 2, reached stage 5 -- and its sprites are
+# still 5-of-8 blocked, identical to before. Enough retries will eventually
+# find a concept that satisfies stage 1's heuristics without reconstructing
+# any better, which is tuning to the metric in a thin disguise. 2 is modest
+# enough not to grind far. What actually protects the library is downstream:
+# `art_review` reads the sprites and blocked `bread_loaf` both times.
 RETRY_SEEDS = 2
 
 

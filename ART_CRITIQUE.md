@@ -4258,7 +4258,47 @@ One thing the batch did **not** test, and the report says so explicitly:
 `seed_used` is absent on every row, because retries only fire for a concept
 generated in that run and all 31 concepts already existed on disk. The
 29/31 is entirely the threshold correction. Auto-reseed contributed nothing
-to it and remains verified only at the six-subject scale.
+to it.
+
+### Forcing the last two, and what reseeding actually bought
+
+Re-running the two survivors with `--force` finally exercised the retry path
+in anger, and the report shows it working exactly as designed:
+`bread_loaf` gated on seed 1, retried, `seed_used: 2`, "gate passed on seed
+2 after 1 reseed(s)". `croissant` passed at seed 1. Both reached stage 5,
+taking the library to 32 assets.
+
+Then the obvious question, which is the one this whole session has been
+about: did passing the gate mean the sprites are any good?
+
+    croissant     0/8 blocked      genuinely recovered
+    bread_loaf    5/8 blocked      exactly as bad as before
+
+`bread_loaf` is the finding. Reseeding pushed it through the stage-1 gate
+and produced **nothing usable** -- the identical 5-of-8 failure measured
+back when it was forced through manually. A loaf is an amorphous form with
+no stable silhouette; no seed fixes that. What enough seeds *will* eventually
+do is find a concept that happens to satisfy stage 1's heuristics while
+still reconstructing badly, because stage 1 is a proxy for reconstruction
+quality and a proxy can be satisfied without the thing it proxies for
+improving at all.
+
+So auto-reseed carries a hazard worth naming plainly: **it optimises against
+the gate, and the gate is not the goal.** Retry hard enough and it becomes a
+mild form of tuning to the metric -- the same failure this file caught the
+focal-contrast check committing, in a different costume. `RETRY_SEEDS = 2`
+is modest enough that it cannot grind far, and it was chosen from measurement
+rather than to be safe, which is luck rather than judgement. The safeguard
+that actually matters is downstream: `art_review` reads the sprites
+themselves and blocked `bread_loaf` both times, correctly, without caring
+what stage 1 thought. That is the check to trust, and the reason `MIN_FILL`
+could be relaxed so far without danger.
+
+The honest scoreboard, then, is not "31/31". It is 30 subjects with usable
+sprites, one (`bread_loaf`) with sprites that exist and are bad, and a gate
+that no longer says so. Whether stage 1 should be able to reject an
+amorphous subject on principle -- rather than being talked round by a
+retry -- is a real open question, and a better one than any number here.
 
 ## UI art, and the same wrong-check mistake made twice in one session
 
