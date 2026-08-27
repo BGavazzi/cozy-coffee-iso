@@ -120,9 +120,10 @@ done.** They landed as two separate PRs against roughly the same base, so:
   out of the build and only one of them was machine-visible; write-up:
   `ART_CRITIQUE.md`, "Drawing the chrome, and three things only looking
   caught".
-- **Ground tiles, with the tiling proved rather than eyeballed** (same PR #6,
-  later pass). `tools/tileset.py` builds three tile types (plain, plank,
-  checker; 7 variants total) as isometric diamonds, the first per-tile output
+- **Ground tiles and walls, with the tiling proved rather than eyeballed**
+  (same PR #6, later pass). `tools/tileset.py` builds three floor types
+  (plain, plank, checker; 7 variants) and four wall types (plain and
+  wainscot, on each of the two visible runs), the first per-tile output
   this repo has had — `render_room.py` composites a whole shop into one
   image, which is a proof, not a level. Ground tiles are the third case for
   procedural authoring after furniture and UI chrome, and for the same
@@ -142,10 +143,37 @@ done.** They landed as two separate PRs against roughly the same base, so:
   No outline pass, deliberately. A floor is not an object, and outlining it
   draws the dark diamond grid `assetlib.floor()` already records hitting
   twice by other means.
-  Exported: one Godot `TileSet`, isometric diamond-down, 3 atlas sources, 7
-  tiles. Adding this fourth producer to the export cost four lines in the
-  stager and one function in `build_all.gd`, which is the test of whether
-  the three-section manifest shape was right.
+  **Walls cost one property floors get free.** Horizontally they tile the
+  same way. Vertically they cannot: one world unit of height is
+  `sqrt(6)/4 * W` pixels, irrational at every tile width, so wall tiles carry
+  their full height and never stack. Stated in the manifest
+  (`walls_stack: false`) rather than left to be discovered.
+  Two more defects came out of the wall pass, and both were mine:
+  - Tiles were being lit with a bare `dot(normal, light)` while every other
+    surface in the repo goes through `mesh.rasterize`'s ambient/key/fill/
+    bounce model. Invisible on a floor; on the +y wall it produced lambert
+    **0** — pinned to the darkest step of every ramp, skirting board
+    included. Now imported from `render_room.py`'s own call.
+  - The wainscot then vanished on the shadowed wall, because `cream-2`
+    already resolves to step 0 of a 5-step ramp there and no offset can
+    escape downward. `check_collapse` catches this class — two materials
+    resolving to one colour on one surface — and the fix was to carry the
+    detail in timber rather than in tone. A detail that exists on half a
+    corner is worse than a detail that does not exist.
+  **The check that catches a wrong published number.** `room_corner()` places
+  tiles by projecting world coordinates, which proves the picture and not the
+  manifest. `check_manifest_placement` rebuilds the same scene using nothing
+  but `tileset.json` and the atlas PNGs and requires it to be pixel-identical.
+  Verified failable: a one-pixel error in a wall's `origin_offset` moves 753
+  pixels.
+  Exported: two Godot `TileSet` resources (`ground.tres`, `walls.tres`), 7
+  atlas sources. Adding this fourth producer cost four lines in the stager and
+  one function in `build_all.gd`, which is the test of whether the
+  three-section manifest shape was right. Wall draw offsets ride as resource
+  metadata rather than as `TileData.texture_origin` — the offset is verified,
+  converting it into Godot's frame is a second step headless Godot cannot
+  check, and publishing an unverified conversion would be worse than
+  publishing the verified number and saying so.
   *(The module landed a commit early, riding along on the `ui_icon_pastry`
   commit's `git add -A`. Noted rather than rewritten, since the branch was
   already pushed.)*
@@ -315,11 +343,12 @@ not, not every asset any game has ever shipped.
 
 **Still missing, ranked by how much a small game would feel it**
 
-1. **Wall tiles and their corners.** Floors are done (`tileset.py`, below);
-   walls are not. A wall is a vertical plane rather than a ground plane, so
-   it needs its own projection and its own tiling proof, and corners need an
-   autotile/terrain rule on top. Still the largest remaining gap, and now a
-   well-scoped one: the floor pass established the pattern and the check.
+1. **Autotile / terrain rules, and openings.** Floors and walls both ship
+   (`tileset.py`, below) and a corner assembles correctly, but there is no
+   terrain metadata — nothing that says which tile to place where when a
+   designer paints a region, and no doorway or window opening in the wall
+   set. Both are rule-and-variant work on top of geometry that is now proved,
+   which is a much smaller job than the one this entry used to describe.
 2. **A character portrait / dialogue bust.** The rig renders 46px-tall
    figures; a dialogue box wants a face. Different framing, different
    resolution, and probably a different producer again -- generation is

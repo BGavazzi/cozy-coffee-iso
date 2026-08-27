@@ -249,8 +249,15 @@ def stage_tiles(tiles_dir: Path, assets_dir: Path) -> dict:
     proved the tiling. Passing it through unchanged rather than recomputing
     it here keeps one authority for the geometry.
 
-    `_proof_*.png` are the 3x3 tiling proofs, which are evidence rather than
-    assets and stay out of the export.
+    `_proof_*.png` and `_room_corner.png` are evidence rather than assets and
+    stay out of the export.
+
+    Walls ride in the same manifest but a separate section, because they are a
+    different shape of claim: a floor tile tiles in two directions and a wall
+    tile in one, and each wall carries the `origin_offset` that puts its base
+    on the floor edge it stands on. That number is verified on the Python side
+    by rebuilding the room from the manifest alone and requiring the result to
+    be pixel-identical to the projected one.
     """
     meta_path = tiles_dir / "tileset.json"
     if not meta_path.exists():
@@ -258,9 +265,10 @@ def stage_tiles(tiles_dir: Path, assets_dir: Path) -> dict:
     meta = json.loads(meta_path.read_text())
     dest = assets_dir / "tiles"
     dest.mkdir(parents=True, exist_ok=True)
-    for name, info in meta["tiles"].items():
-        shutil.copyfile(tiles_dir / info["file"], dest / info["file"])
-        info["file"] = f"tiles/{info['file']}"
+    for section in ("tiles", "walls"):
+        for name, info in meta.get(section, {}).items():
+            shutil.copyfile(tiles_dir / info["file"], dest / info["file"])
+            info["file"] = f"tiles/{info['file']}"
     return meta
 
 
@@ -313,9 +321,11 @@ def summarise(build: dict) -> str:
         lines.append(f"{chars} characters + {len(anim) - chars} effects, "
                      f"{clips} clips, {frames} frames")
     tiles = build.get("tiles", {}).get("tiles", {})
-    if tiles:
-        lines.append(f"{len(tiles)} tile types, "
-                     f"{sum(t['variants'] for t in tiles.values())} variants")
+    walls = build.get("tiles", {}).get("walls", {})
+    if tiles or walls:
+        lines.append(f"{len(tiles)} floor types + {len(walls)} wall types, "
+                     f"{sum(t['variants'] for t in tiles.values()) + sum(t['variants'] for t in walls.values())} "
+                     f"variants")
     ui = build.get("ui", {}).get("icons", {})
     if ui:
         nine = sum(1 for i in ui.values() if "nine_slice" in i)

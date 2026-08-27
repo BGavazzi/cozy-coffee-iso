@@ -141,7 +141,7 @@ sections instead of one.
 | `out/sprites/manifest.json` | `SpriteFrames` | one `"idle"` animation, 8 `AtlasTexture` frames; game code sets `.frame = direction_index` directly, since there is no motion, just 8 fixed poses of a camera-fixed rig |
 | `out/sprites/atlas.json` | `SpriteFrames` | one animation per *(clip, facing)*, named `"<clip>_<dir>"`, frames cut from the packed sheet as `AtlasTexture` regions at the clip's own fps |
 | `out/ui/` | `StyleBoxTexture` | nine-slice chrome only, margins from `nine_slice.json`; plain icons get no wrapper because the imported PNG already *is* the `Texture2D` a `Control` wants, and they are load-checked instead |
-| `out/tiles/` | `TileSet` | one `TileSetAtlasSource` per tile type, isometric diamond-down, tile size read from `tileset.json` rather than restated |
+| `out/tiles/` | `TileSet` x2 | `ground.tres` (floors) and `walls.tres`; one `TileSetAtlasSource` per tile type, isometric diamond-down, tile size read from `tileset.json` rather than restated. Wall draw offsets ride as resource metadata rather than as `TileData.texture_origin`, because converting into that frame is a second step headless Godot cannot check |
 
 The row arithmetic for the animation sheets is resolved in Python and shipped
 as explicit rects rather than recomputed in GDScript. `animate.py` lays clips
@@ -180,10 +180,10 @@ layout.
 Tiles were the test of whether that shape was right: adding a fourth
 producer cost four lines in the stager and one function in `build_all.gd`.
 
-Output: `godot_export/project/resources/`, **53 resources** for the current
+Output: `godot_export/project/resources/`, **54 resources** for the current
 library -- 32 prop `SpriteFrames`, 17 animation `SpriteFrames` (9 characters,
-8 effects, 3032 frames), 3 nine-slice `StyleBoxTexture`, and one `TileSet`
-carrying 3 atlas sources and 7 tiles -- referencing the staged PNGs by path
+8 effects, 3032 frames), 3 nine-slice `StyleBoxTexture`, and two `TileSet`
+resources carrying 7 atlas sources -- referencing the staged PNGs by path
 rather than duplicating them. `barista.tres` alone
 carries 336 `AtlasTexture` regions across 56 named `<clip>_<dir>`
 animations.

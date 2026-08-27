@@ -259,4 +259,46 @@ func _build_tiles(tiles: Dictionary) -> int:
 
 	if n > 0 and not _save(ts, "res://resources/tiles/ground.tres", "tileset"):
 		return 0
+
+	# Walls get their own TileSet. Their texture region is 32x112 against a
+	# 64x32 grid -- a wall is taller than the cell it stands on -- so they
+	# cannot share a source set with the floors.
+	#
+	# The per-tile draw offset is carried as resource METADATA rather than
+	# written into TileData.texture_origin, and that restraint is deliberate.
+	# tileset.py's origin_offset is verified: the room is rebuilt from
+	# tileset.json alone and required to be pixel-identical to the projected
+	# one, and a one-pixel error in it moves 753 pixels. Converting it into
+	# texture_origin's own frame is a second, unverified step, because headless
+	# Godot has no renderer to check it against. Publishing the verified number
+	# and saying it is not yet converted beats publishing a converted number
+	# nobody has looked at.
+	var walls = tiles.get("walls", {})
+	if walls.is_empty():
+		return n
+	var wts := TileSet.new()
+	wts.tile_shape = TileSet.TILE_SHAPE_ISOMETRIC
+	wts.tile_layout = TileSet.TILE_LAYOUT_DIAMOND_DOWN
+	wts.tile_offset_axis = TileSet.TILE_OFFSET_AXIS_HORIZONTAL
+	wts.tile_size = Vector2i(size[0], size[1])
+	var offsets := {}
+	var runs := {}
+	for wall_name in walls.keys():
+		var info = walls[wall_name]
+		var tex := _load_tex("res://assets/%s" % info["file"], wall_name)
+		if tex == null:
+			continue
+		var src := TileSetAtlasSource.new()
+		src.texture = tex
+		src.texture_region_size = Vector2i(info["tile_size"][0], info["tile_size"][1])
+		for v in range(int(info["variants"])):
+			src.create_tile(Vector2i(v, 0))
+		wts.add_source(src)
+		offsets[wall_name] = info["origin_offset"]
+		runs[wall_name] = info["run_step"]
+		n += 1
+	wts.set_meta("origin_offsets", offsets)
+	wts.set_meta("run_steps", runs)
+	wts.set_meta("stackable", false)   # see tileset.py's WALL_HEIGHT comment
+	_save(wts, "res://resources/tiles/walls.tres", "wall tileset")
 	return n

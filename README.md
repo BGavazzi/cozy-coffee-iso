@@ -50,7 +50,8 @@ authoring rather than sampling.
     python tools/scaffold_subjects.py photos/ -o subjects.yaml
     python tools/factory.py subjects.yaml          # then the whole batch
 
-    # ground tiles, with a 3x3 coverage proof that they actually tessellate
+    # floor + wall tiles, with a coverage proof that they actually tessellate
+    # and a room corner rebuilt from the manifest alone to check the numbers
     python tools/tileset.py --proof
 
     # UI: icons generated, chrome drawn, one contact sheet over both
