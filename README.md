@@ -44,6 +44,8 @@ authoring rather than sampling.
     python tools/concept.py "a ceramic mug" --reference photos/mug.jpg -o out/y.png
 
     # same thing, interactively -- ip_scale needs eyeballing per reference
+    # ...or all of the below from one browser tab: concept -> sprite,
+    # the drawn producers, and the Godot export
     pip install gradio && python tools/concept_ui.py   # http://127.0.0.1:7860
 
     # a folder of reference photos -> a subject list, heights left to type

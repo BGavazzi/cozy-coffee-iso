@@ -120,6 +120,17 @@ done.** They landed as two separate PRs against roughly the same base, so:
   out of the build and only one of them was machine-visible; write-up:
   `ART_CRITIQUE.md`, "Drawing the chrome, and three things only looking
   caught".
+- **The UI has three tabs now, not one** (same PR #6, later pass).
+  `concept_ui.py` reached stage 1 and, after an earlier pass, stages 2-5.
+  Everything added since — `ui_chrome.py`, `tileset.py`, the widened
+  `package_godot.py` — was reachable only from a terminal, which made the
+  half of the library that always works the half nobody could see. So:
+  *Concept → sprite* unchanged, *Drawn: chrome + tiles* running both
+  procedural producers with their previews and their proofs, and *Export to
+  Godot* running the stage + import + build chain and reporting the resource
+  count. Both new handlers exercised directly, not just rendered: 7/7 chrome
+  pieces, tiles clean including the pixel-identical manifest rebuild, and 54
+  Godot resources.
 - **Ground tiles and walls, with the tiling proved rather than eyeballed**
   (same PR #6, later pass). `tools/tileset.py` builds three floor types
   (plain, plank, checker; 7 variants) and four wall types (plain and

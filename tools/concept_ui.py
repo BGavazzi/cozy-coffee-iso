@@ -6,6 +6,17 @@ through stages 2-5 (`lift.py`, `ingest.py`, `render_batch.py`) to a sprite
 contact sheet, so a whole subject can be taken from prompt to reviewable
 asset without leaving the browser.
 
+Three tabs now, because a generation is not the only thing this repo makes:
+
+    Concept -> sprite     stage 1, then stages 2-5 on the same concept
+    Drawn: chrome + tiles `ui_chrome.py` and `tileset.py` -- no GPU, no seed
+    Export to Godot       `package_godot.py` + two headless Godot passes
+
+The second tab exists for a reason worth stating. Everything on the first is
+slow and uncertain and wants watching; the drawn producers are neither, and
+being reachable only from a terminal made the half of the library that
+always works the half nobody could see.
+
 `PIPELINE.md`'s "Reference images" section measured that `--ip-scale`'s
 right value depends on how much the reference's own material/shape conflicts
 with the prompt -- there is no single good default, only a per-reference one.
@@ -234,11 +245,89 @@ prop default:
 """
 
 
+def run_procedural(target: int, tile_width: int):
+    """The two producers that need no GPU, no seed and no prompt.
+
+    They live behind a button here for a plain reason: everything else in
+    this app is a generation, and a generation is slow, uncertain and worth
+    watching. `ui_chrome` and `tileset` are neither -- they are deterministic
+    and take a couple of seconds -- but they were only reachable from a
+    terminal, which made the half of the library that always works the half
+    nobody could see. `ART_CRITIQUE.md` records the same asymmetry in the art
+    itself: the pipeline makes things, and the abstractions are drawn.
+
+    Returns (chrome preview, room corner, log).
+    """
+    import ui_chrome
+    import tileset as T
+    from pixelize import load_palette
+
+    lines, ramps = [], load_palette()
+    try:
+        results = [ui_chrome.build(name, target / 64.0, ramps)
+                   for name in ui_chrome.CHROME]
+        ok = sum(1 for r in results if r["ok"])
+        lines.append(f"chrome: {ok}/{len(results)} pieces at {target}px")
+        for r in results:
+            if not r["ok"]:
+                lines.append(f"  FAIL {r['name']}: {r['detail']}")
+    except Exception as e:
+        lines.append(f"chrome failed: {type(e).__name__}: {e}")
+
+    try:
+        rc = T.build(tile_width, proof=True)
+        lines.append(f"tiles: {'ok' if rc == 0 else 'PROBLEMS -- see console'}"
+                     f" at {tile_width}px")
+    except Exception as e:
+        lines.append(f"tiles failed: {type(e).__name__}: {e}")
+
+    chrome_png = ROOT / "out" / "ui" / "_preview.png"
+    try:
+        import preview_ui
+        chrome_png = preview_ui.build(3)
+    except Exception as e:
+        lines.append(f"chrome preview failed: {type(e).__name__}: {e}")
+
+    corner = ROOT / "out" / "tiles" / "_room_corner.png"
+    return (str(chrome_png) if chrome_png.exists() else None,
+            str(corner) if corner.exists() else None,
+            "\n".join(lines))
+
+
+def run_export():
+    """Stage + import + build, straight through to Godot resources."""
+    import export_godot as E
+    import package_godot as P
+    lines = []
+    try:
+        build = P.stage()
+        lines.append(P.summarise(build))
+    except Exception as e:
+        return f"staging failed: {type(e).__name__}: {e}"
+    godot = E.find_godot(None)
+    if not godot.exists():
+        return "\n".join(lines + [
+            f"staged, but no Godot binary at {godot} -- set $GODOT_BIN or "
+            f"run tools/export_godot.py --godot-bin PATH to finish the "
+            f"import and build passes."])
+    try:
+        E.run_godot(godot, ["--import"])
+        E.run_godot(godot, ["--script", "build_all.gd"])
+    except SystemExit as e:
+        return "\n".join(lines + [str(e)])
+    problems = E.check_nine_slice_roundtrip(build)
+    lines += problems or ["nine-slice margins match the drawn insets"]
+    n = len(list((E.PROJECT_DIR / "resources").rglob("*.tres")))
+    lines.append(f"{n} resources -> {E.PROJECT_DIR / 'resources'}")
+    return "\n".join(lines)
+
+
 def build_app():
     import gradio as gr
     import concept as C
 
-    with gr.Blocks(title="Cozy Coffee -- Stage 1 concept generation") as app:
+    with gr.Blocks(title="Cozy Coffee -- asset factory") as app:
+      with gr.Tab("Concept -> sprite"):
         gr.Markdown(
             "## Stage 1: concept art\n"
             "Prompt alone, or prompt + one or more reference images "
@@ -309,6 +398,52 @@ def build_app():
                   outputs=[raw_out, matte_out, status])
         cont.click(continue_to_sprites, inputs=[subject, height],
                    outputs=[sheet_out, sprite_status])
+
+      with gr.Tab("Drawn: chrome + tiles"):
+        gr.Markdown(
+            "## The half that needs no model\n"
+            "UI chrome and ground tiles are **drawn**, not generated -- see "
+            "`ART_CRITIQUE.md`, \"Icons split by whether they depict a "
+            "thing\". A speech bubble and a floor tile are geometry with a "
+            "semantic role, so SDXL renders them as photographs of "
+            "something frame-shaped and a few lines of code render them "
+            "correctly, at any size, on every run.\n\n"
+            "No GPU, no seed, a couple of seconds. Every piece is held to "
+            "the same speckle and palette checks the generated icons pass, "
+            "and the tiles additionally prove their own tiling: a 3x3 "
+            "coverage count per floor type, a 3-tile run per wall, and a "
+            "room corner rebuilt from `tileset.json` alone and required to "
+            "be pixel-identical to the projected one.")
+        with gr.Row():
+            chrome_target = gr.Number(value=64, precision=0,
+                                      label="icon size (px)")
+            tile_w = gr.Number(value=64, precision=0,
+                               label="tile width (px, multiple of 4)",
+                               info="Height is half. A width that is not a "
+                                    "multiple of 4 puts the lattice step on "
+                                    "half pixels and is rejected.")
+        draw_go = gr.Button("Draw chrome + tiles", variant="primary")
+        with gr.Row():
+            chrome_out = gr.Image(label="UI: generated icons and drawn chrome")
+            corner_out = gr.Image(label="Tiles: room corner")
+        draw_status = gr.Textbox(label="Result", lines=8)
+        draw_go.click(run_procedural, inputs=[chrome_target, tile_w],
+                      outputs=[chrome_out, corner_out, draw_status])
+
+      with gr.Tab("Export to Godot"):
+        gr.Markdown(
+            "## Stage 10: engine export\n"
+            "Stages every producer -- props, animation sheets, UI, tiles -- "
+            "then runs Godot headless twice: an import pass so the PNGs "
+            "become real file-backed textures, and a build pass that writes "
+            "`SpriteFrames`, `StyleBoxTexture` and `TileSet` resources.\n\n"
+            "Needs a Godot 4.3 binary (`$GODOT_BIN`, or the portable build "
+            "at the path `export_godot.py` names). Without one this still "
+            "stages the files and says so rather than failing.")
+        export_go = gr.Button("Stage + import + build", variant="primary")
+        export_status = gr.Textbox(label="Result", lines=12)
+        export_go.click(run_export, inputs=None, outputs=export_status)
+
     return app
 
 
