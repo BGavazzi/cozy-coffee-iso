@@ -211,6 +211,19 @@ foliage, fabric and skin — most of the material range a 2D game needs.
 | 9 (human critique) | working — `review_queue.py`, contact sheet + ratchet |
 | 10 (engine export) | working — `export_godot.py`, 22 Godot `SpriteFrames` resources built from the current sprite library |
 
+**UI art takes a shorter route through the same parts.** An icon has no mesh
+and exactly one azimuth, so `tools/ui_forge.py` runs stage 1 (via
+`concept()`'s `positive_override`, the custom escape hatch) straight into
+stage 6 (`pixelize`'s snap + modal downsample + outline), skipping 2 through
+5 because they have nothing to contribute rather than because they are slow.
+It builds the fourteen `cat: ui` entries `assets.yaml` declares. Order
+matters in the quantizer: pixels are snapped to the palette *before* the
+modal downsample, because `downsample_modal` assumes palette-exact input --
+which the 3D path gets free from `shade_toon` and the flat path does not.
+Getting that backwards speckles the result (13.2% isolated pixels versus
+1.5% on the same icon). Icons are held to `art_review`'s own 6.2% isolated-
+pixel floor, not a softer one.
+
 `isorender.py` is a software raytracer and `mesh.py` an orthographic rasterizer,
 both standing in for Blender so the deterministic half runs with no GPU or DCC
 dependency. Stages 4-9 are complete end to end.

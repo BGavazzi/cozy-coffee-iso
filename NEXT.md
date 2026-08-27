@@ -76,6 +76,13 @@ done.** They landed as two separate PRs against roughly the same base, so:
   than clean: 1 production-ready, 1 correctly gated, 1 that passes the metric
   with the wrong shape. Write-up: `ART_CRITIQUE.md`, "UI art, and the same
   wrong-check mistake made twice in one session".
+  **Known gap, stated rather than hidden:** `ui_forge` writes to `out/ui/`
+  and nothing exports it. `package_godot.py` reads
+  `out/sprites/manifest.json`, whose shape is 8 direction frames per asset,
+  and a single-frame icon does not fit that. Forcing it in would be worse
+  than leaving it visible. This is the same "the two halves don't meet"
+  problem `atlas.json` already has (animated characters and FX have no Godot
+  export either) and both want solving together, not one at a time.
 - **`MIN_FILL` corrected, 0.12 → 0.02** (same PR #6, later pass). The
   stage-1 frame-fill floor had no bracketing recorded and was rejecting
   better work than it admitted. Its premise (fill predicts reconstruction
