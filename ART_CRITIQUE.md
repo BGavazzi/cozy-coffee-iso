@@ -4236,3 +4236,66 @@ no bracket recorded is a guess, and a guess that gates work is expensive in
 a direction nobody measures, because the things it rejects leave no trace.
 `MIN_FILL` cost this library four usable assets per batch for as long as it
 has existed, and nothing anywhere reported that.
+
+## UI art, and the same wrong-check mistake made twice in one session
+
+`assets.yaml` declares fourteen `cat: ui` entries and none of them had ever
+been rendered -- the largest declared-but-unbuilt category in the manifest.
+The reason is structural: the pipeline is concept → mesh → 8 azimuths, and
+an icon has no mesh and one azimuth. Sending an icon through `lift.py` would
+ask TripoSR to invent depth for something deliberately flat, which is the
+character-ceiling mistake pointed the other way.
+
+`tools/ui_forge.py` takes the short path -- generate, matte, snap, downsample,
+outline -- reusing `concept.concept()`'s `positive_override` (the same custom
+escape hatch the Gradio UI exposes) and `pixelize`'s existing functions, so
+no new generation or quantization code exists. Stages 2-5 are skipped because
+they have nothing to contribute, which is a different statement from skipping
+them because they are slow.
+
+Two things went wrong, and both are worth keeping because they are the same
+mistake in different clothes.
+
+**The check could not fail.** The first `check_icon` tested coverage and
+palette-exactness. Palette-exactness is guaranteed by construction -- the
+snap only ever picks palette colours -- and coverage is nearly always fine,
+so the check passed all three of the first icons generated. Pointing
+`art_review` at the same three files blocked every one of them on isolated
+pixels: 13.4%, 19.1%, 33.5% against its 6.2% authored-art floor, and the eye
+agreed with the instrument. That is `MIN_FILL` again, one file over and
+within the same session -- a threshold that cannot reject the failure it
+exists to catch. The speckle reading is now the check, and deliberately at
+`art_review`'s own number rather than a softer one invented to let this tool
+pass: an icon and a sprite are the same kind of object once they are
+palette-quantized pixels.
+
+**The quantization order was backwards.** `downsample_mean_then_snap` averages
+a block and then snaps the average, which salt-and-peppers anything with fine
+detail: adjacent blocks average to slightly different RGB and land on
+different ramp steps. `downsample_modal` cannot do that -- its docstring says
+"invents nothing", it only ever picks a colour already dominant in the block
+-- but it assumes palette-exact input, which the 3D path gets free from
+`shade_toon` and the 2D path did not have. Snapping every pixel first and
+then taking the mode puts the flat path in the condition the modal
+downsampler was written for:
+
+        mean-then-snap   snap-then-modal
+        18.8%            15.5%    ui_coin
+        13.2%             1.5%    ui_icon_espresso
+        39.1%             5.8%    ui_star_rating
+
+Two of three cross from blocked to comfortably under the floor, and the fix
+is one line of ordering plus reusing the function that already existed
+rather than writing a de-speckler.
+
+Where that leaves it, stated plainly rather than as three-for-three:
+`ui_icon_espresso` is genuinely production-clean -- flat shapes, cup, handle
+and saucer all reading at 64px. `ui_coin` is still gated at 14.7%, correctly,
+because the generated coin is an ornate relief medallion and no quantizer
+rescues that; it needs a reseed or a plainer prompt. `ui_star_rating` passes
+the speckle check at 5.8% and is still **wrong** -- an eight-pointed
+starburst where the prompt asked for a five-pointed star. No metric here can
+see that, and none should be invented to: "is it the shape I asked for" is
+the human tier this repo has always said is the whole point. One clean, one
+correctly rejected, one that needs a person to look at it is an honest first
+result for a category that had nothing in it an hour ago.

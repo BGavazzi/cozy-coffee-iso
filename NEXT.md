@@ -63,6 +63,19 @@ done.** They landed as two separate PRs against roughly the same base, so:
   `review/sheet.png`. Write-up: `ART_CRITIQUE.md`, "The UI stopped at the
   render; a 'Continue' button now carries it to a sprite sheet".
 
+- **UI art has a path now** (same PR #6, later pass). `tools/ui_forge.py`
+  builds the fourteen `cat: ui` entries `assets.yaml` has always declared and
+  never rendered — the largest declared-but-unbuilt category. Flat 2D, so it
+  skips stages 2-5 entirely (an icon has no mesh and one azimuth), reusing
+  `concept()`'s custom-prompt override and `pixelize`'s own functions rather
+  than adding a generation path. Two real fixes came out of it: the first
+  `check_icon` couldn't fail (coverage + palette-exactness only, while
+  `art_review` blocked all three icons on speckle), and the quantization
+  order was backwards — snap-then-modal instead of mean-then-snap took
+  espresso from 13.2% isolated pixels to 1.5%. First result is honest rather
+  than clean: 1 production-ready, 1 correctly gated, 1 that passes the metric
+  with the wrong shape. Write-up: `ART_CRITIQUE.md`, "UI art, and the same
+  wrong-check mistake made twice in one session".
 - **`MIN_FILL` corrected, 0.12 → 0.02** (same PR #6, later pass). The
   stage-1 frame-fill floor had no bracketing recorded and was rejecting
   better work than it admitted. Its premise (fill predicts reconstruction
