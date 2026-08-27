@@ -96,6 +96,23 @@ done.** They landed as two separate PRs against roughly the same base, so:
   exactly right every time. Same "things, not abstractions" ceiling as the
   character work, in a third costume. Write-up: `ART_CRITIQUE.md`, "Icons
   split by whether they depict a thing".
+- **UI chrome is drawn now, not generated** (same PR #6, later pass).
+  `tools/ui_chrome.py` is the answer to the finding above: the six chrome
+  ids plus an empty star, authored as a grid of material tokens and resolved
+  through the same palette ramps and the same `apply_outline` the sprites
+  use. No GPU, no seed, deterministic. All seven clear `ui_forge`'s own gate
+  at 32 / 64 / 128 px (worst isolated ratio 6.1% / 3.6% / 1.6% against the
+  6.2% cap), so the category is now **14 usable of 15 declared** —
+  `ui_icon_pastry` still gated and `ui_coin`'s generated version retired.
+  `tools/preview_ui.py` builds the contact sheet, labelled by producer.
+  The part worth having beyond correctness is **nine-slice metadata**, which
+  generation cannot produce at all: `out/ui/nine_slice.json` carries insets
+  for the bubble, banner and badge, `check_nine_slice` verifies the stretch
+  bands are uniform *on the resolved pixels*, and `expand()` performs the
+  stretch so the numbers are exercised rather than filed. Three defects came
+  out of the build and only one of them was machine-visible; write-up:
+  `ART_CRITIQUE.md`, "Drawing the chrome, and three things only looking
+  caught".
   **Known gap, stated rather than hidden:** `ui_forge` writes to `out/ui/`
   and nothing exports it. `package_godot.py` reads
   `out/sprites/manifest.json`, whose shape is 8 direction frames per asset,

@@ -14,8 +14,18 @@ after a stage-1 threshold that had been silently discarding good work was
 measured and corrected). Characters do not:
 stage 2's single-view reconstruction turns anything with limbs, a cape or a
 held weapon into a fused blob, and no prompt change fixes it (both attempts
-measured, one made it worse). See `NEXT.md`'s accepted-limitations list before
-pointing this at a character.
+measured, one made it worse). Neither does abstract UI chrome: asked for a
+speech bubble or a nameplate, SDXL renders a photographed picture in a frame,
+and three of those passed every automated check because they are wrong-*shape*
+failures. Chrome is drawn instead (`tools/ui_chrome.py`), which is also the
+only way to get nine-slice insets at all. See `NEXT.md`'s
+accepted-limitations list before pointing this at a character.
+
+The line those two share is worth stating once: **this pipeline makes things,
+not abstractions.** A cup is a thing. A frog knight and a nine-slice border
+are not, for opposite reasons -- one is too articulated for single-view
+reconstruction, the other is geometry with a semantic role that wants
+authoring rather than sampling.
 
 ## The division of labour
 
@@ -35,6 +45,11 @@ pointing this at a character.
 
     # same thing, interactively -- ip_scale needs eyeballing per reference
     pip install gradio && python tools/concept_ui.py   # http://127.0.0.1:7860
+
+    # UI: icons generated, chrome drawn, one contact sheet over both
+    python tools/ui_forge.py             # the object-depicting icons
+    python tools/ui_chrome.py            # frames, banners, star, coin, ticket
+    python tools/preview_ui.py           # -> out/ui/_preview.png
 
     python tools/palette_forge.py        # compute + validate the 40-colour palette
     python tools/animate.py --fx         # the deliverable: sheets + atlas.json

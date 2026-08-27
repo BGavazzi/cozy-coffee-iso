@@ -224,6 +224,31 @@ Getting that backwards speckles the result (13.2% isolated pixels versus
 1.5% on the same icon). Icons are held to `art_review`'s own 6.2% isolated-
 pixel floor, not a softer one.
 
+**And a third route, for the part of the UI that is not art at all.** Running
+all fourteen split them on an axis none of those checks can see: every icon
+that depicts an *object* came out usable, and every piece of abstract chrome
+came out wrong -- a speech bubble as a photographed tablet, a nameplate as a
+framed panel, a five-pointed star as an eight-pointed burst. Three of those
+passed the isolated-pixel check comfortably, because they are wrong-*shape*
+failures and shape is the human tier. So `tools/ui_chrome.py` draws them
+instead: a Canvas of material tokens, resolved through the same palette ramps
+and the same `apply_outline`, with no generation step and no GPU. It is the
+answer `assetlib.py` already gives for furniture, applied one category over.
+
+Drawing buys a thing generating cannot: **nine-slice metadata**. A generated
+64x64 speech bubble is that size forever; a drawn one declares which rows and
+columns tile, so one source serves every dialogue box. `check_nine_slice`
+verifies those bands really are uniform on the *resolved pixels* -- and caught
+its own author on the first run, with the bubble's bottom inset set from where
+the body ends rather than where the rounded corner ends. `expand()` performs
+the stretch, so the insets are exercised rather than merely recorded.
+
+| target | worst isolated-pixel ratio across the 7 pieces (cap 6.2%) |
+|---|---|
+| 32 px | 6.1% |
+| 64 px | 3.6% |
+| 128 px | 1.6% |
+
 `isorender.py` is a software raytracer and `mesh.py` an orthographic rasterizer,
 both standing in for Blender so the deterministic half runs with no GPU or DCC
 dependency. Stages 4-9 are complete end to end.

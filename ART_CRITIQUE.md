@@ -4396,6 +4396,62 @@ So the honest count for the category is **7 usable of 14 declared**, not
 9 of 12 -- and the correct next move is not more seeds but moving the six
 chrome entries out of `ui_forge`'s prompt table and into procedural code.
 
+## Drawing the chrome, and three things only looking caught
+
+That move is now made: `tools/ui_chrome.py` draws the six failing pieces
+plus an empty star, as a grid of material tokens resolved through the same
+palette ramps and the same `apply_outline` the sprites use. All seven clear
+`ui_forge`'s own gate rather than a softer one, at 32, 64 and 128 px --
+worst isolated-pixel ratio 6.1% / 3.6% / 1.6% against the 6.2% cap.
+
+The interesting part is not that they pass. Procedural output passing a
+speckle check is close to tautological, since nothing procedural speckles.
+It is that **three separate defects showed up here, and not one of them was
+visible to any check in this repo until something was built to look.**
+
+*One.* The nine-slice insets were wrong on the first run, and
+`check_nine_slice` caught it: the bubble's bottom inset was set from where
+the body ends rather than from where the rounded corner ends, so four rows
+of corner sat inside the vertical stretch band and would have smeared every
+time a dialogue box grew taller. This is the one case where a check did the
+work -- and only because the check was written to verify the specific claim
+the metadata makes ("these bands tile"), rather than to score the image.
+That is the difference between a check and a metric, and it is worth being
+precise about: `MIN_FILL` was a metric standing in for a claim nobody had
+stated. `check_nine_slice` is a claim, checked.
+
+It also moved once, for a reason: it originally read the material Canvas and
+now reads the resolved pixels. `apply_outline` runs between the two and can
+turn a uniform band non-uniform at its edges, so checking the materials was
+checking the easier of two available things.
+
+*Two.* The star's edge is now floored at 2 px instead of scaling freely,
+because at `--target 32` a proportional 1.1 px edge is a one-pixel *diagonal*
+run, and a one-pixel diagonal has no four-neighbour of its own colour
+anywhere along it: 7.8% isolated, 13.3% for the empty variant. Two readings
+were available. The cap is calibrated on generated icons, where isolated
+pixels genuinely are speckle, so it is arguably over-strict on a deliberate
+thin diagonal -- and raising it would have let the art through. That is
+tuning the check to fit the art, the mistake this file already records twice
+in one session. The art moved instead, and thickening an edge at 32 px is
+what a pixel artist does anyway.
+
+*Three*, and the one with no check behind it at all. The coin's first
+highlight was a small crescent near the centre, and at 64 px it read as a
+crescent moon sitting on a yellow circle. It measured 1.1% isolated -- one of
+the cleanest numbers in the set -- and it was wrong. A specular has to hug
+the edge it is reflecting off; anything drawn inland is a shape, not a
+highlight. Nothing found that except opening the PNG.
+
+Which is the same lesson as the generated frames, arriving from the opposite
+direction. Generation produced things that scored well and were the wrong
+shape; drawing produced a thing that scored well and was the wrong shape. The
+metrics are not failing at their jobs -- speckle and coverage are real and
+they catch real defects. They simply have nothing to say about whether the
+picture is of the right thing, and no amount of adding metrics will change
+that, which is exactly why `review_queue.py` exists and why the honest
+category count is the one an eye produced, not the one the report did.
+
 ## UI art, and the same wrong-check mistake made twice in one session
 
 `assets.yaml` declares fourteen `cat: ui` entries and none of them had ever
