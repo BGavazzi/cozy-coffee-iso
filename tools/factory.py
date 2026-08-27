@@ -16,14 +16,39 @@ Subject list format (YAML or JSON, a list of objects):
     - name: teapot
       prompt: a ceramic teapot
       height: 0.28
+      reference: photos/teapot.jpg   # optional -- see concept.py's
+      ip_scale: 0.45                 # "Reference images" section
+      kind: prop                     # prop (default) or character --
+                                      # see concept.py's NEGATIVE_CHARACTER
+
+A subject list can be scaffolded from a folder of photographs rather than
+typed:
+
+    python tools/scaffold_subjects.py photos/ -o subjects.yaml
+
+which fills in name, prompt and reference for every image (and treats a
+subdirectory as one subject with several reference views), leaving only the
+heights to type. See that file for why heights are left null rather than
+defaulted.
 
 `prompt` defaults to `name` with underscores turned to spaces. `height` is in
 tile units and is required -- `ingest.fit()` has no other way to know a
-teapot from a table.
+teapot from a table. `reference` is optional -- a single path or a YAML list
+of paths -- and when given, stage 1 conditions on it via IP-Adapter as well
+as `prompt`. `kind: character` is for a prompt naming a specific character
+or franchise, which pulls SDXL toward fan-art/character-sheet training data
+harder than a generic prop noun does; see `concept.py`'s module docstring.
 
 Each stage is skipped when its output file already exists, so a batch that
 fails partway through resumes rather than re-spending GPU time stage 1 already
 paid for. `--force` clears one subject's outputs first.
+
+A concept that fails the stage-1 fitness gate is automatically retried on the
+next seed up, twice, before the subject is given up on -- measured to rescue
+three of four genuinely-gated subjects, all on the first retry.
+`--retry-seeds 0` restores the old one-shot behaviour. See `RETRY_SEEDS` for
+the numbers, for the failure class it does not rescue, and for the correction
+this sentence used to be on the wrong side of.
 """
 from __future__ import annotations
 
@@ -39,6 +64,39 @@ CONCEPT_DIR = ROOT / "out" / "concept"
 MESH_DIR = ROOT / "out" / "mesh"
 SPRITE_DIR = ROOT / "out" / "sprites"
 
+# Extra seeds to try when a concept fails the stage-1 gate, before giving up.
+#
+# Measured, and measured twice, because the first attempt was wrong. A sweep
+# against the stored factory report said five of six gated subjects were
+# rescued by reseeding; re-establishing the seed-1 baseline under the CURRENT
+# gate showed three of those nine (`book`, `fern`, `bicycle`) already pass on
+# seed 1 -- the report predated B1's MAX_SOFT_ALPHA/DETACHED_SOFT_FLOOR split
+# and the recalibration, not the reseed, had fixed them.
+#
+# Corrected tally against a fresh baseline: of four genuinely-gated subjects
+# retried, three passed (`wine_glass` 11.9%, `cake_slice` 10.9%, `croissant`
+# 2.6% frame fill), all on the FIRST retry. Hence 2 rather than 3 -- the
+# third attempt bought nothing in that sample and costs a full SDXL
+# generation per subject. See `ART_CRITIQUE.md`, "The 29% that was being
+# thrown away", for the full correction.
+#
+# What it does not fix: `wooden_spoon` failed at all three seeds (7.7%,
+# 11.9%, 5.4%). A long thin object is systematically small in frame once
+# `STYLE`'s "generous margin" clause has had its way, and no amount of
+# reseeding changes the shape of a spoon. Reseeding rescues seed-specific
+# noise -- collage, a bad matte, a near-miss crop -- not a subject whose
+# geometry fights the framing.
+#
+# And the hazard, which is worth knowing before raising this number:
+# reseeding optimises against the GATE, and the gate is a proxy. `bread_loaf`
+# gated on seed 1, passed on seed 2, reached stage 5 -- and its sprites are
+# still 5-of-8 blocked, identical to before. Enough retries will eventually
+# find a concept that satisfies stage 1's heuristics without reconstructing
+# any better, which is tuning to the metric in a thin disguise. 2 is modest
+# enough not to grind far. What actually protects the library is downstream:
+# `art_review` reads the sprites and blocked `bread_loaf` both times.
+RETRY_SEEDS = 2
+
 
 def _load_subjects(path: Path) -> list[dict]:
     text = path.read_text(encoding="utf-8")
@@ -47,6 +105,21 @@ def _load_subjects(path: Path) -> list[dict]:
         data = yaml.safe_load(text)
     else:
         data = json.loads(text)
+    # A subject list scaffolded by `scaffold_subjects.py` arrives with every
+    # height null on purpose -- a filename cannot tell `ingest.fit()` a teapot
+    # from a table, and a plausible default would put a wrong number in every
+    # row rather than a missing one in a few. So the whole file is checked
+    # first and every offender named, because finding out about row 31 after
+    # thirty SDXL generations is the expensive way to learn it.
+    missing = [s.get("name", f"row {i}") for i, s in enumerate(data)
+               if s.get("height") is None]
+    if missing:
+        raise SystemExit(
+            f"{path}: {len(missing)} subject(s) have no height: "
+            + ", ".join(missing[:12]) + ("..." if len(missing) > 12 else "")
+            + "\nheight is in tile units (a person is ~1.6, a mug ~0.12) and "
+              "cannot be inferred from a name or a photo.")
+
     subs = []
     for s in data:
         name = s["name"]
@@ -55,6 +128,9 @@ def _load_subjects(path: Path) -> list[dict]:
             "prompt": s.get("prompt", name.replace("_", " ")),
             "height": s["height"],
             "seed": s.get("seed", 1),
+            "reference": s.get("reference"),
+            "ip_scale": s.get("ip_scale"),  # None -> concept.py's own default
+            "kind": s.get("kind", "prop"),
         })
     return subs
 
@@ -66,12 +142,19 @@ def _clear(name: str) -> None:
         p.unlink(missing_ok=True)
 
 
-def run_subject(spec: dict, pipe, model, ramps) -> dict:
+def run_subject(spec: dict, pipe, model, ramps, retries: int = RETRY_SEEDS) -> dict:
     """Concept -> lift -> ingest -> render, skipping stages already done.
 
     Returns a result dict rather than raising, because one bad subject in a
     batch of thirty should not cost the other twenty-nine their GPU time --
     the whole point of this file is to survive that.
+
+    A concept that fails the stage-1 gate is retried on the next seed up to
+    `retries` times. See `RETRY_SEEDS` for why, and for what this does not
+    fix. Retries only apply to a concept generated in THIS run: an existing
+    `out/concept/<name>.png` is respected exactly as before, because "skip
+    what is already done" is what makes a half-finished batch resumable.
+    Use `--force <name>` to redo one from scratch.
     """
     import concept as C
     import ingest as I
@@ -83,12 +166,33 @@ def run_subject(spec: dict, pipe, model, ramps) -> dict:
 
     png = CONCEPT_DIR / f"{name}.png"
     try:
-        if not png.exists():
+        if png.exists():
+            fitness = C.check_concept_fitness(png)
+        else:
             CONCEPT_DIR.mkdir(parents=True, exist_ok=True)
-            C.concept(spec["prompt"], spec["seed"], out=png, pipe=pipe)
-        fitness = C.check_concept_fitness(png)
+            ref_kwargs = {"reference": spec["reference"], "kind": spec["kind"]}
+            if spec["ip_scale"] is not None:
+                ref_kwargs["ip_scale"] = spec["ip_scale"]
+            for attempt in range(retries + 1):
+                seed = spec["seed"] + attempt
+                C.concept(spec["prompt"], seed, out=png, pipe=pipe,
+                          **ref_kwargs)
+                fitness = C.check_concept_fitness(png)
+                if not fitness:
+                    if attempt:
+                        # Reported, never silent: a subject that needed three
+                        # tries is a subject whose prompt is marginal, and
+                        # that is worth seeing in the report even though the
+                        # asset came out fine.
+                        result["seed_used"] = seed
+                        result["detail"] += (f"gate passed on seed {seed} "
+                                             f"after {attempt} reseed(s); ")
+                    break
+                if attempt < retries:
+                    print(f"  seed {seed} gated, reseeding: {fitness[0][:70]}")
         if fitness:
-            result.update(stage="concept", detail="; ".join(fitness))
+            result.update(stage="concept", detail=result["detail"]
+                          + "; ".join(fitness))
             return result
     except Exception as e:
         result.update(stage="concept", detail=f"{type(e).__name__}: {e}")
@@ -139,6 +243,11 @@ def main() -> int:
     ap.add_argument("--only", help="comma-separated subject names to run")
     ap.add_argument("--force", help="comma-separated subject names to redo "
                                     "from stage 1")
+    ap.add_argument("--retry-seeds", type=int, default=RETRY_SEEDS,
+                    metavar="N",
+                    help=f"extra seeds to try when a concept fails the "
+                         f"stage-1 gate (default {RETRY_SEEDS}; 0 restores "
+                         f"the old one-shot behaviour)")
     args = ap.parse_args()
 
     subjects = _load_subjects(Path(args.subjects))
@@ -164,7 +273,7 @@ def main() -> int:
     results = []
     for spec in subjects:
         print(f"\n=== {spec['name']} ===")
-        r = run_subject(spec, pipe, model, ramps)
+        r = run_subject(spec, pipe, model, ramps, retries=args.retry_seeds)
         results.append(r)
         status = "OK" if r["ok"] else f"GATED at {r['stage']}"
         print(f"  {status}" + (f": {r['detail']}" if r["detail"] else ""))

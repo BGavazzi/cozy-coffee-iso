@@ -1,21 +1,308 @@
 # Next
 
-**Godot export is done.** `tools/export_godot.py` (stage → import → build,
-`PIPELINE.md` "Stage 10") turns `out/sprites/` + `manifest.json` into 22
-Godot 4 `SpriteFrames` resources, one per asset, 8 direction frames each,
-world facts carried as metadata. Write-up: `ART_CRITIQUE.md`, "Godot export:
-the resource loader was the whole problem, and it has one fix".
+**Both halves of "prompts and examples in, engine-usable assets out" are
+done.** They landed as two separate PRs against roughly the same base, so:
 
-**Not done, and the next natural step toward "prompts and examples in, engine-
-usable assets out":** reference-image conditioning in `concept.py` — the
-factory currently takes a prompt only. Not yet scoped.
+- **Godot export** (PR #5, merged). `tools/export_godot.py` (stage → import
+  → build, `PIPELINE.md` "Stage 10") turns `out/sprites/` + `manifest.json`
+  into 22 Godot 4 `SpriteFrames` resources, one per asset, 8 direction
+  frames each, world facts carried as metadata. Write-up:
+  `ART_CRITIQUE.md`, "Godot export: the resource loader was the whole
+  problem, and it has one fix".
+- **Reference-image conditioning** (PR #6). `tools/concept.py`'s
+  `concept()` takes an optional `reference` image, conditioning SDXL via
+  IP-Adapter alongside the text prompt -- `--reference PATH [--ip-scale N]`
+  on the CLI, `reference`/`ip_scale` fields on a `factory.py` subject spec.
+  Found and fixed a real bug along the way (the IP-Adapter image encoder
+  isn't covered by `enable_model_cpu_offload()`'s hooks) and swept
+  `--ip-scale` rather than guessing it. Write-up: `ART_CRITIQUE.md`,
+  "Reference images: one real bug, one measured knob". Proof:
+  `proof/reference_image_conditioning.png`.
+- **A local UI sits in front of the reference-image path** (same PR #6).
+  `tools/concept_ui.py` (Gradio, `pip install gradio && python
+  tools/concept_ui.py`) wraps the same `concept()`/`check_concept_fitness()`
+  calls the CLI uses -- prompt box, reference upload, `ip_scale` slider --
+  because the sweep found there's no single right `--ip-scale`, only a
+  per-reference one, which is exactly the kind of judgement this repo puts
+  in front of a human rather than automating. Verified live through a real
+  browser: generated end to end, fitness gate correctly failed a genuinely
+  bad multi-object generation with the same messages the CLI gives.
+  Write-up: `ART_CRITIQUE.md`, "`--ip-scale` doesn't get one right answer,
+  so it got a slider instead".
+- **`kind`, multi-reference, and a custom prompt escape hatch** (same PR
+  #6, later pass). A phone-triggered failure (SDXL collaging "Frog from
+  Chrono Trigger" into ~30 tiled frogs) led to finding and fixing a real
+  bug: CLIP silently truncates any prompt past 77 tokens, so a first
+  anti-collage negative-prompt fix mostly wasn't reaching the model at all.
+  `concept()` now checks token length itself and warns on overflow.
+  `NEGATIVE` gained the three words that actually survived the ceiling;
+  `kind="character"` swaps in a separate token-budget-aware
+  `NEGATIVE_CHARACTER` for prompts naming a specific character (measured:
+  fixes frog and a knight, reduces but doesn't fix Mario-tier fame).
+  `reference`/`ip_scale` now take a list -- multiple images each load as
+  their own IP-Adapter slot, blended by the UNet, not averaged in Python;
+  verified live with two simultaneous references producing one coherent
+  object. `concept_ui.py` gained a Prop/Character/Custom selector (custom
+  exposes full positive/negative prompt override fields, for anything
+  outside the isolated-single-object framing) with an example-prompt panel,
+  and was re-verified live end to end after the rewrite. Write-up:
+  `ART_CRITIQUE.md`, "The collage failure mode, and the 77-token ceiling
+  that was already most of the way there".
+- **A "Continue -> mesh + sprites" button carries the UI past stage 1**
+  (same PR #6, later pass). Until now `concept_ui.py` stopped at the
+  render; getting to a sprite meant dropping to the CLI. Continue calls the
+  same `lift.lift()` / `ingest.ingest()` / `render_batch.py` /
+  `review_queue.py build` functions `factory.py` calls for a batch, adds a
+  `height` field the UI was missing, and promotes the scratch concept into
+  `out/concept/<slug>.png` under `factory.py`'s own naming convention
+  before running the later stages -- so a subject worked up in the UI is
+  recognised as already-done if it's later added to a `subjects.yaml` under
+  the same name. Verified twice: once in-process against a staged teapot
+  concept, once live through a real browser click producing an actual
+  8-direction pixel sprite sheet of a mug (footprint 0.125) at
+  `review/sheet.png`. Write-up: `ART_CRITIQUE.md`, "The UI stopped at the
+  render; a 'Continue' button now carries it to a sprite sheet".
 
-**The calibration backlog is untouched by this pass, not forgotten** — see
-`ART_CRITIQUE.md`'s most recent "Still open" list: counter orientation
-(0.04 focal-lead cost), the focal-reading-falls-with-resolution gap,
-furniture screen spread's possibly-redundant floor, and the detail floor's
-0.010-wide bracket. None of the Godot export work touched a generator, check,
-or threshold, so check these before assuming anything moved.
+- **UI art has a path now** (same PR #6, later pass). `tools/ui_forge.py`
+  builds the fourteen `cat: ui` entries `assets.yaml` has always declared and
+  never rendered — the largest declared-but-unbuilt category. Flat 2D, so it
+  skips stages 2-5 entirely (an icon has no mesh and one azimuth), reusing
+  `concept()`'s custom-prompt override and `pixelize`'s own functions rather
+  than adding a generation path. Two real fixes came out of it: the first
+  `check_icon` couldn't fail (coverage + palette-exactness only, while
+  `art_review` blocked all three icons on speckle), and the quantization
+  order was backwards — snap-then-modal instead of mean-then-snap took
+  espresso from 13.2% isolated pixels to 1.5%. First result is honest rather
+  than clean: 1 production-ready, 1 correctly gated, 1 that passes the metric
+  with the wrong shape. Write-up: `ART_CRITIQUE.md`, "UI art, and the same
+  wrong-check mistake made twice in one session".
+  **Full-category result, and the ceiling it found:** the remaining twelve
+  entries then ran as a batch — 9 of 12 past the speckle check, with
+  auto-reseed doing genuine work for once (`ui_clock_day` seed 3;
+  `ui_heart_mood`, `ui_icon_cappuccino`, `ui_icon_latte` seed 2), which is
+  the honest counterweight to the `bread_loaf` false positive below: speckle
+  really is seed-dependent, an amorphous loaf really is not. But looking at
+  the rendered icons rather than their scores splits them along an axis no
+  check measures: **all 7 object-depicting icons are usable (the five drinks,
+  `clock_day`, `heart_mood`) and all 6 pieces of abstract UI chrome are
+  wrong** — `dialogue_frame` and `ticket` render as photographed
+  pictures-in-frames, `nameplate` as a framed panel, `star_rating` as an
+  8-point burst, `coin` gated muddy. Three of those passed the isolated-pixel
+  check comfortably; they are wrong-*shape* failures, and no metric here can
+  see shape. Honest category count is **7 usable of 14 declared**, not 9 of
+  12. The fix is not more seeds: nine-slice frames and banners are geometry
+  with a semantic role, which belongs in `assetlib` as procedural code next
+  to the furniture, where a rounded rect with a 2px border is four lines and
+  exactly right every time. Same "things, not abstractions" ceiling as the
+  character work, in a third costume. Write-up: `ART_CRITIQUE.md`, "Icons
+  split by whether they depict a thing".
+- **UI chrome is drawn now, not generated** (same PR #6, later pass).
+  `tools/ui_chrome.py` is the answer to the finding above: the six chrome
+  ids plus an empty star, authored as a grid of material tokens and resolved
+  through the same palette ramps and the same `apply_outline` the sprites
+  use. No GPU, no seed, deterministic. All seven clear `ui_forge`'s own gate
+  at 32 / 64 / 128 px (worst isolated ratio 6.1% / 3.6% / 1.6% against the
+  6.2% cap), so the category is now **14 usable of 15 declared** —
+  `ui_icon_pastry` still gated and `ui_coin`'s generated version retired.
+  The pastry was chased and deliberately not shipped: at `--retry-seeds 6`
+  it passed on seed 4 with an image that is not a croissant, while seeds 2
+  and 3 were recognisable croissants that failed. Deleted rather than
+  counted, and the sharpest evidence yet that the stage-1 gate is a proxy.
+  A background-clause remedy was measured and rejected — grey lifts the
+  coverage number but gets matted *in* rather than out. `ART_CRITIQUE.md`,
+  "The clearest proof yet that the stage-1 gate is a proxy".
+  `tools/preview_ui.py` builds the contact sheet, labelled by producer.
+  The part worth having beyond correctness is **nine-slice metadata**, which
+  generation cannot produce at all: `out/ui/nine_slice.json` carries insets
+  for the bubble, banner and badge, `check_nine_slice` verifies the stretch
+  bands are uniform *on the resolved pixels*, and `expand()` performs the
+  stretch so the numbers are exercised rather than filed. Three defects came
+  out of the build and only one of them was machine-visible; write-up:
+  `ART_CRITIQUE.md`, "Drawing the chrome, and three things only looking
+  caught".
+- **The UI has three tabs now, not one** (same PR #6, later pass).
+  `concept_ui.py` reached stage 1 and, after an earlier pass, stages 2-5.
+  Everything added since — `ui_chrome.py`, `tileset.py`, the widened
+  `package_godot.py` — was reachable only from a terminal, which made the
+  half of the library that always works the half nobody could see. So:
+  *Concept → sprite* unchanged, *Drawn: chrome + tiles* running both
+  procedural producers with their previews and their proofs, and *Export to
+  Godot* running the stage + import + build chain and reporting the resource
+  count. Both new handlers exercised directly, not just rendered: 7/7 chrome
+  pieces, tiles clean including the pixel-identical manifest rebuild, and 54
+  Godot resources.
+- **Ground tiles and walls, with the tiling proved rather than eyeballed**
+  (same PR #6, later pass). `tools/tileset.py` builds three floor types
+  (plain, plank, checker; 7 variants) and four wall types (plain and
+  wainscot, on each of the two visible runs), the first per-tile output
+  this repo has had — `render_room.py` composites a whole shop into one
+  image, which is a proof, not a level. Ground tiles are the third case for
+  procedural authoring after furniture and UI chrome, and for the same
+  reason: a tile's silhouette is not an artistic choice, it is the projection
+  of a unit square.
+  Built by inverse-projecting each screen pixel onto the ground plane through
+  the repo's own `DimetricCamera` basis and testing the half-open unit
+  square, so coverage is exact by construction — an affine map sends every
+  point to exactly one square. That leaves one way to get it wrong and it is
+  the interesting one: **the lattice step must land on whole pixels**, which
+  at 2:1 means the tile width must be a multiple of 4. Checked
+  (`check_lattice` rejects 50 and names the fractional step), and `--proof`
+  lays a 3x3 patch and counts coverage per pixel — a seam is a pixel claimed
+  zero times, an overlap one claimed twice, and both are invisible at a
+  glance on a flat-toned floor while being fatal on a real one. All three
+  types: every interior pixel covered exactly once.
+  No outline pass, deliberately. A floor is not an object, and outlining it
+  draws the dark diamond grid `assetlib.floor()` already records hitting
+  twice by other means.
+  **Walls cost one property floors get free.** Horizontally they tile the
+  same way. Vertically they cannot: one world unit of height is
+  `sqrt(6)/4 * W` pixels, irrational at every tile width, so wall tiles carry
+  their full height and never stack. Stated in the manifest
+  (`walls_stack: false`) rather than left to be discovered.
+  Two more defects came out of the wall pass, and both were mine:
+  - Tiles were being lit with a bare `dot(normal, light)` while every other
+    surface in the repo goes through `mesh.rasterize`'s ambient/key/fill/
+    bounce model. Invisible on a floor; on the +y wall it produced lambert
+    **0** — pinned to the darkest step of every ramp, skirting board
+    included. Now imported from `render_room.py`'s own call.
+  - The wainscot then vanished on the shadowed wall, because `cream-2`
+    already resolves to step 0 of a 5-step ramp there and no offset can
+    escape downward. `check_collapse` catches this class — two materials
+    resolving to one colour on one surface — and the fix was to carry the
+    detail in timber rather than in tone. A detail that exists on half a
+    corner is worse than a detail that does not exist.
+  **The check that catches a wrong published number.** `room_corner()` places
+  tiles by projecting world coordinates, which proves the picture and not the
+  manifest. `check_manifest_placement` rebuilds the same scene using nothing
+  but `tileset.json` and the atlas PNGs and requires it to be pixel-identical.
+  Verified failable: a one-pixel error in a wall's `origin_offset` moves 753
+  pixels.
+  Exported: two Godot `TileSet` resources (`ground.tres`, `walls.tres`), 7
+  atlas sources. Adding this fourth producer cost four lines in the stager and
+  one function in `build_all.gd`, which is the test of whether the
+  three-section manifest shape was right. Wall draw offsets ride as resource
+  metadata rather than as `TileData.texture_origin` — the offset is verified,
+  converting it into Godot's frame is a second step headless Godot cannot
+  check, and publishing an unverified conversion would be worse than
+  publishing the verified number and saying so.
+  *(The module landed a commit early, riding along on the `ui_icon_pastry`
+  commit's `git add -A`. Noted rather than rewritten, since the branch was
+  already pushed.)*
+- **A folder of photos is now a subject list** (same PR #6, later pass).
+  `tools/scaffold_subjects.py` walks a directory and writes the
+  `factory.py` YAML: name, prompt and reference filled in per image, with a
+  *subdirectory* becoming one subject carrying several reference views —
+  which matters because `concept.py` loads N images into N independent
+  IP-Adapter slots and blends them in cross-attention, so several views
+  condition better than one. `--merge` re-scans without losing heights or
+  prompts already edited by hand. **Heights stay null on purpose**: a
+  filename cannot tell `ingest.fit()` a mug from a table, and a plausible
+  default would put a wrong number in every row where a missing one is at
+  least loud — a mug scaled to a table's height reaches stage 5 and produces
+  a sprite that is confidently the wrong size. `factory._load_subjects` now
+  checks the whole file up front and names every offender, because learning
+  about row 31 after thirty SDXL generations is the expensive way to learn
+  it. The hand-written YAML is emitted rather than `yaml.dump`'d, to keep the
+  one-flow-row-per-subject shape the existing lists have, and the emitter is
+  verified by `safe_load` round-trip rather than reasoned about.
+- **The export gap is closed — all three producers reach Godot** (same PR #6,
+  later pass). `package_godot.py` read only `out/sprites/manifest.json`,
+  whose shape is 8 direction frames per asset, so neither a packed animation
+  sheet nor a single-frame icon fitted and neither was exported. The entry
+  this replaces said the two halves wanted solving together rather than one
+  at a time, and that was right: the fix both needed was for the build
+  manifest to have three sections instead of one.
+  - static props → `SpriteFrames`, unchanged
+  - `atlas.json` characters and FX → `SpriteFrames` with one animation per
+    *(clip, facing)* named `"<clip>_<dir>"`, regions cut from the packed
+    sheet, at the clip's own fps. The row arithmetic is resolved in Python
+    and shipped as explicit rects, because `animate.py`'s layout has been
+    one row off before and that failure is invisible in every frame and
+    wrong in all of them.
+  - `out/ui/` → `StyleBoxTexture` for the three nine-slice pieces, with
+    `AXIS_STRETCH_MODE_TILE` so the engine repeats the centre band the way
+    `expand()` does rather than interpolating and inventing colours. Plain
+    icons get no wrapper resource — the imported PNG already *is* the
+    `Texture2D` a `Control` wants — and are load-checked instead of being
+    given output for the sake of a count.
+  Verified end to end against real Godot 4.3: 35 resources built (32 props +
+  3 styleboxes, 11 icons load-checked), and a new round-trip step re-reads
+  the written `.tres` and compares nine-slice margins against the drawn
+  insets. **Confirmed failable** — swapping left and right in the resource is
+  caught and named.
+  The animation branch is exercised too, after `animate.py --fx` produced
+  3032 frames across 9 characters and 8 effects: **52 resources** total (32
+  props + 17 animation SpriteFrames + 3 styleboxes), `barista.tres` carrying
+  336 AtlasTextures across 56 named `<clip>_<dir>` animations. One real bug
+  on the way — `animate.py` writes to `sprites/` and the static factory
+  writes to `out/sprites/`, two gitignored directories one word apart, and
+  the first version of this pointed at the wrong one. Renaming either is its
+  own change, so the path carries a comment instead.
+  `check_anim_layout` guards the row arithmetic: a rect outside the packer's
+  own declared `sheet_size`, or two clips claiming the same cell. Both
+  **confirmed failable** by perturbing a resolved layout — the first reports
+  the offending clip and cell, the second names both claimants.
+  **Known limit, stated rather than glossed:** headless Godot has no
+  renderer, so the engine's own nine-slice stretch is never rendered and
+  compared. The two implementations agree by construction and by margin, not
+  by a compared render; the pixels are verified only on the Python side via
+  `expand()` and `preview_ui.py`.
+- **`MIN_FILL` corrected, 0.12 → 0.02** (same PR #6, later pass). The
+  stage-1 frame-fill floor had no bracketing recorded and was rejecting
+  better work than it admitted. Its premise (fill predicts reconstruction
+  quality) tested against 20 library subjects at 14-41% fill: no
+  relationship — the two worst sprite sets in the library (`basket` 8/8
+  blocked, `cutting_board` 7/8) are among the best-filling. Five sub-floor
+  concepts forced through the full pipeline: 2.6% clean, 8.9% bad, 10.9%
+  clean, 10.9% mixed, 11.9% clean. The mechanism is that
+  `render_batch.frame_all()` refits the camera to the mesh, so concept fill
+  never became sprite resolution. Re-gated at seed 1 under the corrected
+  floor: **8 of 9 previously-gated subjects now pass, and the one still
+  rejected (`bread_loaf`) is the one that genuinely renders badly.**
+  Write-up: `ART_CRITIQUE.md`, "`MIN_FILL` was rejecting better work than it
+  was admitting".
+- **Auto-reseed on a gated concept** (same PR #6, later pass).
+  `factory.py`'s `RETRY_SEEDS = 2` retries a concept that fails the stage-1
+  gate on the next seed up, twice, before giving up. Measured on six of the
+  nine subjects the last full batch gated: five passed, all on the first
+  retry. The sixth (`wooden_spoon`) failed at every seed for a structural
+  reason -- a long thin object is systematically small in frame once
+  `STYLE`'s generous-margin clause is honoured -- so this is a bounded fix,
+  not a general one. `--retry-seeds 0` restores the old behaviour. Write-up:
+  `ART_CRITIQUE.md`, "The 29% that was being thrown away".
+  **Known hazard:** reseeding optimises against the gate, and the gate is a
+  proxy. `bread_loaf` gated on seed 1, passed on seed 2, and its sprites are
+  still 5-of-8 blocked — identical to before. Enough retries find a concept
+  that satisfies stage 1 without reconstructing better. 2 is modest enough
+  not to grind far; `art_review` downstream is what actually protects the
+  library. Open question worth more than any number here: should stage 1 be
+  able to reject an amorphous subject on principle, rather than being talked
+  round by a retry? **Investigated, answer is no on current evidence.**
+  Three concept-image metrics correlated against `art_review`'s blocked-frame
+  count across all 32 subjects: silhouette compactness +0.256, lightness
+  spread +0.077, internal lightness gradient **+0.658**. The third is a real
+  texture signal and still cannot gate — bad spans 0.0075-0.0396, good spans
+  0.0030-0.0263, and every cut catching most failures also discards good
+  work (0.018 → 7/10 bad caught, 2/18 good lost). Shipping it would be
+  `MIN_FILL`'s error in a better disguise. Recorded as a warning-grade
+  signal; any future attempt must clear the overlap table in
+  `ART_CRITIQUE.md`, "Answering that question", not just a correlation.
+
+**Not yet started**: no subject in `subjects_c1.yaml` (or any shipped
+subject list) actually uses a reference image yet -- this built and
+verified the capability, not a curated reference library to point it at.
+`kind="character"` likewise has no subject exercising it in a shipped list.
+**The full batch has not been re-run since auto-reseed landed**, so the
+22/31 → ~28/31 improvement is projected from a six-subject sample, not
+measured. Re-running `factory.py subjects_c1.yaml` is the way to settle it.
+
+**The calibration backlog is untouched across all four passes, not
+forgotten** — see `ART_CRITIQUE.md`'s most recent "Still open" list: counter
+orientation (0.04 focal-lead cost), the focal-reading-falls-with-resolution
+gap, furniture screen spread's possibly-redundant floor, and the detail
+floor's 0.010-wide bracket. None of the four passes touched a generator,
+check, or threshold in the sprite/room pipeline, so check these before
+assuming anything moved.
 
 ---
 
@@ -46,6 +333,62 @@ Kept below as a record, not an open queue. Read `ART_CRITIQUE.md`'s final
 "Still open" section before touching anything that produces art — it is a
 pass-by-pass historical log, not a live tracker, but the most recent entries
 are this list's source material.
+
+---
+
+## What a game still needs that this does not make
+
+Asked directly -- *what is missing from an end-to-end art pipeline for a
+small game* -- with the honest answer rather than the flattering one. The
+list is short on purpose: things this repo could plausibly produce and does
+not, not every asset any game has ever shipped.
+
+**Closed since this question was first asked**
+
+- ~~UI art~~ — 14 usable of 15 declared, split between a generative path for
+  object icons and a procedural one for chrome.
+- ~~Engine export for animations and UI~~ — all three producers now build
+  Godot resources, 52 of them.
+- ~~Hand-authoring a subject list per reference photo~~ —
+  `scaffold_subjects.py`.
+
+**Still missing, ranked by how much a small game would feel it**
+
+1. **Autotile / terrain rules, and openings.** Floors and walls both ship
+   (`tileset.py`, below) and a corner assembles correctly, but there is no
+   terrain metadata — nothing that says which tile to place where when a
+   designer paints a region, and no doorway or window opening in the wall
+   set. Both are rule-and-variant work on top of geometry that is now proved,
+   which is a much smaller job than the one this entry used to describe.
+2. **A character portrait / dialogue bust.** The rig renders 46px-tall
+   figures; a dialogue box wants a face. Different framing, different
+   resolution, and probably a different producer again -- generation is
+   plausible here in a way it is not for a walk cycle, since a portrait is a
+   single view of a thing.
+3. **Text.** No font, no bitmap glyph set, nothing that renders a word in
+   the palette. Every UI mockup in this repo has ruled lines where text
+   would go, including the drawn `ui_ticket`, and that is a placeholder
+   rather than a style decision.
+4. **Item/inventory icons beyond drinks.** The generative icon path works
+   and is proven; what is missing is subjects, not machinery. This is a
+   `UI_PROMPTS` list to extend, and it is item 4 rather than item 1 for
+   exactly that reason.
+5. **Cursors and pointer states.** Trivially procedural, genuinely required,
+   and nobody has written the six lines.
+6. **A palette-swap path.** One shop, several times of day or seasons, is a
+   normal thing for this genre to want, and the ramps are computed rather
+   than picked -- which is the hard half already done. Nothing exercises it.
+7. **Rigging from a generated mesh** (UniRig) and **TRELLIS 2** — both
+   blocked on this workstation's toolchain rather than on design, and both
+   already recorded below.
+
+**Deliberately not on this list**
+
+Audio, writing, level design, and anything that is not art. Also: a
+general-purpose character pipeline. Stage 2's single-view reconstruction
+fuses limbs, capes and held weapons into a blob, both prompt remedies were
+measured and one made it worse, and calling that a "gap" implies a fix is
+scheduled. It is a ceiling, and it is recorded as one.
 
 ---
 
@@ -275,6 +618,18 @@ detail, not lower).
 
 ## Not tasks — accepted limitations, recorded so they are not rediscovered
 
+- **This is a prop pipeline, not a character pipeline, and the ceiling is
+  stage 2.** `kind="character"` fixes the concept *image* for a named
+  character; TripoSR then reconstructs it as a lumpy semi-fused blob. The
+  frog knight blocks on 4 of 8 frames (11-12% isolated pixels against a
+  6.2% floor) with no separable limbs or weapon. Two cheap remedies were
+  measured and both failed: `--resolution 128` was a wash (still 4/8
+  blocked), and simplifying the prompt to reduce occlusion made it **worse**
+  (8/8 blocked, 15.3% mean) because "weapon held clear of the body" gives
+  the reconstructor thin unsupported geometry, which is the thing it handles
+  worst. The lever is a better reconstructor (TRELLIS 2, blocked below), not
+  prompt engineering. Scope line: object-shaped things without articulation.
+  See `ART_CRITIQUE.md`, "The character ceiling is stage 2, not stage 1".
 - **The far side of a single-view reconstruction cannot be verified by
   machine.** The eight frames are a consistent turnaround of geometry that is
   wrong on the back, so no image-space metric over the direction set can see

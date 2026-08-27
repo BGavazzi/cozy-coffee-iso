@@ -1,16 +1,50 @@
 #!/usr/bin/env python3
-"""Stage factory sprite output for Godot import.
+"""Stage every kind of factory output for Godot import.
 
-Reads out/sprites/manifest.json (the factory's per-direction render output)
-and stages it into godot_export/project/ as:
-  - assets/<asset>/<asset>_dir<N>.png   (copied, so Godot's import cache
-    lives outside the generated out/ tree and survives a `factory.py --force`
-    re-run without re-importing everything)
-  - build_manifest.json   (per-asset world facts + per-direction frame data,
-    consumed by build_all.gd to build SpriteFrames resources)
+Reads the four things this repo actually produces and stages them into
+`godot_export/project/`:
+
+  out/sprites/manifest.json   static props, 8 fixed direction frames each
+  sprites/atlas.json          animated characters and FX, packed sheets
+  out/ui/                     icons (generated) and chrome (drawn)
+  out/tiles/                  ground tiles, one atlas per type
+
+Note the first two directories: `out/sprites/` is the static prop factory's
+output and plain `sprites/` is `animate.py`'s. They are two different places
+with almost the same name, which cost a wrong path on the first run of this
+file. Both are gitignored; neither is being renamed here, because the name
+appears in `animate.py`'s `--out` default and in the docs, and a rename is
+its own change rather than a rider on this one.
+
+into
+
+  assets/<asset>/<asset>_dir<N>.png     one file per prop direction
+  assets/anim/<name>.png                one packed sheet per character/effect
+  assets/ui/<id>.png                    one file per icon or chrome piece
+  assets/tiles/<type>.png               one atlas per tile type
+  build_manifest.json                   the facts `build_all.gd` needs
+
+Copied rather than referenced in place, so Godot's import cache lives outside
+the generated `out/` tree and survives a `factory.py --force` re-run without
+re-importing everything.
+
+Three of those four had no export path until now, and the gap was structural
+rather than neglect: this file only ever read `manifest.json`, whose shape is
+"8 direction frames per asset", and neither a packed animation sheet nor a
+single-frame icon nor a tile atlas fits that. `NEXT.md` recorded the first
+two as one gap for a reason -- forcing either into the 8-direction shape
+would have been worse than leaving it visible, and they wanted the same fix,
+which is for the manifest to have a section per producer instead of one for
+all of them. Tiles then cost four lines, which is the test of whether the
+shape was right.
+
+Nine-slice chrome carries insets from `out/ui/nine_slice.json` through to a
+Godot `StyleBoxTexture`, which is the whole reason `ui_chrome.py` draws those
+pieces instead of generating them: a generated frame is one fixed size
+forever, and a drawn one becomes every dialogue box in the game.
 
 This only stages files -- it does not invoke Godot. See
-tools/export_godot.py for the full three-step pipeline (stage, import,
+`tools/export_godot.py` for the full three-step pipeline (stage, import,
 build).
 """
 import json
@@ -22,25 +56,24 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SPRITES_MANIFEST = ROOT / "out" / "sprites" / "manifest.json"
 SPRITES_DIR = ROOT / "out" / "sprites"
+ATLAS = ROOT / "sprites" / "atlas.json"   # animate.py, NOT out/sprites/
+UI_DIR = ROOT / "out" / "ui"
+TILES_DIR = ROOT / "out" / "tiles"
 PROJECT_DIR = ROOT / "godot_export" / "project"
 ASSETS_DIR = PROJECT_DIR / "assets"
 BUILD_MANIFEST = PROJECT_DIR / "build_manifest.json"
 
 
-def stage(manifest_path: Path = SPRITES_MANIFEST, sprites_dir: Path = SPRITES_DIR,
-          project_dir: Path = PROJECT_DIR) -> dict:
+def stage_sprites(manifest_path: Path, sprites_dir: Path,
+                  assets_dir: Path) -> dict:
+    """Static props: 8 direction frames each, copied one file per frame."""
     manifest = json.loads(manifest_path.read_text())
 
     by_asset = defaultdict(list)
     for entry in manifest:
         by_asset[entry["asset"]].append(entry)
 
-    assets_dir = project_dir / "assets"
-    if assets_dir.exists():
-        shutil.rmtree(assets_dir)
-    assets_dir.mkdir(parents=True)
-
-    build = {"assets": {}}
+    out = {}
     for asset, entries in sorted(by_asset.items()):
         entries.sort(key=lambda e: e["direction"])
         if len(entries) != 8:
@@ -53,9 +86,7 @@ def stage(manifest_path: Path = SPRITES_MANIFEST, sprites_dir: Path = SPRITES_DI
         asset_dir.mkdir(parents=True)
         frames = []
         for e in entries:
-            src = sprites_dir / e["file"]
-            dst = asset_dir / e["file"]
-            shutil.copyfile(src, dst)
+            shutil.copyfile(sprites_dir / e["file"], asset_dir / e["file"])
             frames.append({
                 "direction": e["direction"],
                 "azimuth": e["azimuth"],
@@ -64,25 +95,254 @@ def stage(manifest_path: Path = SPRITES_MANIFEST, sprites_dir: Path = SPRITES_DI
                 "pivot": e["pivot"],
                 "coverage": e["coverage"],
             })
+        out[asset] = {"world": entries[0]["world"], "frames": frames}
+    return out
 
-        build["assets"][asset] = {
-            "world": entries[0]["world"],
-            "frames": frames,
+
+def stage_anim(atlas_path: Path, atlas_dir: Path, assets_dir: Path) -> dict:
+    """Animated characters and FX: one packed sheet each, plus its geometry.
+
+    The sheet stays whole. Godot's `AtlasTexture` addresses a region of a
+    parent texture, which is exactly what a packed sheet is for, so slicing
+    it back into files here would undo the packing and quadruple the import
+    count for no gain.
+
+    What has to cross the boundary is the row arithmetic. `animate.py` lays
+    clips out in row-blocks -- row `clip.row + d` holds direction `d` of that
+    clip, column `f` holds frame `f` -- and a consumer that recomputes that
+    from scratch is a consumer that can get it one row off. It has been one
+    row off before, on the direction names (see `animate.py`'s DIRECTIONS
+    comment), and that failure is invisible in every frame and wrong in all
+    of them. So the rects are resolved here, once, and shipped explicitly.
+    """
+    atlas = json.loads(atlas_path.read_text())
+    fw, fh = atlas["frame_size"]
+    dirs = atlas["directions"]
+
+    dest = assets_dir / "anim"
+    dest.mkdir(parents=True, exist_ok=True)
+
+    def sheet_entry(name: str, entry: dict, n_dirs: int, kind: str) -> dict:
+        shutil.copyfile(atlas_dir / entry["image"], dest / entry["image"])
+        clips = {}
+        for clip, meta in entry["clips"].items():
+            per_dir = {}
+            for d in range(n_dirs):
+                label = dirs[d] if n_dirs == len(dirs) else str(d)
+                per_dir[label] = [
+                    [f * fw, (meta["row"] + d) * fh, fw, fh]
+                    for f in range(meta["frames"])
+                ]
+            clips[clip] = {
+                "fps": meta["fps"],
+                "frames": meta["frames"],
+                "regions": per_dir,
+                # Characters carry a per-clip anchor; effects do not, and
+                # defaulting one in would be inventing a fact.
+                **({"anchor": meta["anchor"]} if "anchor" in meta else {}),
+            }
+        return {"kind": kind, "file": f"anim/{entry['image']}",
+                "sheet_size": entry["sheet_size"], "clips": clips,
+                **({"role": entry["role"]} if "role" in entry else {}),
+                **({"symmetry": entry["symmetry"]} if "symmetry" in entry
+                   else {})}
+
+    out = {"frame_size": [fw, fh], "directions": dirs, "sheets": {}}
+    for name, entry in sorted(atlas.get("characters", {}).items()):
+        out["sheets"][name] = sheet_entry(name, entry, len(dirs), "character")
+    for name, entry in sorted(atlas.get("fx", {}).items()):
+        # An effect is rendered at the azimuth count its symmetry allows, so
+        # its row block is `azimuths` tall, not always 8.
+        n = next(iter(entry["clips"].values()))["azimuths"]
+        out["sheets"][name] = sheet_entry(name, entry, n, "fx")
+
+    problems = check_anim_layout(out)
+    if problems:
+        raise SystemExit("animation sheet layout is wrong:\n  "
+                         + "\n  ".join(problems))
+    return out
+
+
+def check_anim_layout(anim: dict) -> list[str]:
+    """Do the resolved rects fit the sheet, and does each one belong to one clip?
+
+    Two failures are possible in the row arithmetic above and both are
+    silent. A rect past the bottom of the sheet gives Godot an
+    `AtlasTexture` reading outside its parent, which renders as empty rather
+    than as an error. Two clips resolving to the same row gives two
+    animations that play identical frames, which looks like a rig bug rather
+    than a packing bug.
+
+    Neither needs the image to be opened -- `sheet_size` comes from
+    `animate.py`, which is the authority on how it packed. Checking against
+    the packer's own declared size is the point: if the two ever disagree,
+    that disagreement is the bug.
+    """
+    out = []
+    for name, sheet in sorted(anim["sheets"].items()):
+        sw, sh = sheet["sheet_size"]
+        seen: dict[tuple, str] = {}
+        for clip, meta in sheet["clips"].items():
+            for label, rects in meta["regions"].items():
+                for r in rects:
+                    x, y, w, h = r
+                    if x < 0 or y < 0 or x + w > sw or y + h > sh:
+                        out.append(f"{name}.{clip}.{label}: frame at "
+                                   f"({x},{y},{w},{h}) falls outside the "
+                                   f"{sw}x{sh} sheet -- the row block for "
+                                   f"this clip is wrong")
+                        break
+                    key = (x, y)
+                    prev = seen.get(key)
+                    if prev is not None and prev != f"{clip}.{label}":
+                        out.append(f"{name}: {prev} and {clip}.{label} both "
+                                   f"claim the cell at ({x},{y}) -- two "
+                                   f"clips resolved to the same row")
+                    seen[key] = f"{clip}.{label}"
+    return out
+
+
+def stage_ui(ui_dir: Path, assets_dir: Path) -> dict:
+    """Icons and chrome. Flat, single-frame, and two producers deep.
+
+    `_`-prefixed files are previews and `*_concept*` are the 1024px SDXL
+    sources; neither is an asset. The producer is recorded per piece because
+    it is the one fact about a UI asset that a later reader will want and
+    cannot recover from the PNG -- which of these was drawn is the difference
+    between "regenerate it with another seed" and "edit the function".
+    """
+    if not ui_dir.exists():
+        return {}
+    nine_path = ui_dir / "nine_slice.json"
+    nine = json.loads(nine_path.read_text()) if nine_path.exists() else {}
+    chrome_path = ui_dir / "chrome_report.json"
+    drawn = ({r["name"] for r in json.loads(chrome_path.read_text())}
+             if chrome_path.exists() else set())
+
+    from PIL import Image
+    dest = assets_dir / "ui"
+    dest.mkdir(parents=True, exist_ok=True)
+
+    icons = {}
+    for p in sorted(ui_dir.glob("*.png")):
+        if p.name.startswith("_") or "_concept" in p.name:
+            continue
+        shutil.copyfile(p, dest / p.name)
+        with Image.open(p) as im:
+            size = list(im.size)
+        icons[p.stem] = {
+            "file": f"ui/{p.name}",
+            "size": size,
+            "source": "drawn" if p.stem in drawn else "generated",
         }
+        if p.stem in nine:
+            icons[p.stem]["nine_slice"] = nine[p.stem]
+    return {"icons": icons}
+
+
+def stage_tiles(tiles_dir: Path, assets_dir: Path) -> dict:
+    """Ground tiles: one atlas per tile type, variants in a row.
+
+    `tileset.json` already carries everything an engine needs -- tile size,
+    the two lattice steps, and the region of each variant inside its atlas --
+    because `tileset.py` computed all of it from the projection basis and
+    proved the tiling. Passing it through unchanged rather than recomputing
+    it here keeps one authority for the geometry.
+
+    `_proof_*.png` and `_room_corner.png` are evidence rather than assets and
+    stay out of the export.
+
+    Walls ride in the same manifest but a separate section, because they are a
+    different shape of claim: a floor tile tiles in two directions and a wall
+    tile in one, and each wall carries the `origin_offset` that puts its base
+    on the floor edge it stands on. That number is verified on the Python side
+    by rebuilding the room from the manifest alone and requiring the result to
+    be pixel-identical to the projected one.
+    """
+    meta_path = tiles_dir / "tileset.json"
+    if not meta_path.exists():
+        return {}
+    meta = json.loads(meta_path.read_text())
+    dest = assets_dir / "tiles"
+    dest.mkdir(parents=True, exist_ok=True)
+    for section in ("tiles", "walls"):
+        for name, info in meta.get(section, {}).items():
+            shutil.copyfile(tiles_dir / info["file"], dest / info["file"])
+            info["file"] = f"tiles/{info['file']}"
+    return meta
+
+
+def stage(manifest_path: Path = SPRITES_MANIFEST,
+          sprites_dir: Path = SPRITES_DIR,
+          project_dir: Path = PROJECT_DIR,
+          atlas_path: Path = ATLAS,
+          ui_dir: Path = UI_DIR,
+          tiles_dir: Path = TILES_DIR) -> dict:
+    """Clear `assets/`, stage all three producers, write the build manifest.
+
+    The clear happens once, here, rather than inside each stager -- three
+    functions each rmtree-ing a shared directory is a bug waiting for the
+    first person who reorders the calls.
+    """
+    assets_dir = project_dir / "assets"
+    if assets_dir.exists():
+        shutil.rmtree(assets_dir)
+    assets_dir.mkdir(parents=True)
+
+    build = {"assets": stage_sprites(manifest_path, sprites_dir, assets_dir)}
+    if atlas_path.exists():
+        build["anim"] = stage_anim(atlas_path, atlas_path.parent, assets_dir)
+    if ui_dir.exists():
+        ui = stage_ui(ui_dir, assets_dir)
+        if ui.get("icons"):
+            build["ui"] = ui
+    if tiles_dir.exists():
+        tiles = stage_tiles(tiles_dir, assets_dir)
+        if tiles.get("tiles"):
+            build["tiles"] = tiles
 
     project_dir.mkdir(parents=True, exist_ok=True)
     (project_dir / "build_manifest.json").write_text(json.dumps(build, indent=2))
     return build
 
 
+def summarise(build: dict) -> str:
+    lines = []
+    props = build.get("assets", {})
+    lines.append(f"{len(props)} props, "
+                 f"{sum(len(a['frames']) for a in props.values())} frames")
+    anim = build.get("anim", {}).get("sheets", {})
+    if anim:
+        clips = sum(len(s["clips"]) for s in anim.values())
+        frames = sum(len(r) for s in anim.values()
+                     for c in s["clips"].values()
+                     for r in c["regions"].values())
+        chars = sum(1 for s in anim.values() if s["kind"] == "character")
+        lines.append(f"{chars} characters + {len(anim) - chars} effects, "
+                     f"{clips} clips, {frames} frames")
+    tiles = build.get("tiles", {}).get("tiles", {})
+    walls = build.get("tiles", {}).get("walls", {})
+    if tiles or walls:
+        lines.append(f"{len(tiles)} floor types + {len(walls)} wall types, "
+                     f"{sum(t['variants'] for t in tiles.values()) + sum(t['variants'] for t in walls.values())} "
+                     f"variants")
+    ui = build.get("ui", {}).get("icons", {})
+    if ui:
+        nine = sum(1 for i in ui.values() if "nine_slice" in i)
+        drawn = sum(1 for i in ui.values() if i["source"] == "drawn")
+        lines.append(f"{len(ui)} UI pieces ({drawn} drawn, {len(ui) - drawn} "
+                     f"generated), {nine} nine-slice")
+    return "\n".join(lines)
+
+
 def main():
     if not SPRITES_MANIFEST.exists():
-        print(f"no manifest at {SPRITES_MANIFEST} -- run the factory first", file=sys.stderr)
+        print(f"no manifest at {SPRITES_MANIFEST} -- run the factory first",
+              file=sys.stderr)
         return 1
     build = stage()
-    n_assets = len(build["assets"])
-    n_frames = sum(len(a["frames"]) for a in build["assets"].values())
-    print(f"staged {n_assets} assets, {n_frames} frames -> {ASSETS_DIR}")
+    print(summarise(build))
+    print(f"-> {ASSETS_DIR}")
     print(f"wrote {BUILD_MANIFEST}")
     return 0
 

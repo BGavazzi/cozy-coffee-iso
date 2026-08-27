@@ -9,15 +9,20 @@ loader refuses an un-imported PNG, and the workaround of loading pixels
 directly serializes a bloated inline blob instead of a lightweight resource
 reference):
 
-  1. package_godot.py   copies out/sprites/*.png + manifest facts into
-                         godot_export/project/, gitignored (regenerated from
-                         the factory output every run)
+  1. package_godot.py   copies out/sprites/*.png, the packed animation
+                         sheets and out/ui/ into godot_export/project/,
+                         gitignored (regenerated from factory output every
+                         run)
   2. `godot --import`   headless import pass, produces .import sidecars so
                          the PNGs become real, file-backed Texture2D
                          resources
-  3. build_all.gd        builds one SpriteFrames resource per asset
-                         (8 direction frames + world-fact metadata) into
+  3. build_all.gd        builds SpriteFrames for props (8 direction frames +
+                         world facts) and for characters/FX (one animation
+                         per clip and facing), and StyleBoxTexture for
+                         nine-slice UI chrome, into
                          godot_export/project/resources/
+  4. a round-trip check  re-reads the written .tres files and compares the
+                         nine-slice margins against build_manifest.json
 
 Needs a Godot 4.3 binary. Resolved in this order: --godot-bin, $GODOT_BIN,
 then D:/vibes/.godot-tool/Godot_v4.3-stable_win64_console.exe (the portable
@@ -53,6 +58,54 @@ def run_godot(godot_bin: Path, args: list[str]) -> None:
         raise SystemExit(f"godot exited {result.returncode}: {' '.join(cmd)}")
 
 
+def check_nine_slice_roundtrip(build: dict) -> list[str]:
+    """Do the margins in the written .tres match the insets that were drawn?
+
+    Godot names its four texture margins left/top/right/bottom and
+    `ui_chrome` names its insets in that same order, which is exactly the
+    kind of agreement that is true until someone reorders one of them. The
+    failure would be silent -- a frame that stretches with the wrong corner
+    fixed still loads, still renders, and only looks subtly wrong in a
+    running game.
+
+    What this does NOT verify is the engine's own stretch. Godot's headless
+    mode has no renderer, so the nine-slice can be checked as data here and
+    is checked as pixels only on the Python side, through
+    `ui_chrome.expand()` and `preview_ui.py`. Stated rather than glossed:
+    the two implementations agree by construction and by margin, not by
+    a compared render.
+    """
+    out = []
+    icons = build.get("ui", {}).get("icons", {})
+    keys = ("texture_margin_left", "texture_margin_top",
+            "texture_margin_right", "texture_margin_bottom")
+    for name, info in sorted(icons.items()):
+        if "nine_slice" not in info:
+            continue
+        tres = PROJECT_DIR / "resources" / "ui" / f"{name}.tres"
+        if not tres.exists():
+            out.append(f"{name}: declares nine-slice insets but no "
+                       f"StyleBoxTexture was written to {tres}")
+            continue
+        text = tres.read_text(encoding="utf-8")
+        got = []
+        for k in keys:
+            for line in text.splitlines():
+                if line.startswith(k + " ="):
+                    got.append(int(float(line.split("=", 1)[1])))
+                    break
+            else:
+                got.append(None)
+        if got != list(info["nine_slice"]):
+            out.append(f"{name}: drawn insets {info['nine_slice']} but "
+                       f"{tres.name} carries {got} -- left/top/right/bottom "
+                       f"ordering disagrees somewhere")
+    if icons and not out:
+        n = sum(1 for i in icons.values() if "nine_slice" in i)
+        print(f"  {n} nine-slice margins match the drawn insets")
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--godot-bin", default=None, help="path to Godot 4.3 executable")
@@ -69,9 +122,7 @@ def main():
     sys.path.insert(0, str(ROOT / "tools"))
     import package_godot
     build = package_godot.stage()
-    n_assets = len(build["assets"])
-    n_frames = sum(len(a["frames"]) for a in build["assets"].values())
-    print(f"staged {n_assets} assets, {n_frames} frames")
+    print(package_godot.summarise(build))
 
     print("\n-- import pass --")
     run_godot(godot_bin, ["--import"])
@@ -79,9 +130,15 @@ def main():
     print("\n-- build pass --")
     run_godot(godot_bin, ["--script", "build_all.gd"])
 
-    resources = sorted((PROJECT_DIR / "resources").glob("*.tres"))
-    print(f"\n{len(resources)} SpriteFrames resources written to {PROJECT_DIR / 'resources'}")
-    return 0
+    print("\n-- round-trip check --")
+    problems = check_nine_slice_roundtrip(build)
+    for p in problems:
+        print(f"  BLOCKER  {p}", file=sys.stderr)
+
+    resources = sorted((PROJECT_DIR / "resources").rglob("*.tres"))
+    print(f"\n{len(resources)} resources written to "
+          f"{PROJECT_DIR / 'resources'}")
+    return 1 if problems else 0
 
 
 if __name__ == "__main__":

@@ -3763,16 +3763,808 @@ path) with per-direction pivot/bbox/azimuth and per-asset
 height/footprint/anchor/walkable carried as resource metadata -- lossless
 relative to `manifest.json`, just reshaped into Godot's vocabulary.
 
-**Not done**: the "examples" half of the product goal -- reference-image
-conditioning in `concept.py`, so the factory can take a prompt *and* a
-reference image rather than a prompt alone. That's the larger, model-side gap
-this pass deliberately deferred in favour of the smaller, code-only export
-gap. It has not been scoped yet.
+At the time this was written, reference-image conditioning (below) was the
+deferred "examples" half of the product goal. It's since been built.
 
-**The calibration backlog has not moved this pass and is not forgotten**:
-`counter orientation` (0.04 focal-lead cost, unresolved), the `focal reading
-falls with render resolution` gap, `furniture screen spread`'s
-possibly-redundant mean floor, and the `detail floor`'s 0.010-wide bracket
-(see the "Still open" list above this entry) are all exactly where the last
-pass left them. None of this session's Godot-export work touched a generator,
-a check, or a threshold, so none of it could have moved them either way.
+---
+
+## Reference images: one real bug, one measured knob
+
+`concept()` gained an optional `reference` image, conditioning SDXL via
+IP-Adapter alongside the text prompt -- see `PIPELINE.md`'s "Reference
+images" for why IP-Adapter and not img2img (img2img imports the reference's
+own camera angle, which is exactly the drift the fixed `STYLE` clause exists
+to prevent).
+
+**The bug**: `load_ip_adapter()` attaches a CLIP vision encoder that did not
+exist when `_pipe()` first called `enable_model_cpu_offload()`, so it never
+got an offload hook and sat on CPU while everything else ran on CUDA. First
+call crashed inside the encoder's own first conv layer:
+`RuntimeError: Input type (torch.cuda.HalfTensor) and weight type
+(torch.HalfTensor) should be the same`. Not a guess -- read directly off the
+traceback, which named `modeling_clip.py`'s `patch_embedding` as the failing
+op. Fixed by re-running `enable_model_cpu_offload()` after
+`load_ip_adapter()`; accelerate's offload hooks attach per-module at call
+time, so a module added after the first `enable_model_cpu_offload()` call
+just never got one until a second call swept it up too.
+
+**The knob**: `--ip-scale` needed a default, and picking one meant actually
+sweeping it rather than guessing round numbers -- this repo's own rule 1
+("bracket every floor between a measured defect and the weakest known-good")
+applied even though this isn't a pass/fail gate. One reference (a matte
+ceramic teapot photo, copper handle) against a prompt naming a conflicting
+material ("a glass vase"), same seed, six points on the sweep:
+
+| ip_scale | glass vase renders as |
+|---|---|
+| 0.3 | glass, body proportions alone pull toward the reference |
+| 0.4 | glass, gains one handle + spout |
+| 0.45 | glass, gains two handles |
+| 0.5 | glass, two handles, more pronounced |
+| 0.6 | **opaque matte ceramic** -- material overridden |
+| 0.85 | near-reproduction of the reference, copper accent included |
+
+The first pass through this shipped 0.6 as the default on the strength of a
+guess ("0.3 barely shifted colour, 0.8 pulled proportions through") that
+turned out wrong in both directions once actually measured -- 0.6 already
+loses the prompt's material entirely. Default corrected to 0.45, just under
+where the transition happens for this pair. `proof/reference_image_conditioning.png`
+is the contact strip: reference, prompt-only baseline, 0.45, 0.6.
+
+One reference/prompt pair, not the swept bracket the fitness floors have.
+Recorded as a starting point and a warning against guessing constants this
+file's own discipline says to measure, not as a calibrated default -- a
+reference that doesn't fight the prompt on material should tolerate a
+higher scale before losing it.
+
+**Not done**: no subject in `subjects_c1.yaml` uses a reference yet. This
+pass built and verified the capability; pointing it at real reference photos
+is separate work.
+
+---
+
+## `--ip-scale` doesn't get one right answer, so it got a slider instead
+
+The sweep above is the argument against hard-coding a second guess at
+`--ip-scale`: the right value depends on how much a specific reference
+conflicts with a specific prompt, which is not something to automate a
+threshold for -- it's a judgement call, the kind this repo already routes to
+a human at stage 9 rather than pretending a metric could make it. `tools/
+concept_ui.py` is a small local Gradio app over the same `concept()` and
+`check_concept_fitness()` the CLI and `factory.py` call -- prompt box,
+reference upload, `ip_scale` slider, and the raw render / matte / fitness
+verdict shown for whatever just generated.
+
+Verified live rather than just import-checked: launched the server, drove it
+through an actual Chrome tab via the browser-automation MCP, typed "a wicker
+basket", hit Generate, and watched it through the real ~40s SDXL round trip
+(pipe load included, first call). It worked, and it caught something real on
+the way: this particular seed generated a 4x3 grid of baskets instead of one
+isolated object, and the fitness gate reported it correctly and specifically
+-- "a second mass 48% the size of the main one (cap 15%)", among four
+findings -- the same message the CLI would have printed, because it's the
+same function. The reference-image upload path wasn't driven through the
+browser itself (the browser session's file-upload permissions only allow
+files explicitly shared with it, unrelated to anything in this app), but
+`generate()` passes the uploaded path straight into the identical
+`concept(reference=..., ip_scale=...)` call the six-point sweep above
+already exercised directly and confirmed working.
+
+**The calibration backlog has not moved across either of these passes and is
+not forgotten**: `counter orientation` (0.04 focal-lead cost, unresolved),
+the `focal reading falls with render resolution` gap, `furniture screen
+spread`'s possibly-redundant mean floor, and the `detail floor`'s
+0.010-wide bracket (see the "Still open" list above this entry) are all
+exactly where they were left. Neither the Godot export work nor the
+reference-image work touched a generator, a check, or a threshold, so
+neither could have moved them either way.
+
+## The collage failure mode, and the 77-token ceiling that was already most of the way there
+
+A phone-triggered generation of "Frog character from chrono trigger" came
+back gated with three findings, all pointing at the same thing: SDXL had
+rendered a tiled sheet of roughly thirty small frogs instead of one isolated
+object, and `check_concept_fitness()` caught it correctly ("a second mass
+100% the size of the main one" among others). This is a known SDXL failure
+mode -- the model falls back on grid/collage/character-sheet training data
+when a prompt reads as "a thing with many variants" rather than "one thing"
+-- and it's more likely for named characters and generic multi-instance
+nouns (baskets, coins) than for prompts that already read as singular
+objects.
+
+The first fix attempt added roughly a dozen anti-collage terms to `NEGATIVE`
+-- "collage, grid, tiled, tiled pattern, sticker sheet, character sheet,
+reference sheet, model sheet, turnaround, multiple poses, many variations,
+repeated, pattern, array" -- and re-ran the frog prompt. It came back clean.
+Case closed, except a routine "how many tokens is this now" check turned up
+`transformers`' own warning: 105 tokens against SDXL's CLIP tokenizer,
+which hard-truncates at 77 (BOS/EOS included) with no error and no default
+warning of its own. Counting where 77 actually landed in the string showed
+only "collage, grid, tiled" -- the first three added words -- had survived;
+every other term added, including the two most specific ones ("character
+sheet", "turnaround"), was silently past the cliff and never reached the
+model. The fix had "worked" for the wrong reason: the base 68-token
+`NEGATIVE` plus those three words was the entire effective change, and the
+other nine terms were decoration. This is exactly the kind of failure this
+repo's discipline exists to catch -- bracket the floor, verify with the
+actual instrument, don't trust a fix that wasn't measured against what the
+model actually receives -- so `concept()` now checks
+`len(pipe.tokenizer(text).input_ids)` itself and prints to stderr whenever
+a prompt or negative crosses 77, for `negative_extra`/`positive_extra`/the
+override fields where a silent truncation could otherwise ship unnoticed
+again.
+
+`NEGATIVE` was trimmed back to exactly the surviving, verified addition (75
+tokens total: the original 68 plus ", collage, grid, tiled"). Re-run against
+the frog prompt at the same seed: clean, no findings. Re-run against a
+teapot at the same seed, as a regression check: unchanged, still clean.
+Re-run against a wicker basket that had independently collaged in an
+earlier pass (a different, generic-noun instance of the same failure mode,
+not the same bug as the frog's): **still fails**, and worse on the numbers
+-- 54584% soft-alpha ratio against a 5664% un-fixed baseline. This is
+recorded as a negative result rather than smoothed over: the anti-collage
+negative helps the failure mode it was measured against and is not a
+universal fix. Some collage failures are seed-specific, not prompt-specific,
+and the honest remedy there is "change the seed," which `factory.py`
+already supports per-subject.
+
+Frog's specific case -- a small, non-photoreal creature described by name --
+also raised a question the repo hadn't answered yet: `character.py` is
+fully procedural and part-based, built for original café-cast archetypes
+(barista, customer), and never takes a text prompt at all; `concept.py` was
+built around the isolated-single-prop framing. Neither covers "a specific
+named character," which pulls SDXL toward fan-art and character-sheet
+training data harder than a generic noun does -- the exact pressure that
+produces the collage failure in the first place. Rather than add a third
+generator, `concept()` gained a `kind` parameter (`prop`, the existing
+default, or `character`) that swaps in a dedicated `NEGATIVE_CHARACTER`
+string instead of adding to the same one -- it had to be a swap, not an
+addition, to stay under the same 77-token ceiling that caused the first
+problem. It drops four lower-value terms ("depth of field, bokeh,
+reflection, mirror") to make room for three targeted ones ("character
+sheet, turnaround, multiple poses"), landing at 72 tokens.
+
+Measured against three character-style prompts at seed 1, base `NEGATIVE`
+vs. `NEGATIVE_CHARACTER`: frog passes under both (the base fix already
+covered it); a knight ("a knight character with sword and shield") passes
+under both; Mario ("Mario from super mario bros" -- about as heavily
+represented in character-sheet and fan-art training data as a prompt can
+get) fails under both, but `NEGATIVE_CHARACTER` cuts the severity a real
+amount -- soft-alpha ratio 162643% down to 2156%, detached-mass fraction
+100% down to 90%. Reported as what it is: a genuine reduction, not a fix.
+Some subjects are famous enough that no negative-prompt string is going to
+out-compete their training-data weight; `--reference` (below) is the
+better lever there, or a less iconic description.
+
+All three of `concept()`'s own current numbers were re-verified end to end
+through the shipped function itself, not hand-rolled duplicates of its
+logic, immediately before shipping: frog×`kind=prop` clean, frog×
+`kind=character` clean, teapot×`kind=prop` unchanged (regression-clean),
+and a deliberately 106-token `negative_extra` confirmed to both print the
+new stderr warning and still run rather than error.
+
+**Multiple references, not one.** The same session's other open question --
+can `--reference` take more than one image -- turned out to be yes, but not
+by averaging. diffusers' IP-Adapter conditioning requires one image per
+loaded adapter *slot*: N reference images means loading the same IP-Adapter
+checkpoint N times as N independent slots
+(`subfolder=[...]*N, weight_name=[...]*N`), each conditioned on a different
+image, with the blending happening inside the UNet's cross-attention rather
+than in Python. `concept()`'s `reference` argument now accepts a single
+path or a list, `ip_scale` accordingly accepts a single value or one per
+reference, and `_set_reference()` reloads the adapter whenever the slot
+count changes between calls sharing one pipe (the same one-pipe-per-session
+model `factory.py` already uses). Verified live: a teapot and a basket as
+two simultaneous references produced one coherent object, not two
+overlaid, confirming the UNet is doing real per-slot blending and not just
+taking the last image loaded.
+
+`tools/concept_ui.py` picked up all three changes: a Prop / Character /
+Custom radio (custom exposes full positive/negative override text boxes,
+for anything that doesn't fit the isolated-single-object framing those two
+presets assume -- a flat icon, a different camera angle), a multi-file
+reference upload replacing the single-image one, and an examples panel
+showing what a good prompt looks like in each mode, including the specific
+warning that naming a source franchise pulls harder toward the collage
+failure than describing the design does. Verified live through the browser:
+built the layout, toggled Custom to confirm the override fields actually
+show and hide, then ran a real generation ("a brass coffee grinder") through
+the full ~40s SDXL round trip and watched the fitness gate report PASSES.
+
+**The calibration backlog is still exactly where the previous entry left
+it** -- none of this touched a generator, a check, or a threshold either.
+
+## The UI stopped at the render; a "Continue" button now carries it to a sprite sheet
+
+A concept passing the fitness gate is not a finished asset -- it is stage
+1's output, and everything a person could see of it in `concept_ui.py` was
+a raw render and a matte. Getting from there to something reviewable meant
+dropping to the CLI: `lift.py`, then `ingest.py` with a hand-typed
+`--height`, then `render_batch.py`, invoked one at a time or bundled into a
+`subjects.yaml` entry for `factory.py`. That's the right shape for a batch
+of forty; it's friction for "is this one thing worth pursuing at all,"
+which is exactly the question the UI exists to answer quickly.
+
+`concept_ui.py` gained a `height` field and a "Continue -> mesh + sprites"
+button. It does not call anything new -- `lift.lift()`, `ingest.ingest()`,
+`render_batch.py`, and `review_queue.py build` are the same four calls
+`factory.py`'s `run_subject()` makes for a batch, invoked directly instead
+of through a subject-list YAML. TripoSR loads once and stays resident the
+same way the SDXL pipe does, via the same `_pipe_holder`-style cache
+pattern.
+
+The one design decision worth recording: Generate's output
+(`out/concept_ui/current.png`) is scratch, overwritten every run, by
+existing design -- so Continue's first act is to *promote* it, copying the
+current concept into `out/concept/<slug of the subject text>.png` before
+running the later stages. Slugged names land in exactly the paths
+`factory.py` already checks for existing output
+(`out/mesh/<name>.obj`, `out/sprites/<name>_dir*.png`), so a subject worked
+up here and later added to a `subjects.yaml` under the same name is
+recognised as already done through however many stages got run in the UI --
+the two paths share state instead of silently duplicating it.
+
+Verified live and end to end, twice: once by staging a known-good matted
+concept directly and calling `continue_to_sprites()` in-process (teapot,
+height 0.28 -- produced a real bound OBJ and an 8-direction pixel contact
+sheet at `review/sheet.png`, all under the exact `factory.py` naming
+convention), and once through an actual browser session driving the real
+button -- typed "browser continue test mug", generated, passed the fitness
+gate, set height 0.12, clicked Continue, and watched TripoSR load cold and
+the sheet fill in with 8 real sprite frames of the mug, footprint 0.125,
+status text confirming all three output paths. Both runs' artifacts were
+removed afterward along with the manifest entries they added; `review/
+sheet.png` and `review/verdicts.jsonl` are tracked files and were restored
+to their prior committed state rather than left showing test output.
+
+## The character ceiling is stage 2, not stage 1, and two cheap fixes both failed
+
+The `kind="character"` work above fixed the *concept image* for a named
+character. It said nothing about whether the rest of the pipeline could do
+anything with one, and the honest answer, now measured, is no.
+
+Taking the passing frog concept all the way through (`lift` → `ingest` →
+`render_batch` → `review_queue`, height 1.2) produces a sprite set that
+`art_review.py` blocks on 4 of 8 frames: 11-12% of opaque pixels match none
+of their four neighbours, against a check whose floor is "authored art
+measures under 6.2% on its busiest frame". Every frame also warns on
+cross-ramp adjacency at 17-25% against clean toon shading's ~2.5%. The
+mesh is a lumpy semi-fused blob -- no cape, no separable limbs, no rapier,
+and nothing a person would call a knight.
+
+Benchmarked against the real thing rather than against a feeling: the
+original SNES sprite sheet was looked at directly (viewed for comparison
+only; nothing copied, saved, or reproduced). Its ~60 frames are flat colour
+fields inside a dark outline, six to eight colours a frame, with limbs and
+the sword separately legible at 32px. That cleanliness is a property of
+being hand-authored -- every pixel a decision -- and it sets the bar the
+cross-ramp check is already encoding. Our frames are not a worse drawing of
+the same thing; they are a different class of object, geometric noise
+rendered faithfully.
+
+Two cheap remedies were proposed and both tested before either was
+believed:
+
+- **Coarser marching cubes** (`lift.py --resolution 128` against the default
+  256), on the theory that a coarser grid cannot represent the
+  high-frequency surface noise the blocker is catching. Result: a wash.
+  Still 4 of 8 blocked, blocker 11.5% → 10.9% mean, cross-ramp 21.5% →
+  19.7%. Both inside noise. This rules out voxel size as the cause: the
+  reconstruction is producing the wrong *shape*, not a correct shape sampled
+  too finely.
+- **Simplifying the prompt to reduce occlusion** ("arms visible at sides, no
+  cloak, weapon held clear of the body, simple silhouette"), on the theory
+  that a cloak and a held weapon are exactly the self-intersecting geometry
+  a single view cannot resolve. Result: **measurably worse, on every frame**
+  -- 8 of 8 blocked, blocker mean 15.3%, cross-ramp mean 28.2%. The reason
+  is visible in the sheet and is worth keeping: asking for the weapon *clear
+  of the body* gave TripoSR a thin unsupported protrusion to reconstruct,
+  and thin unsupported geometry is the single thing single-view
+  reconstruction is worst at, because there is no volume to anchor it
+  against. The change did partly work on the axis it targeted -- legs
+  separate into a real bipedal stance in several frames, more humanoid than
+  baseline's undifferentiated blob-bottom -- and it still lost, because the
+  floating blade cost more than the stance gained.
+
+So the character ceiling is TripoSR, and neither prompt engineering nor a
+reconstruction parameter moves it. The lever that would is a better
+reconstructor -- TRELLIS 2 -- which remains blocked on this workstation's
+toolchain for the reasons already recorded under accepted limitations, and
+which is a decision about somebody's hardware rather than about this repo.
+
+**What this does not say** is that the pipeline is broken. It says the
+pipeline is a *prop* pipeline. The same batch that cannot make a frog knight
+took 22 of 31 café props to clean sprites, and the teapot and mug taken
+through the new Continue button both came out auto-clean with no blockers at
+all. The honest scope line is object-shaped things without articulation,
+and it should be written down as such rather than discovered per-subject.
+
+## The 29% that was being thrown away, and the one kind that stays thrown away
+
+If the scope line is "props," then the number that matters for throughput is
+the prop batch's own: 22 of 31 clean, 9 gated. Worth looking at what those 9
+actually were before accepting them as the cost of doing business, because
+**every one of them failed at stage 1**, not at reconstruction -- and several
+by a hair: 11.7%, 11.2% and 10.9% against a 12% frame-fill floor. Nothing
+retried them. A human had to notice and re-run with `--force`.
+
+An earlier entry above established, while chasing the basket's collage, that
+this class of failure is *seed*-specific rather than prompt-specific, and
+concluded "the honest remedy there is reseed and retry." That was a
+conclusion drawn from one subject, so before automating it, it got measured
+on six: the three near-miss frame-fill failures and the three soft-alpha
+ones, at seeds 2, 3 and 4. Five of the six passed.
+
+**That first measurement was wrong, and finding out why matters more than
+the number did.** The end-to-end check afterwards -- force `book` through
+`factory.py` and watch the retry fire -- showed `book` passing on seed *1*,
+with no retry at all. The report those nine failures came from predates B1's
+`MAX_SOFT_ALPHA` / `DETACHED_SOFT_FLOOR` split, and `NEXT.md` says plainly
+that fern and bicycle now pass under the recalibrated check. So the sweep had
+taken its seed-1 baseline from a stale file and only ever re-run seeds 2-4:
+any subject the recalibration had already fixed looked like a reseed rescue
+while reseeding did nothing. A measurement that never re-establishes its own
+baseline is measuring the baseline's age.
+
+Re-run properly -- seed 1, all nine, current gate -- three of the nine
+(`book`, `fern`, `bicycle`) already pass and were never reseeding's to
+rescue. Every remaining soft-alpha failure is gone too; the six still gated
+now fail on frame fill or a second mass, not on alpha at all. Against that
+corrected baseline the honest tally is **three genuine rescues of four
+tested**: `wine_glass` (11.9%), `cake_slice` (10.9%) and `croissant` (2.6%)
+all pass on seed 2, and `wooden_spoon` fails at every seed. `bottle` and
+`bread_loaf` were not tested above seed 1. Three of four is still a good
+enough return to keep the feature; five of six was never real.
+
+`wooden_spoon` is the interesting failure, and it is why this is a bounded
+fix rather than a general one. It failed at **every** seed -- 7.7%, 11.9%,
+5.4% frame fill -- and the reason is not noise. A long thin object is
+systematically small in frame once `STYLE`'s "full object in frame with
+generous margin" clause has been honoured: the margin is sized to the
+spoon's length, which leaves its width occupying almost nothing. Reseeding
+cannot change the aspect ratio of a spoon. That is a framing/floor question,
+taken up separately below, and it turns out to be the more interesting one.
+
+So `RETRY_SEEDS = 2` in `factory.py`, not 3: the third attempt bought nothing
+in the sample and costs a full generation per subject. Retries apply only to
+a concept generated in the current run -- an existing `out/concept/<name>.png`
+is still respected exactly as before, because "skip what is already done" is
+what makes a half-finished batch resumable, and quietly overwriting a
+previous run's output to chase a gate would trade one surprise for another.
+When a retry does succeed it is recorded in the report (`seed_used`, plus a
+note in `detail`) rather than passing silently: a subject that needed three
+attempts has a marginal prompt, and that is worth seeing even though the
+asset came out fine.
+
+Projected against the last full batch: three of the nine already pass on the
+recalibrated gate without any of this, and reseeding should convert most of
+the remaining near-misses, leaving the spoon-shaped ones -- call it 22/31 to
+somewhere around 28/31. Projected, not measured. The full batch has not been
+re-run, and after the baseline mistake above, an unmeasured projection is
+exactly the kind of number that deserves the label.
+
+## `MIN_FILL` was rejecting better work than it was admitting
+
+Correcting the reseed baseline left every surviving stage-1 failure looking
+like the same thing: `bottle` 10.9%, `wooden_spoon` 11.1%, `wine_glass`
+11.9%, `cake_slice` 10.9% -- four of six sitting within a point and a half
+of `MIN_FILL = 0.12`. A cluster that tight against a threshold is either a
+real boundary or an arbitrary one, and `MIN_FILL`'s comment is one line
+long ("object share of the frame") with none of the bracketing every other
+floor in this file carries. That absence was the tell.
+
+Its stated reason is "too little resolution on the thing being
+reconstructed" -- a claim that fill predicts reconstruction quality. That is
+testable against work already on disk. Twenty library subjects that passed
+the floor, scored by how many of their eight frames `art_review` blocks:
+
+    14.1% rolling_pin    3/8      27.6% sugar_bowl      0/8
+    19.8% coffee_cup     0/8      28.8% french_press    0/8
+    21.8% table_lamp     0/8      28.9% book            0/8
+    22.3% umbrella       0/8      31.1% basket          8/8
+    25.8% candle         0/8      32.0% kettle          0/8
+    26.6% mason_jar      0/8      33.7% teapot          0/8
+    27.3% creamer        0/8      34.2% newspaper       3/8
+    27.4% potted_plant   1/8      35.2% teacup_stack    0/8
+    27.5% flower_pot     2/8      35.5% stack_of_books  3/8
+                                  37.5% cutting_board   7/8
+                                  40.6% cheese_wheel    0/8
+
+There is no relationship. The two worst sets in the library -- `basket` at
+8/8 and `cutting_board` at 7/8 -- are among the *best*-filling subjects
+there are, and mean blocked frames are higher above 25% fill (1.50) than
+below it (0.75). Whatever makes a sprite set bad, it is not how much of the
+concept frame the object occupied.
+
+That sample cannot speak below 14.1%, though, and the reason is a selection
+effect rather than an absence: the floor stopped anything lower from ever
+being built. So three sub-floor concepts were forced through `lift` →
+`ingest` → `render_batch` → `art_review` anyway:
+
+    11.9% wine_glass    0/8 blocked
+    10.9% bottle        0/8 blocked
+    10.9% cake_slice    2/8 blocked
+
+Two of the three are perfectly clean, and the group mean (0.67) is *better
+than the library average the floor admits* (1.35). `MIN_FILL` is not
+protecting stage 2 from anything. It is rejecting work that outperforms what
+it lets through, and it has been doing so silently -- four subjects in the
+last batch, gated on a threshold with no measurement behind it.
+
+The obvious next move was to find where the claim *does* become true, since
+an object occupying twelve pixels surely cannot be reconstructed. The two
+lowest-fill concepts in existence went through the same treatment, and the
+answer is that it does not become true anywhere measurable:
+
+     2.6% croissant    0/8 blocked
+     8.9% bread_loaf   5/8 blocked
+
+The *lowest*-fill subject there is came out clean, and the one above it came
+out bad. Looking at the frames settles what the numbers only imply:
+`croissant` is eight recognisable crescents with good silhouette and
+colour -- a genuinely usable asset that the floor had been discarding -- and
+`wine_glass` at 11.9% reads clearly as a glass, stem and base included.
+`bread_loaf` really is bad, blobby and inconsistent between directions.
+
+The mechanism, once seen, is obvious and is the whole explanation:
+`render_batch.frame_all()` refits the camera span to the mesh's own bounds
+across all eight azimuths. A small object gets framed to fill the sprite
+regardless of how much of the *concept* it occupied, so concept fill was
+never going to survive into the sprite as resolution. `bread_loaf` fails
+because a loaf is an amorphous form with no stable silhouette for TripoSR to
+recover, which has nothing to do with its size in frame.
+
+So `MIN_FILL` drops from 0.12 to 0.02 -- placed just under `croissant`, the
+weakest thing actually shown to work, rather than pretending to a bracket
+the data does not support, and left in place only to catch degenerate
+segmentation. Re-gating the nine at seed 1 under the corrected floor:
+**eight now pass, and the one still rejected is `bread_loaf`** -- the one
+that genuinely produces bad sprites. The gate went from rejecting six
+subjects of which four were good, to rejecting one that deserves it.
+
+Two things worth saying plainly about what this does to the entry above it.
+First, most of what auto-reseed was rescuing, it was rescuing from a
+threshold that should not have been there: `wine_glass`, `cake_slice` and
+`bottle` all pass on seed 1 now, no retry involved. Reseeding keeps its
+value for genuine seed noise -- collage, a stray second mass -- but it was
+treating a symptom, and the honest ordering is that the threshold was the
+bug. Second, `wooden_spoon`, whose stubbornness prompted this whole line of
+enquiry, passes too. The spoon was never the problem; the floor was.
+
+The general lesson is the one this file keeps relearning: a threshold with
+no bracket recorded is a guess, and a guess that gates work is expensive in
+a direction nobody measures, because the things it rejects leave no trace.
+`MIN_FILL` cost this library four usable assets per batch for as long as it
+has existed, and nothing anywhere reported that.
+
+**Measured at full scale afterwards rather than left as a projection: the
+batch now runs 29 of 31 clean, against 22 of 31 before.** The estimate above
+said "somewhere around 28/31", which is close enough to be worth noting and
+not close enough to have been worth trusting -- the point of running it was
+that the difference between 28 and 29 is two real assets. `bottle`,
+`wine_glass`, `cake_slice`, `wooden_spoon`, `book`, `fern` and `bicycle` all
+came through.
+
+The two survivors are worth separating. `bread_loaf` is correctly gated and
+was independently confirmed bad (5 of 8 frames blocked when forced through).
+`croissant` is gated on soft alpha and a second mass at 95% of the main one
+-- genuinely two croissants in frame -- and yet the forced run above produced
+eight clean, recognisable crescents from a croissant concept. So it may be a
+second false rejection, on a different check, and the honest position is that
+one clean run is not enough to indict `MAX_SECOND_BLOB` the way twenty
+subjects indicted `MIN_FILL`. Recorded as a lead, not a finding.
+
+One thing the batch did **not** test, and the report says so explicitly:
+`seed_used` is absent on every row, because retries only fire for a concept
+generated in that run and all 31 concepts already existed on disk. The
+29/31 is entirely the threshold correction. Auto-reseed contributed nothing
+to it.
+
+### Forcing the last two, and what reseeding actually bought
+
+Re-running the two survivors with `--force` finally exercised the retry path
+in anger, and the report shows it working exactly as designed:
+`bread_loaf` gated on seed 1, retried, `seed_used: 2`, "gate passed on seed
+2 after 1 reseed(s)". `croissant` passed at seed 1. Both reached stage 5,
+taking the library to 32 assets.
+
+Then the obvious question, which is the one this whole session has been
+about: did passing the gate mean the sprites are any good?
+
+    croissant     0/8 blocked      genuinely recovered
+    bread_loaf    5/8 blocked      exactly as bad as before
+
+`bread_loaf` is the finding. Reseeding pushed it through the stage-1 gate
+and produced **nothing usable** -- the identical 5-of-8 failure measured
+back when it was forced through manually. A loaf is an amorphous form with
+no stable silhouette; no seed fixes that. What enough seeds *will* eventually
+do is find a concept that happens to satisfy stage 1's heuristics while
+still reconstructing badly, because stage 1 is a proxy for reconstruction
+quality and a proxy can be satisfied without the thing it proxies for
+improving at all.
+
+So auto-reseed carries a hazard worth naming plainly: **it optimises against
+the gate, and the gate is not the goal.** Retry hard enough and it becomes a
+mild form of tuning to the metric -- the same failure this file caught the
+focal-contrast check committing, in a different costume. `RETRY_SEEDS = 2`
+is modest enough that it cannot grind far, and it was chosen from measurement
+rather than to be safe, which is luck rather than judgement. The safeguard
+that actually matters is downstream: `art_review` reads the sprites
+themselves and blocked `bread_loaf` both times, correctly, without caring
+what stage 1 thought. That is the check to trust, and the reason `MIN_FILL`
+could be relaxed so far without danger.
+
+The honest scoreboard, then, is not "31/31". It is 30 subjects with usable
+sprites, one (`bread_loaf`) with sprites that exist and are bad, and a gate
+that no longer says so. Whether stage 1 should be able to reject an
+amorphous subject on principle -- rather than being talked round by a
+retry -- is a real open question, and a better one than any number here.
+
+## Answering that question: a real signal that still should not be a gate
+
+The library now carries its own ground truth. Thirty-two subjects have
+sprites, and `art_review` scores each set 0-8 blocked frames, so "does this
+concept reconstruct well" is a label rather than an opinion. That makes the
+question testable in the way `MIN_FILL` never was before it shipped: does
+anything measurable *in the concept image* predict the blocked count?
+
+Three candidates, correlated against blocked frames across all 32:
+
+    silhouette compactness (perimeter / sqrt area)   +0.256
+    internal lightness spread (p90 - p10)            +0.077
+    internal lightness gradient (mean |dL| per px)   +0.658
+
+The first two are nothing. The third is a strong signal and it makes
+physical sense: mean adjacent-pixel lightness difference is a texture
+reading, and texture is precisely what a single-view reconstructor turns
+into noisy geometry. The ranking passes the eye test too -- `basket` 0.0396,
+`bread_loaf` 0.0340, the frog knight 0.0270 at the top; `teapot` 0.0042,
+`teacup_stack` 0.0048, `umbrella` 0.0071 at the bottom.
+
+(That number is also a lesson in checking the instrument. The first pass
+measured this at +0.011 and would have been filed as a third null result --
+because the subsample took every seventh pixel, so the "adjacent" pair it
+differenced almost never actually was adjacent, and most subjects scored a
+flat 0.0000. A metric returning suspicious zeros is a broken metric, not a
+finding. Sampling whole rows instead moved it from +0.011 to +0.658.)
+
+And it still should not become a stage-1 blocker, because the distributions
+overlap badly:
+
+    bad  (>=3 blocked, n=10)   0.0075 .. 0.0396
+    good (0 blocked,   n=18)   0.0030 .. 0.0263
+
+    cut 0.018   catches 7/10 bad, wrongly rejects 2/18 good
+    cut 0.025   catches 5/10 bad, wrongly rejects 1/18 good
+    cut 0.028   catches 3/10 bad, wrongly rejects 0/18 good
+
+There is no cut that separates them. Every setting that catches most of the
+failures also throws away good work, which is `MIN_FILL`'s exact sin in a
+more sophisticated costume -- and it would be easy to ship, because +0.658
+sounds like enough. It is not. A correlation strong enough to be interesting
+is not the same as a boundary sharp enough to gate on, and the difference is
+whether the two populations actually separate.
+
+So the answer to the open question is **no, on the evidence available**:
+stage 1 cannot reliably reject an amorphous subject, and the best predictor
+found so far is a good warning and a bad gate. That is not a failure of the
+search. It is the reason the architecture already works -- `art_review`
+reads the finished sprites, needs no proxy, and blocked `bread_loaf` twice
+without being asked. Any future attempt at this should have to clear the
+overlap table above rather than a correlation coefficient.
+
+## Icons split by whether they depict a thing, and reseeding earns its keep
+
+Running the remaining twelve `cat: ui` entries gave 9 of 12 past the speckle
+check, and this time **auto-reseed did real work**: `ui_clock_day` needed
+seed 3, `ui_heart_mood`, `ui_icon_cappuccino` and `ui_icon_latte` needed seed
+2. That is the honest counterweight to `bread_loaf` above. Speckle genuinely
+is seed-dependent -- a different draw gives flatter shapes with fewer stray
+pixels -- whereas an amorphous loaf is the same loaf at every seed. Reseeding
+works exactly where the failure is noise and fails exactly where it is
+structure, which is what it was measured to do.
+
+Looking at the twelve rendered icons rather than their scores splits them
+cleanly, and not along the axis the checks measure:
+
+    depicts an object   clock_day, heart_mood, cappuccino, cold_brew,
+                        espresso, latte, tea            -- 7, all usable
+    UI chrome           dialogue_frame, ticket, nameplate, upgrade_frame,
+                        star_rating, coin               -- 5 wrong, 1 gated
+
+Every drink and object icon works. Every piece of abstract UI *chrome*
+fails, and fails the same way: asked for a speech bubble, SDXL renders a
+photographed tablet with a picture in it; asked for a nameplate banner, a
+framed panel; asked for a torn paper ticket, a framed picture again. The
+star is an eight-pointed burst instead of a five-pointed star. None of these
+are speckle failures -- `dialogue_frame`, `ticket` and `upgrade_frame` all
+passed the isolated-pixel check comfortably. They are *wrong-shape*
+failures, which no metric in this repo can see and none should be invented
+to see, because "is this the thing I asked for" is the human tier.
+
+The pattern is the prop/character split again in a third costume: **this
+pipeline makes things, not abstractions.** A cup is a thing and SDXL has
+seen a million of them. A dialogue frame is geometry with a semantic role --
+nine-slice borders, defined corners, a fill region -- and a diffusion model
+has no reason to produce it as flat vector chrome rather than as a
+photograph of something frame-shaped. That is not a prompt to tune; it is
+the wrong tool. UI chrome belongs in `assetlib` alongside the furniture,
+authored procedurally, where a rounded rect with a two-pixel border is four
+lines of code and exactly right every time.
+
+So the honest count for the category is **7 usable of 14 declared**, not
+9 of 12 -- and the correct next move is not more seeds but moving the six
+chrome entries out of `ui_forge`'s prompt table and into procedural code.
+
+## The clearest proof yet that the stage-1 gate is a proxy
+
+`ui_icon_pastry` was the last unbuilt entry in the UI category, so it got a
+run with `--retry-seeds 6` instead of the default 2. It passed on seed 4.
+The result is a pale cream blob with black scribbles through it, cropped at
+the frame edge, with no croissant shape anywhere in it -- and it is the best
+demonstration this repo has of what reseeding against a gate actually buys.
+
+The seeds, in order:
+
+    seed 1   0.2% frame coverage   -- the subject was matted away entirely
+    seed 2   11.4% isolated
+    seed 3   18.1% isolated
+    seed 4   PASSED
+
+Seeds 2 and 3 are *recognisable croissants*. Seed 4, the one that passed, is
+not a croissant at all. The gate did not find a better image; it found an
+image whose defects happen not to be the two defects it measures. This is
+the `bread_loaf` hazard `factory.RETRY_SEEDS` warns about, and it is much
+sharper here, because with `bread_loaf` the gate at least passed something
+that still looked like bread. **The icon was deleted rather than shipped**,
+and the category count stays at 14 of 15.
+
+Seed 1's failure was the interesting one, though, because it names a
+mechanism rather than a symptom. A golden croissant on `UI_STYLE`'s "plain
+white background" gives `matte()` almost nothing to cut against, and 99.8%
+of the frame went. So: does a pale subject want a different background
+clause? Measured, same subject, same three seeds, only that clause changed:
+
+    background    seed 1              seed 2              seed 3
+    white         0.2% cover          23.4% cover         23.3% cover
+    grey          39.2% cover         19.6% cover         23.7% cover
+
+Which looks like a win and is not. Opening the six icons shows what the
+numbers cannot: the grey background does not get matted *out*, it gets
+matted *in*. Grey seed 1's 39.2% "coverage" is a slab of background sitting
+behind a small croissant, and it is the worst of the six. The white
+background is doing its job; the failure at seed 1 was that a pale subject
+on white is a hard separation, not that the clause is wrong.
+
+The remaining defect is the subject itself. Every usable draw here is a
+croissant covered in fine dark flecks -- laminated pastry is high-frequency
+light-and-dark detail by nature, and high-frequency detail is exactly what
+quantizes to isolated pixels. That puts `ui_icon_pastry` in the same class
+as `bread_loaf` and the frog knight: not a seed problem, not a prompt
+problem, a subject whose surface fights the target resolution. Recorded as a
+ceiling, not as a task.
+
+Two things follow that are worth doing rather than noting. The gate stays
+exactly as it is -- 11.4% really is speckled, and the cap is not what went
+wrong here. And `--retry-seeds` keeps its default of 2, because the whole
+lesson of this run is that the number is not free: every extra seed is
+another chance to satisfy the proxy without satisfying the eye.
+
+## Drawing the chrome, and three things only looking caught
+
+That move is now made: `tools/ui_chrome.py` draws the six failing pieces
+plus an empty star, as a grid of material tokens resolved through the same
+palette ramps and the same `apply_outline` the sprites use. All seven clear
+`ui_forge`'s own gate rather than a softer one, at 32, 64 and 128 px --
+worst isolated-pixel ratio 6.1% / 3.6% / 1.6% against the 6.2% cap.
+
+The interesting part is not that they pass. Procedural output passing a
+speckle check is close to tautological, since nothing procedural speckles.
+It is that **three separate defects showed up here, and not one of them was
+visible to any check in this repo until something was built to look.**
+
+*One.* The nine-slice insets were wrong on the first run, and
+`check_nine_slice` caught it: the bubble's bottom inset was set from where
+the body ends rather than from where the rounded corner ends, so four rows
+of corner sat inside the vertical stretch band and would have smeared every
+time a dialogue box grew taller. This is the one case where a check did the
+work -- and only because the check was written to verify the specific claim
+the metadata makes ("these bands tile"), rather than to score the image.
+That is the difference between a check and a metric, and it is worth being
+precise about: `MIN_FILL` was a metric standing in for a claim nobody had
+stated. `check_nine_slice` is a claim, checked.
+
+It also moved once, for a reason: it originally read the material Canvas and
+now reads the resolved pixels. `apply_outline` runs between the two and can
+turn a uniform band non-uniform at its edges, so checking the materials was
+checking the easier of two available things.
+
+*Two.* The star's edge is now floored at 2 px instead of scaling freely,
+because at `--target 32` a proportional 1.1 px edge is a one-pixel *diagonal*
+run, and a one-pixel diagonal has no four-neighbour of its own colour
+anywhere along it: 7.8% isolated, 13.3% for the empty variant. Two readings
+were available. The cap is calibrated on generated icons, where isolated
+pixels genuinely are speckle, so it is arguably over-strict on a deliberate
+thin diagonal -- and raising it would have let the art through. That is
+tuning the check to fit the art, the mistake this file already records twice
+in one session. The art moved instead, and thickening an edge at 32 px is
+what a pixel artist does anyway.
+
+*Three*, and the one with no check behind it at all. The coin's first
+highlight was a small crescent near the centre, and at 64 px it read as a
+crescent moon sitting on a yellow circle. It measured 1.1% isolated -- one of
+the cleanest numbers in the set -- and it was wrong. A specular has to hug
+the edge it is reflecting off; anything drawn inland is a shape, not a
+highlight. Nothing found that except opening the PNG.
+
+Which is the same lesson as the generated frames, arriving from the opposite
+direction. Generation produced things that scored well and were the wrong
+shape; drawing produced a thing that scored well and was the wrong shape. The
+metrics are not failing at their jobs -- speckle and coverage are real and
+they catch real defects. They simply have nothing to say about whether the
+picture is of the right thing, and no amount of adding metrics will change
+that, which is exactly why `review_queue.py` exists and why the honest
+category count is the one an eye produced, not the one the report did.
+
+## UI art, and the same wrong-check mistake made twice in one session
+
+`assets.yaml` declares fourteen `cat: ui` entries and none of them had ever
+been rendered -- the largest declared-but-unbuilt category in the manifest.
+The reason is structural: the pipeline is concept → mesh → 8 azimuths, and
+an icon has no mesh and one azimuth. Sending an icon through `lift.py` would
+ask TripoSR to invent depth for something deliberately flat, which is the
+character-ceiling mistake pointed the other way.
+
+`tools/ui_forge.py` takes the short path -- generate, matte, snap, downsample,
+outline -- reusing `concept.concept()`'s `positive_override` (the same custom
+escape hatch the Gradio UI exposes) and `pixelize`'s existing functions, so
+no new generation or quantization code exists. Stages 2-5 are skipped because
+they have nothing to contribute, which is a different statement from skipping
+them because they are slow.
+
+Two things went wrong, and both are worth keeping because they are the same
+mistake in different clothes.
+
+**The check could not fail.** The first `check_icon` tested coverage and
+palette-exactness. Palette-exactness is guaranteed by construction -- the
+snap only ever picks palette colours -- and coverage is nearly always fine,
+so the check passed all three of the first icons generated. Pointing
+`art_review` at the same three files blocked every one of them on isolated
+pixels: 13.4%, 19.1%, 33.5% against its 6.2% authored-art floor, and the eye
+agreed with the instrument. That is `MIN_FILL` again, one file over and
+within the same session -- a threshold that cannot reject the failure it
+exists to catch. The speckle reading is now the check, and deliberately at
+`art_review`'s own number rather than a softer one invented to let this tool
+pass: an icon and a sprite are the same kind of object once they are
+palette-quantized pixels.
+
+**The quantization order was backwards.** `downsample_mean_then_snap` averages
+a block and then snaps the average, which salt-and-peppers anything with fine
+detail: adjacent blocks average to slightly different RGB and land on
+different ramp steps. `downsample_modal` cannot do that -- its docstring says
+"invents nothing", it only ever picks a colour already dominant in the block
+-- but it assumes palette-exact input, which the 3D path gets free from
+`shade_toon` and the 2D path did not have. Snapping every pixel first and
+then taking the mode puts the flat path in the condition the modal
+downsampler was written for:
+
+        mean-then-snap   snap-then-modal
+        18.8%            15.5%    ui_coin
+        13.2%             1.5%    ui_icon_espresso
+        39.1%             5.8%    ui_star_rating
+
+Two of three cross from blocked to comfortably under the floor, and the fix
+is one line of ordering plus reusing the function that already existed
+rather than writing a de-speckler.
+
+Where that leaves it, stated plainly rather than as three-for-three:
+`ui_icon_espresso` is genuinely production-clean -- flat shapes, cup, handle
+and saucer all reading at 64px. `ui_coin` is still gated at 14.7%, correctly,
+because the generated coin is an ornate relief medallion and no quantizer
+rescues that; it needs a reseed or a plainer prompt. `ui_star_rating` passes
+the speckle check at 5.8% and is still **wrong** -- an eight-pointed
+starburst where the prompt asked for a five-pointed star. No metric here can
+see that, and none should be invented to: "is it the shape I asked for" is
+the human tier this repo has always said is the whole point. One clean, one
+correctly rejected, one that needs a person to look at it is an honest first
+result for a category that had nothing in it an hour ago.

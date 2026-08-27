@@ -168,3 +168,9 @@ ui:
   - {id: ui_upgrade_frame,   cat: ui, prio: 2}
   - {id: ui_star_rating,     cat: ui, prio: 2}
   - {id: ui_heart_mood,      cat: ui, prio: 3}
+  # Not in the original fourteen. A rating widget needs a filled star AND an
+  # empty one, and drawing the pair costs one argument (`ui_chrome._star`),
+  # where generating it would be two independent SDXL draws of "a star" and
+  # therefore two different stars. Declared because it now exists, rather
+  # than existing undeclared.
+  - {id: ui_star_rating_empty, cat: ui, prio: 2, src: procedural}

@@ -7,6 +7,26 @@ output actually looks good.
 Art stops being the constraint once this works. Content becomes the constraint,
 which is the point.
 
+**Scope, measured rather than claimed:** this is a *prop* pipeline. Café-scale
+object-shaped things without articulation go through clean — 29 of 31 subjects
+in the last full batch reached stage 5 with no findings (up from 22 of 31,
+after a stage-1 threshold that had been silently discarding good work was
+measured and corrected). Characters do not:
+stage 2's single-view reconstruction turns anything with limbs, a cape or a
+held weapon into a fused blob, and no prompt change fixes it (both attempts
+measured, one made it worse). Neither does abstract UI chrome: asked for a
+speech bubble or a nameplate, SDXL renders a photographed picture in a frame,
+and three of those passed every automated check because they are wrong-*shape*
+failures. Chrome is drawn instead (`tools/ui_chrome.py`), which is also the
+only way to get nine-slice insets at all. See `NEXT.md`'s
+accepted-limitations list before pointing this at a character.
+
+The line those two share is worth stating once: **this pipeline makes things,
+not abstractions.** A cup is a thing. A frog knight and a nine-slice border
+are not, for opposite reasons -- one is too articulated for single-view
+reconstruction, the other is geometry with a semantic role that wants
+authoring rather than sampling.
+
 ## The division of labour
 
 | | owns | why |
@@ -18,6 +38,28 @@ which is the point.
 ## Run it
 
     pip install -r tools/requirements.txt
+
+    # stage 1 -- concept art, prompt alone or prompt + a reference image
+    python tools/concept.py "a ceramic teapot" --seed 1 -o out/x.png
+    python tools/concept.py "a ceramic mug" --reference photos/mug.jpg -o out/y.png
+
+    # same thing, interactively -- ip_scale needs eyeballing per reference
+    # ...or all of the below from one browser tab: concept -> sprite,
+    # the drawn producers, and the Godot export
+    pip install gradio && python tools/concept_ui.py   # http://127.0.0.1:7860
+
+    # a folder of reference photos -> a subject list, heights left to type
+    python tools/scaffold_subjects.py photos/ -o subjects.yaml
+    python tools/factory.py subjects.yaml          # then the whole batch
+
+    # floor + wall tiles, with a coverage proof that they actually tessellate
+    # and a room corner rebuilt from the manifest alone to check the numbers
+    python tools/tileset.py --proof
+
+    # UI: icons generated, chrome drawn, one contact sheet over both
+    python tools/ui_forge.py             # the object-depicting icons
+    python tools/ui_chrome.py            # frames, banners, star, coin, ticket
+    python tools/preview_ui.py           # -> out/ui/_preview.png
 
     python tools/palette_forge.py        # compute + validate the 40-colour palette
     python tools/animate.py --fx         # the deliverable: sheets + atlas.json
@@ -59,6 +101,7 @@ which is the point.
 | `proof/floorplans.png` | twelve plans, top-down, walkable floor shaded, topology labelled |
 | `proof/generators.png` | every generator, eight seeds each, spread measured |
 | `proof/characters.png` | roster, eight directions, and generated extras |
+| `proof/reference_image_conditioning.png` | reference photo, prompt-only, and two `--ip-scale` levels of the same prompt |
 | `ART_CRITIQUE.md` | what was rejected, why, and what became a check |
 
 The reference room is still the better room. It holds seven passes of judgement

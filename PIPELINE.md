@@ -120,21 +120,77 @@ Three steps, chained because each is a real dependency of the next:
    references the result embeds the pixel data inline instead of a path --
    confirmed empirically: a single 64x64 sprite's `.tres` came out over
    60,000 characters that way, versus ~130 as a proper `[ext_resource]` line.
-3. `build_all.gd` reads `build_manifest.json` and builds one `SpriteFrames`
-   resource per asset -- 8 `AtlasTexture` frames, indexed by direction (game
-   code sets `.frame = direction_index` directly; there's no animation here,
-   just 8 fixed poses of a camera-fixed rig). World facts that have no native
-   `SpriteFrames` slot (height, footprint, anchor, walkable, and the
-   per-direction pivot/bbox/azimuth) ride along as resource metadata,
-   readable in GDScript via `get_meta()`.
+3. `build_all.gd` reads `build_manifest.json` and builds one resource per
+   asset. World facts that have no native slot (height, footprint, anchor,
+   walkable, and the per-direction pivot/bbox/azimuth) ride along as resource
+   metadata, readable in GDScript via `get_meta()`.
+4. a round-trip check re-reads the written `.tres` files and compares the
+   nine-slice margins against the insets that were drawn.
 
-Output: `godot_export/project/resources/<asset>.tres`, 22 resources / 92KB for
-the current library, referencing the staged PNGs by path rather than
-duplicating them.
+**Four producers, four resource shapes.** This stage read only
+`manifest.json` for a long time, whose shape is "8 direction frames per
+asset", and the repo's other two outputs did not fit it: a packed animation
+sheet is one image holding hundreds of frames, and a UI icon is one frame
+with no direction at all. `NEXT.md` filed them as a single gap, correctly --
+forcing either into the 8-direction shape would have been worse than leaving
+it visible, and the fix they both wanted was for the manifest to have three
+sections instead of one.
 
-Not yet built: reference-image ("examples") conditioning in `concept.py` --
-the other half of "prompts and examples in, engine-usable assets out". Export
-packaging was the smaller, code-only gap; this is the larger, model-side one.
+| producer | resource | shape |
+|---|---|---|
+| `out/sprites/manifest.json` | `SpriteFrames` | one `"idle"` animation, 8 `AtlasTexture` frames; game code sets `.frame = direction_index` directly, since there is no motion, just 8 fixed poses of a camera-fixed rig |
+| `out/sprites/atlas.json` | `SpriteFrames` | one animation per *(clip, facing)*, named `"<clip>_<dir>"`, frames cut from the packed sheet as `AtlasTexture` regions at the clip's own fps |
+| `out/ui/` | `StyleBoxTexture` | nine-slice chrome only, margins from `nine_slice.json`; plain icons get no wrapper because the imported PNG already *is* the `Texture2D` a `Control` wants, and they are load-checked instead |
+| `out/tiles/` | `TileSet` x2 | `ground.tres` (floors) and `walls.tres`; one `TileSetAtlasSource` per tile type, isometric diamond-down, tile size read from `tileset.json` rather than restated. Wall draw offsets ride as resource metadata rather than as `TileData.texture_origin`, because converting into that frame is a second step headless Godot cannot check |
+
+The row arithmetic for the animation sheets is resolved in Python and shipped
+as explicit rects rather than recomputed in GDScript. `animate.py` lays clips
+out in row-blocks -- row `clip.row + d` is direction `d` -- and a consumer
+that rederives that is a consumer that can land one row off. It has been one
+row off before, on the direction names, and that failure is invisible in
+every frame and wrong in all of them.
+
+`StyleBoxTexture` is written with `AXIS_STRETCH_MODE_TILE` rather than the
+default stretch, because `ui_chrome.expand()` repeats the centre band instead
+of interpolating it -- interpolation invents colours and would break the
+palette-exactness every earlier stage guarantees. Telling the engine to
+stretch would mean a frame verified palette-exact stops being palette-exact
+the moment a `Control` resizes it.
+
+**What the round-trip check does and does not cover.** Godot names its four
+texture margins left/top/right/bottom and `ui_chrome` names its insets in the
+same order, which is an agreement that holds right up until someone reorders
+one of them -- and the failure is silent, since a frame with the wrong corner
+pinned still loads and still renders. So the written `.tres` is re-read and
+compared. Verified failable: swapping left and right in the resource is
+caught and reported. What it does *not* cover is the engine's own stretch,
+because headless Godot has no renderer; the nine-slice is checked as pixels
+only on the Python side, through `expand()` and `preview_ui.py`. The two
+implementations agree by construction and by margin, not by a compared
+render.
+
+The sheet layout is guarded on the Python side by `check_anim_layout`, which
+catches the two ways row arithmetic fails silently: a rect that falls outside
+the packer's own declared `sheet_size` (Godot renders an out-of-bounds
+`AtlasTexture` as empty, not as an error) and two clips resolving to the same
+cell (two animations that play identical frames, which reads as a rig bug
+rather than a packing bug). Both confirmed failable against a perturbed
+layout.
+
+Tiles were the test of whether that shape was right: adding a fourth
+producer cost four lines in the stager and one function in `build_all.gd`.
+
+Output: `godot_export/project/resources/`, **54 resources** for the current
+library -- 32 prop `SpriteFrames`, 17 animation `SpriteFrames` (9 characters,
+8 effects, 3032 frames), 3 nine-slice `StyleBoxTexture`, and two `TileSet`
+resources carrying 7 atlas sources -- referencing the staged PNGs by path
+rather than duplicating them. `barista.tres` alone
+carries 336 `AtlasTexture` regions across 56 named `<clip>_<dir>`
+animations.
+
+Reference-image ("examples") conditioning in `concept.py` -- the other half
+of "prompts and examples in, engine-usable assets out" -- is built; see the
+"Reference images" section below.
 
 ### The loop is a ratchet
 
@@ -200,14 +256,54 @@ foliage, fabric and skin — most of the material range a 2D game needs.
 
 | Stage | State |
 |---|---|
-| 1–3 (concept, mesh, rig) | specified, tooling verified available, not built — but **the seam they attach to is built and checked**: `ingest.py` binds an arbitrary mesh to the palette and the tile grid |
+| 1 (concept) | working — `concept.py`, SDXL + fitness gate, prompt or prompt+reference (IP-Adapter) |
+| 2 (mesh) | working — `lift.py` reconstructs a mesh via TripoSR (TRELLIS 2 blocked, see below) |
+| 3 (rig) | blocked on this workstation's toolchain (UniRig needs `nvcc` + MSVC), not rejected — but **the seam it attaches to is built and checked**: `ingest.py` binds an arbitrary mesh to the palette and the tile grid |
 | 4 (motion) | working as a **procedural rig** — `character.py` poses, `animate.py` clips. Stands in for HY-Motion the way the rasterizer stands in for Blender |
 | 5 (render) | working — exact 2:1, 8 azimuths, camera-space key. **Consumes OBJ meshes** via `mesh.py`, or analytic primitives as a fixture |
 | 6 (pixelize) | working — `pixelize.py`, ramp-quantized, zero contamination |
 | 7 (metadata) | working — `animate.py` emits `atlas.json`: frame rects, per-clip anchors, fps, direction order |
-| 8 (auto-review) | working — `art_review.py` and friends, **21 checks**, all run by `manifest.py --check` |
+| 8 (auto-review) | working — `art_review.py` and friends, **22 checks**, all run by `manifest.py --check` (the newest, `check_ui`, audits the declared UI category against what is on disk — palette exactness and the same 6.2% speckle cap, as warnings rather than errors, because an incomplete library is not a wrong one) |
 | 9 (human critique) | working — `review_queue.py`, contact sheet + ratchet |
 | 10 (engine export) | working — `export_godot.py`, 22 Godot `SpriteFrames` resources built from the current sprite library |
+
+**UI art takes a shorter route through the same parts.** An icon has no mesh
+and exactly one azimuth, so `tools/ui_forge.py` runs stage 1 (via
+`concept()`'s `positive_override`, the custom escape hatch) straight into
+stage 6 (`pixelize`'s snap + modal downsample + outline), skipping 2 through
+5 because they have nothing to contribute rather than because they are slow.
+It builds the fourteen `cat: ui` entries `assets.yaml` declares. Order
+matters in the quantizer: pixels are snapped to the palette *before* the
+modal downsample, because `downsample_modal` assumes palette-exact input --
+which the 3D path gets free from `shade_toon` and the flat path does not.
+Getting that backwards speckles the result (13.2% isolated pixels versus
+1.5% on the same icon). Icons are held to `art_review`'s own 6.2% isolated-
+pixel floor, not a softer one.
+
+**And a third route, for the part of the UI that is not art at all.** Running
+all fourteen split them on an axis none of those checks can see: every icon
+that depicts an *object* came out usable, and every piece of abstract chrome
+came out wrong -- a speech bubble as a photographed tablet, a nameplate as a
+framed panel, a five-pointed star as an eight-pointed burst. Three of those
+passed the isolated-pixel check comfortably, because they are wrong-*shape*
+failures and shape is the human tier. So `tools/ui_chrome.py` draws them
+instead: a Canvas of material tokens, resolved through the same palette ramps
+and the same `apply_outline`, with no generation step and no GPU. It is the
+answer `assetlib.py` already gives for furniture, applied one category over.
+
+Drawing buys a thing generating cannot: **nine-slice metadata**. A generated
+64x64 speech bubble is that size forever; a drawn one declares which rows and
+columns tile, so one source serves every dialogue box. `check_nine_slice`
+verifies those bands really are uniform on the *resolved pixels* -- and caught
+its own author on the first run, with the bubble's bottom inset set from where
+the body ends rather than where the rounded corner ends. `expand()` performs
+the stretch, so the insets are exercised rather than merely recorded.
+
+| target | worst isolated-pixel ratio across the 7 pieces (cap 6.2%) |
+|---|---|
+| 32 px | 6.1% |
+| 64 px | 3.6% |
+| 128 px | 1.6% |
 
 `isorender.py` is a software raytracer and `mesh.py` an orthographic rasterizer,
 both standing in for Blender so the deterministic half runs with no GPU or DCC
@@ -316,6 +412,66 @@ failures are informative:
   during diffusion, which is a property of the generator and not of the key.
   The separation check caught it at dE 0.121. The machinery was deleted rather
   than left in as a setting.
+
+**Reference images.** `concept()` takes an optional `reference` image,
+conditioning generation via SDXL IP-Adapter alongside the text prompt --
+the "examples" half of "a factory that takes prompts and examples". IP-Adapter
+rather than img2img, deliberately: img2img denoises the reference's own
+layout, importing whatever camera angle it happened to be shot at, which is
+exactly the per-object drift the fixed `STYLE` camera clause exists to
+prevent. IP-Adapter conditions on the reference's *appearance* while the
+prompt and `STYLE` keep owning composition.
+
+One real bug and one real measurement here:
+
+- **The image encoder `load_ip_adapter()` attaches isn't covered by the
+  offload hooks `enable_model_cpu_offload()` set up when the pipe was first
+  built** -- it stays on CPU while everything else runs on CUDA, and the
+  first call crashes: `RuntimeError: Input type (torch.cuda.HalfTensor) and
+  weight type (torch.HalfTensor) should be the same`. Fixed by re-running
+  `enable_model_cpu_offload()` after `load_ip_adapter()`, which re-attaches
+  hooks to every current submodule.
+- **`--ip-scale` was swept, not guessed**, one reference (a matte ceramic
+  teapot photo, copper handle) against a deliberately conflicting prompt
+  ("a glass vase"), same seed: 0.3 only nudges body proportions, 0.4-0.5
+  add the reference's handle(s) while the vase stays glass, 0.6 overrides the
+  material entirely (renders in opaque ceramic), 0.85 nearly reproduces the
+  reference outright, copper accent included. Shipped default is 0.45 -- just
+  under where the prompt starts losing. One pair, not the swept bracket the
+  fitness floors above have; a reference that doesn't fight the prompt on
+  material will tolerate a higher scale.
+
+Because there is no single right `--ip-scale`, `tools/concept_ui.py` puts a
+slider in front of a human instead of hard-coding a second guess: a small
+local Gradio app over the same `concept()`/`check_concept_fitness()` calls
+the CLI and `factory.py` use, showing the raw render, the matte, and the
+fitness gate's exact findings for whatever's just been generated. `pip
+install gradio && python tools/concept_ui.py`, opens
+`http://127.0.0.1:7860`.
+
+`--reference` and `--ip-scale` also take multiple values (`--reference a.jpg
+b.jpg`): each image loads as its own IP-Adapter slot rather than being
+averaged, so two references genuinely blend rather than one silently
+overriding the other. `--kind character` swaps in a dedicated negative
+prompt (`NEGATIVE_CHARACTER`) tuned for prompts naming a specific character
+or franchise, which pulls SDXL toward fan-art/character-sheet training data
+harder than a generic prop noun does -- see `ART_CRITIQUE.md`, "The collage
+failure mode, and the 77-token ceiling that was already most of the way
+there", including the measured limits (helps, doesn't universally fix
+famous-enough subjects). `--positive-override`/`--negative-override` bypass
+`STYLE`/`NEGATIVE` entirely for anything outside the isolated-single-object
+framing both presets assume; `concept_ui.py`'s "custom" kind exposes the
+same two fields with example prompts shown alongside them.
+
+A "Continue -> mesh + sprites" button carries a concept the rest of the
+way through stages 2-5 without leaving the browser: it takes a `height`
+typed into the UI and calls `lift.lift()` / `ingest.ingest()` /
+`render_batch.py` / `review_queue.py build` directly -- the same functions
+`factory.py` calls for a batch subject, not a new path. It also promotes
+the scratch concept into `out/concept/<name>.png` under `factory.py`'s own
+naming convention first, so a subject taken this far in the UI is
+recognised as already done if it's later added to a `subjects.yaml` under
+the same name rather than silently regenerated.
 
 ### Stage 2 -- `tools/lift.py`, and why it is not TRELLIS
 
