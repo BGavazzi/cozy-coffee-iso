@@ -233,6 +233,7 @@ defect only exists once geometry meets a specific camera:
 | `check_buried_detail` | geometry that faces the camera and still never wins a pixel — detail modelled where it cannot be seen |
 | `check_direction_labels` | sprite facings derived from the camera basis rather than declared, so the atlas cannot be off by a rotation |
 | `measured_symmetry` | how many azimuths actually produce different sprites, which sets the render budget |
+| `furnish.check_distinct` | two declared ids whose eight sprites are byte-identical — one asset wearing two names, which per-asset framing makes invisible because scale lives in metadata, not in pixels |
 
 Each of these was written after a human said some version of "that area is
 mush", which is not actionable, and each turned that into a specific pair of
@@ -263,7 +264,7 @@ foliage, fabric and skin — most of the material range a 2D game needs.
 | 5 (render) | working — exact 2:1, 8 azimuths, camera-space key. **Consumes OBJ meshes** via `mesh.py`, or analytic primitives as a fixture |
 | 6 (pixelize) | working — `pixelize.py`, ramp-quantized, zero contamination |
 | 7 (metadata) | working — `animate.py` emits `atlas.json`: frame rects, per-clip anchors, fps, direction order |
-| 8 (auto-review) | working — `art_review.py` and friends, **22 checks**, all run by `manifest.py --check` (the newest, `check_ui`, audits the declared UI category against what is on disk — palette exactness and the same 6.2% speckle cap, as warnings rather than errors, because an incomplete library is not a wrong one) |
+| 8 (auto-review) | working — `art_review.py` and friends, **23 checks**, most run by `manifest.py --check`; `furnish.check_distinct` is the exception and runs in the producer that can act on it, because a duplicate is a fact about a build, not about the manifest. `check_grid` was tightened rather than added: uniform blocks are evidence of an upscale, not proof, so the finding now has to survive reconstructing the image from one pixel per block — that removed 20 false blockers on flat-shaded blockout geometry (a chalkboard's edge-on face lost 43% of its solid pixels under the round trip and was still being reported as upscaled art) while a deliberately 2x- and 4x-upscaled sprite is still caught at 100% |
 | 9 (human critique) | working — `review_queue.py`, contact sheet + ratchet |
 | 10 (engine export) | working — `export_godot.py`, 22 Godot `SpriteFrames` resources built from the current sprite library |
 

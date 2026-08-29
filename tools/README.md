@@ -112,6 +112,59 @@ catches duplicate ids and bad symmetry classes, warns when tier-1 furniture
 would not leave room to walk, and flags palette ramps no asset uses — dead weight
 in a 40-colour budget. It caught four stale ramp names on first run.
 
+## Building the declared props
+
+    python tools/furnish.py             # build every mapped prop
+    python tools/furnish.py --list      # what maps to what, and what does not
+    python tools/furnish.py --only chair_wood table_4top
+
+`assets.yaml` declares 64 props; `assetlib.py` has been building most of that
+furniture procedurally since the room renderer existed. Nothing connected the
+two — `render_room.py` and `build_plan.py` both parameterise builders inline at
+the call site, so there was no id-to-builder mapping anywhere in the repo, and
+only **2 of 64** declared props had sprites. Both by accident: the built sprites
+are named after `subjects_c1.yaml`, and two of those names happen to collide
+with a declared id.
+
+`furnish.py` is that mapping, and running it takes the library to **56 of 64**.
+Everything downstream is `ingest.fit` and `render_batch` called directly, not
+reimplemented: mesh, fit, eight azimuths, footprint, manifest merge.
+
+**The remaining 8 are reported, not guessed at.** `--list` prints each unmapped
+id with the reason it has no recipe. A `sink_double` rendered from `counter()`
+would pass every automated check in this repo and be wrong in the only way that
+matters, so a recipe is written only where a builder genuinely makes the
+declared object, and a recipe that reuses a builder for a related id carries a
+note that `--list` prints.
+
+### Scale comes from the manifest
+
+Every mesh is fit to its declared height, so the manifest is authoritative
+rather than the builder's own proportions. The declared footprint is then a
+**cap, not a target** — `fp` is a layout reservation, so a chair measuring 0.65
+tiles inside its 1-tile reservation is correct and only overflow is a defect.
+Seven props overflow when fit to their declared height and are refit to the
+reservation, with the height they actually achieved printed: two declared
+numbers and a builder's proportions cannot all three hold, and the one with a
+downstream consumer wins.
+
+### What the review found
+
+Across the 448 sprites this produces, `art_review.py` reports **zero blockers**.
+The 57 blockers remaining in `out/sprites/` all belong to the 32 SDXL-path
+assets and are all `speckle` — the recorded ceiling for high-frequency detail.
+That is the session's "things versus abstractions" finding as a number: geometry
+with a semantic role wants to be rendered, not generated.
+
+Two defects the checks could not have caught, both found by opening the PNG:
+`sandwich_board` had a docstring describing a lean over geometry that had none
+(`add_box` is axis-aligned, so two parallel panels and a hinge is a box — it
+rendered as a doorway, and now leans via `pivot_rot`), and `plant_succulent`
+was `leafy_plant` at a short height, which is a plant correctly grown of the
+wrong species. One defect the checks did catch: `saucer` and `cup_latte` were
+byte-identical, because `fit` scales uniformly and per-asset framing then makes
+scale invisible in the image. That is now `check_distinct`.
+
 ## Characters and layout
 
     python tools/preview_characters.py   # roster + one archetype x 8 directions
