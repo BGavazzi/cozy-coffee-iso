@@ -165,6 +165,102 @@ wrong species. One defect the checks did catch: `saucer` and `cup_latte` were
 byte-identical, because `fit` scales uniformly and per-asset framing then makes
 scale invisible in the image. That is now `check_distinct`.
 
+## Text
+
+    python tools/bitmap_font.py           # build the shipping sizes
+    python tools/bitmap_font.py --check   # sweep cap heights 5..20
+    python tools/bitmap_font.py --demo    # text inside the nine-slice chrome
+
+`NEXT.md` item 3 read: "No font, no bitmap glyph set, nothing that renders a
+word in the palette." 90 glyphs now do.
+
+### Skeletons, not a pixel grid
+
+A pixel font is normally authored by placing pixels, one glyph at a time, at one
+size — which is why bitmap fonts ship as "8px", "16px", and nothing between.
+Every glyph here is a set of **polylines** on a shared metric grid, stroked by an
+integer line algorithm at whatever cap height is asked for. Size, weight,
+letterspacing and palette are parameters; the letterforms are the only data.
+
+That is the split every producer here makes. `assetlib` describes a chair as
+geometry; `ui_chrome` describes a frame as rects and discs. A letterform is the
+irreducible part — 'A' is a cultural convention and cannot be derived from a
+rule — so it is the part written down, and nothing else is.
+
+### Which sizes ship is measured
+
+| cap | result |
+|---|---|
+| 5 | `8`/`S` and `c`/`o` and `i`/`l` collide; `A` and `4` lose their counters |
+| 6 | `a`/`o` collide; `A` and `4` still filled in |
+| **7–20** | **clean** |
+
+`SIZES` ships 7, 9, 11 and 13. `check_counters` is what sets the floor: an 'e'
+whose aperture has closed is not a smaller 'e', it is a blob, and that is a
+question about *topology* — no palette or coverage metric can see it, because
+both measure colour.
+
+### What the checks found
+
+Four defects, none of which a person would reliably catch by eye:
+
+- **Hand-declared advances disagreed with their own ink.** `1` and `Q` put
+  pixels outside their cell, at cap 9 and cap 17 only, where rounding lands ink
+  one pixel further right than it lands the advance. Advances are now *measured*
+  off the rasterised ink, which cannot be inconsistent with it — and that makes
+  the font proportional for free.
+- **Every advance was one unit too tight**, so "HH" set the two facing stems
+  adjacent and read as a single 2px bar.
+- **Python's `round` is banker's rounding.** `round(1.5)` is 2 but `round(2.5)`
+  is 2 and `round(4.5)` is 4. Mirror-symmetric letterforms therefore came out
+  asymmetric at some sizes and not others — `W` with unequal halves, `^` with
+  one leg short. Half-up rounding throughout, and both glyphs re-cut onto
+  integer offsets from an integer centre.
+- **`"` merged into a thick apostrophe** — its two strokes landed on adjacent
+  columns at cap 7.
+
+Each check was verified to fail before it was believed: aliasing `0` to `O`
+trips `check_distinct`; a solid `e` trips `check_counters`; an overshooting `T`
+trips `check_bounds`; removing one pixel from the advance trips `check_pairs` on
+5923 of 7921 pairs. Worth recording what *doesn't* trip it: setting `SPACING` to
+zero does not, because the gap is floored at 1 — so `check_pairs` guards the
+advance rule, not the spacing constant.
+
+### The isolated-pixel metric needed correcting, not relaxing
+
+Rendered text failed `ui_forge`'s `MAX_ISOLATED` gate at 9–14% against a 6.2%
+cap. A one-pixel diagonal — which is what `X`, `/` and `V` *are* at cap 7 — has
+no orthogonal neighbour at all. So the threshold stays and the neighbourhood
+changes, from four neighbours to eight, justified by measurement rather than by
+convenience:
+
+| | 4-conn | 8-conn |
+|---|---|---|
+| font sheet cap 7 | 11.5% | **1.5%** |
+| `ui_dialogue_frame` | 0.3% | 0.0% |
+| `chair_wood_dir0` | 1.1% | 0.0% |
+| random palette noise | 90.3% | **80.6%** |
+
+The last row is the one that matters: the reading that stops punishing a
+diagonal still separates art from noise fifty-fold. The 4-neighbour reading is
+left alone everywhere else, where a pixel with no orthogonal neighbour genuinely
+is a downsample artefact.
+
+### Exported as a font, not as baked strings
+
+`build_all.gd` writes a `FontFile` per size — no anti-aliasing, no hinting, no
+subpixel positioning, no MSDF, all for the same reason `_line` has none: every
+one of them blends pixels this pipeline guarantees are palette-exact.
+
+`export_godot.check_font_layout` then measures strings with those resources
+through Godot's own TextServer and compares against `bitmap_font.measure`:
+**32 of 32 widths match across four sizes.** This is the only export whose
+*behaviour* can be checked headless — the nine-slice round-trip can confirm its
+margins are the numbers that were drawn and cannot confirm the engine lays them
+out right. The samples are adversarial: `iiii` and `MMMM` would tie if the font
+had silently fallen back to a monospaced cell, and `A B C` is the only one that
+exercises the space glyph.
+
 ## Characters and layout
 
     python tools/preview_characters.py   # roster + one archetype x 8 directions

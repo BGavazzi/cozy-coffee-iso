@@ -204,6 +204,21 @@ def nameplate(s: float) -> Canvas:
     return c
 
 
+def nameplate_span(s: float) -> tuple[int, int, int]:
+    """(x, width, baseline-ish y) of the banner's writable middle.
+
+    The end caps are drawn OVER the band, so the space a name can occupy is not
+    the canvas width and is not the canvas width less a guessed margin -- it is
+    the gap between the two caps. `bitmap_font.demo` guessed `w - 16` and put
+    the 'l' of "Marisol" underneath the right cap. Published from the same
+    numbers the drawing uses so the two cannot drift.
+    """
+    w, h = int(64 * s), int(24 * s)
+    cap = int(round(9 * s))
+    pad = max(1, int(round(2 * s)))
+    return cap + pad, w - 2 * (cap + pad), h // 2
+
+
 def upgrade_frame(s: float) -> Canvas:
     """Square badge, corners notched off at 45 degrees, with a bevel line."""
     n = int(64 * s)
@@ -228,8 +243,16 @@ def upgrade_frame(s: float) -> Canvas:
     return c
 
 
-def ticket(s: float) -> Canvas:
+def ticket(s: float, ruled: bool = True) -> Canvas:
     """Order ticket: torn top edge, a perforation, two ruled lines.
+
+    `ruled=False` leaves the writing area empty for real text. The two lines
+    were only ever standing in for an order, on the reasoning that text "would
+    be mush at this size" -- an assertion about a font that did not exist yet.
+    It is now measurable, and `bitmap_font.fit_cap` says it was half right: a
+    36px writing area takes "Latte" at cap 9 and does not take "Flat White" at
+    any shipping size. So the rules stay the default and become an option
+    rather than a fact.
 
     The tear is a fixed-period sawtooth rather than noise. Random tearing at
     64px produces exactly the isolated pixels `check_icon` blocks on, and a
@@ -260,11 +283,19 @@ def ticket(s: float) -> Canvas:
     # Two ruled lines, the second short, which is what reads as "an order
     # written on it" without drawing text that would be mush at this size.
     lh = max(1, int(round(2 * s)))
-    for i, ly in enumerate((int(round(18 * s)), int(round(28 * s)))):
-        c.rect(int(round(8 * s)), ly,
-               w - 1 - int(round(8 * s)) - i * int(round(9 * s)),
-               ly + lh - 1, INK)
+    if ruled:
+        for i, ly in enumerate((int(round(18 * s)), int(round(28 * s)))):
+            c.rect(int(round(8 * s)), ly,
+                   w - 1 - int(round(8 * s)) - i * int(round(9 * s)),
+                   ly + lh - 1, INK)
     return c
+
+
+def ticket_span(s: float) -> tuple[int, int, int, int]:
+    """(x, y, width, line pitch) of the ticket's writing area."""
+    w = int(52 * s)
+    x = int(round(8 * s))
+    return x, int(round(16 * s)), w - 2 * x, int(round(10 * s))
 
 
 def _star(s: float, fill) -> Canvas:

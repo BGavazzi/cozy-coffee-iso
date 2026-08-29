@@ -174,3 +174,9 @@ ui:
   # therefore two different stars. Declared because it now exists, rather
   # than existing undeclared.
   - {id: ui_star_rating_empty, cat: ui, prio: 2, src: procedural}
+  # The font. One id rather than one per size, because the four cap heights are
+  # one set of letterforms rasterised at four scales and not four assets --
+  # `bitmap_font` measures which sizes stay legible and ships those. Declared
+  # here so `manifest.check_ui` can see it; it lands in `out/ui/font/` rather
+  # than beside the icons, since a glyph sheet is not an icon.
+  - {id: ui_font,            cat: ui, prio: 1, src: procedural}

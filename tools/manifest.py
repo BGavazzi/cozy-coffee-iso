@@ -16,6 +16,7 @@ saving available, and it is free.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -144,6 +145,25 @@ def check_ui(man: dict) -> list[str]:
                 f"exist -- run tools/ui_forge.py and tools/ui_chrome.py"]
 
     out = []
+    # `ui_font` is one declared id over several files, because the four cap
+    # heights are one set of letterforms and not four assets. It is checked
+    # against its own index rather than against `out/ui/ui_font.png`, which
+    # will never exist -- a glyph sheet is not an icon and does not live beside
+    # them.
+    font_index = ui_dir / "font" / "font.json"
+    if "ui_font" in declared:
+        declared = [d for d in declared if d != "ui_font"]
+        if not font_index.exists():
+            out.append("ui_font declared and no out/ui/font/font.json -- run "
+                       "tools/bitmap_font.py")
+        else:
+            meta = json.loads(font_index.read_text(encoding="utf-8"))
+            gone = [e["file"] for e in meta.get("sizes", {}).values()
+                    if not (ui_dir / "font" / e["file"]).exists()]
+            if gone:
+                out.append(f"ui_font: font.json lists {len(gone)} sheet(s) "
+                           f"with no PNG on disk: {', '.join(sorted(gone))}")
+
     missing = [i for i in declared if not (ui_dir / f"{i}.png").exists()]
     if missing:
         out.append(f"{len(missing)} declared but not built: "

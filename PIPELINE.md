@@ -234,6 +234,8 @@ defect only exists once geometry meets a specific camera:
 | `check_direction_labels` | sprite facings derived from the camera basis rather than declared, so the atlas cannot be off by a rotation |
 | `measured_symmetry` | how many azimuths actually produce different sprites, which sets the render budget |
 | `furnish.check_distinct` | two declared ids whose eight sprites are byte-identical — one asset wearing two names, which per-asset framing makes invisible because scale lives in metadata, not in pixels |
+| `bitmap_font.check_counters` | a glyph whose enclosed hole has filled in. A question about topology, which no palette or coverage metric can answer — both measure colour. This is what sets the font's minimum size |
+| `export_godot.check_font_layout` | the engine laying text out somewhere other than where the producer says it will. The only export whose *behaviour* is checkable headless: `get_string_size` runs on TextServer, not the renderer, and is the same path a `Label` uses |
 
 Each of these was written after a human said some version of "that area is
 mush", which is not actionable, and each turned that into a specific pair of
@@ -264,7 +266,7 @@ foliage, fabric and skin — most of the material range a 2D game needs.
 | 5 (render) | working — exact 2:1, 8 azimuths, camera-space key. **Consumes OBJ meshes** via `mesh.py`, or analytic primitives as a fixture |
 | 6 (pixelize) | working — `pixelize.py`, ramp-quantized, zero contamination |
 | 7 (metadata) | working — `animate.py` emits `atlas.json`: frame rects, per-clip anchors, fps, direction order |
-| 8 (auto-review) | working — `art_review.py` and friends, **23 checks**, most run by `manifest.py --check`; `furnish.check_distinct` is the exception and runs in the producer that can act on it, because a duplicate is a fact about a build, not about the manifest. `check_grid` was tightened rather than added: uniform blocks are evidence of an upscale, not proof, so the finding now has to survive reconstructing the image from one pixel per block — that removed 20 false blockers on flat-shaded blockout geometry (a chalkboard's edge-on face lost 43% of its solid pixels under the round trip and was still being reported as upscaled art) while a deliberately 2x- and 4x-upscaled sprite is still caught at 100% |
+| 8 (auto-review) | working — `art_review.py` and friends, **29 checks**, most run by `manifest.py --check`; `furnish.check_distinct` is the exception and runs in the producer that can act on it, because a duplicate is a fact about a build, not about the manifest. `check_grid` was tightened rather than added: uniform blocks are evidence of an upscale, not proof, so the finding now has to survive reconstructing the image from one pixel per block — that removed 20 false blockers on flat-shaded blockout geometry (a chalkboard's edge-on face lost 43% of its solid pixels under the round trip and was still being reported as upscaled art) while a deliberately 2x- and 4x-upscaled sprite is still caught at 100% |
 | 9 (human critique) | working — `review_queue.py`, contact sheet + ratchet |
 | 10 (engine export) | working — `export_godot.py`, 22 Godot `SpriteFrames` resources built from the current sprite library |
 
