@@ -84,14 +84,26 @@ def pivot_rot(m: Mesh, axis: str, degrees: float, pivot: tuple) -> Mesh:
             x, y = x * c - y * s_, x * s_ + y * c
         verts.append((x + px, y + py, z + pz))
     out.verts = verts
+    # Same field `ingest.fit` records losing in transit: a reconstructor that
+    # copies three of Mesh's four fields drops vertex colours silently. Empty
+    # for everything in this file, which is exactly why it would go unnoticed
+    # until a generated mesh came through here.
+    out.vcolors = list(m.vcolors)
     return out
 
 
 def merge(*meshes: Mesh) -> Mesh:
+    # `vcolors` is parallel to `verts`, so it can only be concatenated when
+    # EVERY input carries it -- one mesh without colours would shift every
+    # later mesh's colours onto the wrong vertices, which is worse than not
+    # carrying them at all. All-or-nothing, decided before the loop.
+    keep = all(len(m.vcolors) == len(m.verts) for m in meshes)
     out = Mesh()
     for m in meshes:
         off = len(out.verts)
         out.verts += m.verts
+        if keep:
+            out.vcolors += m.vcolors
         out.faces += [((a + off, b + off, c + off), None, mat)
                       for (a, b, c), _, mat in m.faces]
     return out
@@ -1030,6 +1042,54 @@ def leafy_plant(height: float = 0.85, seed: int = 1, stems: int = 5,
     return m
 
 
+def succulent(seed: int | None = None) -> Mesh:
+    """A rosette in a small pot. Deliberately NOT `leafy_plant`.
+
+    `leafy_plant` grows branching stems, and every parameter it has makes a
+    plant that spreads. Asked for a 0.25-tall succulent it produced a green
+    sprawl three times wider than its pot, with the pot as a sliver underneath
+    -- a plant, correctly grown, of the wrong species.
+
+    A succulent's geometry is the opposite: leaves radiate from a single point
+    at a steep angle and stay inside the pot's own diameter, which is why the
+    silhouette is a compact dome rather than an outline with gaps in it. Built
+    as `strut` beams from a shared hub, in two tiers, because the tier is what
+    stops a dome from reading as one blob.
+    """
+    st = None if seed is None else _mix(seed)
+
+    def rnd():
+        nonlocal st
+        if st is None:
+            return 0.5
+        st = _mix(st)
+        return st / 0x7FFFFFFF
+
+    m = Mesh()
+    pot_r, pot_h = 0.20, 0.16
+    m.add_prism((0.5, 0.5, 0.0), pot_r * 0.80, pot_r * 0.80, pot_h * 0.75,
+                FABRIC, 10)
+    m.add_prism((0.5, 0.5, pot_h * 0.75), pot_r, pot_r, pot_h * 0.25,
+                FABRIC, 10)
+    m.add_prism((0.5, 0.5, pot_h * 0.92), pot_r * 0.86, pot_r * 0.86, 0.02,
+                "wood-2", 10)                                        # soil
+
+    hub = (0.5, 0.5, pot_h + 0.02)
+    # Outer tier lies nearly flat and inner tier stands up. Both stay within
+    # the pot radius: a leaf that overhangs the pot is what made the last
+    # version read as a shrub.
+    for n, reach, rise, thick, mat in ((7, 0.94, 0.30, 0.030, PLANT),
+                                       (5, 0.55, 0.85, 0.026, "foliage+1")):
+        phase = rnd() * math.tau
+        for i in range(n):
+            a = phase + i * math.tau / n
+            tip = (hub[0] + math.cos(a) * pot_r * reach,
+                   hub[1] + math.sin(a) * pot_r * reach,
+                   hub[2] + pot_r * rise * (0.7 + rnd() * 0.6))
+            strut(m, hub, tip, thick, mat)
+    return m
+
+
 def plant_large(seed: int = 3) -> Mesh:
     return leafy_plant(height=1.05, seed=seed, stems=6)
 
@@ -1510,18 +1570,44 @@ def coat_rack(coat=None) -> Mesh:
     return m
 
 
-def sandwich_board() -> Mesh:
-    """A-frame chalkboard. The lean is the whole silhouette, so it is generous."""
+def _aframe_panel(slate_side: float) -> Mesh:
+    """One upright panel, hinged at the top, slate on the given face."""
     m = Mesh()
     # Solid panels, not quads. A zero-thickness plane is right for a floor
     # overlay and wrong for anything standing up: seen near edge-on it collapses
     # to a 1 px line, which is how this shipped at 3 px and read as a stray mark.
-    for y0, y1 in ((0.16, 0.30), (0.70, 0.84)):
-        m.add_box((0.12, y0, 0.0), (0.88, y1, 0.90), WOOD)
-    m.add_box((0.17, 0.28, 0.16), (0.83, 0.34, 0.78), "neutral-2")        # slate
-    m.add_box((0.17, 0.66, 0.16), (0.83, 0.72, 0.78), "neutral-2")
-    m.add_box((0.12, 0.28, 0.86), (0.88, 0.72, 0.94), WOOD)               # hinge
+    m.add_box((0.12, 0.485, 0.0), (0.88, 0.515, 0.90), WOOD)
+    if slate_side > 0:
+        m.add_box((0.17, 0.515, 0.16), (0.83, 0.527, 0.78), "neutral-2")
+    else:
+        m.add_box((0.17, 0.473, 0.16), (0.83, 0.485, 0.78), "neutral-2")
     return m
+
+
+A_FRAME_LEAN = 17.0
+
+
+def sandwich_board() -> Mesh:
+    """A-frame chalkboard. The lean is the whole silhouette, so it is generous.
+
+    The lean has to be a ROTATION. This shipped as two axis-aligned boxes at
+    different y with a hinge across the top, which is a docstring describing a
+    lean over geometry that has none -- and it rendered as exactly what it is:
+    a closed rectangular box, read in review as a doorway rather than a board.
+    `add_box` cannot lean, so each panel is built upright at the hinge plane and
+    swung about the hinge line with `pivot_rot`, the same primitive the rig uses
+    to turn a leg about its hip.
+
+    The slate sits on each panel's OUTWARD face and is rotated with it, so the
+    two boards splay apart the way a real A-frame's do -- which is what makes
+    the silhouette read from the sides as well as from the front.
+    """
+    hinge = (0.5, 0.5, 0.90)
+    front = pivot_rot(_aframe_panel(+1.0), "x", A_FRAME_LEAN, hinge)
+    back = pivot_rot(_aframe_panel(-1.0), "x", -A_FRAME_LEAN, hinge)
+    cap = Mesh()
+    cap.add_box((0.12, 0.44, 0.88), (0.88, 0.56, 0.96), WOOD)              # hinge
+    return merge(front, back, cap)
 
 
 def wall_shelf(length: float = 2.0, along: str = "x", rows=(0.34,)) -> Mesh:
@@ -1658,4 +1744,443 @@ def flower_vase(seed: int | None = None) -> Mesh:
               0.012, PLANT)
         m.add_sphere((0.5 + math.cos(a) * lean, 0.5 + math.sin(a) * lean, z),
                      r, bloom if i else bloom, 8, 6)
+    return m
+
+
+# --- back-of-house fixtures --------------------------------------------------
+#
+# Everything below exists because `furnish.py`'s registry made the gap countable:
+# `assets.yaml` declares these ids, no builder made them, and the honest report
+# said so. They are written to the same rule the rest of this file follows --
+# the SILHOUETTE carries the object, and interior detail is drawn as a value
+# step rather than as geometry, because interior detail is gone by the time the
+# frame is downsampled and the outline is not.
+
+
+def fridge_under(seed: int | None = None) -> Mesh:
+    """Under-counter fridge. A door line and a handle, and nothing else.
+
+    A closed appliance is a box, and pretending otherwise by modelling a vent
+    grille would spend geometry on something two pixels tall. What makes it
+    read as a fridge rather than as a cabinet is the full-height door reveal and
+    the horizontal handle -- both drawn as value on the front face, which is the
+    same technique `counter`'s front treatments use.
+    """
+    m = Mesh()
+    m.add_box((0.14, 0.14, 0.04), (0.86, 0.86, 0.92), METAL)
+    # +y is the front. `counter` draws its front treatments at y=0.9412 and
+    # every room placement rotates props to suit, so a detail on -y is a detail
+    # the camera cannot see in the direction the prop is meant to face -- which
+    # is how this first shipped, as a featureless grey box at dir0.
+    m.add_box((0.16, 0.86, 0.06), (0.84, 0.88, 0.90), "neutral+1")     # door
+    m.add_box((0.20, 0.87, 0.70), (0.80, 0.90, 0.76), "neutral+2")     # handle
+    m.add_box((0.14, 0.14, 0.0), (0.86, 0.86, 0.04), "neutral-2")      # plinth
+    return m
+
+
+def ice_machine() -> Mesh:
+    """A lid that overhangs is the whole tell -- otherwise this is `fridge_under`
+    in a different size, and two boxes with different declared heights are one
+    asset wearing two names."""
+    m = Mesh()
+    m.add_box((0.18, 0.18, 0.0), (0.82, 0.82, 0.78), METAL)
+    m.add_box((0.14, 0.14, 0.78), (0.86, 0.86, 0.90), "neutral+1")     # lid
+    m.add_box((0.22, 0.81, 0.24), (0.78, 0.84, 0.58), "neutral-1")     # hatch
+    return m
+
+
+def sink_double() -> Mesh:
+    """Two basins. `Mesh` is additive, so the recess is built as a rim rather
+    than cut out of a solid.
+
+    Four walls and a floor per basin is the whole of it -- and it is the right
+    shape anyway, because from this camera the only part of a basin anyone sees
+    is the rim and the far inside wall. A subtractive model would spend
+    triangles on a bottom the camera cannot reach.
+    """
+    m = Mesh()
+    top, wall, depth = 0.86, 0.05, 0.18
+    m.add_box((0.0, 0.10, 0.0), (2.0, 0.90, top - depth), METAL)       # carcass
+    for x0 in (0.16, 1.06):
+        x1 = x0 + 0.78
+        m.add_box((x0, 0.18, top - depth), (x1, 0.82, top - depth + 0.02),
+                  "neutral-2")                                        # basin floor
+        for a, b in ((x0, x0 + wall), (x1 - wall, x1)):               # side walls
+            m.add_box((a, 0.18, top - depth), (b, 0.82, top), "neutral+1")
+        for a, b in ((0.18, 0.18 + wall), (0.82 - wall, 0.82)):       # end walls
+            m.add_box((x0, a, top - depth), (x1, b, top), "neutral+1")
+    m.add_cylinder((1.0, 0.30, top), 0.035, 0.26, "neutral+2", 8)     # tap column
+    m.add_box((0.96, 0.30, top + 0.22), (1.04, 0.58, top + 0.28), "neutral+2")
+    return m
+
+
+def cup_warmer() -> Mesh:
+    """A heated plate with cups upended on it. The cups are the object: a bare
+    plate is a tray, and at three pixels tall the difference has to be the
+    thing standing on top."""
+    m = Mesh()
+    m.add_box((0.16, 0.24, 0.0), (0.84, 0.76, 0.10), METAL)
+    m.add_box((0.18, 0.26, 0.10), (0.82, 0.74, 0.12), "neutral+2")     # hot plate
+    for cx in (0.32, 0.50, 0.68):
+        for cy in (0.38, 0.62):
+            m.add_cylinder((cx, cy, 0.12), 0.065, 0.11, CERAMIC, 8)
+    return m
+
+
+def bean_hopper() -> Mesh:
+    """An inverted cone on a collar. The taper IS the object -- a cylinder of
+    beans is a tin."""
+    m = Mesh()
+    m.add_prism((0.5, 0.5, 0.0), 0.16, 0.16, 0.10, METAL, 10)          # collar
+    # The BEANS are the outer surface, not the glass. A hopper modelled as a
+    # glass shell with beans inside draws the shell over the beans -- this
+    # rasteriser has no transparency -- and a whole vessel of `sky+2` came out
+    # as a pale blue tank, which is the same reading GLASS's own comment records
+    # for windows. So the wall is beans, and the glass is two narrow bands that
+    # read as the empty top of the vessel.
+    for r, z0, z1 in ((0.20, 0.10, 0.26), (0.26, 0.26, 0.42), (0.31, 0.42, 0.56)):
+        m.add_prism((0.5, 0.5, z0), r, r, z1 - z0, "wood-1", 10)       # beans
+    m.add_prism((0.5, 0.5, 0.36), 0.265, 0.265, 0.03, "wood-2", 10)    # band
+    m.add_prism((0.5, 0.5, 0.56), 0.31, 0.31, 0.06, GLASS, 10)         # empty top
+    m.add_prism((0.5, 0.5, 0.62), 0.33, 0.33, 0.06, "neutral+1", 10)   # rim
+    return m
+
+
+def drip_brewer() -> Mesh:
+    """Body, basket, carafe on a plate. The overhang of the brew head over the
+    carafe is what separates this from a kettle at this size."""
+    m = Mesh()
+    m.add_box((0.20, 0.22, 0.0), (0.80, 0.78, 0.20), METAL)            # base
+    m.add_box((0.22, 0.24, 0.20), (0.78, 0.42, 0.92), "neutral+1")     # column
+    m.add_box((0.22, 0.24, 0.62), (0.80, 0.74, 0.78), "neutral+1")     # brew head
+    m.add_box((0.24, 0.26, 0.20), (0.76, 0.72, 0.23), "neutral-1")     # warm plate
+    m.add_prism((0.52, 0.54, 0.23), 0.20, 0.20, 0.34, GLASS, 10)       # carafe
+    m.add_prism((0.52, 0.54, 0.23), 0.17, 0.17, 0.18, "wood-2", 10)    # coffee
+    m.add_box((0.70, 0.50, 0.26), (0.76, 0.58, 0.52), "neutral-1")     # handle
+    return m
+
+
+def pourover_stand() -> Mesh:
+    """A cone held over a carafe by an arm. Every part of this is air except the
+    arm, which is why it is built with `strut` -- an axis-aligned bracket reads
+    as a box with a hole and loses the cantilever the object is named for."""
+    m = Mesh()
+    m.add_box((0.16, 0.30, 0.0), (0.84, 0.70, 0.06), WOOD)             # foot
+    strut(m, (0.24, 0.50, 0.06), (0.24, 0.50, 0.86), 0.035, METAL)     # post
+    strut(m, (0.24, 0.50, 0.82), (0.58, 0.50, 0.78), 0.030, METAL)     # arm
+    m.add_prism((0.58, 0.50, 0.66), 0.10, 0.10, 0.06, METAL, 8)        # ring
+    m.add_prism((0.58, 0.50, 0.60), 0.06, 0.06, 0.20, CERAMIC, 10)     # cone
+    m.add_prism((0.58, 0.50, 0.80), 0.16, 0.16, 0.04, CERAMIC, 10)
+    m.add_prism((0.58, 0.50, 0.06), 0.17, 0.17, 0.30, GLASS, 10)       # carafe
+    m.add_prism((0.58, 0.50, 0.06), 0.14, 0.14, 0.12, "wood-2", 10)
+    return m
+
+
+def grinder_hand() -> Mesh:
+    """The crank is the silhouette. Everything under it is a box, and a box
+    without the crank is a canister."""
+    m = Mesh()
+    m.add_box((0.30, 0.30, 0.0), (0.70, 0.70, 0.44), WOOD)             # body
+    m.add_box((0.32, 0.32, 0.44), (0.68, 0.68, 0.50), "wood+1")        # collar
+    m.add_prism((0.50, 0.50, 0.50), 0.15, 0.15, 0.14, METAL, 10)       # hopper
+    strut(m, (0.50, 0.50, 0.64), (0.50, 0.50, 0.78), 0.020, METAL)     # shaft
+    strut(m, (0.50, 0.50, 0.76), (0.74, 0.50, 0.74), 0.022, METAL)     # crank arm
+    m.add_cylinder((0.74, 0.50, 0.60), 0.030, 0.14, WOOD, 8)           # knob
+    m.add_box((0.34, 0.28, 0.06), (0.66, 0.31, 0.24), "wood+2")        # drawer
+    return m
+
+
+def kettle_gooseneck() -> Mesh:
+    """The spout arcs up and over, which no single beam draws -- it is three
+    struts, because the curve is the entire reason this object has a name."""
+    m = Mesh()
+    m.add_prism((0.44, 0.50, 0.0), 0.22, 0.22, 0.26, METAL, 12)        # body
+    m.add_prism((0.44, 0.50, 0.26), 0.17, 0.17, 0.06, "neutral+1", 12)  # shoulder
+    m.add_prism((0.44, 0.50, 0.32), 0.09, 0.09, 0.05, "neutral+2", 10)  # lid
+    strut(m, (0.62, 0.50, 0.12), (0.74, 0.50, 0.30), 0.024, "neutral+1")
+    strut(m, (0.74, 0.50, 0.30), (0.80, 0.50, 0.40), 0.022, "neutral+1")
+    strut(m, (0.80, 0.50, 0.40), (0.84, 0.50, 0.30), 0.020, "neutral+1")
+    strut(m, (0.22, 0.50, 0.06), (0.14, 0.50, 0.26), 0.022, "neutral-1")  # handle
+    strut(m, (0.14, 0.50, 0.26), (0.26, 0.50, 0.34), 0.022, "neutral-1")
+    return m
+
+
+# --- tabletop ----------------------------------------------------------------
+#
+# These are the smallest objects the factory makes, and small is the reason
+# they are geometry rather than SDXL output: a 0.15-tile mug quantized from a
+# photograph is a speckle field, which is the same ceiling `bread_loaf` and the
+# laminated pastry hit. Built as boxes and prisms, they downsample to clean
+# flats because there was never any high-frequency detail to lose.
+
+
+def cup_espresso() -> Mesh:
+    """A demitasse differs from a latte cup by PROPORTION, not by size -- it is
+    short and narrow on a saucer that is wide relative to it. `fit` scales
+    uniformly, so this cannot be `cup_and_saucer` at a smaller height: that
+    produced pixel-identical sprites, which is how the duplicate was caught."""
+    m = Mesh()
+    m.add_cylinder((0.5, 0.5, 0.0), 0.145, 0.018, CERAMIC, 12)         # saucer
+    m.add_cylinder((0.5, 0.5, 0.0), 0.120, 0.030, "cream+1", 12)       # well
+    # The cup was 0.055 against a 0.15 saucer and disappeared into it: the
+    # sprite read as a flat disc. A demitasse is small in ABSOLUTE terms and
+    # still most of what is on the saucer, and only the latter survives being
+    # framed to fill 64 px.
+    m.add_cylinder((0.5, 0.5, 0.018), 0.090, 0.115, CERAMIC, 10)       # cup
+    m.add_cylinder((0.5, 0.5, 0.115), 0.070, 0.018, "wood-2", 10)      # crema
+    strut(m, (0.585, 0.50, 0.085), (0.645, 0.50, 0.070), 0.016, CERAMIC)
+    strut(m, (0.645, 0.50, 0.070), (0.615, 0.50, 0.040), 0.016, CERAMIC)
+    return m
+
+
+def cup_togo() -> Mesh:
+    """Tapered body, lid wider than the rim, sleeve as a value band. The taper
+    and the proud lid are the two things that separate a paper cup from a
+    tumbler at eight pixels wide."""
+    m = Mesh()
+    m.add_prism((0.5, 0.5, 0.0), 0.115, 0.115, 0.10, CERAMIC, 12)
+    m.add_prism((0.5, 0.5, 0.10), 0.135, 0.135, 0.12, CERAMIC, 12)
+    m.add_prism((0.5, 0.5, 0.07), 0.140, 0.140, 0.09, "wood-1", 12)    # sleeve
+    m.add_prism((0.5, 0.5, 0.22), 0.155, 0.155, 0.035, "neutral+1", 12)  # lid
+    m.add_prism((0.5, 0.5, 0.255), 0.075, 0.075, 0.020, "neutral+1", 10)  # spout
+    return m
+
+
+def mug_ceramic() -> Mesh:
+    """The handle is the silhouette. A mug without one is a tumbler, so the
+    handle is built as three struts around a genuine hole rather than as a lump
+    on the side -- the gap is what the eye reads."""
+    m = Mesh()
+    m.add_cylinder((0.46, 0.5, 0.0), 0.145, 0.20, CERAMIC, 12)
+    m.add_cylinder((0.46, 0.5, 0.185), 0.115, 0.020, "wood-2", 12)     # coffee
+    strut(m, (0.60, 0.50, 0.055), (0.70, 0.50, 0.070), 0.020, CERAMIC)
+    strut(m, (0.70, 0.50, 0.070), (0.71, 0.50, 0.140), 0.020, CERAMIC)
+    strut(m, (0.71, 0.50, 0.140), (0.60, 0.50, 0.160), 0.020, CERAMIC)
+    return m
+
+
+def milk_jug() -> Mesh:
+    """A pitcher: straight-sided, with a pulled lip. The lip is one strut and it
+    is the only thing that says "pour" rather than "cup"."""
+    m = Mesh()
+    m.add_prism((0.44, 0.5, 0.0), 0.130, 0.130, 0.23, METAL, 10)
+    m.add_prism((0.44, 0.5, 0.23), 0.145, 0.145, 0.02, "neutral+2", 10)  # rim
+    # A pitcher is a lip and a handle attached to a cylinder, and a cylinder on
+    # its own is a tin. Both were built at strut radii that land under a pixel
+    # once the sprite is framed, so neither reached the silhouette; they are
+    # now sized to clear the library's own 4 px member floor.
+    strut(m, (0.55, 0.50, 0.225), (0.70, 0.50, 0.185), 0.045, "neutral+2")  # lip
+    strut(m, (0.31, 0.50, 0.045), (0.19, 0.50, 0.115), 0.034, "neutral+1")
+    strut(m, (0.19, 0.50, 0.115), (0.32, 0.50, 0.200), 0.034, "neutral+1")
+    return m
+
+
+def sugar_caddy() -> Mesh:
+    """An open box with sachets standing in it. The sachets are the object; an
+    empty caddy is a matchbox."""
+    m = Mesh()
+    for a, b in ((0.26, 0.30), (0.70, 0.74)):
+        m.add_box((0.26, a, 0.0), (0.74, b, 0.16), WOOD)
+        m.add_box((a, 0.26, 0.0), (b, 0.74, 0.16), WOOD)
+    m.add_box((0.28, 0.28, 0.0), (0.72, 0.72, 0.03), "wood-1")
+    for i, x in enumerate((0.34, 0.42, 0.50, 0.58, 0.66)):
+        mat = "cream+2" if i % 2 else "cream+1"
+        m.add_box((x, 0.32, 0.03), (x + 0.055, 0.68, 0.22), mat)
+    return m
+
+
+def napkin_holder() -> Mesh:
+    """Two uprights with a stack of paper wedged between them. The paper is a
+    lighter step than the metal, which is the whole of the contrast."""
+    m = Mesh()
+    m.add_box((0.26, 0.30, 0.0), (0.74, 0.70, 0.025), METAL)
+    for a, b in ((0.30, 0.345), (0.655, 0.70)):
+        m.add_box((0.28, a, 0.025), (0.72, b, 0.24), "neutral+1")
+    m.add_box((0.31, 0.36, 0.025), (0.69, 0.64, 0.27), "cream+3")      # napkins
+    return m
+
+
+def tip_jar(seed: int | None = None) -> Mesh:
+    """A jar with coins in it and a label band. Glass reads as near-empty at
+    this size, so what makes it a tip jar is the coin mass at the bottom."""
+    m = Mesh()
+    m.add_prism((0.5, 0.5, 0.0), 0.19, 0.19, 0.30, GLASS, 12)
+    m.add_prism((0.5, 0.5, 0.0), 0.165, 0.165, 0.09, "gold_coin", 12)  # coins
+    m.add_prism((0.5, 0.5, 0.15), 0.195, 0.195, 0.07, "cream+2", 12)   # label
+    m.add_prism((0.5, 0.5, 0.30), 0.20, 0.20, 0.035, "neutral+1", 12)  # ring
+    return m
+
+
+def laptop_open(angle: float = 100.0) -> Mesh:
+    """Base and screen, hinged. The angle between them is the object -- flat it
+    is a book, and vertical it is a picture frame -- so the screen is swung with
+    `pivot_rot` about the hinge line rather than placed as a leaning box."""
+    m = Mesh()
+    m.add_box((0.18, 0.34, 0.0), (0.82, 0.78, 0.030), "neutral-1")     # base
+    m.add_box((0.22, 0.40, 0.030), (0.78, 0.72, 0.036), "neutral+1")   # keys
+    lid = Mesh()
+    lid.add_box((0.18, 0.34, 0.030), (0.82, 0.36, 0.44), "neutral-1")
+    lid.add_box((0.21, 0.355, 0.060), (0.79, 0.365, 0.41), GLASS)      # screen
+    return merge(m, pivot_rot(lid, "x", angle - 90.0, (0.5, 0.35, 0.030)))
+
+
+def book_stack(seed: int | None = None) -> Mesh:
+    """Four volumes, each offset and rotated a little. A stack squared up is a
+    block; the offsets are what make it a stack."""
+    st = None if seed is None else _mix(seed)
+
+    def rnd():
+        nonlocal st
+        if st is None:
+            return 0.5
+        st = _mix(st)
+        return st / 0x7FFFFFFF
+
+    m = Mesh()
+    z = 0.0
+    for i in range(4):
+        t = 0.038 + rnd() * 0.026
+        w, d = 0.30 - i * 0.012, 0.22 - i * 0.008
+        one = Mesh()
+        one.add_box((0.5 - w, 0.5 - d, z), (0.5 + w, 0.5 + d, z + t),
+                    BOOK_SPINES[int(rnd() * len(BOOK_SPINES)) % len(BOOK_SPINES)])
+        one.add_box((0.5 - w + 0.03, 0.5 - d, z + 0.008),
+                    (0.5 + w, 0.5 + d, z + t - 0.008), "cream+3")      # pages
+        m = merge(m, pivot_rot(one, "z", (rnd() - 0.5) * 26.0, (0.5, 0.5, 0.0)))
+        z += t
+    return m
+
+
+def pastry_plate(seed: int | None = None) -> Mesh:
+    """A plate with two pastries on it. Laminated pastry is high-frequency
+    detail that quantizes to speckle -- the ceiling `ui_icon_pastry` hit -- so
+    these are stepped blocks whose value change does the work instead."""
+    st = None if seed is None else _mix(seed)
+
+    def rnd():
+        nonlocal st
+        if st is None:
+            return 0.5
+        st = _mix(st)
+        return st / 0x7FFFFFFF
+
+    m = Mesh()
+    m.add_cylinder((0.5, 0.5, 0.0), 0.28, 0.020, CERAMIC, 14)
+    m.add_cylinder((0.5, 0.5, 0.020), 0.24, 0.012, "cream+3", 14)
+    for cx, cy in ((0.42, 0.46), (0.58, 0.55)):
+        r = 0.10 + rnd() * 0.03
+        m.add_prism((cx, cy, 0.032), r, r * 0.72, 0.045, "wood+2", 8)
+        m.add_prism((cx, cy, 0.077), r * 0.72, r * 0.52, 0.035, "wood+3", 8)
+    return m
+
+
+def bean_sack(seed: int | None = None) -> Mesh:
+    """A sack slumps: wide at the base, cinched at the neck, with the top folded
+    over. Three stacked prisms of falling radius, which is what a slump looks
+    like once it has been quantized to a 64 px sprite anyway."""
+    st = None if seed is None else _mix(seed)
+
+    def rnd():
+        nonlocal st
+        if st is None:
+            return 0.5
+        st = _mix(st)
+        return st / 0x7FFFFFFF
+
+    m = Mesh()
+    base = 0.30 + rnd() * 0.04
+    m.add_prism((0.5, 0.5, 0.0), base, base * 0.86, 0.26, "wood+1", 10)
+    m.add_prism((0.5, 0.5, 0.26), base * 0.86, base * 0.74, 0.20, "wood+1", 10)
+    m.add_prism((0.5, 0.5, 0.46), base * 0.58, base * 0.50, 0.12, "wood", 10)
+    m.add_prism((0.5, 0.5, 0.58), base * 0.70, base * 0.60, 0.06, "wood+2", 10)
+    m.add_box((0.5 - base * 0.55, 0.5 - base * 0.10, 0.14),
+              (0.5 + base * 0.55, 0.5 - base * 0.06, 0.34), "cream+2")  # stencil
+    return m
+
+
+# --- wall and light ----------------------------------------------------------
+
+def wall_art_framed(seed: int | None = None) -> Mesh:
+    """A frame, a mount, and a picture. Three concentric value steps: the frame
+    dark, the mount at the top of the cream ramp, the picture somewhere else
+    entirely -- which is the only way a 12 px rectangle says "art" rather than
+    "panel"."""
+    st = None if seed is None else _mix(seed)
+
+    def rnd():
+        nonlocal st
+        if st is None:
+            return 0.5
+        st = _mix(st)
+        return st / 0x7FFFFFFF
+
+    y0, y1 = 0.12, 0.18
+    m = Mesh()
+    m.add_box((0.10, y0, 0.06), (0.90, y1, 0.94), "wood-1")            # frame
+    m.add_box((0.16, y1, 0.12), (0.84, y1 + 0.010, 0.88), "cream+3")   # mount
+    hue = ("sky-1", "foliage-1", "rose-1", "wood+1")[int(rnd() * 4) % 4]
+    m.add_box((0.22, y1 + 0.010, 0.20), (0.78, y1 + 0.018, 0.80), hue)
+    m.add_box((0.22, y1 + 0.018, 0.20), (0.78, y1 + 0.024, 0.42),
+              hue.split("-")[0] + "+1")                                # horizon
+    return m
+
+
+def lamp_floor() -> Mesh:
+    """A standard lamp: weighted base, thin stem, drum shade with a lit
+    underside. The stem has to be thin -- a thick one reads as a column, and the
+    gap either side of it is most of the silhouette."""
+    m = Mesh()
+    m.add_cylinder((0.5, 0.5, 0.0), 0.20, 0.045, "neutral-1", 12)      # base
+    m.add_cylinder((0.5, 0.5, 0.045), 0.028, 1.02, METAL, 8)           # stem
+    m.add_prism((0.5, 0.5, 1.02), 0.24, 0.24, 0.30, CERAMIC, 12)       # shade
+    m.add_prism((0.5, 0.5, 0.995), 0.225, 0.225, 0.03, "cream+3", 12)  # lit rim
+    return m
+
+
+def lamp_table() -> Mesh:
+    """The same three parts as `lamp_floor` in different proportion, which is
+    what actually separates them: a table lamp is nearly all shade."""
+    m = Mesh()
+    m.add_cylinder((0.5, 0.5, 0.0), 0.13, 0.035, WOOD, 12)
+    m.add_cylinder((0.5, 0.5, 0.035), 0.075, 0.14, CERAMIC, 10)        # body
+    m.add_cylinder((0.5, 0.5, 0.175), 0.024, 0.06, METAL, 6)
+    m.add_prism((0.5, 0.5, 0.235), 0.21, 0.21, 0.20, CERAMIC, 12)      # shade
+    m.add_prism((0.5, 0.5, 0.215), 0.195, 0.195, 0.025, "cream+3", 12)
+    return m
+
+
+def plant_hanging(seed: int = 5) -> Mesh:
+    """A pot on a hanger with the foliage trailing DOWNWARD. That direction is
+    the entire difference from `leafy_plant`, which grows up -- and it is why
+    the pot sits at the top of the sprite rather than the bottom.
+
+    The hook terminating in mid-air is fine here and is not fine in a room
+    render: this is a sprite with its own frame, the same way `pendant_lamp`
+    already ships one.
+    """
+    st = _mix(seed)
+
+    def rnd():
+        nonlocal st
+        st = _mix(st)
+        return st / 0x7FFFFFFF
+
+    m = Mesh()
+    top = 1.00
+    m.add_cylinder((0.5, 0.5, top - 0.04), 0.020, 0.04, METAL, 6)      # hook
+    for a in (0.4, 2.5, 4.6):                                          # cords
+        strut(m, (0.5, 0.5, top - 0.02),
+              (0.5 + math.cos(a) * 0.15, 0.5 + math.sin(a) * 0.15, top - 0.34),
+              0.010, METAL)
+    m.add_prism((0.5, 0.5, top - 0.42), 0.18, 0.18, 0.08, FABRIC, 10)
+    m.add_prism((0.5, 0.5, top - 0.34), 0.20, 0.20, 0.10, FABRIC, 10)  # pot
+    m.add_prism((0.5, 0.5, top - 0.25), 0.185, 0.185, 0.02, "wood-2", 10)
+    for i in range(7):                                                 # trailers
+        a = rnd() * math.tau
+        r0 = 0.10 + rnd() * 0.07
+        drop = 0.26 + rnd() * 0.34
+        x0, y0 = 0.5 + math.cos(a) * r0, 0.5 + math.sin(a) * r0
+        x1, y1 = 0.5 + math.cos(a) * (r0 + 0.09), 0.5 + math.sin(a) * (r0 + 0.09)
+        strut(m, (x0, y0, top - 0.25), (x1, y1, top - 0.25 - drop), 0.024,
+              PLANT if i % 2 else "foliage+1")
     return m

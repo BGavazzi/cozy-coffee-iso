@@ -166,15 +166,43 @@ def check_grid(px, w, h) -> list[Finding]:
         # is also perfectly uniform at 2x, and reporting 2x understates the problem.
         if score > 0.92 and (score > best_score or b > best_b):
             best_b, best_score = b, score
-    if best_b > 1 and best_score > 0.92:
-        return [Finding(
-            BLOCKER, "grid",
-            f"art appears to be {best_b}x upscaled "
-            f"({best_score:.0%} of {best_b}x{best_b} blocks are uniform)",
-            f"True resolution is {w // best_b}x{h // best_b}. Author and export at "
-            f"native size; upscale only for display.",
-        )]
-    return []
+    if best_b <= 1 or best_score <= 0.92:
+        return []
+
+    # Uniform blocks are EVIDENCE of an upscale, not proof of one. The decisive
+    # test is whether the claim survives being acted on: if the art really is
+    # b-times upscaled, then taking one pixel per block and blowing it back up
+    # reconstructs the original exactly. Flat-shaded blockout geometry seen
+    # near edge-on scores just as high on uniform blocks and does NOT survive
+    # that round trip -- a chalkboard's edge-on face lost 43% of its solid
+    # pixels, an ice machine's 8.7%, and both were reported as upscaled art.
+    #
+    # Measured on the 448 sprites `furnish.py` produces: 20 blockers before,
+    # 0 after, with no genuine upscale in the set to lose. The heuristic was
+    # measuring FLATNESS, which is something this style bible asks for.
+    lost = 0
+    solid = 0
+    for y in range(h):
+        for x in range(w):
+            here = px[y * w + x]
+            if here is not None and here[3]:
+                solid += 1
+            src = px[(y // best_b * best_b) * w + (x // best_b * best_b)]
+            lost += here != src
+    # 1% allows for a stray pixel on a genuine upscale that was re-saved or
+    # lightly touched up, and is far below the 8.7% floor measured on the
+    # false positives.
+    if solid and lost / solid > 0.01:
+        return []
+
+    return [Finding(
+        BLOCKER, "grid",
+        f"art appears to be {best_b}x upscaled "
+        f"({best_score:.0%} of {best_b}x{best_b} blocks are uniform, and "
+        f"reconstructing from one pixel per block is lossless)",
+        f"True resolution is {w // best_b}x{h // best_b}. Author and export at "
+        f"native size; upscale only for display.",
+    )]
 
 
 def check_extremes(px) -> list[Finding]:
@@ -342,7 +370,14 @@ def main() -> int:
     by_rgb, ramps, entries = load_palette()
     report = {}
     for spec in args.images:
-        for path in sorted(Path().glob(spec)) or [Path(spec)]:
+        # `Path().glob` raises on an absolute pattern, so an absolute path --
+        # which is what any caller outside the repo root passes -- crashed the
+        # tool rather than being reviewed. Globbing is only attempted for
+        # relative specs; anything else is taken as the literal path it is.
+        matches = []
+        if not Path(spec).is_absolute():
+            matches = sorted(Path().glob(spec))
+        for path in matches or [Path(spec)]:
             report[str(path)] = review(path, by_rgb, ramps, entries)
 
     if args.json:
