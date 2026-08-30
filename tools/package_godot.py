@@ -240,6 +240,39 @@ def stage_ui(ui_dir: Path, assets_dir: Path) -> dict:
     return {"icons": icons}
 
 
+def stage_font(ui_dir: Path, assets_dir: Path) -> dict:
+    """The bitmap font: one uniform-cell sheet per size, plus its metrics.
+
+    A font is not an icon, which is why it lives in `out/ui/font/` rather than
+    beside them -- `stage_ui` globs `out/ui/*.png` and would otherwise stage
+    four glyph sheets and a demo render as game assets.
+
+    Everything an engine needs to cut the sheet up is arithmetic on the cell
+    size and the glyph's index, so only the per-glyph ADVANCE has to travel:
+    the cells are uniform and the font is not, and that difference is the whole
+    of what makes the setting proportional. Passed through unchanged from
+    `font.json` rather than recomputed here, for the reason `stage_tiles`
+    records -- one authority for the metrics, on the Python side.
+    """
+    src = ui_dir / "font"
+    index = src / "font.json"
+    if not index.exists():
+        return {}
+    meta = json.loads(index.read_text(encoding="utf-8"))
+    dest = assets_dir / "font"
+    dest.mkdir(parents=True, exist_ok=True)
+    sizes = {}
+    for cap, entry in meta["sizes"].items():
+        png = src / entry["file"]
+        if not png.exists():
+            continue
+        shutil.copyfile(png, dest / png.name)
+        out = dict(entry)
+        out["file"] = f"font/{png.name}"
+        sizes[cap] = out
+    return {"sizes": sizes, "ink": meta.get("ink")} if sizes else {}
+
+
 def stage_tiles(tiles_dir: Path, assets_dir: Path) -> dict:
     """Ground tiles: one atlas per tile type, variants in a row.
 
@@ -296,6 +329,9 @@ def stage(manifest_path: Path = SPRITES_MANIFEST,
         ui = stage_ui(ui_dir, assets_dir)
         if ui.get("icons"):
             build["ui"] = ui
+        font = stage_font(ui_dir, assets_dir)
+        if font.get("sizes"):
+            build["font"] = font
     if tiles_dir.exists():
         tiles = stage_tiles(tiles_dir, assets_dir)
         if tiles.get("tiles"):
@@ -332,6 +368,11 @@ def summarise(build: dict) -> str:
         drawn = sum(1 for i in ui.values() if i["source"] == "drawn")
         lines.append(f"{len(ui)} UI pieces ({drawn} drawn, {len(ui) - drawn} "
                      f"generated), {nine} nine-slice")
+    font = build.get("font", {}).get("sizes", {})
+    if font:
+        caps = sorted(int(c) for c in font)
+        glyphs = len(next(iter(font.values()))["glyphs"])
+        lines.append(f"{glyphs} glyphs at cap heights {caps}")
     return "\n".join(lines)
 
 
