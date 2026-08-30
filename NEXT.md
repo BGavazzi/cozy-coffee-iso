@@ -375,9 +375,18 @@ not, not every asset any game has ever shipped.
    exactly that reason.
 5. **Cursors and pointer states.** Trivially procedural, genuinely required,
    and nobody has written the six lines.
-6. **A palette-swap path.** One shop, several times of day or seasons, is a
-   normal thing for this genre to want, and the ramps are computed rather
-   than picked -- which is the hard half already done. Nothing exercises it.
+6. ~~**A palette-swap path.**~~ **Done.** `palette_swap.py`, four variants in
+   `style_bible.yaml`, `proof/variants.png`. Two things worth carrying
+   forward. First, the swap is a lookup and not a re-quantization, which is
+   only possible because the library measured exactly 40 colours with none
+   off-palette -- that measurement is the feature's foundation, so
+   `--check` re-takes it rather than trusting it. Second, the first set of
+   variants was swept to maximise each variant's own internal `min_delta_e`,
+   which is the wrong objective: a variant is never quantized against, so the
+   sweep was climbing a phantom constraint, and it converged `evening` and
+   `night` to 0.0057 apart -- one palette shipped twice. `check_separation`
+   now gates the distance BETWEEN shipped palettes, and the proof sheet is
+   what made the collapse visible in the first place.
 7. **Rigging from a generated mesh** (UniRig) and **TRELLIS 2** — both
    blocked on this workstation's toolchain rather than on design, and both
    already recorded below.

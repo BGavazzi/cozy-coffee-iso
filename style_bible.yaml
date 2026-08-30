@@ -76,6 +76,75 @@ palette:
     accent_read:   { hue: 15,  lightness: 0.62, chroma: 0.145 }  # UI / interactable
     gold_coin:     { hue: 95,  lightness: 0.780, chroma: 0.160 } # currency, UI positive
 
+  # --- Time-of-day variants -------------------------------------------------
+  # Each variant is a set of TRANSFORMS on the generator's parameters, never a
+  # list of colours. That is the whole reason the base palette is computed
+  # rather than picked: a second palette costs six numbers instead of forty
+  # re-argued decisions.
+  #
+  # `lightness` is a SHIFT and a SQUEEZE about each ramp's own midpoint, not a
+  # delta on its two ends. The obvious form is wrong and only shows it once the
+  # palette is validated: `cream` spans 0.25 of lightness and `wood` spans 0.60,
+  # so the same absolute delta compresses cream by 44% and wood by 18%, and
+  # cream's steps land on top of wood's. All four first drafts were rejected on
+  # exactly that collision.
+  #
+  # The strengths below were SWEPT, not chosen. Each variant has a direction,
+  # and the sweep reports the strongest setting that still satisfies every
+  # constraint; these sit one step inside it. `evening` and `overcast` never
+  # broke and run at full strength. `golden_hour` and `night` are bounded by
+  # `max_lightness` and `min_lightness` -- the "almost never pure black or pure
+  # white" rule -- at 0.47 and 0.57 respectively, and ship at 0.42 and 0.52.
+  variants:
+    # Strengths are set so that every PAIR of shipped palettes is at least
+    # min_delta_e apart on average -- the same 0.035 this palette uses to decide
+    # two colours are different colours. An earlier set was swept to maximise
+    # each variant's own internal min_delta_e, which is the wrong objective (a
+    # variant is never quantized against, see palette_forge.validate_variant)
+    # and it converged evening and night onto the same point: 0.0057 apart,
+    # a sixth of the floor. They rendered as one palette shipped twice.
+    # `palette_forge.check_separation` now gates that.
+    golden_hour:
+      note: late afternoon, the hour the genre is actually about
+      # Lightness barely moves because the base palette's top ramp sits near
+      # max_lightness already -- pushing it up clips to white. So this variant
+      # earns its separation from chroma and hue instead, which is also what
+      # low sun actually does: not brighter, oranger and more saturated.
+      lightness: {shift: 0.018, squeeze: {mul: 0.97}}
+      chroma: {mul: 1.55}
+      hue_shift: {warm_amount: {mul: 2.10}, cool_amount: {mul: 0.60}}
+
+    evening:
+      note: after sunset, before the lamps carry the room
+      lightness: {shift: -0.105, squeeze: {mul: 0.92}}
+      chroma: {mul: 0.72}
+      hue_shift: {cool_amount: {mul: 1.85}, warm_amount: {mul: 0.60}}
+
+    night:
+      note: >-
+        lamps carry the room. The ramps drop and compress; the spot colours do
+        NOT follow them down, because a lamp that dims with the room it is
+        lighting is the one thing that would read as wrong.
+      # squeeze 0.68 is heavier than the others on purpose. Shifting this far
+      # down alone puts the darkest ramp at L 0.087, well under min_lightness
+      # 0.15, so the squeeze is what buys the room to be this dark at all --
+      # it lands the floor at 0.165 with margin rather than on the boundary.
+      # The flattened contrast is not a cost here: losing shading separation in
+      # the dark is what low light does to vision.
+      lightness: {shift: -0.185, squeeze: {mul: 0.68}}
+      chroma: {mul: 0.55}
+      hue_shift: {cool_amount: {mul: 2.30}, warm_amount: {mul: 0.42}}
+      spot_lightness: {add: 0.030}
+
+    overcast:
+      note: rain on the window, the low-chroma variant
+      # The only variant where chroma does nearly all the work. Flat daylight
+      # is not much darker than sun, it is much greyer, so a big lightness
+      # shift here would read as dusk instead of as weather.
+      lightness: {shift: -0.045, squeeze: {mul: 0.88}}
+      chroma: {mul: 0.38}
+      hue_shift: {cool_amount: {mul: 1.50}, warm_amount: {mul: 0.55}}
+
   constraints:
     no_pure_black: true
     no_pure_white: true

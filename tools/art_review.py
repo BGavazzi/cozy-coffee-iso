@@ -365,9 +365,26 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("images", nargs="+")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--palette", default=None,
+                    help="variant name (golden_hour, evening, night, "
+                         "overcast) or a path to a palette.json. Defaults to "
+                         "the base palette.")
     args = ap.parse_args()
 
-    by_rgb, ramps, entries = load_palette()
+    # Art from `palette_swap.py` is palette-exact in ITS OWN palette and 100%
+    # off the base one, so reviewing `out/variants/night/` against the default
+    # produces a blocker on every file -- 3,020 of them, all false, and all
+    # saying the tool was pointed at the wrong palette rather than that the art
+    # is wrong. A bare variant name is accepted because that is what a caller
+    # actually has in hand; anything with a separator is treated as a path.
+    pal_path = None
+    if args.palette:
+        pal_path = Path(args.palette)
+        if not pal_path.exists() and "/" not in args.palette:
+            pal_path = ROOT / "palette" / "variants" / f"{args.palette}.json"
+        if not pal_path.exists():
+            raise SystemExit(f"no palette at {pal_path}")
+    by_rgb, ramps, entries = load_palette(pal_path)
     report = {}
     for spec in args.images:
         # `Path().glob` raises on an absolute pattern, so an absolute path --

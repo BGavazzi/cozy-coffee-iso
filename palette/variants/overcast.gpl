@@ -1,0 +1,44 @@
+GIMP Palette
+Name: Cozy Coffee Iso - Ghibli 16bit
+Columns: 5
+#
+ 54  39  43	wood_0
+ 80  60  60	wood_1
+106  84  79	wood_2
+131 110  98	wood_3
+157 136 124	wood_4
+183 164 152	wood_5
+209 192 182	wood_6
+162 153 152	cream_0
+180 170 164	cream_1
+194 189 179	cream_2
+212 207 197	cream_3
+229 225 217	cream_4
+ 58  76  76	foliage_0
+ 78 100  94	foliage_1
+103 123 111	foliage_2
+130 147 132	foliage_3
+156 171 156	foliage_4
+184 196 183	foliage_5
+ 75  85  94	sky_0
+ 92 105 116	sky_1
+110 126 138	sky_2
+130 148 159	sky_3
+150 170 179	sky_4
+173 192 200	sky_5
+197 214 219	sky_6
+109  85  90	rose_0
+132 101 106	rose_1
+153 119 122	rose_2
+173 138 139	rose_3
+192 158 158	rose_4
+208 180 178	rose_5
+ 33  33  36	neutral_0
+ 57  57  62	neutral_1
+ 83  84  89	neutral_2
+111 111 117	neutral_3
+141 140 145	neutral_4
+172 170 174	neutral_5
+255 232 170	lamp_glow
+206  92 106	accent_read
+216 181   1	gold_coin

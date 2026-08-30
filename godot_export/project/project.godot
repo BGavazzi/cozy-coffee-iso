@@ -4,3 +4,14 @@ config_version=5
 
 config/name="Cozy Coffee Export"
 config/features=PackedStringArray("4.3")
+
+[rendering]
+
+; Nearest, not Godot's Linear default. Every texture this project imports is
+; pixel art on an exact 40-colour palette, and linear filtering resamples it
+; into colours that are in no palette -- the same failure `pixelize.audit`
+; exists to catch on the Python side, reintroduced by the engine at draw time.
+; It matters most for assets/palette/lut.png, where a filtered sample is a
+; blend of two adjacent swatches and therefore a colour no variant contains,
+; but it was wrong for all 704 prop frames too.
+textures/canvas_textures/default_texture_filter=0
