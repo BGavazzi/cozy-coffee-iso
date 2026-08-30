@@ -365,10 +365,17 @@ not, not every asset any game has ever shipped.
    resolution, and probably a different producer again -- generation is
    plausible here in a way it is not for a walk cycle, since a portrait is a
    single view of a thing.
-3. **Text.** No font, no bitmap glyph set, nothing that renders a word in
-   the palette. Every UI mockup in this repo has ruled lines where text
-   would go, including the drawn `ui_ticket`, and that is a placeholder
-   rather than a style decision.
+3. ~~**Text.**~~ **Done** -- `tools/bitmap_font.py`. 90 glyphs as stroke
+   skeletons rather than pixel grids, so size, weight and letterspacing are
+   parameters and the letterforms are the only data. Which cap heights ship
+   was measured rather than chosen: 5 collides '8' with 'S' and 6 collides
+   'a' with 'o', and 'A' and '4' lose their counters at both, so the floor is
+   7. Exported as `FontFile` per size, and Godot's own TextServer agrees with
+   `bitmap_font.measure` on 32 of 32 string widths across four sizes. The
+   `ui_ticket` ruled lines are now an option (`ruled=False`) rather than a
+   fact -- and the claim they stood on, that text "would be mush at this
+   size", turned out half right: a 36px writing area takes "Latte" at cap 9
+   and takes "Flat White" at no shipping size at all.
 4. **Item/inventory icons beyond drinks.** The generative icon path works
    and is proven; what is missing is subjects, not machinery. This is a
    `UI_PROMPTS` list to extend, and it is item 4 rather than item 1 for

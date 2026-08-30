@@ -21,14 +21,20 @@ reference):
                          per clip and facing), and StyleBoxTexture for
                          nine-slice UI chrome, into
                          godot_export/project/resources/
-  4. a round-trip check  re-reads the written .tres files and compares the
-                         nine-slice margins against build_manifest.json
+  4. two round-trip checks  the first re-reads the written .tres files and
+                         compares the nine-slice margins against
+                         build_manifest.json; the second measures strings with
+                         the exported FontFile resources through Godot's own
+                         TextServer and compares the widths against
+                         bitmap_font's metrics -- the one export whose
+                         behaviour, not just its data, can be checked headless
 
 Needs a Godot 4.3 binary. Resolved in this order: --godot-bin, $GODOT_BIN,
 then D:/vibes/.godot-tool/Godot_v4.3-stable_win64_console.exe (the portable
 build downloaded for this project, kept outside the repo).
 """
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -162,6 +168,56 @@ def check_palette_lut_godot(godot_bin: Path, build: dict) -> list[str]:
     return out
 
 
+def check_font_layout(godot_bin: Path, build: dict) -> list[str]:
+    """Does Godot lay these glyphs out where `bitmap_font` says it will?
+
+    The nine-slice round-trip re-reads margins out of a `.tres` and confirms
+    they are the numbers that were drawn. That catches a reordering and cannot
+    catch a resource the engine loads and then lays out wrongly -- its own
+    docstring says as much: headless Godot has no renderer, so the nine-slice is
+    checked as data here and as pixels only on the Python side.
+
+    Text is the one export that escapes that limit. `get_string_size` runs on
+    TextServer rather than on the renderer, so it works headless, and it is the
+    same code path a `Label` uses. Agreement across a whole string means the
+    per-glyph advances, the cell arithmetic, the glyph offset against the
+    baseline and the zero-size space glyph are all right TOGETHER, which is more
+    than any of them can be established one at a time.
+
+    The samples are adversarial rather than typical: 'iiii' and 'MMMM' are the
+    narrow and wide extremes, so a font that silently fell back to a monospaced
+    cell would give them the same width; 'A B C' is the only one that exercises
+    the space glyph; 'gjpqy' is all descenders.
+    """
+    if not build.get("font", {}).get("sizes"):
+        return []
+    sys.path.insert(0, str(ROOT / "tools"))
+    import bitmap_font
+
+    cmd = [str(godot_bin), "--headless", "--path", str(PROJECT_DIR),
+           "--script", "verify_font.gd"]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    tag = "VERIFY_FONT_JSON:"
+    line = next((l for l in result.stdout.splitlines() if l.startswith(tag)), None)
+    if line is None:
+        return [f"verify_font.gd produced no measurements "
+                f"(exit {result.returncode})"]
+
+    out = []
+    checked = 0
+    for cap_s, widths in json.loads(line[len(tag):]).items():
+        cap = int(cap_s)
+        for text, godot_w in widths.items():
+            mine = bitmap_font.measure(text, cap)[0]
+            checked += 1
+            if abs(godot_w - mine) > 0.5:
+                out.append(f"cap {cap}: Godot lays {text!r} out {godot_w:g}px "
+                           f"wide, bitmap_font says {mine}px")
+    if not out:
+        print(f"  {checked} string widths match between Godot and bitmap_font")
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--godot-bin", default=None, help="path to Godot 4.3 executable")
@@ -189,6 +245,7 @@ def main():
     print("\n-- round-trip check --")
     problems = check_nine_slice_roundtrip(build)
     problems += check_palette_lut_godot(godot_bin, build)
+    problems += check_font_layout(godot_bin, build)
     for p in problems:
         print(f"  BLOCKER  {p}", file=sys.stderr)
 

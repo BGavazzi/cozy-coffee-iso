@@ -15,6 +15,9 @@ extends SceneTree
 #                               icons need no wrapper resource and are only
 #                               load-checked, because the imported PNG already
 #                               IS the Texture2D a Control wants
+#   "font"    bitmap font    -> one FontFile per cap height, glyphs registered
+#                               against the staged sheet so a Label can set any
+#                               string -- a font resource, not baked strings
 #   "tiles"   ground tiles   -> one TileSet holding a TileSetAtlasSource per
 #                               tile type, isometric diamond-down, with the
 #                               tile size read from the manifest rather than
@@ -53,10 +56,11 @@ func _init():
 	var n_anim := _build_anim(data.get("anim", {}))
 	var n_ui := _build_ui(data.get("ui", {}))
 	var n_tiles := _build_tiles(data.get("tiles", {}))
+	var n_font := _build_font(data.get("font", {}))
 
 	print("built ", n_props, " prop SpriteFrames, ", n_anim,
 		" animation SpriteFrames, ", n_ui, " UI resources, ", n_tiles,
-		" tile sources in res://resources")
+		" tile sources, ", n_font, " fonts in res://resources")
 	if failed.size() > 0:
 		printerr("failed: ", failed)
 		quit(1)
@@ -302,3 +306,67 @@ func _build_tiles(tiles: Dictionary) -> int:
 	wts.set_meta("stackable", false)   # see tileset.py's WALL_HEIGHT comment
 	_save(wts, "res://resources/tiles/walls.tres", "wall tileset")
 	return n
+
+
+# --- bitmap font --------------------------------------------------------------
+
+func _build_font(font: Dictionary) -> int:
+	if font.is_empty():
+		return 0
+	_mkdir("res://resources/font")
+	var sizes = font.get("sizes", {})
+	var ok := 0
+	for cap in sizes.keys():
+		var entry = sizes[cap]
+		var tex := _load_tex("res://assets/%s" % entry["file"], "font %s" % cap)
+		if tex == null:
+			continue
+		var img := tex.get_image()
+
+		var f := FontFile.new()
+		# Fixed size, no hinting, no subpixel positioning, no MSDF. Every one of
+		# those exists to make a scalable outline look good at an arbitrary size,
+		# and every one of them would blend pixels this pipeline guarantees are
+		# palette-exact -- the same reason `bitmap_font._line` has no
+		# anti-aliasing.
+		f.fixed_size = int(cap)
+		f.antialiasing = TextServer.FONT_ANTIALIASING_NONE
+		f.subpixel_positioning = TextServer.SUBPIXEL_POSITIONING_DISABLED
+		f.hinting = TextServer.HINTING_NONE
+		f.multichannel_signed_distance_field = false
+
+		var sz := Vector2i(int(cap), 0)
+		f.set_texture_image(0, sz, 0, img)
+		var cell = entry["cell"]
+		var cols := int(entry["columns"])
+		var ascent := float(entry["ascent"])
+		f.set_cache_ascent(0, int(cap), ascent)
+		f.set_cache_descent(0, int(cap), float(entry["descent"]))
+
+		var glyphs = entry["glyphs"]
+		for ch in glyphs.keys():
+			var g = glyphs[ch]
+			var idx := int(g["index"])
+			var code: int = ch.unicode_at(0)
+			# A space carries an advance and no cell; giving it a zero-size rect
+			# is what makes it advance without drawing.
+			if idx < 0:
+				f.set_glyph_advance(0, int(cap), code, Vector2(float(g["advance"]), 0))
+				f.set_glyph_size(0, sz, code, Vector2.ZERO)
+				continue
+			var rect := Rect2(float((idx % cols) * int(cell[0])),
+				float((idx / cols) * int(cell[1])),
+				float(cell[0]), float(cell[1]))
+			f.set_glyph_texture_idx(0, sz, code, 0)
+			f.set_glyph_uv_rect(0, sz, code, rect)
+			f.set_glyph_size(0, sz, code, rect.size)
+			# Godot places a glyph relative to the BASELINE, and the sheet cell
+			# is measured from its top. The offset is therefore minus the
+			# ascent, not zero -- get this wrong and every line of text sits one
+			# ascent too low, which still renders and still looks like a font.
+			f.set_glyph_offset(0, sz, code, Vector2(0.0, -ascent))
+			f.set_glyph_advance(0, int(cap), code, Vector2(float(g["advance"]), 0))
+
+		if _save(f, "res://resources/font/font_cap%s.tres" % cap, "font %s" % cap):
+			ok += 1
+	return ok
