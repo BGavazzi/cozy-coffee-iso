@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import copy
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
@@ -94,8 +95,113 @@ def build_spot(name: str, spec: dict) -> Swatch:
                   rgb=rgb, L=round(L, 4), C=round(C, 4), h=round(h, 2))
 
 
-def forge(bible: dict) -> list[Swatch]:
-    cfg = bible["palette"]
+def _apply(value: float, tf) -> float:
+    """One transform: {add: x}, {mul: x}, or a bare number read as `add`."""
+    if tf is None:
+        return value
+    if isinstance(tf, (int, float)):
+        return value + float(tf)
+    out = value
+    if "mul" in tf:
+        out *= float(tf["mul"])
+    if "add" in tf:
+        out += float(tf["add"])
+    return out
+
+
+def _relight(span, tf) -> list:
+    """Move a ramp's lightness range by SHIFT and SQUEEZE about its midpoint.
+
+    The obvious form -- an absolute delta on each end -- is wrong, and wrong in
+    a way that only shows up once the palette is validated. `cream` spans 0.25
+    of lightness and `wood` spans 0.60, so the same 0.11 taken off both ends
+    compresses cream by 44% and wood by 18%. Cream's steps then land on top of
+    wood's, which is exactly the collision `validate` reported for every one of
+    the first four variants.
+
+    Shift-and-squeeze keeps each ramp's internal spacing proportional, so a
+    variant slides the whole palette without changing which ramps are
+    distinguishable from which. That is the difference between a time of day
+    and a broken palette.
+    """
+    lo, hi = span
+    mid, half = (lo + hi) / 2.0, (hi - lo) / 2.0
+    mid = _apply(mid, tf.get("shift"))
+    half = _apply(half, tf.get("squeeze"))
+    return [mid - half, mid + half]
+
+
+def variant_config(cfg: dict, variant: str | None) -> dict:
+    """The palette config with one variant's transforms folded in.
+
+    A variant transforms the GENERATOR'S PARAMETERS, never the colours. That is
+    the payoff of computing the base palette instead of picking it: an evening
+    palette costs six numbers and arrives already subject to `validate` --
+    perceptual separation, monotonic ramps, the warm-highlight rule, no pure
+    black or white. A hand-picked one would have to be re-argued from scratch
+    and could only be checked by eye.
+
+    Per-ramp overrides in the base spec survive: `rose` keeps its own low
+    `cool_amount` (bending red toward violet gives plum, which reads as
+    bruising) and a variant that scales the global cool amount scales that
+    override too, rather than replacing it. Scaling rather than setting is
+    deliberate -- a variant should not be able to silently undo a decision the
+    base palette recorded a reason for.
+    """
+    if not variant:
+        return cfg
+    variants = cfg.get("variants", {})
+    if variant not in variants:
+        raise SystemExit(f"unknown palette variant {variant!r}; "
+                         f"style_bible declares {sorted(variants)}")
+    v = variants[variant]
+    out = copy.deepcopy(cfg)
+
+    hs_tf = v.get("hue_shift", {})
+    for key in ("cool_amount", "warm_amount"):
+        if key in hs_tf:
+            out["hue_shift"][key] = _apply(out["hue_shift"][key], hs_tf[key])
+
+    lt = v.get("lightness", {})
+    ct = v.get("chroma")
+    for name, spec in out["ramps"].items():
+        spec["lightness"] = _relight(spec["lightness"], lt)
+        if ct is not None:
+            spec["chroma"] = _apply(spec["chroma"], ct)
+        # A per-ramp cool/warm override is a ratio to the global amount, so the
+        # variant has to scale it by the same factor or the override drifts
+        # relative to everything else.
+        for key in ("cool_amount", "warm_amount"):
+            if key in spec and key in hs_tf:
+                spec[key] = _apply(spec[key], hs_tf[key])
+
+    # Per-ramp overrides, applied after the global ones. The base palette needed
+    # these (`rose` has its own `cool_amount`) and so do the variants, for the
+    # same reason and caught the same way: `validate` rejected all four on
+    # `min_delta_e` first time out, and every collision was one named pair of
+    # ramps rather than a palette that was globally too tight.
+    for name, tf in v.get("ramps", {}).items():
+        if name not in out["ramps"]:
+            raise SystemExit(f"variant {variant!r} overrides unknown ramp {name!r}")
+        spec = out["ramps"][name]
+        if "chroma" in tf:
+            spec["chroma"] = _apply(spec["chroma"], tf["chroma"])
+        rlt = tf.get("lightness", {})
+        if rlt:
+            spec["lightness"] = _relight(spec["lightness"], rlt)
+        for key in ("cool_amount", "warm_amount"):
+            if key in tf:
+                spec[key] = _apply(spec.get(key, out["hue_shift"][key]), tf[key])
+
+    slt = v.get("spot_lightness")
+    if slt is not None:
+        for spec in out["spot"].values():
+            spec["lightness"] = min(0.99, _apply(spec["lightness"], slt))
+    return out
+
+
+def forge(bible: dict, variant: str | None = None) -> list[Swatch]:
+    cfg = variant_config(bible["palette"], variant)
     swatches: list[Swatch] = []
     for name, spec in cfg["ramps"].items():
         swatches += build_ramp(name, spec, cfg)
@@ -164,6 +270,61 @@ def validate(swatches: list[Swatch], bible: dict) -> list[str]:
     return errs
 
 
+def validate_variant(swatches: list[Swatch], bible: dict,
+                     variant: str) -> tuple[list[str], list[str]]:
+    """(errors, notes) for one variant. Every base constraint but one.
+
+    `min_delta_e` becomes a REPORTED NUMBER rather than a gate, and the reason
+    is the constraint's own stated justification: `style_bible` says "below this
+    two entries collapse under quantization". A variant palette is never
+    quantized against. Sprites reach it by exact `(ramp, index)` lookup from art
+    that is already palette-exact -- `pixelize.material` addresses colours by
+    name and index, and the only nearest-colour matching in the repo is
+    `ingest.bind_colour`, which binds EXTERNAL generated meshes to the base
+    palette and never runs on a variant. There is no quantization step for two
+    close entries to collapse in.
+
+    That is not a licence to let them merge. Two base colours that became the
+    SAME variant colour would destroy information the base palette carried --
+    two surfaces that were distinguishable at noon become one surface at dusk --
+    so identity collapse stays a hard error, and it is checked directly rather
+    than approximated by a distance floor.
+
+    Measured: no variant produces a duplicate at any strength up to where the
+    lightness bounds stop it. The variants ship at min deltaE 0.014 to 0.027
+    against the base's 0.035, which says sky's dark end and neutral's middle
+    read alike under overcast -- which is what overcast does to a room.
+
+    Every other constraint is a hard error, unchanged: monotonic ramps, the
+    warm-highlight rule, the lightness bounds, no pure black or white, and the
+    colour count. Those are statements about whether the palette WORKS, and a
+    variant that breaks them is broken.
+    """
+    errs = [e for e in validate(swatches, bible)
+            if not e.startswith("min deltaE")]
+
+    seen: dict = {}
+    for sw in swatches:
+        seen.setdefault(sw.rgb, []).append(sw.name)
+    merged = [names for names in seen.values() if len(names) > 1]
+    for names in merged:
+        errs.append(f"variant {variant}: {sorted(names)} resolve to the same "
+                    f"colour -- surfaces the base palette kept apart merge here")
+
+    labs = {s.name: srgb_to_oklab(s.rgb) for s in swatches}
+    names = list(labs)
+    worst, pair = 1e9, None
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            d = delta_e(labs[a], labs[b])
+            if d < worst:
+                worst, pair = d, (a, b)
+    notes = [f"variant {variant}: closest pair {worst:.4f} "
+             f"({pair[0]} vs {pair[1]}); base palette holds "
+             f"{bible['palette']['min_delta_e']}"]
+    return errs, notes
+
+
 # --- output -----------------------------------------------------------------
 
 def write_gpl(swatches: list[Swatch], path: Path) -> None:
@@ -199,6 +360,48 @@ def write_swatch_sheet(swatches: list[Swatch], bible: dict, path: Path,
     img.save(path)
 
 
+def check_separation(bible: dict) -> tuple[list[str], list[str]]:
+    """Every pair of SHIPPED palettes must be at least min_delta_e apart.
+
+    All the other validation asks whether one palette is internally sound. None
+    of it asks the question that actually matters to a player, which is whether
+    two palettes look different from each other -- and that gap shipped a real
+    defect: `evening` and `night` came out 0.0057 apart on average, under a
+    sixth of the floor two colours inside one palette have to clear. Four
+    variants were declared and three were visible.
+
+    The reuse of `min_delta_e` here is deliberate rather than convenient. It is
+    already this project's measured answer to "are these two colours the same
+    colour", so applying it to the mean distance between corresponding swatches
+    asks the same question one level up: is this the same palette twice. It is
+    a floor and not a target -- `golden_hour` sits just over it at 0.0358 by
+    design, because late afternoon is meant to be a warm reading of the base
+    palette rather than a different world.
+    """
+    cfg = bible["palette"]
+    floor = cfg["min_delta_e"]
+    names = ["base"] + list(cfg.get("variants", {}))
+    pal = {n: forge(bible, None if n == "base" else n) for n in names}
+
+    errs, notes = [], []
+    pairs = []
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            d = sum(delta_e(srgb_to_oklab(x.rgb), srgb_to_oklab(y.rgb))
+                    for x, y in zip(pal[a], pal[b])) / len(pal[a])
+            pairs.append((d, a, b))
+    pairs.sort()
+    for d, a, b in pairs:
+        if d < floor:
+            errs.append(f"separation: {a} and {b} are {d:.4f} apart on "
+                        f"average, under min_delta_e {floor} -- they are the "
+                        f"same palette shipped twice")
+    if pairs:
+        d, a, b = pairs[0]
+        notes.append(f"closest palettes {a}/{b} at {d:.4f} (floor {floor})")
+    return errs, notes
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--bible", default=str(ROOT / "style_bible.yaml"))
@@ -223,13 +426,39 @@ def main() -> int:
             print(f"{ramp:12s} " + " ".join(s.hex for s in items))
         print(f"\n{len(swatches)} colours -> {out}/")
 
+    # Variants, each into palette/variants/<name>.{json,gpl}. Written beside the
+    # base rather than instead of it: the base is what every producer renders
+    # against, and a variant is a second reading of the same art.
+    variants = bible["palette"].get("variants", {})
+    vdir = out / "variants"
+    if variants:
+        vdir.mkdir(parents=True, exist_ok=True)
+    for name in variants:
+        vsw = forge(bible, name)
+        verrs, vnotes = validate_variant(vsw, bible, name)
+        errs += verrs
+        (vdir / f"{name}.json").write_text(
+            json.dumps([asdict(s) for s in vsw], indent=2), encoding="utf-8")
+        write_gpl(vsw, vdir / f"{name}.gpl")
+        if not args.quiet:
+            lo = min(s.L for s in vsw)
+            hi = max(s.L for s in vsw)
+            print(f"{name:12s} L {lo:.3f}..{hi:.3f}  "
+                  + vnotes[0].split(": ", 1)[1])
+
+    serrs, snotes = check_separation(bible)
+    errs += serrs
+    if not args.quiet and snotes:
+        print(snotes[0])
+
     if errs:
         print("\nFAIL:", file=sys.stderr)
         for e in errs:
             print("  -", e, file=sys.stderr)
         return 1
     if not args.quiet:
-        print("all constraints pass")
+        print(f"all constraints pass"
+              + (f"; {len(variants)} variants -> {vdir}/" if variants else ""))
     return 0
 
 

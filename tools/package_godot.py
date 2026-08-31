@@ -305,6 +305,86 @@ def stage_tiles(tiles_dir: Path, assets_dir: Path) -> dict:
     return meta
 
 
+def stage_palettes(assets_dir: Path) -> dict:
+    """Every palette as one lookup texture: 40 columns, one row per time of day.
+
+    The art itself is NOT re-exported per variant. `palette_swap.py` can write
+    all four pre-swapped copies to `out/variants/` (3.8 MB each) and a project
+    that wants the no-shader path should copy those, but staging 3,020 extra
+    PNGs into the engine to express 160 numbers is the wrong trade -- and it
+    buys the weaker feature. Four folders of art give four discrete states.
+    This texture gives a shader the endpoints to interpolate BETWEEN, which is
+    what a day/night cycle actually is, and costs 200 pixels.
+
+    Row 0 is always the base palette, so a shader that samples row 0 renders
+    the art unchanged and `mix()` toward any other row is a dissolve from
+    "now" to "then". Column order is the forge order -- ramp by ramp, index by
+    index -- which is the same identity `palette_swap` keys its table on, so
+    the two cannot disagree about what column 17 means.
+
+    Nearest-neighbour and no mipmaps are not preferences here: a filtered
+    sample of this texture is a colour that exists in no palette.
+    """
+    from PIL import Image
+    sys.path.insert(0, str(Path(__file__).parent))
+    import palette_forge as PF
+    import palette_swap as PS
+
+    bible = PS.load_bible()
+    names = ["base"] + list(bible["palette"].get("variants", {}))
+    rows = [PF.forge(bible, None if n == "base" else n) for n in names]
+    width = len(rows[0])
+
+    img = Image.new("RGBA", (width, len(rows)))
+    img.putdata([(*sw.rgb, 255) for row in rows for sw in row])
+    dest = assets_dir / "palette"
+    dest.mkdir(parents=True, exist_ok=True)
+    img.save(dest / "lut.png")
+
+    return {
+        "lut": "palette/lut.png",
+        "size": [width, len(rows)],
+        "rows": {n: i for i, n in enumerate(names)},
+        "columns": [s.name for s in rows[0]],
+        "notes": {n: " ".join(str(bible["palette"]["variants"][n]
+                                  .get("note", "")).split())
+                  for n in names[1:]},
+    }
+
+
+def check_palette_lut(build: dict, assets_dir: Path) -> list[str]:
+    """Read the written texture back and require it to BE the palettes.
+
+    Writing a lookup table and trusting it is how a lookup table goes wrong:
+    every failure mode here (a transposed row, an RGBA channel order, a save
+    path that quantized) produces a file that loads fine and recolours the
+    game incorrectly. Reading the pixels back and comparing them to a fresh
+    forge is the only check that would catch a transpose.
+    """
+    pal = build.get("palettes")
+    if not pal:
+        return []
+    from PIL import Image
+    sys.path.insert(0, str(Path(__file__).parent))
+    import palette_forge as PF
+    import palette_swap as PS
+
+    bible = PS.load_bible()
+    with Image.open(assets_dir / "palette" / "lut.png") as im:
+        px = list(im.convert("RGBA").getdata())
+        w, h = im.size
+
+    out = []
+    for name, row in pal["rows"].items():
+        want = PF.forge(bible, None if name == "base" else name)
+        got = [p[:3] for p in px[row * w:(row + 1) * w]]
+        if got != [s.rgb for s in want]:
+            bad = sum(1 for a, b in zip(got, want) if a != b.rgb)
+            out.append(f"palette lut row {row} ({name}) disagrees with the "
+                       f"forged palette on {bad} of {w} columns")
+    return out
+
+
 def stage(manifest_path: Path = SPRITES_MANIFEST,
           sprites_dir: Path = SPRITES_DIR,
           project_dir: Path = PROJECT_DIR,
@@ -336,6 +416,9 @@ def stage(manifest_path: Path = SPRITES_MANIFEST,
         tiles = stage_tiles(tiles_dir, assets_dir)
         if tiles.get("tiles"):
             build["tiles"] = tiles
+    build["palettes"] = stage_palettes(assets_dir)
+    for problem in check_palette_lut(build, assets_dir):
+        raise SystemExit(f"BLOCKER  {problem}")
 
     project_dir.mkdir(parents=True, exist_ok=True)
     (project_dir / "build_manifest.json").write_text(json.dumps(build, indent=2))
@@ -368,6 +451,11 @@ def summarise(build: dict) -> str:
         drawn = sum(1 for i in ui.values() if i["source"] == "drawn")
         lines.append(f"{len(ui)} UI pieces ({drawn} drawn, {len(ui) - drawn} "
                      f"generated), {nine} nine-slice")
+    pal = build.get("palettes")
+    if pal:
+        w, h = pal["size"]
+        lines.append(f"{h} palettes x {w} colours as one {w}x{h} lookup "
+                     f"texture ({', '.join(pal['rows'])})")
     font = build.get("font", {}).get("sizes", {})
     if font:
         caps = sorted(int(c) for c in font)

@@ -62,6 +62,8 @@ authoring rather than sampling.
     python tools/preview_ui.py           # -> out/ui/_preview.png
 
     python tools/palette_forge.py        # compute + validate the 40-colour palette
+    python tools/palette_swap.py --all   # re-palette the library, 4 times of day
+    python tools/preview_variants.py     # -> proof/variants.png
     python tools/animate.py --fx         # the deliverable: sheets + atlas.json
     python tools/render_room.py          # whole-shop composite (integration test)
 
@@ -295,6 +297,42 @@ work — is a parameter that cannot be forgotten on asset 180.
     python tools/palette_forge.py     # exits non-zero on constraint failure
 
 Loads into Aseprite via `palette/palette.gpl`.
+
+### Times of day come free
+
+Because the palette is computed, a second one costs six numbers rather than
+forty colours. `style_bible.yaml` declares four — `golden_hour`, `evening`,
+`night`, `overcast` — as transforms on the *generator's parameters*, so each
+arrives already subject to the same validation the base palette passes:
+monotonic ramps, the warm-highlight rule, no pure black or white.
+
+Re-palettizing the art is then a **40-entry lookup, not an image operation**.
+Every pixel the factory produces is already exactly one swatch, so it already
+carries a `(ramp, index)` identity; the swap reads that identity and re-renders
+it under different generator parameters. Nothing is re-quantized, which is why
+it can tell `wood_6` from `cream_3` — the closest pair in the palette, 0.0354
+apart — where a nearest-colour pass could not.
+
+    python tools/palette_swap.py --check   # audit the library and the tables
+    python tools/palette_swap.py --all     # -> out/variants/<name>/
+
+Measured, not asserted: the library is **755 files, exactly 40 distinct
+colours, all 40 used, none off-palette**; all 3,020 swapped files are
+palette-exact in their target palette; and every asset survives
+`base -> variant -> base` byte-identically.
+
+Two floors are enforced that are easy to skip. Within a palette, no two
+swatches may collapse to one colour. *Between* palettes, any two shipped
+palettes must be at least `min_delta_e` apart on average — the same 0.035 that
+decides two colours are different colours, asked one level up. That second one
+is not theoretical: the first set of variants had `evening` and `night` 0.0057
+apart, a sixth of the floor, and shipped as one palette twice.
+
+![four times of day](proof/variants.png)
+
+The Godot export carries the palettes as a single 40x5 lookup texture rather
+than four copies of the art — 200 pixels instead of 15 MB, and a shader can
+`mix()` between two rows, which four folders of pre-swapped PNGs cannot do.
 
 A coffee shop interior was chosen deliberately: it exercises wood, ceramic,
 foliage, fabric and skin — most of the material range a 2D game needs.

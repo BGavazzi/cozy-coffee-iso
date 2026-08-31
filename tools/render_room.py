@@ -29,6 +29,12 @@ from pixelize import (  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 ROOM_W, ROOM_D = 14, 10
 
+# The backdrop this composition is flattened onto. Deliberately NOT a palette
+# entry: it is the surround a screenshot needs, not a surface the art uses, and
+# keeping it off-palette is what lets a tool tell the two apart. `palette_swap`
+# leaves it alone for that reason, so it must be imported rather than repeated.
+BACKDROP = (26, 23, 31)
+
 # Window apertures, shared by the geometry and the light rig so the two cannot
 # drift apart. Sill and head match wall_run's a/b.
 WIN_X = (4, 5, 10, 11)
@@ -537,7 +543,7 @@ def render(L, rig, target: int, out: Path, factor: int = 3,
     px = apply_outline(px, [back.get(c) if c is not None else None for c in small],
                        target, ramps)
 
-    bg = (26, 23, 31)
+    bg = BACKDROP
     img = Image.new("RGB", (target, target), bg)
     img.putdata([c if c is not None else bg for c in px])
 

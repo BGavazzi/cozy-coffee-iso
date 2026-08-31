@@ -112,6 +112,62 @@ def check_nine_slice_roundtrip(build: dict) -> list[str]:
     return out
 
 
+def check_palette_lut_godot(godot_bin: Path, build: dict) -> list[str]:
+    """Does the ENGINE see the palettes Python forged, and see them unfiltered?
+
+    `package_godot.check_palette_lut` already reads the written PNG back, but
+    it reads it with Pillow, which is not the thing that will draw it. This
+    loads the imported texture through Godot's own resource loader and pulls
+    the pixels back out, so it also covers the import pass -- a compression
+    mode that quantized, or an alpha-border fix that touched an edge column,
+    would survive the Python check and die here.
+
+    It also asserts the canvas texture filter, which is the one setting that
+    makes the whole palette guarantee true or false at draw time. Godot
+    defaults it to Linear; under Linear a shader sampling between two columns
+    of this texture gets a blend of two swatches, which is a colour that is in
+    no palette. That default was live in this project until it was measured --
+    the first attempt to fix it wrote the key as
+    `rendering/textures/...` inside a `[rendering]` section, which silently
+    resolves to `rendering/rendering/textures/...` and changed nothing. The
+    setting read back as 1 and this check is the only reason that was noticed.
+    """
+    script = PROJECT_DIR / "verify_palette.gd"
+    if not script.exists() or "palettes" not in build:
+        return []
+    cmd = [str(godot_bin), "--headless", "--path", str(PROJECT_DIR),
+           "--script", script.name]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    line = next((l for l in result.stdout.splitlines()
+                 if l.startswith("VERIFY_LUT_JSON:")), None)
+    if line is None:
+        return [f"verify_palette.gd produced no result (exit "
+                f"{result.returncode})"]
+    import json as _json
+    got = _json.loads(line.split(":", 1)[1])
+
+    out = []
+    if got["filter"] != 0:
+        out.append(f"canvas texture filter is {got['filter']}, not 0 "
+                   f"(nearest) -- filtered pixel art leaves the palette")
+    sys.path.insert(0, str(ROOT / "tools"))
+    import palette_forge as PF
+    import palette_swap as PS
+    bible = PS.load_bible()
+    for row in got["rows"]:
+        want = [s.hex for s in
+                PF.forge(bible, None if row["name"] == "base" else row["name"])]
+        if row["colours"] != want:
+            bad = sum(1 for a, b in zip(row["colours"], want) if a != b)
+            out.append(f"palette {row['name']}: Godot reads {bad} of "
+                       f"{len(want)} colours differently from the forge")
+    if not out:
+        n = len(got["rows"])
+        print(f"  Godot reads all {n} palettes x {got['size'][0]} colours "
+              f"exactly, at nearest filtering")
+    return out
+
+
 def check_font_layout(godot_bin: Path, build: dict) -> list[str]:
     """Does Godot lay these glyphs out where `bitmap_font` says it will?
 
@@ -188,6 +244,7 @@ def main():
 
     print("\n-- round-trip check --")
     problems = check_nine_slice_roundtrip(build)
+    problems += check_palette_lut_godot(godot_bin, build)
     problems += check_font_layout(godot_bin, build)
     for p in problems:
         print(f"  BLOCKER  {p}", file=sys.stderr)
