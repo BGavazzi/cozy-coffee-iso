@@ -282,3 +282,70 @@ exceeding a share of the smaller object. Not all overlap is a defect -- a chair
 tucked under a table is correct -- so specific pairs are whitelisted and the test
 is proportional rather than binary. It caught two chairs from adjacent tables
 sharing a square at 67% overlap on first run.
+
+## Character portraits
+
+    python tools/portrait.py           # roster -> out/portraits/<name>.png
+    python tools/portrait.py --check   # eye visibility, distinctness, determinism
+    python tools/portrait.py --demo    # -> proof/portraits.png
+
+`portrait.py` builds a dialogue bust for each roster character: `head()` and
+`hair()` reused directly from `character.py` for shape and material identity,
+a bust-height `chest()` slice standing in for the full body, and real brow,
+mouth, eye and blush geometry authored fresh at portrait scale, because
+`character.face()`'s flat sprite-scale marks -- correct at 12px of head --
+render a blank mannequin once that head fills a 96px canvas. The camera is a
+bespoke dead-on view (`azimuth=90`, `elevation=15`), not the sprite rig's
+corner-view `frame_all`, since a portrait never rotates and gains nothing from
+the 8-direction framing a rotating sprite needs.
+
+### What the checks found
+
+Four checks run over the full 9-character roster: palette-exactness,
+pairwise distinctness, per-eye visibility, and render determinism. The
+eye-visibility check is the one worth describing, because its first version
+passed while an eye was genuinely, fully invisible. It compared bare skin
+against the complete face -- eyes, brows, mouth, blush -- as one image-half
+diff; enough contrast came from the brows and blush alone to clear the
+threshold even with the eye itself occluded. Rewritten to isolate exactly one
+eye against bare skin, feature by feature, it then found a real defect: at an
+early camera angle and margin, `bob`'s eyes rendered **zero** pixels of
+difference from bare skin.
+
+Root cause was a hidden-surface bug, not a camera-angle bug. Face geometry
+was authored proud of `head()`'s own facet (`HEAD_RY * FACET + 0.004`), which
+is the surface it visually sits on -- but `hair()` draws every style's main
+cap at a *larger* radius (`HEAD_RY + 0.022`) than the head it covers, so
+hair's front facet can be the nearer surface to the camera even when the
+head's own facet is cleared. The fix widens the margin to clear `hair()`'s
+facet, not just `head()`'s. Its one measured effect on the shipped nine,
+once the camera was set to the simpler dead-on `azimuth=90` rather than the
+off-axis angle first tried to dodge the (mis-diagnosed) problem: `reader`'s
+brows go from invisible to rendered. Smaller claim than "the eyes were
+broken" -- and the checked one.
+
+### A bug one level down
+
+Building the portrait producer surfaced a real defect in code it merely
+exercises harder than its usual caller: `render_batch.render_sprite`'s
+outline pass assigned material ids with `hash(m) % 251` for its downsample
+pass. Python randomises string hashing per process, so which pair of a
+scene's materials collided -- and which outline pixels silently took an
+unrelated ramp's colour as a result -- changed on every run. A prop rarely
+carries enough distinct materials to make this visible; a character bust,
+crowding skin, hair, shirt, eyes, brows and mouth into a small canvas, does.
+`render_room.py` and `preview_characters.py` already carried a fix (a sorted
+material index instead of a hash), but `render_batch.py` -- the function
+`furnish.py`'s entire prop factory renders through -- had been missed. Fixed
+at the source, plus the same fix backported into `prove_shading.py`'s local
+copy of the same pattern.
+
+### One artifact, left as a characteristic
+
+A faceted seam is visible where the octagonal `chest()` prism meets the round
+head silhouette, at some strength on every character and most visible on the
+widest `bulk` values (`commuter`, `elder`), where the torso's facets push
+past the head's own width. It is the same kind of modal-downsample aliasing
+this pipeline already accepts on other faceted silhouettes, not a defect
+specific to portraits, so it is recorded rather than chased with more
+geometry.

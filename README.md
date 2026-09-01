@@ -81,6 +81,7 @@ authoring rather than sampling.
     # review surfaces -- what a human actually looks at
     python tools/preview_clips.py --who barista   # clip strips + looping GIFs
     python tools/preview_characters.py            # roster + 8 directions
+    python tools/portrait.py --demo                # -> proof/portraits.png
     python tools/preview_generators.py            # 16 generators x 8 seeds
     python tools/review_queue.py build "sprites/*.png"
     # fill verdict + reason in review/verdicts.jsonl
@@ -110,6 +111,7 @@ authoring rather than sampling.
 | `proof/floorplans.png` | twelve plans, top-down, walkable floor shaded, topology labelled |
 | `proof/generators.png` | every generator, eight seeds each, spread measured |
 | `proof/characters.png` | roster, eight directions, and generated extras |
+| `proof/portraits.png` | roster, dialogue-scale busts, same identity as their sprites |
 | `proof/reference_image_conditioning.png` | reference photo, prompt-only, and two `--ip-scale` levels of the same prompt |
 | `proof/variants.png` | one room render, five palettes, nothing re-rendered |
 | `proof/font_in_chrome.png` | the bitmap font set inside the drawn UI chrome it was built for |
@@ -390,3 +392,48 @@ TextServer and compares against `bitmap_font.measure`: **32 of 32 widths
 match.** See [tools/README.md](tools/README.md#text) for the defect log —
 four real bugs the checks caught, including Python's banker's rounding
 breaking mirror-symmetric letters like `W`.
+
+## Character portraits
+
+The rig above renders 46 px figures for a room; a dialogue box wants a face,
+and the sprite-scale rule for one — flat colour-offset marks, no real geometry,
+because there is no room for it at 12 px of head — produces a blank mannequin
+once that same head fills a 96 px canvas. So a portrait is not `face()` scaled
+up: it reuses `head()` and `hair()` for shape and skin/hair material (a
+portrait is provably the same character as its sprite; a generated image
+could not promise that) and authors real brow, mouth and eye geometry on top,
+sized for the larger canvas, on a bust crop rather than the full standing
+figure, from a camera that faces the character instead of the sprite rig's
+corner view.
+
+    python tools/portrait.py           # roster -> out/portraits/<name>.png
+    python tools/portrait.py --check   # eye visibility, distinctness, determinism
+    python tools/portrait.py --demo    # -> proof/portraits.png
+
+![nine character busts, same identity as their sprites, dialogue-scale detail](proof/portraits.png)
+
+Four checks gate the roster, and the eye-visibility one is worth naming
+because its first version couldn't fail: comparing bare skin against the full
+set of face features together let brow contrast hide a fully-occluded eye
+behind it. Rewritten to isolate one eye at a time against bare skin, it then
+caught a real bug — `hair()` draws every style's cap at a larger radius than
+the head it covers, so a hairstyle's own front facet could occlude face
+detail that had only cleared the head's *own* facet, not the nearer surface
+actually in front of the camera.
+
+Building this also surfaced a bug one level down, in code portraits merely
+exercise harder than its usual caller: `render_batch.render_sprite`'s outline
+pass assigned material ids with `hash(m) % 251` — non-deterministic per
+process and collision-prone with a bust's ~12 materials, so which outline
+pixels silently borrowed an unrelated ramp's colour changed on every run.
+`render_room.py` and `preview_characters.py` already carried the fix; this
+call site hadn't, and `furnish.py` renders its entire prop library through
+it. Fixed at the source rather than in the portrait producer. See
+[tools/README.md](tools/README.md#character-portraits) for the full defect
+log, including the eye-visibility check's own false pass.
+
+One artifact is left as a known characteristic rather than chased: a faceted
+seam where the octagonal chest prism meets the round head, present at some
+strength on every character and most visible on the widest `bulk` values —
+the same kind of silhouette aliasing this pipeline already accepts elsewhere,
+not a portrait-specific regression.

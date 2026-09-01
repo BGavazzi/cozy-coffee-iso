@@ -351,6 +351,8 @@ not, not every asset any game has ever shipped.
   Godot resources, 52 of them.
 - ~~Hand-authoring a subject list per reference photo~~ —
   `scaffold_subjects.py`.
+- ~~A character portrait / dialogue bust~~ — `portrait.py`, 9 of 9 roster
+  characters.
 
 **Still missing, ranked by how much a small game would feel it**
 
@@ -360,11 +362,25 @@ not, not every asset any game has ever shipped.
    designer paints a region, and no doorway or window opening in the wall
    set. Both are rule-and-variant work on top of geometry that is now proved,
    which is a much smaller job than the one this entry used to describe.
-2. **A character portrait / dialogue bust.** The rig renders 46px-tall
-   figures; a dialogue box wants a face. Different framing, different
-   resolution, and probably a different producer again -- generation is
-   plausible here in a way it is not for a walk cycle, since a portrait is a
-   single view of a thing.
+2. ~~**A character portrait / dialogue bust.**~~ **Done** --
+   `tools/portrait.py`. Reuses `character.head()`/`hair()` for shape and
+   material identity (a portrait provably matches its sprite; a generated
+   one could not promise that) and authors real brow/mouth/eye geometry on
+   top rather than blowing up `face()`'s flat sprite-scale marks, which was
+   tried first and renders a mannequin at 96px. Camera is dead-on
+   (`azimuth=90`), not the sprite rig's corner view, on a bust crop
+   (`chest()`) rather than the full standing figure. Four checks --
+   palette-exactness, distinctness, per-eye visibility against bare skin,
+   determinism -- pass on all 9 roster characters; `proof/portraits.png`.
+   Found and fixed a real bug one level down along the way: `render_batch
+   .render_sprite`'s outline pass assigned material ids with `hash(m) %
+   251`, non-deterministic and collision-prone across a process, which
+   `furnish.py`'s whole prop library was rendering through unnoticed until a
+   portrait's higher material density made the wrong-colour outline pixels
+   visible. One cosmetic artifact is left as a known characteristic, not
+   chased further: a faceted seam where the octagonal `chest()` prism meets
+   the round head, more visible on wider `bulk` values, present at some
+   strength on every character.
 3. ~~**Text.**~~ **Done** -- `tools/bitmap_font.py`. 90 glyphs as stroke
    skeletons rather than pixel grids, so size, weight and letterspacing are
    parameters and the letterforms are the only data. Which cap heights ship
