@@ -7,6 +7,9 @@ output actually looks good.
 Art stops being the constraint once this works. Content becomes the constraint,
 which is the point.
 
+<p align="center"><img src="proof/shop_big.png" width="820" alt="An isometric cozy coffee shop interior, rendered entirely by this pipeline"></p>
+<p align="center"><sub>The reference room — every prop, character, tile and pixel below is factory output, not concept art.</sub></p>
+
 **Scope, measured rather than claimed:** this is a *prop* pipeline. Café-scale
 object-shaped things without articulation go through clean — 29 of 31 subjects
 in the last full batch reached stage 5 with no findings (up from 22 of 31,
@@ -64,6 +67,10 @@ authoring rather than sampling.
     python tools/palette_forge.py        # compute + validate the 40-colour palette
     python tools/palette_swap.py --all   # re-palette the library, 4 times of day
     python tools/preview_variants.py     # -> proof/variants.png
+
+    python tools/bitmap_font.py          # 90 glyphs, 4 shipping cap heights
+    python tools/bitmap_font.py --demo   # -> out/ui/font/font_in_chrome.png
+
     python tools/animate.py --fx         # the deliverable: sheets + atlas.json
     python tools/render_room.py          # whole-shop composite (integration test)
 
@@ -104,12 +111,20 @@ authoring rather than sampling.
 | `proof/generators.png` | every generator, eight seeds each, spread measured |
 | `proof/characters.png` | roster, eight directions, and generated extras |
 | `proof/reference_image_conditioning.png` | reference photo, prompt-only, and two `--ip-scale` levels of the same prompt |
+| `proof/variants.png` | one room render, five palettes, nothing re-rendered |
+| `proof/font_in_chrome.png` | the bitmap font set inside the drawn UI chrome it was built for |
 | `ART_CRITIQUE.md` | what was rejected, why, and what became a check |
 
 The reference room is still the better room. It holds seven passes of judgement
 that no rule encodes — why the queue runs across the view rather than into it,
 why the crates go against the far walls. What the generator has is that it can
 make a different cafe, and that every one it makes clears twenty-six checks.
+
+![a generated room: window bar, different counter topology, occupied seating](proof/plan_room_stools.png)
+
+Nobody placed those people at the bar by hand. `window-bar occupancy` — the
+newest of the twenty-six checks — exists because a room can pass every
+placement rule and still read as empty; see below.
 
 ## The loop is a ratchet
 
@@ -272,6 +287,11 @@ sitting customer either in the chair or above it.
 whole rig, and the smallness is the design: at 46 px of figure a pose reads from
 limb *direction* and body height, not from articulation — an elbow is one pixel.
 
+![nine hand-typed archetypes, one rotated through all 8 directions, and nine generated extras](proof/characters.png)
+
+The bottom row is `generate_spec` output, not hand-typed — proposed and tested
+against the same checks the top row has to pass, not a separate, looser tier.
+
 Two behaviours fall out of constraints rather than being animated:
 
 - **The walk bob is derived.** Posed figures are ground-clamped, and swinging a
@@ -336,3 +356,37 @@ than four copies of the art — 200 pixels instead of 15 MB, and a shader can
 
 A coffee shop interior was chosen deliberately: it exercises wood, ceramic,
 foliage, fabric and skin — most of the material range a 2D game needs.
+
+## Text
+
+A bitmap font is normally authored by placing pixels, one glyph at a time, at
+one size — which is why they ship as "8px", "16px", and nothing between. Here
+every glyph is a set of **polylines** on a shared metric grid, stroked by an
+integer line algorithm at whatever cap height is asked for. Size, weight,
+letterspacing and palette are parameters; the 90 letterforms are the only data
+that had to be drawn by hand, because a letterform is a cultural convention
+and cannot be derived from a rule — the same split every other producer here
+makes between authored geometry and generated variation.
+
+    python tools/bitmap_font.py           # build the shipping sizes
+    python tools/bitmap_font.py --check   # sweep cap heights 5..20
+    python tools/bitmap_font.py --demo    # text inside the nine-slice chrome
+
+![the font set inside the chrome it was built for](proof/font_in_chrome.png)
+
+Which sizes ship is measured, not guessed: cap heights 5 and 6 collide letters
+that share a silhouette (`8`/`S`, `c`/`o`) or fill in a counter (`A`, `4`); 7
+and up are clean, and `SIZES` ships 7, 9, 11 and 13. Advances are *measured*
+off the rasterised ink rather than hand-declared, which is what makes the font
+proportional at every size for free, and caught two glyphs whose declared
+advance disagreed with their own pixels.
+
+It exports as a real `FontFile`, not baked strings — no anti-aliasing, no
+hinting, no subpixel positioning, for the same reason nothing else here is
+filtered: every one of those blends pixels this pipeline guarantees are
+palette-exact. `export_godot.check_font_layout` then measures adversarial
+strings (`iiii` vs `MMMM`, all-descender `gjpqy`) through Godot's own
+TextServer and compares against `bitmap_font.measure`: **32 of 32 widths
+match.** See [tools/README.md](tools/README.md#text) for the defect log —
+four real bugs the checks caught, including Python's banker's rounding
+breaking mirror-symmetric letters like `W`.
