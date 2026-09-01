@@ -49,9 +49,13 @@ def main() -> int:
     # --- correct: quantize lighting to ramp indices, modal downsample, outline
     toon_hi = shade_toon(mat, lam, SIZE, ramps, dither=True)
     toon = downsample_modal(toon_hi, SIZE, FACTOR)
+    # SORTED INDEX, never `hash(m) % 251` -- see render_batch.render_sprite,
+    # which carried the collision-prone version this was copied from.
+    id_to_mat = {i: m for i, m in enumerate(sorted(m for m in set(mat) if m is not None))}
+    ids = {m: i for i, m in id_to_mat.items()}
     mat_small = downsample_modal(
-        [m if m is None else (hash(m) % 251, 0, 0) for m in mat], SIZE, FACTOR)
-    id_to_mat = {(hash(m) % 251, 0, 0): m for m in set(mat) if m is not None}
+        [m if m is None else (ids[m] % 256, ids[m] // 256, 0) for m in mat], SIZE, FACTOR)
+    id_to_mat = {(i % 256, i // 256, 0): m for i, m in id_to_mat.items()}
     mat_small = [id_to_mat.get(c) if c is not None else None for c in mat_small]
     toon = apply_outline(toon, mat_small, TARGET, ramps)
 

@@ -71,8 +71,16 @@ def render_sprite(source, azimuth, target, factor, ramps, smooth=False,
     px = downsample_modal(shade_toon(mat, lam, size, ramps, dither=True), size, factor)
 
     # Carry material ids through the same downsample so the outline pass knows
-    # which ramp bounds each surface.
-    ids = {m: (hash(m) % 251, 0, 0) for m in set(mat) if m is not None}
+    # which ramp bounds each surface. SORTED INDEX, never `hash(m) % 251`: with
+    # ~a dozen materials in a character bust, the birthday bound puts a
+    # collision at roughly 1 in 4 renders, and Python randomises string
+    # hashing per process, so which pair collided -- and therefore which
+    # outline pixels came out the wrong colour, borrowed from an unrelated
+    # ramp -- changed on every run. `render_room.py` and `preview_characters.py`
+    # already carry this fix; this call site was missed, which matters because
+    # `furnish.py` renders the entire prop library through it.
+    ids = {m: (i % 256, i // 256, 0)
+          for i, m in enumerate(sorted(m for m in set(mat) if m is not None))}
     back = {v: k for k, v in ids.items()}
     small = downsample_modal([ids[m] if m is not None else None for m in mat],
                              size, factor)
