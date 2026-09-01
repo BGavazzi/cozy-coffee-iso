@@ -7,6 +7,9 @@ output actually looks good.
 Art stops being the constraint once this works. Content becomes the constraint,
 which is the point.
 
+<p align="center"><img src="proof/shop_big.png" width="820" alt="An isometric cozy coffee shop interior, rendered entirely by this pipeline"></p>
+<p align="center"><sub>The reference room — every prop, character, tile and pixel below is factory output, not concept art.</sub></p>
+
 **Scope, measured rather than claimed:** this is a *prop* pipeline. Café-scale
 object-shaped things without articulation go through clean — 29 of 31 subjects
 in the last full batch reached stage 5 with no findings (up from 22 of 31,
@@ -116,6 +119,12 @@ The reference room is still the better room. It holds seven passes of judgement
 that no rule encodes — why the queue runs across the view rather than into it,
 why the crates go against the far walls. What the generator has is that it can
 make a different cafe, and that every one it makes clears twenty-six checks.
+
+![a generated room: window bar, different counter topology, occupied seating](proof/plan_room_stools.png)
+
+Nobody placed those people at the bar by hand. `window-bar occupancy` — the
+newest of the twenty-six checks — exists because a room can pass every
+placement rule and still read as empty; see below.
 
 ## The loop is a ratchet
 
@@ -277,6 +286,11 @@ sitting customer either in the chair or above it.
 `character.Pose` is six limb angles, a vertical offset and a twist. That is the
 whole rig, and the smallness is the design: at 46 px of figure a pose reads from
 limb *direction* and body height, not from articulation — an elbow is one pixel.
+
+![nine hand-typed archetypes, one rotated through all 8 directions, and nine generated extras](proof/characters.png)
+
+The bottom row is `generate_spec` output, not hand-typed — proposed and tested
+against the same checks the top row has to pass, not a separate, looser tier.
 
 Two behaviours fall out of constraints rather than being animated:
 
