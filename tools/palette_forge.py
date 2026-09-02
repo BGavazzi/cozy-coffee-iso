@@ -414,6 +414,9 @@ def main() -> int:
     ap.add_argument("--bible", default=None)
     ap.add_argument("--out", default=None)
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--lock", action="store_true",
+                    help="record the pass/fail in the active style's "
+                         "lock.json (see tools/lockfile.py)")
     args = ap.parse_args()
 
     if args.style or not (args.bible and args.out):
@@ -463,6 +466,16 @@ def main() -> int:
     errs += serrs
     if not args.quiet and snotes:
         print(snotes[0])
+
+    if args.lock:
+        import lockfile
+        from style import load_style
+        sty = load_style(args.style or "cozy_ghibli")
+        entry = lockfile.record(sty, "palette_forge.py", "palette+variants",
+                                ["validate", "check_separation"],
+                                approved=not errs)
+        print(f"lock: {'approved' if entry['approved'] else 'rejected'} "
+              f"at {entry['style_hash']}")
 
     if errs:
         print("\nFAIL:", file=sys.stderr)

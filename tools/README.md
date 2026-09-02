@@ -46,6 +46,8 @@ edit to that style flags every approval recorded against the old version as
 stale rather than leaving it silently out of date.
 
     python tools/portrait.py --check --lock   # records roster:portrait.py
+    python tools/character.py --lock          # records roster:character.py
+    python tools/palette_forge.py --lock      # records palette+variants
     python tools/lockfile.py --status         # what's locked, what's stale
 
 `tools/llm_gate.py` makes `gates.py`'s `llm` kind real: a named `Rubric`, a
