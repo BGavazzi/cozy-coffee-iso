@@ -1,0 +1,58 @@
+{
+  "character.py:roster": {
+    "approved": true,
+    "gates": [
+      "check_contrast",
+      "check_palette_spread",
+      "check_waistline",
+      "check_direction_stability"
+    ],
+    "producer": "character.py",
+    "recorded_at": "2026-09-02T07:21:49+00:00",
+    "scope": "roster",
+    "style": "cozy_ghibli",
+    "style_hash": "db3d2007125e8d1d"
+  },
+  "palette_forge.py:palette+variants": {
+    "approved": true,
+    "gates": [
+      "validate",
+      "check_separation"
+    ],
+    "producer": "palette_forge.py",
+    "recorded_at": "2026-09-02T07:22:38+00:00",
+    "scope": "palette+variants",
+    "style": "cozy_ghibli",
+    "style_hash": "db3d2007125e8d1d"
+  },
+  "portrait.py:roster": {
+    "approved": true,
+    "gates": [
+      "check_eyes_visible",
+      "check_distinct",
+      "check_determinism",
+      "check_palette_exact"
+    ],
+    "producer": "portrait.py",
+    "recorded_at": "2026-09-02T07:10:49+00:00",
+    "scope": "roster",
+    "style": "cozy_ghibli",
+    "style_hash": "db3d2007125e8d1d"
+  },
+  "render_room.py:proof/shop_big.png": {
+    "approved": true,
+    "gates": [
+      "llm:focal_hierarchy"
+    ],
+    "llm_verdict": {
+      "judge": "claude-sonnet-5",
+      "reasoning": "Espresso machine + counter sit centred-upper and are the one cool-grey break against an otherwise warm-wood palette; chalkboard signage above reinforces it. Eye lands there before the floor, plants, or seated figures, though the room is busy enough that it is not an instant read.",
+      "rubric": "focal_hierarchy"
+    },
+    "producer": "render_room.py",
+    "recorded_at": "2026-09-02T07:15:45+00:00",
+    "scope": "proof/shop_big.png",
+    "style": "cozy_ghibli",
+    "style_hash": "db3d2007125e8d1d"
+  }
+}

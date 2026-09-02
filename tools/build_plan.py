@@ -1043,7 +1043,11 @@ def main() -> int:
     # own docstring cited a 17% escape rate measured against different floors
     # than the ones it was comparing to.
     ap.add_argument("--target", type=int, default=0)
-    ap.add_argument("--out", default=str(ROOT / "proof" / "plan_room.png"))
+    ap.add_argument("--style", default=None,
+                    help="style pack to render against (default: cozy_ghibli)")
+    ap.add_argument("--out", default=None,
+                    help="default: proof/plan_room.png, or "
+                         "proof/plan_room_<style>.png for a non-default --style")
     ap.add_argument("--focal-scan", type=int, default=0, metavar="N",
                     help="measure focal lead over N consecutive plans and "
                          "exit; the suite check only samples one room per "
@@ -1087,9 +1091,16 @@ def main() -> int:
     back = plan.of("backbar")[0]
     focal = ((min(run.x0, back.x0), max(run.x1, back.x1)),
              (min(run.y0, back.y0), max(run.y1, back.y1)), (0.0, 1.50))
+    ramps = None
+    if args.style:
+        from pixelize import load_palette
+        from style import load_style
+        ramps = load_palette(load_style(args.style).palette_path)
+    out_path = args.out or (str(ROOT / "proof" / "plan_room.png") if not args.style
+                            else str(ROOT / "proof" / f"plan_room_{args.style}.png"))
     from render_room import render
-    render(L, light_rig(plan), (args.target or 480), Path(args.out),
-           wear=L.wear_field(), focal=focal)
+    render(L, light_rig(plan), (args.target or 480), Path(out_path),
+           wear=L.wear_field(), focal=focal, ramps=ramps)
     return 0
 
 

@@ -452,12 +452,23 @@ def frame(mesh, cam, target_px, margin=0.04):
 
 def main() -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--style", default=None,
+                    help="style pack to render against (default: cozy_ghibli)")
     ap.add_argument("--target", type=int, default=480)
     ap.add_argument("--factor", type=int, default=3)
     ap.add_argument("--azimuth", type=float, default=45.0)
-    ap.add_argument("--out", default=str(ROOT / "proof" / "shop.png"))
+    ap.add_argument("--out", default=None,
+                    help="default: proof/shop.png, or proof/shop_<style>.png "
+                         "for a non-default --style")
     ap.add_argument("--no-shadows", action="store_true")
     args = ap.parse_args()
+
+    ramps = None
+    if args.style:
+        from style import load_style
+        ramps = load_palette(load_style(args.style).palette_path)
+    out_path = args.out or (str(ROOT / "proof" / "shop.png") if not args.style
+                            else str(ROOT / "proof" / f"shop_{args.style}.png"))
 
     L = build_room()
     hits = L.collisions()
@@ -489,15 +500,15 @@ def main() -> int:
             print(f"    {h}")
     else:
         print("  nothing is buried behind anything")
-    render(L, light_rig(), args.target, Path(args.out),
+    render(L, light_rig(), args.target, Path(out_path),
            factor=args.factor, azimuth=args.azimuth,
-           shadows=not args.no_shadows)
+           shadows=not args.no_shadows, ramps=ramps)
     return 0
 
 
 def render(L, rig, target: int, out: Path, factor: int = 3,
            azimuth: float = 45.0, shadows: bool = True, wear=None,
-           focal=None) -> None:
+           focal=None, ramps=None) -> None:
     """Rasterize a laid-out room and write the sprite.
 
     Extracted from `main` when `build_plan.py` needed the same path. It had to
@@ -513,7 +524,7 @@ def render(L, rig, target: int, out: Path, factor: int = 3,
     print(f"camera span {cam.span:.2f}, azimuth {azimuth}")
 
     size = target * factor
-    ramps = load_palette()
+    ramps = ramps or load_palette()
     print(f"rasterizing {size}x{size} -> {target}x{target} ...")
     sm = None
     if shadows:

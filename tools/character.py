@@ -1151,16 +1151,41 @@ def report_widths(spec=None) -> None:
         print(f"  dir{k}  {w:5.1f} px at game scale")
 
 
-if __name__ == "__main__":
+def main() -> int:
+    import argparse
     from pixelize import load_palette
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--lock", action="store_true",
+                    help="record the pass/fail in the active style's "
+                         "lock.json (see tools/lockfile.py)")
+    ap.add_argument("--style", default="cozy_ghibli")
+    args = ap.parse_args()
+
     ramps = load_palette()
+    gate_fns = ("check_contrast", "check_palette_spread", "check_waistline",
+               "check_direction_stability")
     problems = (check_contrast(ramps) + check_palette_spread()
                 + check_waistline(ramps)
                 + check_direction_stability())
+
+    if args.lock:
+        import lockfile
+        from style import load_style
+        entry = lockfile.record(load_style(args.style), "character.py",
+                                "roster", list(gate_fns),
+                                approved=not problems)
+        print(f"lock: {'approved' if entry['approved'] else 'rejected'} "
+              f"at {entry['style_hash']}")
+
     for p in problems:
         print(f"  BLOCKER  {p}")
     print(f"{len(problems)} blocker(s)")
-    raise SystemExit(1 if problems else 0)
+    return 1 if problems else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
 
 
 # --- clips -------------------------------------------------------------------

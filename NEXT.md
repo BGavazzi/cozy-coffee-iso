@@ -483,6 +483,281 @@ low-poly silhouettes -- not literal hardware constraints (15-colour-per-sprite
 subpalettes, a fixed master palette). Hardware-accurate palette partitioning is
 a large side quest with little visual payoff on a modern rendering target.
 
+**Landed (PR #13, stacked on #12): the gate catalog.** The wider objective
+behind this whole initiative, stated directly: taste is the one thing a
+machine can't be handed, so everything else is a matter of defining the right
+gate for the problem. This repo already had 62 of them -- `check_*` functions
+built one hard-won defect at a time, scattered across twenty files with no
+shared vocabulary. `tools/gates.py` catalogs all 62 (sourced from each
+check's own docstring via an AST scan, not hand-paraphrased, so it can't
+drift into misdescribing one), classified into the three kinds a real review
+applies in order: `deterministic` (all 62 existing checks), `llm` (a vision
+model asked to judge what no numeric floor captures well -- real category,
+honestly empty; the focal-contrast/composition family is named as the
+strongest candidate, since `ART_CRITIQUE.md` records a multi-pass history of
+that exact check being re-derived because it approximates a judgment call
+with an ever-more-specific proxy, but wiring an actual model is a deliberate
+decision left for later, not a data change), and `taste` (the human opening
+the proof sheet -- every feature this repo has shipped waited on this,
+written down as a gate or not).
+
+**Landed (PR #14, stacked on #13): provenance and staleness.** `tools/
+lockfile.py` answers approval chaining and precedence flagging directly: an
+approval is only true of one (output, upstream version) pair, and nothing
+before this noticed when that pair changed. One `lock.json` per style pack
+(beside its `bible.yaml`), keyed `producer:scope`, records which gates were
+checked and a content hash of the bible at that moment -- no version number
+to remember to bump, the bible's own bytes are the version. `portrait.py
+--check --lock` is the first real producer wired to it, cross-referencing
+`gates.py`'s own catalog for the gate names rather than typing them by hand.
+Demonstrated end to end, not just unit-tested: recorded the real roster as
+approved, edited `style_bible.yaml`, confirmed `lockfile.py --status` flips
+that same entry to `STALE` and exits non-zero, reverted the edit, confirmed
+it flips back. `lock.json` is committed -- the point is a persistent,
+shared record, not a local scratch file.
+
+**Landed (PR #15, stacked on #14): the `llm` gate kind, made real rather
+than left as an empty category.** No external API is wired, deliberately --
+`tools/llm_gate.py`'s own docstring makes the case: the agent operating this
+repo already IS a vision-capable LLM, in the loop for every judgment call
+this pipeline has ever needed a human for, so routing that same judgment
+through a `Rubric`/`Verdict` contract costs nothing, commits to no vendor,
+and needs no credential to manage. A future automated backend (an actual API
+call, for judging at a volume no interactive session could keep up with) is
+a real, separate cost/vendor decision this file does not make. Demonstrated
+for real against `proof/shop_big.png` -- this repo's own "the reference room
+is still the better room" -- applying the first rubric (`focal_hierarchy`,
+the composition-judgment family `gates.py` named as the strongest llm-gate
+candidate): PASS, with real reasoning (the espresso machine's cool-grey break
+against the warm palette, reinforced by the chalkboard signage above it),
+recorded into the SAME `lock.json` a deterministic `--lock` call writes, so
+staleness tracking covers both kinds identically -- verified a rejected
+verdict is stored but never flagged stale, since it was never approved in
+the first place.
+
+**Landed (PR #16, stacked on #15): two more real producers wired to
+`--lock`.** `character.py` and `palette_forge.py` each gained the same
+opt-in flag `portrait.py` did. `character.py --lock` records exactly the
+four checks its own `__main__` already ran (`check_contrast`,
+`check_palette_spread`, `check_waistline`, `check_direction_stability`) --
+honestly a subset of the nine `gates.py` catalogs for it, not silently
+expanded to all nine, since that would be a behaviour change past what was
+asked. `palette_forge.py --lock` records `validate` + `check_separation`,
+its real gate logic, even though `validate` doesn't match the `check_*`
+naming convention `gates.py`'s catalog scans for -- recorded under its real
+name rather than skipped for not fitting the pattern. Both verified
+byte-identical to their pre-`--lock` output when the flag is omitted.
+`lock.json` now carries four real, independently-recorded entries:
+`portrait.py:roster`, `character.py:roster`, `palette_forge.py:
+palette+variants`, `render_room.py:proof/shop_big.png`.
+
+**Landed (PR #17, stacked on #16): the "one of each class, approved, placed
+in engine" gate, made checkable.** `cozy_ghibli` already satisfies this in
+practice -- `render_room.py`'s whole-shop composite and `export_godot.py`'s
+export happen to cover every class this game needs -- but nothing made that
+an explicit, re-checkable requirement before now. `tools/style_approve.py`
+computes it entirely from `lock.json`: a style is APPROVED when it has an
+approved, current character-roster entry (`character.py` and/or
+`portrait.py`), an approved, current `palette_forge.py` entry, and at least
+one approved, current `llm:focal_hierarchy` verdict -- the actual "does this
+read as one coherent world" question. Deliberately not "every gate passes":
+most of `gates.py`'s 62 are per-producer regression checks, not questions
+about whether a STYLE holds together as a whole. `cozy_ghibli` passes today
+on the entries #14-#16 already recorded. Demonstrated the negative case the
+same way `lockfile.py`'s staleness was demonstrated: edited `style_bible
+.yaml`, confirmed all three requirements correctly flip to failing (not just
+one), reverted, confirmed APPROVED again. This is the gate a second style
+pack (the SNES-flavoured one, or any future one) will have to clear before
+it's safe to generate a real asset library against.
+
+**Landed (PR #18, stacked on #17): the first real second style pack --
+`styles/snes_rpg/bible.yaml`, palette only.** Same computed-not-picked
+machinery as `cozy_ghibli` (`palette_forge.py` needed zero code changes,
+confirming the earlier research finding that it's genuinely style-agnostic)
+-- only new numbers. Targets 16-bit JRPG character/monster sprite work
+specifically (Chrono Trigger, Secret of Evermore), not that era's more
+Ghibli-adjacent background painting: fewer, harder-countable shading bands
+(4-5 steps per ramp instead of `cozy_ghibli`'s 5-7), far less aggressive
+chroma falloff (0.10 vs 0.26, so saturation holds toward both ends of a
+ramp instead of washing to pastel), hue held close to constant per ramp
+rather than painterly warm/cool-shifted (`cool_amount`/`warm_amount` at
+0.05 vs `cozy_ghibli`'s ~0.22-0.24), and `require_warm_cool_shift: false`
+in its own constraints -- an explicit opt-out of the one hard-coded rule in
+`palette_forge.validate()`, not a failure to meet it. One real collision
+found and fixed the same way `cozy_ghibli`'s own history recorded similar
+ones: `accent_read` at hue 8 landed 0.0121 apart from `rose`'s own mid-ramp
+(hue 6, similar lightness) against a 0.035 floor -- pushed to hue 30
+(orange) to separate. Visually reviewed against the rendered swatch sheet
+(`styles/snes_rpg/palette/palette.png`, committed) before being called
+done, same as every palette this repo has shipped. Character rig, materials
+and check-threshold wiring for this style are separate, not-yet-started
+work -- `style_approve.py --style snes_rpg` correctly reports NOT approved
+until they exist, which is the gate working as designed, not a bug.
+
+**Landed (PR #19, stacked on #18): the organic cylinder/sphere character
+rig, built and rendered for real.** `tools/organic_rig.py` -- a new,
+self-contained producer, not a `character.py` rewrite (same relationship
+`portrait.py` has to `character.py`), because it sidesteps the import-order
+problem entirely: it reads `styles/<name>/bible.yaml`'s `rig:` block
+directly through `tools/style.py` rather than through module-level default
+arguments bound at `def` time.
+
+Building it surfaced a real correction, not just new geometry: the earlier
+`rig:` schema carried over `torso_rx`/`torso_ry`-style independent radii
+from the prism rig, but `add_cylinder`/`add_sphere` (`tools/mesh.py`) only
+take ONE radius -- a true circle. That is strictly better for the exact
+property the prism rewrite exists for: `add_prism`'s own docstring measures
+a box at 53% silhouette swing between face-on and corner-on views and an
+octagon at ~8%, while a true circle's projected width is identical at every
+azimuth by construction. `styles/snes_rpg/bible.yaml`'s `rig:` block was
+corrected to `torso_radius`/`head_radius`/`leg_radius`/`arm_radius` (single
+values) to match. `check_direction_stability` in `organic_rig.py` measures
+this claim directly rather than asserting it -- both rigs' silhouette swing
+across the same 8 azimuths, organic against `character.BARISTA`'s own prism
+swing -- and the organic rig wins on the numbers, not just by construction.
+
+Scoped to a static standing figure (legs, torso, arms, head, minimal face,
+one hair cap) through the "upright, unposed" case only -- explicitly not
+the 15-clip pose system, seated/perched legs, or `character.hair`'s six
+styles. Each of those is a real, separate authoring pass the same size as
+this one; porting all of them at once would be an unreviewed batch, which
+is exactly what this repo's own process argues against.
+
+One real visual bug found by rendering and looking, same as everywhere else
+in this repo: the first hair sphere (1.08x head radius, offset 0.28 head
+radii up) was large enough to swallow nearly the entire head from every
+camera angle, reading as a grey metal helmet rather than hair -- worse, its
+material (`neutral+1`, a cool blue-grey ramp meant for metal surfaces) made
+it look even more like armor. Fixed by shrinking to 0.86x radius at a
+smaller +0.16 offset (crown-and-back coverage, face left clear) and
+switching to `wood-3` (dark brown, off the same ramp `SKIN` reads from,
+consistent with how the existing roster's own hair materials work). Visually
+confirmed at azimuth 90 -- eyes and blush read clearly, matching
+`portrait.py`'s own finding that a dead-on camera is what facial detail
+actually needs. Proof sheet: `proof/organic_rig.png`, all 8 azimuths, looked
+at before being called done.
+
+`style_approve.py`'s `REQUIRED_PRODUCERS_ANY_OF` gained `organic_rig.py`:
+for a `primitive: cylinder_sphere` style, it is the only one of the three
+character producers that builds that style's own declared geometry today,
+so requiring only `character.py`/`portrait.py` would make such a style
+permanently unapprovable on a technicality unrelated to whether its
+characters read correctly. With this plus a real `palette_forge.py --style
+snes_rpg --lock` entry, `style_approve.py --style snes_rpg` is down to one
+remaining reason (no `llm:focal_hierarchy` verdict) -- which correctly
+requires a real composed scene, itself blocked on `furnish.py`/
+`render_room.py` being wired to this style, still separate, not-yet-started
+work.
+
+**Landed (PR #20, stacked on #19): `snes_rpg` reaches APPROVED for real --
+and the deferred `assetlib.py` import-order blocker turns out mostly not to
+be one.** Three findings, in the order they happened:
+
+1. Rendering an existing `assetlib.py` prop (`table()`) under `snes_rpg`'s
+   palette with ZERO code changes -- just passing `load_palette(style.
+   palette_path)` -- produced a correctly-styled result. The reason: `WOOD`,
+   `CERAMIC`, etc. are semantic role names (`"wood"`, `"cream"`, ...), and
+   both real style packs' `materials:` blocks happen to map every role to
+   the SAME ramp name (`wood -> wood`, `ceramic -> cream`, ...) -- only the
+   ramp's own colours differ per style, which is exactly the axis
+   `load_palette` already varies. The import-order problem this file
+   flagged three times over is real in the abstract (a style that wanted to
+   remap a role to a DIFFERENT ramp name would hit it, because those
+   constants really are bound as function defaults at `def` time), but no
+   style that exists today needs that, so it was blocking nothing real.
+   Confirmed on five more props spanning wood, fabric, foliage and ceramic
+   materials (`table_4top`, `chair_wood`, `armchair`, `plant_monstera`,
+   `cup_espresso`) side by side against `cozy_ghibli` -- all five read
+   correctly, distinctly punchier and more saturated, with no cross-ramp
+   bleeding. This closes most of what NEXT.md previously called "separate,
+   real geometry-authoring work" down to a much smaller and already-landed
+   change (below).
+
+2. `furnish.py` and `render_room.py` gained `--style` (default
+   `cozy_ghibli`, exact prior behaviour when omitted -- verified: the
+   default-path room render reproduces `ART_CRITIQUE.md`'s own recorded
+   focal-contrast figure, `+0.133`, exactly). Both were genuinely small,
+   mechanical changes -- swap a hardcoded `load_palette()` for
+   `load_palette(style.palette_path)`, default `--out` to a style-named
+   subpath so a non-default render can't silently overwrite the shipped
+   proof image. `render_room.py --style snes_rpg` produced a full composed
+   room, `proof/shop_snes_rpg.png` -- same layout as the shipped
+   `proof/shop.png`, same characters (still the box/prism rig; `character.py`
+   itself is the one real remaining piece that needs the rig: block wired
+   in, see above), completely re-shaded. Focal contrast measured HIGHER
+   under this palette than the original, `+0.166` vs `+0.133` -- snes_rpg's
+   higher chroma and harder value steps sharpen the counter-vs-field
+   separation rather than softening it, not just a different-looking room
+   but a stronger one by this repo's own composition metric.
+
+3. Judged `proof/shop_snes_rpg.png` against the `focal_hierarchy` rubric
+   honestly (PASS -- reasoning in `styles/snes_rpg/lock.json`) and recorded
+   it with `--style snes_rpg` (missing that flag the first time silently
+   recorded the verdict into `cozy_ghibli`'s own `lock.json` instead --
+   caught by re-running `style_approve.py --style snes_rpg` and seeing it
+   still fail, removed the misfiled entry, re-recorded correctly).
+
+`python tools/style_approve.py --style snes_rpg` now reports **APPROVED** --
+the first style pack other than `cozy_ghibli` to clear the "one of each
+class, approved, placed in engine" bar this repo set for itself. What's
+still real, separate, not-yet-started work: `character.py` itself does not
+yet build `snes_rpg`'s declared cylinder/sphere rig (the room above uses the
+existing prism customers, correctly re-shaded, not `organic_rig.py`'s
+figures merged into a scene); and `character.hair`'s six styles have no
+organic-rig equivalent yet.
+
+**Landed (PR #21, stacked on #20): `build_plan.py`'s curated floor plan
+gained the same `--style` wiring.** Same small, mechanical pattern as
+`furnish.py`/`render_room.py` -- a `--style` flag, `ramps` threaded through
+to the shared `render_room.render()` call, `--out` defaulting to a
+style-suffixed path. `build_plan.py --style snes_rpg` -> `proof/
+plan_room_snes_rpg.png`, a second, independently-generated composed scene
+(different layout topology than `render_room.py`'s own `build_room()`) --
+worth having because this is the actual producer `proof/shop_big.png`,
+the ORIGINAL `focal_hierarchy` verdict's scope, came from.
+
+Judged and recorded honestly: PASS, but the weaker of the two `snes_rpg`
+scenes so far (`+0.078` focal contrast vs the other scene's `+0.166`) --
+this layout's counter is a long, thin run rather than a compact cluster,
+and the magenta cushioned chairs scattered through the seating area compete
+with it more than the first scene's plants did. Recorded anyway, as
+additional real evidence rather than cherry-picking the stronger result --
+`style_approve.py` only needs one passing verdict to grant APPROVED, and it
+already had one; this is a second, independent data point, and an honest
+weaker-but-still-passing one is more useful than a hidden failed attempt
+would have been.
+
+**Landed (PR #22, stacked on #21): three more `organic_rig.py` hairstyles --
+`long`, `bun`, `cap` -- alongside the existing `short`.** `bob` and `curly`
+are still not here: both rely on a partial (non-360deg) ring in the
+box/prism original, which `add_cylinder`/`add_sphere` cannot express without
+new primitive code, a real, separate job rather than something to fake.
+
+Two rendering mistakes found by looking, not assumed away, the same
+discipline `short`'s own fix (PR #19) established:
+
+- The demo's hairstyle row was first rendered at azimuth 90 (face-on) --
+  the one azimuth that CANNOT show `long`/`bun`, because both are placed
+  behind the head (negative y) specifically so they clear the face. Every
+  style looked identical to `short` until the row was moved to azimuth 225
+  (a back-left corner view), which is where the geometry actually lives.
+- Even at the right azimuth, the first `long`/`bun` placements were too
+  close to the crown sphere to read as separate shapes -- `long`'s cylinder
+  barely poked past the head sphere's own silhouette (offset -0.65 head_r,
+  when the sphere's own back edge is already at -1.0 head_r at crown
+  height), and `bun`'s sphere mostly overlapped the cap rather than
+  protruding from it. Both pushed further out and, for `bun`, shrunk --
+  `bun` specifically needed to be SMALLER and further out to read as a
+  distinct knot rather than a thicker cap.
+
+`cap` needed no correction: a short wide cylinder (brim) plus a smaller one
+(crown) is the one style a cylinder is the obviously correct primitive for,
+not a stand-in for a box, and it read correctly on the first render.
+
+`organic_rig.py --demo` now shows two rows: the existing 8-azimuth
+silhouette-swing sheet, and a new one comparing all four hairstyles side by
+side at azimuth 225.
+
 ---
 
 ## How this repo expects work to be done

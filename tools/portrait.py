@@ -390,10 +390,23 @@ def main() -> int:
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--demo", action="store_true")
     ap.add_argument("--target", type=int, default=TARGET)
+    ap.add_argument("--lock", action="store_true",
+                    help="with --check: record the pass/fail in the active "
+                         "style's lock.json (see tools/lockfile.py)")
+    ap.add_argument("--style", default="cozy_ghibli")
     args = ap.parse_args()
 
     if args.check:
         problems = check()
+        if args.lock:
+            from gates import by_producer
+            from style import load_style
+            import lockfile
+            gate_names = [g.name for g in by_producer("portrait.py")]
+            entry = lockfile.record(load_style(args.style), "portrait.py",
+                                    "roster", gate_names, approved=not problems)
+            print(f"lock: {'approved' if entry['approved'] else 'rejected'} "
+                  f"at {entry['style_hash']}")
         if problems:
             for p in problems:
                 print(f"  BLOCKER  {p}", file=sys.stderr)

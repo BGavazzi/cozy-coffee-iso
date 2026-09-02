@@ -29,6 +29,93 @@ and proportion values as function default arguments, which Python binds at
 packs: generalizing beyond one art direction", for the full status and what a
 second style pack needs next.
 
+`styles/snes_rpg/bible.yaml` is the first real second style pack, and the
+first to reach `style_approve.py`'s APPROVED bar. Its palette needed zero
+code changes to `palette_forge.py` -- the concrete proof the earlier "is the
+palette forge actually generic" research finding was right. Its character
+rig is real too: `tools/organic_rig.py`, a cylinder/sphere rig built as its
+own self-contained producer (same relationship `portrait.py` has to
+`character.py`) rather than a `character.py` rewrite, which sidesteps the
+import-order problem above entirely -- it reads `rig:` through `tools/
+style.py`, not through a module-level default argument.
+
+`assetlib.py`'s own props needed no code changes either, which turned out to
+be the bigger finding: `WOOD`/`CERAMIC`/etc. are semantic role names, and
+both real style packs' `materials:` blocks happen to map every role to the
+SAME ramp name, so `load_palette(style.palette_path)` alone re-styles a prop
+correctly. The import-order problem is real for a HYPOTHETICAL style that
+wants to remap a role to a different ramp name -- it isn't for either style
+that exists today. `furnish.py` and `render_room.py` gained `--style` on
+that basis (small, mechanical -- exact prior behaviour when omitted):
+
+    python tools/palette_forge.py --style snes_rpg
+    python tools/organic_rig.py --check                 # silhouette-swing measurement
+    python tools/organic_rig.py --demo                  # -> proof/organic_rig.png
+    python tools/furnish.py --style snes_rpg --only table_4top chair_wood
+    python tools/render_room.py --style snes_rpg        # -> proof/shop_<style>.png
+    python tools/style_approve.py --style snes_rpg      # APPROVED
+
+A true circle (`add_cylinder`/`add_sphere`, one radius) turns out to beat
+the octagonal prism rig at its own game: `add_prism`'s docstring measures a
+box at 53% silhouette swing across azimuths and an octagon at ~8%, and a
+true circle's projected width is identical at every azimuth by
+construction. `organic_rig.py`'s `check_direction_stability` measures both
+rigs on the same 8 azimuths rather than asserting the claim. Building it
+also corrected `styles/snes_rpg/bible.yaml`'s `rig:` schema: the original
+`torso_rx`/`torso_ry`-style fields, copied from the prism rig, don't fit
+primitives that only take one radius -- now `torso_radius`/`head_radius`/
+`leg_radius`/`arm_radius`.
+
+### Gates and provenance
+
+`tools/gates.py` catalogs every `check_*` function in this repo -- 62 of them
+-- as `deterministic`, `llm` (a real category, honestly empty; see the module
+docstring for the strongest candidate), or `taste` (the human opening the
+proof sheet, which every shipped feature here has always waited on).
+
+    python tools/gates.py --list
+    python tools/gates.py --producer character.py
+
+`tools/lockfile.py` records which gates a producer's output passed, and at
+what content hash of the active style's `bible.yaml` -- so an approval is
+provably tied to one version of the style it was judged against, and a later
+edit to that style flags every approval recorded against the old version as
+stale rather than leaving it silently out of date.
+
+    python tools/portrait.py --check --lock   # records roster:portrait.py
+    python tools/character.py --lock          # records roster:character.py
+    python tools/palette_forge.py --lock      # records palette+variants
+    python tools/lockfile.py --status         # what's locked, what's stale
+
+`tools/llm_gate.py` makes `gates.py`'s `llm` kind real: a named `Rubric`, a
+`Verdict` recorded through the same `lock.json` a deterministic `--lock`
+call writes. No external API -- the agent operating this repo already is a
+vision-capable LLM in the loop for every judgment call here, so that IS the
+first backend, at zero marginal cost and no vendor decision.
+
+    python tools/llm_gate.py --list
+    python tools/llm_gate.py --record focal_hierarchy --pass \
+        --reasoning "..." --judge claude-sonnet-5 \
+        --producer render_room.py --scope proof/shop_big.png --style snes_rpg
+
+`--style` defaults to `cozy_ghibli` here too -- omitting it for a non-default
+style's scene silently records the verdict into the wrong style's
+`lock.json`, which `style_approve.py` will just as silently keep reporting
+NOT approved for (this happened once, caught by re-running the approval
+check and seeing it still fail; the fix was deleting the misfiled entry and
+re-recording with `--style` set).
+
+`tools/style_approve.py` is the "one of each class, approved, placed in
+engine" gate, computed entirely from `lock.json`: APPROVED requires a
+current, approved character-roster entry, a current, approved palette
+entry, and at least one current, approved `llm:focal_hierarchy` verdict.
+This is the bar a new style pack has to clear before it's safe to generate
+a real asset library against -- both `cozy_ghibli` and `snes_rpg` clear it
+today.
+
+    python tools/style_approve.py --style cozy_ghibli
+    python tools/style_approve.py --style snes_rpg
+
 ## Why the palette is computed rather than picked
 
 Two properties become *checkable* instead of hoped for:
