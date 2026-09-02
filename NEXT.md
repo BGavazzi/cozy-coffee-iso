@@ -896,7 +896,7 @@ side puffs -- and both leave the eyes visible in every view checked.
 `HAIR_STYLES` now has all six of `character.hair`'s styles; `organic_rig.py`
 has no more deliberately-deferred hairstyle work.
 
-**Landed (PR #27, stacked on #26): a real eye-visibility check for
+**Landed (PR #28, stacked on #26): a real eye-visibility check for
 `organic_rig.py`'s roster, and the bug it caught -- `archivist` shipping
 with invisible eyes.** `check_roster` (PR #22) only ever ran
 `character.check_contrast`/`check_waistline` against `ROSTER` -- both test
