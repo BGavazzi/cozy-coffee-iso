@@ -896,6 +896,35 @@ side puffs -- and both leave the eyes visible in every view checked.
 `HAIR_STYLES` now has all six of `character.hair`'s styles; `organic_rig.py`
 has no more deliberately-deferred hairstyle work.
 
+**Landed (PR #27, stacked on #26): a real eye-visibility check for
+`organic_rig.py`'s roster, and the bug it caught -- `archivist` shipping
+with invisible eyes.** `check_roster` (PR #22) only ever ran
+`character.check_contrast`/`check_waistline` against `ROSTER` -- both test
+hair-vs-skin and shirt-vs-trousers, neither tests hair colour against
+`C.EYE` itself. `archivist`'s `hair_mat="neutral-3"` sat one step from
+`C.EYE`'s `neutral-2` on this style's own compressed neutral ramp, and
+`bob`'s full head-wrap coverage put that hair directly behind the eye
+boxes: found by zooming into the rendered portrait and seeing two blank
+sockets, not by any check failing.
+
+`check_eyes_visible` closes the gap, ported from `portrait.py`'s own
+version of the same check: build the figure (torso, head, hair, arms) with
+NO eyes, then again with exactly one eye box added, render both, count
+differing pixels. No axis assumption about which half of frame is which
+eye, no other feature's contrast to hide behind -- if adding the eye
+changed fewer than `MIN_EYE_PIXELS` (3, same floor `portrait.py` uses), it
+isn't visibly there, whether the cause is hair occlusion or colour
+collision. Wired into `check()` alongside `check_direction_stability` and
+`check_roster`, and into `--lock`'s recorded gate list, so this class of
+bug is caught automatically on every future roster edit, not just by
+manual visual spot-check.
+
+Fix: `archivist.hair_mat` -> `wood-4` (already proven safe by
+`check_contrast`/`check_waistline` for every other roster member). Full
+roster -- `check_eyes_visible` included -- passes; re-rendered
+`proof/organic_rig.png` shows archivist's eyes clearly against the bob
+hair, visually confirmed alongside the numeric pass.
+
 ---
 
 ## How this repo expects work to be done
