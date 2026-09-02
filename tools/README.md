@@ -29,6 +29,25 @@ and proportion values as function default arguments, which Python binds at
 packs: generalizing beyond one art direction", for the full status and what a
 second style pack needs next.
 
+### Gates and provenance
+
+`tools/gates.py` catalogs every `check_*` function in this repo -- 62 of them
+-- as `deterministic`, `llm` (a real category, honestly empty; see the module
+docstring for the strongest candidate), or `taste` (the human opening the
+proof sheet, which every shipped feature here has always waited on).
+
+    python tools/gates.py --list
+    python tools/gates.py --producer character.py
+
+`tools/lockfile.py` records which gates a producer's output passed, and at
+what content hash of the active style's `bible.yaml` -- so an approval is
+provably tied to one version of the style it was judged against, and a later
+edit to that style flags every approval recorded against the old version as
+stale rather than leaving it silently out of date.
+
+    python tools/portrait.py --check --lock   # records roster:portrait.py
+    python tools/lockfile.py --status         # what's locked, what's stale
+
 ## Why the palette is computed rather than picked
 
 Two properties become *checkable* instead of hoped for:
