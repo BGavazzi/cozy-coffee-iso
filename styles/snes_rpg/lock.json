@@ -1,4 +1,20 @@
 {
+  "build_plan.py:proof/plan_room_snes_rpg.png": {
+    "approved": true,
+    "gates": [
+      "llm:focal_hierarchy"
+    ],
+    "llm_verdict": {
+      "judge": "claude-sonnet-5",
+      "reasoning": "The service counter -- a long pale cream run along the back-right wall, broken by the grey-steel espresso machine -- is the highest-value shape in the frame against the darker saturated wood floor and walls, and it draws the eye first on a glance. Weaker than the other snes_rpg scene's verdict (contrast +0.078 vs +0.166 there): this curated layout's counter run is longer and thinner rather than a compact cluster, and the magenta cushioned chairs scattered through the seating area are close in saturation. Still passes -- the counter's value lead over the floor/walls is real and it's the only large pale shape in the room -- but it is the weaker of the two snes_rpg scenes judged so far, worth knowing if this specific curated plan is reused for anything comparative.",
+      "rubric": "focal_hierarchy"
+    },
+    "producer": "build_plan.py",
+    "recorded_at": "2026-09-02T08:05:51+00:00",
+    "scope": "proof/plan_room_snes_rpg.png",
+    "style": "snes_rpg",
+    "style_hash": "b35b39e59b56f2cd"
+  },
   "organic_rig.py:silhouette": {
     "approved": true,
     "gates": [
