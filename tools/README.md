@@ -48,6 +48,17 @@ stale rather than leaving it silently out of date.
     python tools/portrait.py --check --lock   # records roster:portrait.py
     python tools/lockfile.py --status         # what's locked, what's stale
 
+`tools/llm_gate.py` makes `gates.py`'s `llm` kind real: a named `Rubric`, a
+`Verdict` recorded through the same `lock.json` a deterministic `--lock`
+call writes. No external API -- the agent operating this repo already is a
+vision-capable LLM in the loop for every judgment call here, so that IS the
+first backend, at zero marginal cost and no vendor decision.
+
+    python tools/llm_gate.py --list
+    python tools/llm_gate.py --record focal_hierarchy --pass \
+        --reasoning "..." --judge claude-sonnet-5 \
+        --producer render_room.py --scope proof/shop_big.png
+
 ## Why the palette is computed rather than picked
 
 Two properties become *checkable* instead of hoped for:
