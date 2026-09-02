@@ -840,6 +840,27 @@ require `portrait.py` or `manifest.py` to pass, only `character.py` OR
 than suppressed, same as PR #23 -- `styles/snes_rpg/lock.json` now has a
 real `portrait.py:roster` entry with `approved: false`.
 
+**Landed (PR #25, stacked on #24): `--style` for `ui_chrome.py` -- the last
+producer that could take it without needing the GPU.** `ui_forge.py` (SDXL
+icons) and `ui_chrome.py` (procedural chrome -- dialogue frames, coins, star
+ratings) were the two remaining producers with no `--style` at all, not the
+accepts-but-ignores bug the last two PRs fixed. `ui_forge.py` needs `concept.
+_pipe()` (SDXL, the GPU stage NEXT.md's own environment section flags) to
+even run, so wiring and verifying it belongs with the GPU-bound work, not
+this compute-light thread. `ui_chrome.py` has no such dependency -- purely
+procedural, same category as `assetlib.py`'s builders -- so it got the same
+small, mechanical `--style` treatment as `furnish.py`/`render_room.py`/
+`build_plan.py`: a flag, `ramps` resolved from the active style and threaded
+into `build()` (which gained an `out_dir` parameter, default `UI_DIR`, so a
+non-default style writes to `out/ui_<style>` instead of silently sharing
+the default style's output directory).
+
+Verified by rendering three chrome pieces (`ui_dialogue_frame`, `ui_coin`,
+`ui_star_rating`) under both styles side by side: all six pass their own
+checks, and `snes_rpg`'s render is visibly, coherently punchier -- brighter
+cream, a harder maroon outline in place of the muted rose one, sharper gold
+on the coin -- not just a different-looking accident.
+
 ---
 
 ## How this repo expects work to be done
