@@ -754,6 +754,10 @@ discipline `short`'s own fix (PR #19) established:
 (crown) is the one style a cylinder is the obviously correct primitive for,
 not a stand-in for a box, and it read correctly on the first render.
 
+`organic_rig.py --demo` now shows two rows: the existing 8-azimuth
+silhouette-swing sheet, and a new one comparing all four hairstyles side by
+side at azimuth 225.
+
 **Landed (PR #23, stacked on #22): a real correctness bug in `character.py
 --style`, fixed, plus the negative result it uncovered, recorded honestly.**
 `character.py`'s `main()` accepted `--style` since PR #16 but only used it
@@ -793,9 +797,48 @@ already derives `snes_rpg`'s character-roster evidence from
 exactly why `REQUIRED_PRODUCERS_ANY_OF` is an "any of" set rather than
 requiring `character.py` specifically.
 
-`organic_rig.py --demo` now shows two rows: the existing 8-azimuth
-silhouette-swing sheet, and a new one comparing all four hairstyles side by
-side at azimuth 225.
+**Landed (PR #24, stacked on #23): the same `--style`-ignored-by-the-actual-
+check bug, found and fixed in `portrait.py` and `manifest.py` too.** Having
+just found it once in `character.py`, checked every other producer
+accepting `--style` for the same pattern rather than assuming it was
+isolated. It was not: `portrait.py`'s `check()`/`build()`/`demo()` and
+`manifest.py`'s `check()` all hardcoded `load_palette()` with no argument
+in one or more places, so `--style snes_rpg` picked which `lock.json` a
+result went into without ever measuring `snes_rpg`'s actual colours.
+
+Both fixed the same way -- `ramps` resolved once from the active style and
+threaded through every call site (`check`/`build`/`demo` in `portrait.py`
+each gained a `ramps=None` parameter; `manifest.py`'s `check()` resolves
+`ramps` once and passes it to `check_waistline`, `check_eye_legibility`,
+`check_spec_coverage`, `check_contrast`, and `generate_roster`, replacing a
+half-dozen bare `load_palette()`/`_lp()` calls). `check_ui`'s own
+`load_palette()` is untouched and correctly so: it audits files already on
+disk under `out/ui/`, which `ui_forge.py`/`ui_chrome.py` never claimed to
+build per-style in the first place -- a different, larger, genuinely
+not-yet-started gap, not a bug in this one.
+
+Running both for real found more of the same honest picture:
+
+- `portrait.py --check --style snes_rpg`: `reader`'s left eye renders 0px
+  against bare skin. Its `hair_mat` (`neutral-2`) and `character.EYE`
+  (also `neutral-2`) are literally the same ramp+offset -- under
+  `cozy_ghibli`'s specific RGB values that pair still separates enough to
+  read; under `snes_rpg`'s darker, more compressed `neutral` ramp it
+  doesn't. Same root cause as PR #23's finding, different check, different
+  specific collision.
+- `manifest.py --check --style snes_rpg`: the same three waistline
+  failures PR #23 already found (consistent -- both producers measure the
+  same roster against the same palette), plus three new near-misses:
+  `check_eye_legibility` measures eyes 0.147 from the face at skin tones
+  `skin-4`/`skin-3`/`skin-2` against a 0.15 floor -- close, not a wide miss,
+  but a real one specific to this palette's darker skin steps.
+
+None of these threaten either style's approval: `style_approve.py` doesn't
+require `portrait.py` or `manifest.py` to pass, only `character.py` OR
+`portrait.py` OR `organic_rig.py` for the character-roster requirement, and
+`organic_rig.py`'s entry already satisfies it. Recorded honestly rather
+than suppressed, same as PR #23 -- `styles/snes_rpg/lock.json` now has a
+real `portrait.py:roster` entry with `approved: false`.
 
 ---
 

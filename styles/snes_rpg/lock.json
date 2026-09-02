@@ -52,6 +52,20 @@
     "style": "snes_rpg",
     "style_hash": "b35b39e59b56f2cd"
   },
+  "portrait.py:roster": {
+    "approved": false,
+    "gates": [
+      "check_eyes_visible",
+      "check_distinct",
+      "check_determinism",
+      "check_palette_exact"
+    ],
+    "producer": "portrait.py",
+    "recorded_at": "2026-09-02T08:23:03+00:00",
+    "scope": "roster",
+    "style": "snes_rpg",
+    "style_hash": "b35b39e59b56f2cd"
+  },
   "render_room.py:proof/shop_snes_rpg.png": {
     "approved": true,
     "gates": [
