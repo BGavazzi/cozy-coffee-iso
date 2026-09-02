@@ -21,5 +21,21 @@
     "scope": "palette+variants",
     "style": "snes_rpg",
     "style_hash": "b35b39e59b56f2cd"
+  },
+  "render_room.py:proof/shop_snes_rpg.png": {
+    "approved": true,
+    "gates": [
+      "llm:focal_hierarchy"
+    ],
+    "llm_verdict": {
+      "judge": "claude-sonnet-5",
+      "reasoning": "The espresso machine + counter cluster (upper-middle, dark steel silhouette against the warm wood/counter field, elevated above the floor plane) is the first thing the eye lands on within a glance, reinforced by the chalkboard signage directly above it -- same read as cozy_ghibli's own shop_big.png verdict, same layout. The measured focal contrast is actually higher under this palette (+0.166 vs cozy_ghibli's +0.133) because snes_rpg's higher chroma and harder value steps sharpen the counter-vs-field separation rather than softening it. The saturated green rug and plant cluster are the strongest competing draws but read as secondary: they're at floor level, smaller, and less central than the counter.",
+      "rubric": "focal_hierarchy"
+    },
+    "producer": "render_room.py",
+    "recorded_at": "2026-09-02T07:59:12+00:00",
+    "scope": "proof/shop_snes_rpg.png",
+    "style": "snes_rpg",
+    "style_hash": "b35b39e59b56f2cd"
   }
 }

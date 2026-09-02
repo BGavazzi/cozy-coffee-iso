@@ -29,22 +29,31 @@ and proportion values as function default arguments, which Python binds at
 packs: generalizing beyond one art direction", for the full status and what a
 second style pack needs next.
 
-`styles/snes_rpg/bible.yaml` is the first real second style pack. Its
-palette needed zero code changes to `palette_forge.py`, the concrete proof
-the earlier "is the palette forge actually generic" research finding was
-right. Its character rig is real too now: `tools/organic_rig.py`, a
-cylinder/sphere rig built as its own self-contained producer (same
-relationship `portrait.py` has to `character.py`) rather than a
-`character.py` rewrite, which means it sidesteps the import-order problem
-above entirely -- it reads `rig:` through `tools/style.py`, not through a
-module-level default argument. Materials/check-threshold wiring into
-`assetlib.py` itself is still ahead, still blocked on that same import-order
-problem.
+`styles/snes_rpg/bible.yaml` is the first real second style pack, and the
+first to reach `style_approve.py`'s APPROVED bar. Its palette needed zero
+code changes to `palette_forge.py` -- the concrete proof the earlier "is the
+palette forge actually generic" research finding was right. Its character
+rig is real too: `tools/organic_rig.py`, a cylinder/sphere rig built as its
+own self-contained producer (same relationship `portrait.py` has to
+`character.py`) rather than a `character.py` rewrite, which sidesteps the
+import-order problem above entirely -- it reads `rig:` through `tools/
+style.py`, not through a module-level default argument.
+
+`assetlib.py`'s own props needed no code changes either, which turned out to
+be the bigger finding: `WOOD`/`CERAMIC`/etc. are semantic role names, and
+both real style packs' `materials:` blocks happen to map every role to the
+SAME ramp name, so `load_palette(style.palette_path)` alone re-styles a prop
+correctly. The import-order problem is real for a HYPOTHETICAL style that
+wants to remap a role to a different ramp name -- it isn't for either style
+that exists today. `furnish.py` and `render_room.py` gained `--style` on
+that basis (small, mechanical -- exact prior behaviour when omitted):
 
     python tools/palette_forge.py --style snes_rpg
-    python tools/organic_rig.py --check                # silhouette-swing measurement
+    python tools/organic_rig.py --check                 # silhouette-swing measurement
     python tools/organic_rig.py --demo                  # -> proof/organic_rig.png
-    python tools/style_approve.py --style snes_rpg      # one reason left: no composed-scene llm verdict yet
+    python tools/furnish.py --style snes_rpg --only table_4top chair_wood
+    python tools/render_room.py --style snes_rpg        # -> proof/shop_<style>.png
+    python tools/style_approve.py --style snes_rpg      # APPROVED
 
 A true circle (`add_cylinder`/`add_sphere`, one radius) turns out to beat
 the octagonal prism rig at its own game: `add_prism`'s docstring measures a
@@ -87,16 +96,25 @@ first backend, at zero marginal cost and no vendor decision.
     python tools/llm_gate.py --list
     python tools/llm_gate.py --record focal_hierarchy --pass \
         --reasoning "..." --judge claude-sonnet-5 \
-        --producer render_room.py --scope proof/shop_big.png
+        --producer render_room.py --scope proof/shop_big.png --style snes_rpg
+
+`--style` defaults to `cozy_ghibli` here too -- omitting it for a non-default
+style's scene silently records the verdict into the wrong style's
+`lock.json`, which `style_approve.py` will just as silently keep reporting
+NOT approved for (this happened once, caught by re-running the approval
+check and seeing it still fail; the fix was deleting the misfiled entry and
+re-recording with `--style` set).
 
 `tools/style_approve.py` is the "one of each class, approved, placed in
 engine" gate, computed entirely from `lock.json`: APPROVED requires a
 current, approved character-roster entry, a current, approved palette
 entry, and at least one current, approved `llm:focal_hierarchy` verdict.
 This is the bar a new style pack has to clear before it's safe to generate
-a real asset library against.
+a real asset library against -- both `cozy_ghibli` and `snes_rpg` clear it
+today.
 
     python tools/style_approve.py --style cozy_ghibli
+    python tools/style_approve.py --style snes_rpg
 
 ## Why the palette is computed rather than picked
 

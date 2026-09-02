@@ -649,6 +649,65 @@ requires a real composed scene, itself blocked on `furnish.py`/
 `render_room.py` being wired to this style, still separate, not-yet-started
 work.
 
+**Landed (PR #20, stacked on #19): `snes_rpg` reaches APPROVED for real --
+and the deferred `assetlib.py` import-order blocker turns out mostly not to
+be one.** Three findings, in the order they happened:
+
+1. Rendering an existing `assetlib.py` prop (`table()`) under `snes_rpg`'s
+   palette with ZERO code changes -- just passing `load_palette(style.
+   palette_path)` -- produced a correctly-styled result. The reason: `WOOD`,
+   `CERAMIC`, etc. are semantic role names (`"wood"`, `"cream"`, ...), and
+   both real style packs' `materials:` blocks happen to map every role to
+   the SAME ramp name (`wood -> wood`, `ceramic -> cream`, ...) -- only the
+   ramp's own colours differ per style, which is exactly the axis
+   `load_palette` already varies. The import-order problem this file
+   flagged three times over is real in the abstract (a style that wanted to
+   remap a role to a DIFFERENT ramp name would hit it, because those
+   constants really are bound as function defaults at `def` time), but no
+   style that exists today needs that, so it was blocking nothing real.
+   Confirmed on five more props spanning wood, fabric, foliage and ceramic
+   materials (`table_4top`, `chair_wood`, `armchair`, `plant_monstera`,
+   `cup_espresso`) side by side against `cozy_ghibli` -- all five read
+   correctly, distinctly punchier and more saturated, with no cross-ramp
+   bleeding. This closes most of what NEXT.md previously called "separate,
+   real geometry-authoring work" down to a much smaller and already-landed
+   change (below).
+
+2. `furnish.py` and `render_room.py` gained `--style` (default
+   `cozy_ghibli`, exact prior behaviour when omitted -- verified: the
+   default-path room render reproduces `ART_CRITIQUE.md`'s own recorded
+   focal-contrast figure, `+0.133`, exactly). Both were genuinely small,
+   mechanical changes -- swap a hardcoded `load_palette()` for
+   `load_palette(style.palette_path)`, default `--out` to a style-named
+   subpath so a non-default render can't silently overwrite the shipped
+   proof image. `render_room.py --style snes_rpg` produced a full composed
+   room, `proof/shop_snes_rpg.png` -- same layout as the shipped
+   `proof/shop.png`, same characters (still the box/prism rig; `character.py`
+   itself is the one real remaining piece that needs the rig: block wired
+   in, see above), completely re-shaded. Focal contrast measured HIGHER
+   under this palette than the original, `+0.166` vs `+0.133` -- snes_rpg's
+   higher chroma and harder value steps sharpen the counter-vs-field
+   separation rather than softening it, not just a different-looking room
+   but a stronger one by this repo's own composition metric.
+
+3. Judged `proof/shop_snes_rpg.png` against the `focal_hierarchy` rubric
+   honestly (PASS -- reasoning in `styles/snes_rpg/lock.json`) and recorded
+   it with `--style snes_rpg` (missing that flag the first time silently
+   recorded the verdict into `cozy_ghibli`'s own `lock.json` instead --
+   caught by re-running `style_approve.py --style snes_rpg` and seeing it
+   still fail, removed the misfiled entry, re-recorded correctly).
+
+`python tools/style_approve.py --style snes_rpg` now reports **APPROVED** --
+the first style pack other than `cozy_ghibli` to clear the "one of each
+class, approved, placed in engine" bar this repo set for itself. What's
+still real, separate, not-yet-started work: `character.py` itself does not
+yet build `snes_rpg`'s declared cylinder/sphere rig (the room above uses the
+existing prism customers, correctly re-shaded, not `organic_rig.py`'s
+figures merged into a scene); `build_plan.py`'s curated "shop_big" floor
+plan (as opposed to `render_room.py`'s own `build_room()`) has not been
+given the same `--style` wiring; and `character.hair`'s six styles have no
+organic-rig equivalent yet.
+
 ---
 
 ## How this repo expects work to be done
