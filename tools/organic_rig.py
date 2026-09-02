@@ -165,34 +165,85 @@ def face(skin: str, head_cz: float, head_r: float, blush: bool = True) -> Mesh:
     return m
 
 
-def hair(mat: str, head_cz: float, head_r: float) -> Mesh:
-    """One cap style for this first pass -- `character.hair`'s six styles are
-    a separate, later porting job (NEXT.md), not a blocker for proving the
-    primitive. A smaller, back-and-up-offset sphere reads as a rounded crop
-    over the crown and back of the skull, leaving the face clear -- the first
-    version used a radius/offset large enough to swallow the whole head
-    (1.08r at +0.28r), which looked like a metal helmet rather than hair once
-    actually rendered and looked at, and is exactly the kind of thing this
-    file's own scope note says to build, render, and adjust rather than trust
-    unreviewed."""
+HAIR_STYLES = ("short", "long", "bun", "cap")
+
+
+def hair(mat: str, head_cz: float, head_r: float, style: str = "short") -> Mesh:
+    """Four of `character.hair`'s six styles, ported to sphere/cylinder.
+    `bob` and `curly` are not here yet -- both rely on a partial (non-360deg)
+    ring in the box/prism original, which `add_cylinder`/`add_sphere` cannot
+    express without new primitive code; a real, separate job, not attempted
+    by guessing at it here.
+
+    Every style is built from full rings placed either well above the eye
+    line (the crown) or well behind it (negative y, the back of the skull) --
+    never a ring that spans both, which is what made the first `short` cap
+    swallow the whole head before it was rendered and fixed. `long`'s and
+    `bun`'s extra geometry sits at y <= -0.55 * head_r specifically so it
+    cannot reach forward far enough to compete with `face`'s proud-of-surface
+    eyes, the same margin discipline `_proud_y` exists for.
+
+    `short` -- crown cap only. A smaller, back-and-up-offset sphere reads as
+    a rounded crop over the crown and back of the skull, leaving the face
+    clear -- the first version used a radius/offset large enough to swallow
+    the whole head (1.08x at +0.28 head radii), which looked like a metal
+    helmet rather than hair once actually rendered and looked at.
+    """
     m = Mesh()
-    m.add_sphere((0.0, -0.020, head_cz + head_r * 0.16), head_r * 0.86, mat,
-                 segments=20, rings=14)
+    cap_c = (0.0, -0.020, head_cz + head_r * 0.16)
+    cap_r = head_r * 0.86
+    m.add_sphere(cap_c, cap_r, mat, segments=20, rings=14)
+
+    if style == "long":
+        # A cylinder hanging from the back of the crown down past the chin,
+        # offset far enough back (-0.75 head_r) that its front edge still
+        # sits behind y=-0.35 head_r -- clear of the face by the same margin
+        # `character.hair`'s own back-only box keeps (drawn from -ry to
+        # -0.09, never past centre). The first version (bottom at
+        # head_cz-0.55r, offset -0.65r) barely poked past the head sphere's
+        # own silhouette and read as identical to `short` once actually
+        # rendered -- the sphere's back edge is already at -1.0 head_r at
+        # crown height, so anything short of clearing that by a visible
+        # margin, at a length that actually reaches below the head, is
+        # invisible rather than subtle.
+        bottom_z = head_cz - 0.85 * head_r
+        m.add_cylinder((0.0, -0.75 * head_r, bottom_z), 0.38 * head_r,
+                       1.15 * head_r, mat, segments=14)
+    elif style == "bun":
+        # A second, smaller sphere behind and above the crown -- the one
+        # style where the extra volume is a knot, not length, so it stays
+        # close to the head rather than hanging. Two corrections from the
+        # first cut: pushed further out (-0.85r, was -0.62r, then -0.70r)
+        # and shrunk (0.34r, was 0.40-0.42r) -- a bun reads as a distinct
+        # round knot only if it clearly protrudes past the crown cap's own
+        # silhouette rather than mostly overlapping it; a bigger sphere
+        # closer in just thickened the cap instead of adding a second shape.
+        m.add_sphere((0.0, -0.85 * head_r, head_cz + head_r * 0.62),
+                     0.34 * head_r, mat + "+1", segments=14, rings=10)
+    elif style == "cap":
+        # A literal hat: a short wide cylinder for the brim, a smaller one
+        # for the crown -- the one style a cylinder is the obviously correct
+        # primitive for, not a stand-in for a box.
+        m.add_cylinder((0.0, 0.0, head_cz + head_r * 0.30), head_r * 1.05,
+                       head_r * 0.18, mat, segments=20)
+        m.add_cylinder((0.0, -0.10 * head_r, head_cz + head_r * 0.28),
+                       head_r * 1.30, head_r * 0.07, mat + "-1", segments=20)
     return m
 
 
 def build(rig: dict, skin: str = SKIN, shirt: str = SHIRT,
          trousers: str = TROUSERS, hair_mat: str = HAIR_MAT,
-         bulk: float = 1.0, blush: bool = True) -> Mesh:
+         hair_style: str = "short", bulk: float = 1.0,
+         blush: bool = True) -> Mesh:
     """Upright, unposed. See module docstring for what this deliberately
-    does not attempt yet (poses, seated/perched legs, hairstyle variety)."""
+    does not attempt yet (poses, seated/perched legs)."""
     spread = 0.105
     head_m, head_cz, head_r = head(skin, rig)
     parts = [
         torso(shirt, rig, bulk),
         head_m,
         face(skin, head_cz, head_r, blush),
-        hair(hair_mat, head_cz, head_r),
+        hair(hair_mat, head_cz, head_r, hair_style),
         arms(shirt, skin, rig, bulk),
     ]
     for sx in (-spread, spread):
@@ -267,9 +318,11 @@ TARGET, FACTOR = 64, 4
 
 
 def demo(style_name: str = "snes_rpg", out: Path | None = None) -> str:
-    """8-azimuth contact sheet -- the visual half of the silhouette-swing
-    claim `check_direction_stability` measures numerically. Same rigor as
-    `preview_characters.py`'s own "one archetype, all 8 directions" row."""
+    """8-azimuth contact sheet plus a hairstyle row -- the visual half of
+    the silhouette-swing claim `check_direction_stability` measures
+    numerically, and of whether `HAIR_STYLES` actually read as different
+    from each other. Same rigor as `preview_characters.py`'s own two-row
+    "roster" / "one archetype, all 8 directions" pattern."""
     style = load_style(style_name)
     ramps = load_palette(style.palette_path)
     mesh = build(style.rig)
@@ -277,12 +330,14 @@ def demo(style_name: str = "snes_rpg", out: Path | None = None) -> str:
 
     pad, label, scale = 8, 20, 3
     cell = TARGET * scale
-    sheet = Image.new("RGB", (8 * (cell + pad) + pad, cell + label + pad * 2 + 24),
+    sheet = Image.new("RGB", (8 * (cell + pad) + pad,
+                              2 * (cell + label + pad) + pad + 24),
                       (18, 16, 22))
     d = ImageDraw.Draw(sheet)
     d.text((pad, 6), f"organic_rig ({style_name}): 8 azimuths, cylinder/sphere",
            fill=(214, 208, 218))
 
+    y0 = 24 + pad
     for k in range(8):
         az = k * 45.0
         img, _ = render_sprite(mesh, az, TARGET, FACTOR, ramps, span=span,
@@ -290,9 +345,28 @@ def demo(style_name: str = "snes_rpg", out: Path | None = None) -> str:
         bg = Image.new("RGB", (TARGET, TARGET), (30, 27, 36))
         bg.paste(img, (0, 0), img)
         x = pad + k * (cell + pad)
-        y = 24 + pad
-        sheet.paste(bg.resize((cell, cell), Image.NEAREST), (x, y))
-        d.text((x + 2, y + cell + 2), f"az{az:.0f}", fill=(214, 208, 218))
+        sheet.paste(bg.resize((cell, cell), Image.NEAREST), (x, y0))
+        d.text((x + 2, y0 + cell + 2), f"az{az:.0f}", fill=(214, 208, 218))
+
+    # az225: a back-left corner view. `long`/`bun`'s extra geometry sits
+    # behind the head (negative y) specifically so it clears the face at
+    # az90 -- which also means az90 is the one azimuth that CANNOT show what
+    # makes them different from `short`. Found by rendering the first cut
+    # of this row at az90 and every style looking identical.
+    HAIR_DEMO_AZIMUTH = 225.0
+    y1 = y0 + cell + label + pad + 14
+    d.text((pad, y1 - 16), f"hairstyles, azimuth {HAIR_DEMO_AZIMUTH:.0f} (back-left corner)",
+           fill=(150, 145, 158))
+    for k, sty in enumerate(HAIR_STYLES):
+        hm = build(style.rig, hair_style=sty)
+        hspan, hcentre = frame_all(hm)
+        img, _ = render_sprite(hm, HAIR_DEMO_AZIMUTH, TARGET, FACTOR, ramps,
+                               span=hspan, centre=hcentre)
+        bg = Image.new("RGB", (TARGET, TARGET), (30, 27, 36))
+        bg.paste(img, (0, 0), img)
+        x = pad + k * (cell + pad)
+        sheet.paste(bg.resize((cell, cell), Image.NEAREST), (x, y1))
+        d.text((x + 2, y1 + cell + 2), sty, fill=(214, 208, 218))
 
     out = out or ROOT / "proof" / "organic_rig.png"
     out.parent.mkdir(parents=True, exist_ok=True)

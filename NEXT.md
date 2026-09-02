@@ -727,6 +727,37 @@ already had one; this is a second, independent data point, and an honest
 weaker-but-still-passing one is more useful than a hidden failed attempt
 would have been.
 
+**Landed (PR #22, stacked on #21): three more `organic_rig.py` hairstyles --
+`long`, `bun`, `cap` -- alongside the existing `short`.** `bob` and `curly`
+are still not here: both rely on a partial (non-360deg) ring in the
+box/prism original, which `add_cylinder`/`add_sphere` cannot express without
+new primitive code, a real, separate job rather than something to fake.
+
+Two rendering mistakes found by looking, not assumed away, the same
+discipline `short`'s own fix (PR #19) established:
+
+- The demo's hairstyle row was first rendered at azimuth 90 (face-on) --
+  the one azimuth that CANNOT show `long`/`bun`, because both are placed
+  behind the head (negative y) specifically so they clear the face. Every
+  style looked identical to `short` until the row was moved to azimuth 225
+  (a back-left corner view), which is where the geometry actually lives.
+- Even at the right azimuth, the first `long`/`bun` placements were too
+  close to the crown sphere to read as separate shapes -- `long`'s cylinder
+  barely poked past the head sphere's own silhouette (offset -0.65 head_r,
+  when the sphere's own back edge is already at -1.0 head_r at crown
+  height), and `bun`'s sphere mostly overlapped the cap rather than
+  protruding from it. Both pushed further out and, for `bun`, shrunk --
+  `bun` specifically needed to be SMALLER and further out to read as a
+  distinct knot rather than a thicker cap.
+
+`cap` needed no correction: a short wide cylinder (brim) plus a smaller one
+(crown) is the one style a cylinder is the obviously correct primitive for,
+not a stand-in for a box, and it read correctly on the first render.
+
+`organic_rig.py --demo` now shows two rows: the existing 8-azimuth
+silhouette-swing sheet, and a new one comparing all four hairstyles side by
+side at azimuth 225.
+
 ---
 
 ## How this repo expects work to be done
