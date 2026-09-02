@@ -483,6 +483,39 @@ low-poly silhouettes -- not literal hardware constraints (15-colour-per-sprite
 subpalettes, a fixed master palette). Hardware-accurate palette partitioning is
 a large side quest with little visual payoff on a modern rendering target.
 
+**Landed (PR #13, stacked on #12): the gate catalog.** The wider objective
+behind this whole initiative, stated directly: taste is the one thing a
+machine can't be handed, so everything else is a matter of defining the right
+gate for the problem. This repo already had 62 of them -- `check_*` functions
+built one hard-won defect at a time, scattered across twenty files with no
+shared vocabulary. `tools/gates.py` catalogs all 62 (sourced from each
+check's own docstring via an AST scan, not hand-paraphrased, so it can't
+drift into misdescribing one), classified into the three kinds a real review
+applies in order: `deterministic` (all 62 existing checks), `llm` (a vision
+model asked to judge what no numeric floor captures well -- real category,
+honestly empty; the focal-contrast/composition family is named as the
+strongest candidate, since `ART_CRITIQUE.md` records a multi-pass history of
+that exact check being re-derived because it approximates a judgment call
+with an ever-more-specific proxy, but wiring an actual model is a deliberate
+decision left for later, not a data change), and `taste` (the human opening
+the proof sheet -- every feature this repo has shipped waited on this,
+written down as a gate or not).
+
+**Landed (PR #14, stacked on #13): provenance and staleness.** `tools/
+lockfile.py` answers approval chaining and precedence flagging directly: an
+approval is only true of one (output, upstream version) pair, and nothing
+before this noticed when that pair changed. One `lock.json` per style pack
+(beside its `bible.yaml`), keyed `producer:scope`, records which gates were
+checked and a content hash of the bible at that moment -- no version number
+to remember to bump, the bible's own bytes are the version. `portrait.py
+--check --lock` is the first real producer wired to it, cross-referencing
+`gates.py`'s own catalog for the gate names rather than typing them by hand.
+Demonstrated end to end, not just unit-tested: recorded the real roster as
+approved, edited `style_bible.yaml`, confirmed `lockfile.py --status` flips
+that same entry to `STALE` and exits non-zero, reverted the edit, confirmed
+it flips back. `lock.json` is committed -- the point is a persistent,
+shared record, not a local scratch file.
+
 ---
 
 ## How this repo expects work to be done

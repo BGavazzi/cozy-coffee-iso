@@ -1,0 +1,16 @@
+{
+  "portrait.py:roster": {
+    "approved": true,
+    "gates": [
+      "check_eyes_visible",
+      "check_distinct",
+      "check_determinism",
+      "check_palette_exact"
+    ],
+    "producer": "portrait.py",
+    "recorded_at": "2026-09-02T07:10:49+00:00",
+    "scope": "roster",
+    "style": "cozy_ghibli",
+    "style_hash": "db3d2007125e8d1d"
+  }
+}
