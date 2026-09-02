@@ -861,6 +861,41 @@ checks, and `snes_rpg`'s render is visibly, coherently punchier -- brighter
 cream, a harder maroon outline in place of the muted rose one, sharper gold
 on the coin -- not just a different-looking accident.
 
+**Landed (PR #26, stacked on #25): `bob` and `curly`, the last two of
+`character.hair`'s six styles, ported to `organic_rig.py` -- and the claim
+that they needed new primitive code, corrected.** PR #22 held both back on
+the stated reason that both rely on a partial (non-360deg) ring the
+box/prism original has, which `add_cylinder`/`add_sphere` cannot express.
+That claim was never actually tested against the real geometry -- it was
+tried here, and it was wrong for both:
+
+- `character.hair`'s `curly` never used a partial ring at all. It is a
+  bigger cap plus two small FULL-sphere puffs at the sides -- the same
+  full-ring idiom `bun` already uses, just two of them, symmetric. Ported
+  directly, no new geometry needed.
+- `character.hair`'s `bob` box only ever occupies the region a full,
+  head-centred cylinder ALSO occupies once the head sphere's own opacity
+  is accounted for. A centred cylinder sized at or past the head's own
+  radius is invisible wherever it falls inside the head's silhouette (the
+  head draws in front of it) and visible only where it pokes past that
+  silhouette -- which is exactly "wraps around the sides and back, stays
+  clear of the front" without clipping anything. This only works because
+  the hair sits within the head sphere's own z-range (crown to jaw); it
+  would NOT generalize to something that needs to hang lower, which is
+  why `long`'s own back-offset technique (PR #19) is still the right one
+  for its case -- two different problems that happen to want two different
+  solutions, not one technique that should have been used for both.
+
+Verified at both the back-corner azimuth (`organic_rig.py --demo`'s own
+row, now six styles wide) and dead-on (`azimuth 90`, checked separately,
+not shown in the committed sheet): both new styles read as visibly, clearly
+distinct from `short` and from each other -- `bob` noticeably fuller
+coverage toward the jaw, `curly` a distinctly bumpier silhouette from the
+side puffs -- and both leave the eyes visible in every view checked.
+
+`HAIR_STYLES` now has all six of `character.hair`'s styles; `organic_rig.py`
+has no more deliberately-deferred hairstyle work.
+
 ---
 
 ## How this repo expects work to be done
