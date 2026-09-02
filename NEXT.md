@@ -551,6 +551,25 @@ byte-identical to their pre-`--lock` output when the flag is omitted.
 `portrait.py:roster`, `character.py:roster`, `palette_forge.py:
 palette+variants`, `render_room.py:proof/shop_big.png`.
 
+**Landed (PR #17, stacked on #16): the "one of each class, approved, placed
+in engine" gate, made checkable.** `cozy_ghibli` already satisfies this in
+practice -- `render_room.py`'s whole-shop composite and `export_godot.py`'s
+export happen to cover every class this game needs -- but nothing made that
+an explicit, re-checkable requirement before now. `tools/style_approve.py`
+computes it entirely from `lock.json`: a style is APPROVED when it has an
+approved, current character-roster entry (`character.py` and/or
+`portrait.py`), an approved, current `palette_forge.py` entry, and at least
+one approved, current `llm:focal_hierarchy` verdict -- the actual "does this
+read as one coherent world" question. Deliberately not "every gate passes":
+most of `gates.py`'s 62 are per-producer regression checks, not questions
+about whether a STYLE holds together as a whole. `cozy_ghibli` passes today
+on the entries #14-#16 already recorded. Demonstrated the negative case the
+same way `lockfile.py`'s staleness was demonstrated: edited `style_bible
+.yaml`, confirmed all three requirements correctly flip to failing (not just
+one), reverted, confirmed APPROVED again. This is the gate a second style
+pack (the SNES-flavoured one, or any future one) will have to clear before
+it's safe to generate a real asset library against.
+
 ---
 
 ## How this repo expects work to be done
