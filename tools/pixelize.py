@@ -208,13 +208,20 @@ def downsample_mean_then_snap(px, size, factor, ramps):
 
 # --- outline ----------------------------------------------------------------
 
-def apply_outline(px, mat_small, size, ramps, selective=True):
+def apply_outline(px, mat_small, size, ramps, selective=True, enabled=True,
+                  colour_step=0):
     """Silhouette outline always; internal boundaries only where contrast is low.
 
-    Outline colour is the bounding surface's own darkest ramp step, so it is
-    tinted per-surface and never pure black -- both style bible requirements
-    satisfied by construction rather than by a colour choice.
+    Outline colour is `colour_step` steps up the bounding surface's own ramp
+    from its darkest end -- `0` (the default, and every style this pipeline
+    has shipped so far) is the darkest step, so it is tinted per-surface and
+    never pure black, both style bible requirements satisfied by construction
+    rather than by a colour choice. `enabled=False` skips the whole pass,
+    for a style whose look leans on internal value contrast instead of a
+    drawn line -- many SNES-era sprites do exactly this.
     """
+    if not enabled:
+        return list(px)
     out = list(px)
     for y in range(size):
         for x in range(size):
@@ -238,7 +245,8 @@ def apply_outline(px, mat_small, size, ramps, selective=True):
                         edge = True
                         break
             if edge and m is not None:
-                out[i] = ramps[material(m)[0]][0]
+                ramp = ramps[material(m)[0]]
+                out[i] = ramp[max(0, min(len(ramp) - 1, colour_step))]
     return out
 
 

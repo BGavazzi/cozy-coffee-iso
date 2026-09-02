@@ -247,13 +247,17 @@ def validate(swatches: list[Swatch], bible: dict) -> list[str]:
             errs.append(f"ramp {ramp}: lightness not strictly increasing: {Ls}")
 
         # The Ghibli rule, checked: the highlight end must sit warmer than the
-        # shadow end, measured as angular distance from the warm anchor.
-        shadow_gap = abs(hue_delta(items[0].h, warm))
-        light_gap = abs(hue_delta(items[-1].h, warm))
-        if light_gap >= shadow_gap:
-            errs.append(
-                f"ramp {ramp}: highlight not warmer than shadow (shadow "
-                f"{shadow_gap:.1f}deg from warm anchor, highlight {light_gap:.1f}deg)")
+        # shadow end, measured as angular distance from the warm anchor. Not
+        # every style pack is chasing this look -- `require_warm_cool_shift:
+        # false` lets one opt out instead of failing validation for not being
+        # this style. Defaults true: silence should not turn the rule off.
+        if con.get("require_warm_cool_shift", True):
+            shadow_gap = abs(hue_delta(items[0].h, warm))
+            light_gap = abs(hue_delta(items[-1].h, warm))
+            if light_gap >= shadow_gap:
+                errs.append(
+                    f"ramp {ramp}: highlight not warmer than shadow (shadow "
+                    f"{shadow_gap:.1f}deg from warm anchor, highlight {light_gap:.1f}deg)")
 
     lo = min(s.L for s in swatches)
     hi = max(s.L for s in swatches)
@@ -404,10 +408,19 @@ def check_separation(bible: dict) -> tuple[list[str], list[str]]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--bible", default=str(ROOT / "style_bible.yaml"))
-    ap.add_argument("--out", default=str(ROOT / "palette"))
+    ap.add_argument("--style", default=None,
+                    help="style pack name (see tools/style.py); "
+                         "sets --bible/--out unless those are also given")
+    ap.add_argument("--bible", default=None)
+    ap.add_argument("--out", default=None)
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
+
+    if args.style or not (args.bible and args.out):
+        from style import load_style
+        sty = load_style(args.style or "cozy_ghibli")
+        args.bible = args.bible or str(sty.bible_path)
+        args.out = args.out or str(sty.palette_dir)
 
     bible = yaml.safe_load(Path(args.bible).read_text(encoding="utf-8"))
     swatches = forge(bible)

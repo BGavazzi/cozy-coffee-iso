@@ -206,9 +206,10 @@ def check_ui(man: dict) -> list[str]:
     return out
 
 
-def check(man: dict) -> int:
+def check(man: dict, style: str = "cozy_ghibli") -> int:
     """Validate the manifest against itself and the style bible."""
-    bible = yaml.safe_load((ROOT / "style_bible.yaml").read_text(encoding="utf-8"))
+    from style import load_style
+    bible = load_style(style).bible
     legal_ramps = set(bible["palette"]["ramps"]) | set(bible["palette"]["spot"])
     errs, warns = [], []
 
@@ -440,11 +441,12 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--queue", type=int, metavar="TIER")
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--style", default="cozy_ghibli")
     args = ap.parse_args()
 
     man = load()
     if args.check:
-        return check(man)
+        return check(man, args.style)
     if args.queue:
         queue(man, args.queue)
         return 0

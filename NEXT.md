@@ -424,6 +424,67 @@ scheduled. It is a ceiling, and it is recorded as one.
 
 ---
 
+## Style packs: generalizing beyond one art direction (in progress)
+
+This whole pipeline was written against one art direction -- `style_bible.yaml`'s
+Ghibli-through-pixel-constraints look. The ask now is a second, SNES-JRPG-flavoured
+one, built as a real generalization rather than a reskin: procedural wherever
+possible, reusable across future styles and games, not hardcoded to the coffee
+shop. Two research passes mapped the actual coupling first, and it was narrower
+than "rewrite everything": the palette forge is already data-driven from YAML,
+and the SDXL prop-prompt stage carries no style language at all -- style is
+applied entirely downstream, in the deterministic shading stage. The real
+blocker is `character.py`'s rig, built only from `add_box`/`add_prism` (flat,
+faceted, blocky) with proportions partly named and partly inlined as magic
+numbers -- and the encouraging find there: `add_cylinder`/`add_sphere` already
+exist and are already load-bearing throughout `assetlib.py` (cups, teapots) and
+`fx.py` (steam, droplets). An organic-reading character rig does not need new
+primitive code, it needs `character.py` rewritten to use primitives the
+codebase already trusts elsewhere.
+
+**Landed (PR #12): the style-pack data model and the safe half of the plumbing.**
+`tools/style.py` loads a "style pack" -- one `bible.yaml` extending today's
+schema with three new top-level keys: `materials:` (semantic role -> material
+token, replacing `assetlib.py`'s hardcoded WOOD/CERAMIC/GLASS/... constants),
+`rig:` (character proportions + primitive vocabulary + target resolution,
+recorded from `character.py`'s own constants), `checks:` (per-style overrides
+for today's hardcoded numeric floors, empty until a style has real renders to
+measure against). `cozy_ghibli` is the existing root `style_bible.yaml` --
+unmoved, so every unflagged script call resolves to exactly the path and
+output it already did; the migration is additive-only, verified byte-identical
+end to end (`palette_forge.py`, `character.py`, `portrait.py --check`,
+`palette_swap.py --check`'s full 755-PNG round-trip). Two real, small,
+independently-safe code changes rode along: `palette_forge.validate()`'s
+warm/cool hue-bend rule is now an opt-out (`require_warm_cool_shift: false`) --
+it's this style's defining choice, not a property every style must share --
+and `pixelize.apply_outline()` gained `enabled`/`colour_step` parameters,
+defaulting to today's exact behaviour, for a style whose look leans on internal
+value contrast instead of a drawn line.
+
+**Deliberately not landed yet, and why:** `assetlib.py`'s material constants
+and `character.py`'s rig constants are recorded as data in `materials:`/`rig:`
+now, but neither module reads them yet. The reason is a real constraint found
+mid-implementation, not an oversight: both modules use these as function
+*default arguments* (`def table(top=WOOD, ...)`), which Python binds once at
+`def` time -- at module import, before any `--style` flag has been parsed. Making
+them genuinely switchable needs either an early args-peek (resolve `--style`
+before the module that consumes it is imported) or converting every default to
+a lazy per-call lookup, and that is real, separate work across every entry-point
+script's import order, not a data change. Slated as the next slice, along with
+the SNES-flavoured palette + rendering pack itself, the organic cylinder/sphere
+character rig (the biggest lump of new authored geometry, comparable in effort
+to the portrait producer -- needs visual iteration, not just a refactor), and
+check-threshold overrides written once that rig's real renders exist to measure
+against.
+
+**Scoping call, flagged rather than pre-decided:** "SNES RPG" here means the
+*aesthetic* -- saturated, fewer shading bands, bold or minimal outlines, rounder
+low-poly silhouettes -- not literal hardware constraints (15-colour-per-sprite
+subpalettes, a fixed master palette). Hardware-accurate palette partitioning is
+a large side quest with little visual payoff on a modern rendering target.
+
+---
+
 ## How this repo expects work to be done
 
 **Environment**

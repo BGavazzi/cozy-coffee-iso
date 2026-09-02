@@ -151,6 +151,73 @@ palette:
     min_lightness: 0.15
     max_lightness: 0.99
     outline_source: neutral   # outline colour comes from the neutral ramp, never #000
+    # The warm-highlight/cool-shadow rule `palette_forge.validate` enforces as a
+    # hard pass/fail is this style's defining choice, not a property every
+    # style must share -- a style that isn't chasing the Ghibli look at all
+    # (flat, hardware-flavoured, no hue-bend) needs to be able to say so
+    # instead of failing validation for not being this style. Left true here
+    # because it is exactly what this style is.
+    require_warm_cool_shift: true
+
+# --- Material roles ----------------------------------------------------------
+# The semantic vocabulary tools/assetlib.py's prop builders and tools/character.py
+# author against -- what "the wood of a chair" or "a window pane" IS, not which
+# ramp happens to carry it in this palette. Every style pack must declare all
+# nine; a missing one means a prop or figure silently reads through whatever
+# ramp a stale default points at, which is a wrong-looking room, not an error.
+# Values are material tokens as tools/pixelize.material() parses them: a ramp
+# name from `palette.ramps` above, optionally with a `+N`/`-N` tone offset.
+materials:
+  wood: wood
+  ceramic: cream
+  plant: foliage
+  fabric: rose
+  metal: neutral
+  # Glass is the sky ramp read HIGH, not at its middle -- mid-lightness sky over
+  # a whole pane is a saturated blue slab, which review called "windows that do
+  # not look like glass". Real glass sits near the value of what is behind it,
+  # with colour arriving only at the edges.
+  glass: sky+2
+  glass_edge: sky
+  # Two steps down from plain cream -- at full cream the far wall measured the
+  # brightest thing in frame by a wide margin, pulling the eye off the room.
+  wall_field: cream-2
+  # One step down from bare wood -- not a colour choice, a value choice, so the
+  # floor is the quietest surface everything else is measured up from.
+  floor_field: wood-1
+
+# --- Character rig -------------------------------------------------------
+# tools/character.py's proportions, recorded as data. NOT YET CONSUMED by
+# character.py -- the module still reads these as its own hardcoded module
+# constants, with the values below kept identical on purpose so the two never
+# drift out of sync until the promotion lands (see NEXT.md, "style packs").
+# A style that wants a rounder, less faceted figure declares `primitive:
+# cylinder_sphere` here; `character.py` still only knows `box_prism`.
+rig:
+  primitive: box_prism
+  height: 1.59
+  torso_rx: 0.250
+  torso_ry: 0.210
+  head_rx: 0.205
+  head_ry: 0.185
+  head_z: 1.00
+  hip_z: 0.46
+  shoulder_z: 0.92
+  ankle_z: 0.10
+  seat_z: 0.45
+  max_seat_z: 0.58
+  perch_leg: 0.52
+  max_perch_z: 0.85
+  sprite_target_px: 46
+  portrait_target_px: 128
+
+# --- Check-threshold overrides ------------------------------------------
+# Empty on purpose. These floors (see tools/character.py, tools/art_review.py)
+# were each set from a real measurement run against THIS rig and THIS palette
+# -- see their docstrings for the run that set them. A different style earns
+# its own overrides the same way, from a real render, not a guess made ahead
+# of having one.
+checks: {}
 
 # --- Rendering conventions --------------------------------------------------
 
