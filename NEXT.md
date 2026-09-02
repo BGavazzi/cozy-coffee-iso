@@ -754,6 +754,45 @@ discipline `short`'s own fix (PR #19) established:
 (crown) is the one style a cylinder is the obviously correct primitive for,
 not a stand-in for a box, and it read correctly on the first render.
 
+**Landed (PR #23, stacked on #22): a real correctness bug in `character.py
+--style`, fixed, plus the negative result it uncovered, recorded honestly.**
+`character.py`'s `main()` accepted `--style` since PR #16 but only used it
+to pick which style's `lock.json` got the recorded result -- the roster's
+own material checks (`check_contrast`, `check_waistline`) always loaded
+`load_palette()` with no argument, i.e. always `cozy_ghibli`'s palette,
+regardless of `--style`. `character.py --check --style snes_rpg` therefore
+always passed, because it never actually measured `snes_rpg`'s colours --
+a check that cannot fail for the thing it claims to certify, which this
+file's own discipline rule (below) says is worse than no check. Fixed:
+`ramps = load_palette(load_style(args.style).palette_path)`.
+
+Running it for real immediately found a genuine, measured failure:
+`character.CUSTOMERS`'s hardcoded material choices -- written and tuned
+against `cozy_ghibli`'s palette -- do NOT all clear `character.py`'s own
+contrast/waistline floors under `snes_rpg`'s punchier, more compressed
+lightness distribution. Four blockers: `elder`'s hair sits 0.088 from skin
+(needs 0.13), and `reader`/`regular`/`writer` each have a shirt/trousers
+pair too close in value for a waistline to read (0.022/0.040/0.080 against
+an 0.085 floor).
+
+Not fixed, and deliberately not: neither the roster's material choices nor
+the check floors. Lowering the floor to make the failures disappear would
+defeat the check's own purpose -- insufficient contrast is a real visual
+defect regardless of which style is being validated, and this file's own
+discipline rule 1 says never pick a threshold because it makes a problem go
+away. Editing the roster's colours to satisfy `snes_rpg` risks quietly
+breaking `cozy_ghibli`'s own currently-clean pass, for a spec list that
+isn't even the geometry that ships for `snes_rpg` in the first place --
+`character.CUSTOMERS` is `character.py`'s own box/prism roster,
+`organic_rig.py` is what actually ships for a `cylinder_sphere` style. The
+honest conclusion, recorded rather than hidden (`styles/snes_rpg/
+lock.json`, `character.py:roster` entry, `approved: false`): this specific
+roster is cozy_ghibli-specific, and that's fine, because `style_approve.py`
+already derives `snes_rpg`'s character-roster evidence from
+`organic_rig.py` instead -- confirmed unaffected, still APPROVED. This is
+exactly why `REQUIRED_PRODUCERS_ANY_OF` is an "any of" set rather than
+requiring `character.py` specifically.
+
 `organic_rig.py --demo` now shows two rows: the existing 8-azimuth
 silhouette-swing sheet, and a new one comparing all four hairstyles side by
 side at azimuth 225.
