@@ -925,6 +925,36 @@ roster -- `check_eyes_visible` included -- passes; re-rendered
 `proof/organic_rig.png` shows archivist's eyes clearly against the bob
 hair, visually confirmed alongside the numeric pass.
 
+**Landed (PR #29, stacked on #28): `--style` for `tileset.py`, plus one more
+honest, measured rejection under `snes_rpg`.** Mechanical wiring, same
+pattern as `furnish.py`/`render_room.py`/`build_plan.py`/`ui_chrome.py`:
+`build()` resolves `ramps` from the active style's palette instead of a bare
+`load_palette()`, and writes to `out/tiles_<style>/` for a non-default style
+rather than overwriting `out/tiles/`. `check_manifest_placement` gained an
+`out_dir` parameter for the same reason. Regression-checked byte-identical
+against `out/tiles/` under the default style before touching anything else.
+
+Running it for real against `snes_rpg` surfaced a genuine finding, not a
+wiring bug: `wall_panel_x`/`wall_plain_x` both fail `check_collapse` --
+`cream-2` (the picture rail), `wood-1` and `wood-2` (the panel trim) resolve
+to only 2 distinguishable colours at that wall's lambert value under this
+style's compressed lightness range. `wall_panel()`'s literal ramp-name
+choices were authored for `cozy_ghibli` and never touched since -- the same
+"shared content, never chosen for this style" shape as `character.CUSTOMERS`
+(PR #23) and `portrait.ROSTER` (PR #24), not the "hair colour vs. this
+style's own new roster" shape PR #28 just fixed. Confirmed visually, not
+just numerically: `out/tiles_snes_rpg/_room_corner.png`'s left (x-axis)
+wall shows the picture rail and trim blurring together, while the right
+(y-axis) wall -- clear of this collision -- reads distinctly banded.
+
+Left as a recorded, honest rejection rather than patched: `wall_panel`'s
+three trim colours are hardcoded literals, not sourced from a per-style
+`materials:` role (that generalization is the same deferred
+`assetlib.py`/`character.py` import-order work PR #12 already flagged, not
+new scope for a CLI-plumbing PR). `tileset.py --style snes_rpg --proof`
+exits 1 on this finding, as it should -- a real, unfixed defect, not a
+silently-passing check.
+
 ---
 
 ## How this repo expects work to be done

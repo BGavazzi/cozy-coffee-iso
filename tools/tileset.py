@@ -684,7 +684,7 @@ def room_corner(width: int, ramps: dict, n: int = 4,
 
 
 def check_manifest_placement(meta: dict, width: int, ramps: dict,
-                             n: int = 4) -> list[str]:
+                             n: int = 4, out_dir: Path | None = None) -> list[str]:
     """Can a consumer rebuild the room from the published numbers alone?
 
     `room_corner()` places tiles by projecting world coordinates, which is the
@@ -701,20 +701,21 @@ def check_manifest_placement(meta: dict, width: int, ramps: dict,
     numbers that work.
     """
     from PIL import Image
+    out_dir = out_dir if out_dir is not None else OUT_DIR
     ref = room_corner(width, ramps, n=n)
 
     dx, dy = meta["lattice_step_x"]
     ex, ey = meta["lattice_step_y"]
     fw, fh = meta["tile_size"]
     info = meta["tiles"]["floor_plank"]
-    atlas = Image.open(OUT_DIR / info["file"]).convert("RGBA")
+    atlas = Image.open(out_dir / info["file"]).convert("RGBA")
     variants = [atlas.crop((r[0], r[1], r[0] + r[2], r[1] + r[3]))
                 for r in info["regions"]]
 
     placed = []
     for axis in ("x", "y"):
         w = meta["walls"][f"wall_panel_{axis}"]
-        im = Image.open(OUT_DIR / w["file"]).convert("RGBA")
+        im = Image.open(out_dir / w["file"]).convert("RGBA")
         r = w["regions"][0]
         tile = im.crop((r[0], r[1], r[0] + r[2], r[1] + r[3]))
         ox, oy = w["origin_offset"]
@@ -748,9 +749,10 @@ def check_manifest_placement(meta: dict, width: int, ramps: dict,
     return []
 
 
-def build(width: int, proof: bool) -> int:
+def build(width: int, proof: bool, style_name: str | None = None) -> int:
     from PIL import Image
     from pixelize import load_palette
+    from style import DEFAULT_STYLE, load_style
 
     problems = check_lattice(width)
     if problems:
@@ -758,8 +760,11 @@ def build(width: int, proof: bool) -> int:
             print(f"  BLOCKER  {p}", file=sys.stderr)
         return 1
 
-    ramps = load_palette()
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    style_name = style_name or DEFAULT_STYLE
+    ramps = load_palette(load_style(style_name).palette_path)
+    out_dir = (OUT_DIR if style_name == DEFAULT_STYLE
+              else OUT_DIR.parent / f"tiles_{style_name}")
+    out_dir.mkdir(parents=True, exist_ok=True)
     _, (w, h), step = _basis(width)
 
     meta = {"tile_size": [w, h], "lattice_step_x": list(step),
@@ -775,7 +780,7 @@ def build(width: int, proof: bool) -> int:
             tile.putdata([(c[0], c[1], c[2], 255) if c else (0, 0, 0, 0)
                           for c in px])
             atlas.paste(tile, (v * w, 0))
-        atlas.save(OUT_DIR / f"{name}.png")
+        atlas.save(out_dir / f"{name}.png")
         meta["tiles"][name] = {"file": f"{name}.png", "variants": variants,
                                "regions": [[v * w, 0, w, h]
                                            for v in range(variants)]}
@@ -787,7 +792,7 @@ def build(width: int, proof: bool) -> int:
 
         if proof:
             img, probs = tiling_proof(fn, variants, width, ramps)
-            img.save(OUT_DIR / f"_proof_{name}.png")
+            img.save(out_dir / f"_proof_{name}.png")
             if probs:
                 for p in probs:
                     print(f"  BLOCKER  {name}: {p}", file=sys.stderr)
@@ -812,7 +817,7 @@ def build(width: int, proof: bool) -> int:
                 tile.putdata([(c[0], c[1], c[2], 255) if c else (0, 0, 0, 0)
                               for c in px])
                 atlas.paste(tile, (v * ww, 0))
-            atlas.save(OUT_DIR / f"{tid}.png")
+            atlas.save(out_dir / f"{tid}.png")
             meta["walls"][tid] = {
                 "file": f"{tid}.png", "variants": variants, "axis": axis,
                 "run_step": list(wstep), "tile_size": [ww, wh],
@@ -829,7 +834,7 @@ def build(width: int, proof: bool) -> int:
                 problems.append(msg)
             if proof:
                 img, probs = wall_proof(fn, width, axis, ramps)
-                img.save(OUT_DIR / f"_proof_{tid}.png")
+                img.save(out_dir / f"_proof_{tid}.png")
                 if probs:
                     for p in probs:
                         print(f"  BLOCKER  {tid}: {p}", file=sys.stderr)
@@ -846,9 +851,9 @@ def build(width: int, proof: bool) -> int:
     if proof:
         # The per-type proofs answer "does this meet a copy of itself". This
         # answers the one they cannot: do the floor and the wall agree.
-        room_corner(width, ramps).save(OUT_DIR / "_room_corner.png")
+        room_corner(width, ramps).save(out_dir / "_room_corner.png")
         print("  room corner: floor + both wall runs, one projection")
-        placement = check_manifest_placement(meta, width, ramps)
+        placement = check_manifest_placement(meta, width, ramps, out_dir=out_dir)
         for msg in placement:
             print(f"  BLOCKER  {msg}", file=sys.stderr)
             problems.append(msg)
@@ -856,10 +861,10 @@ def build(width: int, proof: bool) -> int:
             print("  manifest placement: rebuilt from tileset.json alone, "
                   "pixel-identical")
 
-    (OUT_DIR / "tileset.json").write_text(json.dumps(meta, indent=2),
+    (out_dir / "tileset.json").write_text(json.dumps(meta, indent=2),
                                           encoding="utf-8")
     print(f"\n{len(meta['tiles'])} floor types, {len(meta['walls'])} wall "
-          f"types -> {OUT_DIR}")
+          f"types -> {out_dir}")
     return 1 if problems else 0
 
 
@@ -871,8 +876,11 @@ def main() -> int:
     ap.add_argument("--proof", action="store_true",
                     help="also write a 3x3 tiling proof per tile type and "
                          "verify every interior pixel is covered once")
+    ap.add_argument("--style", default=None,
+                    help="style pack to render against (default: cozy_ghibli); "
+                         "writes to out/tiles_<style>/ for a non-default style")
     args = ap.parse_args()
-    return build(args.width, args.proof)
+    return build(args.width, args.proof, args.style)
 
 
 if __name__ == "__main__":
