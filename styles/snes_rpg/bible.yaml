@@ -1,0 +1,169 @@
+# SNES-JRPG-flavoured style pack. See tools/style.py for the schema this
+# extends and NEXT.md, "Style packs", for why this exists and what it does
+# and doesn't try to be.
+#
+# Scoping call, stated once here rather than re-argued per field: this
+# targets the AESTHETIC (saturated, fewer visible shading bands, bolder or
+# minimal outlines, hue held close to constant across a ramp rather than
+# painterly-shifted) -- not literal SNES hardware constraints (a fixed
+# 15-colour-per-sprite subpalette, a shared master palette). Hardware-
+# accurate partitioning is a real, separate, much larger undertaking with
+# little visual payoff on a modern rendering target.
+
+art_direction:
+  target: >-
+    16-bit JRPG battle-and-field sprite work -- Chrono Trigger, Secret of
+    Evermore, Terranigma's character and creature sprites specifically, as
+    distinct from that same era's more Ghibli-adjacent BACKGROUND painting
+    (which cozy_ghibli's precedent already draws from). Punchier, more
+    saturated, more graphic -- shading reads as deliberate discrete steps,
+    not a soft gradient standing in for one.
+
+  precedent: >-
+    Chrono Trigger and Secret of Evermore character/monster sprites. Bold
+    silhouettes, high local contrast, colour held close to constant in hue
+    across a shaded surface rather than painterly hue-shifted toward a
+    warm/cool anchor -- the value STEPS are doing the work, not a hue drift.
+
+  adopt:
+    - high chroma, sustained across most of a ramp rather than falling off
+      toward the ends
+    - hard, countable shading bands -- fewer steps than cozy_ghibli, so each
+      one reads as a deliberate choice at sprite scale
+    - hue held nearly constant along a ramp; lightness carries the shading,
+      not a colour-temperature shift
+    - bold, mostly-neutral outlines rather than per-surface tinted ones
+  reject:
+    - the warm-shadow/cool-highlight hue bend cozy_ghibli's rule enforces --
+      this style is not chasing that read, so it opts out rather than
+      failing validation for not being Ghibli (see constraints below)
+    - pastel/high-key value distribution -- this palette sits lower and
+      punchier, not airy
+  substitute:
+    painterly_hue_shift: near-flat hue per ramp, shading carried by value
+    soft_tinted_outline: a harder, closer-to-neutral outline
+
+# --- Palette ------------------------------------------------------------
+# Same computed-not-picked machinery as cozy_ghibli (tools/palette_forge.py
+# is genuinely style-agnostic for any ramp/hue/chroma combination) --
+# only the numbers below are new.
+
+palette:
+  total_colours: 32
+  min_delta_e: 0.035
+
+  # Minimal hue bend on purpose -- see art_direction. Kept nonzero rather
+  # than exactly 0 because a perfectly flat hue at every lightness step
+  # reads as slightly synthetic; a small amount reads as intentional.
+  hue_shift:
+    cool_anchor: 275
+    warm_anchor: 85
+    cool_amount: 0.05
+    warm_amount: 0.05
+
+  # Far less aggressive than cozy_ghibli's 0.26 -- chroma stays high toward
+  # both ends of a ramp instead of washing out, which is most of what makes
+  # this read as punchier rather than pastel.
+  chroma_falloff: 0.10
+
+  ramps:
+    # Warmer and more saturated than cozy_ghibli's wood -- closer to a
+    # Chrono-Trigger warm brown than a Ghibli timber. One fewer step: SNES
+    # shading reads as countable bands, not a smooth run.
+    wood:     { hue: 32,  steps: 5, lightness: [0.26, 0.86], chroma: 0.115 }
+    cream:    { hue: 75,  steps: 4, lightness: [0.68, 0.95], chroma: 0.055 }
+    # Emerald-leaning rather than Ghibli's yellow-luminous green -- more of
+    # a jewel tone, sustained chroma rather than falling off at the light end.
+    foliage:  { hue: 142, steps: 5, lightness: [0.32, 0.84], chroma: 0.135 }
+    # A more saturated, slightly cooler blue than cozy_ghibli's sky -- reads
+    # as SNES water/sky rather than a soft daytime blue.
+    sky:      { hue: 222, steps: 5, lightness: [0.38, 0.90], chroma: 0.135 }
+    # A punchier red than cozy_ghibli's rose, which deliberately stayed
+    # muted to avoid reading as bruising on skin. This style's rose is not
+    # the skin-adjacent ramp (wood is), so it can afford to be bold.
+    rose:     { hue: 6,   steps: 5, lightness: [0.40, 0.80], chroma: 0.165 }
+    neutral:  { hue: 258, steps: 5, lightness: [0.18, 0.78], chroma: 0.035 }
+
+  spot:
+    lamp_glow:    { hue: 88,  lightness: 0.93,  chroma: 0.170 }
+    # Pushed to orange (was hue 8) -- at hue 8 this collided with rose's own
+    # mid-ramp (hue 6): both saturated near-reds at similar lightness.
+    accent_read:  { hue: 30,  lightness: 0.68,  chroma: 0.190 }
+    gold_coin:    { hue: 92,  lightness: 0.76,  chroma: 0.185 }
+
+  variants: {}
+
+  constraints:
+    no_pure_black: true
+    no_pure_white: true
+    min_lightness: 0.12
+    max_lightness: 0.99
+    outline_source: neutral
+    # This style is explicitly not chasing cozy_ghibli's warm/cool rule --
+    # see art_direction's `reject`. Opting out here rather than failing
+    # validation for not being Ghibli (tools/palette_forge.py's `validate`
+    # reads this flag; see that module for the mechanism).
+    require_warm_cool_shift: false
+
+# --- Rendering conventions ------------------------------------------------
+# Same status as cozy_ghibli's own rendering: block -- descriptive of
+# intent, not yet auto-consumed by pixelize.py (see NEXT.md, "Style packs",
+# for the import-order gap that also blocks materials:/rig: from being
+# read live). Using `enabled=False`/`colour_step` on a real render today
+# means passing them explicitly at the call site, same as cozy_ghibli.
+
+rendering:
+  outline:
+    mode: uniform          # unlike cozy_ghibli's selective per-surface tint
+    tint: false             # a harder, closer-to-neutral line
+    pure_black: false
+  dithering:
+    enabled: false          # fewer, harder bands -- no dither transition
+    pattern: none
+    scope: none
+  shading:
+    ramp_steps_visible: true
+    smooth_gradients: false
+
+# --- Material roles ---------------------------------------------------
+# Same nine roles cozy_ghibli declares, same tone-offset idiom
+# (tools/pixelize.material) -- only which ramp/offset carries each role
+# changes. Glass and the two field roles keep the same STRUCTURAL choice
+# (glass reads near the top of its ramp, walls sit below plain cream,
+# floor one step below plain wood) since those are facts about how glass
+# and value hierarchy work, not about which style is being rendered.
+materials:
+  wood: wood
+  ceramic: cream
+  plant: foliage
+  fabric: rose
+  metal: neutral
+  glass: sky+2
+  glass_edge: sky
+  wall_field: cream-2
+  floor_field: wood-1
+
+# --- Character rig -------------------------------------------------------
+# Recorded as data now; the organic cylinder/sphere rig this style actually
+# wants is separate, real geometry-authoring work -- see NEXT.md. Proportions
+# below are a first-pass target (rounder, slightly less elongated than
+# cozy_ghibli's chibi rig), not yet consumed by character.py.
+rig:
+  primitive: cylinder_sphere
+  height: 1.55
+  torso_rx: 0.230
+  torso_ry: 0.200
+  head_rx: 0.220
+  head_ry: 0.205
+  head_z: 0.98
+  hip_z: 0.46
+  shoulder_z: 0.90
+  ankle_z: 0.10
+  seat_z: 0.45
+  max_seat_z: 0.58
+  perch_leg: 0.52
+  max_perch_z: 0.85
+  sprite_target_px: 46
+  portrait_target_px: 128
+
+checks: {}
