@@ -516,6 +516,25 @@ that same entry to `STALE` and exits non-zero, reverted the edit, confirmed
 it flips back. `lock.json` is committed -- the point is a persistent,
 shared record, not a local scratch file.
 
+**Landed (PR #15, stacked on #14): the `llm` gate kind, made real rather
+than left as an empty category.** No external API is wired, deliberately --
+`tools/llm_gate.py`'s own docstring makes the case: the agent operating this
+repo already IS a vision-capable LLM, in the loop for every judgment call
+this pipeline has ever needed a human for, so routing that same judgment
+through a `Rubric`/`Verdict` contract costs nothing, commits to no vendor,
+and needs no credential to manage. A future automated backend (an actual API
+call, for judging at a volume no interactive session could keep up with) is
+a real, separate cost/vendor decision this file does not make. Demonstrated
+for real against `proof/shop_big.png` -- this repo's own "the reference room
+is still the better room" -- applying the first rubric (`focal_hierarchy`,
+the composition-judgment family `gates.py` named as the strongest llm-gate
+candidate): PASS, with real reasoning (the espresso machine's cool-grey break
+against the warm palette, reinforced by the chalkboard signage above it),
+recorded into the SAME `lock.json` a deterministic `--lock` call writes, so
+staleness tracking covers both kinds identically -- verified a rejected
+verdict is stored but never flagged stale, since it was never approved in
+the first place.
+
 ---
 
 ## How this repo expects work to be done
