@@ -29,6 +29,15 @@ and proportion values as function default arguments, which Python binds at
 packs: generalizing beyond one art direction", for the full status and what a
 second style pack needs next.
 
+`styles/snes_rpg/bible.yaml` is the first real second style pack -- palette
+only so far, everything else (character rig, materials/check wiring) still
+ahead. `palette_forge.py` needed zero code changes to forge it, which is the
+concrete proof the earlier "is the palette forge actually generic" research
+finding was right.
+
+    python tools/palette_forge.py --style snes_rpg
+    python tools/style_approve.py --style snes_rpg   # correctly NOT approved yet
+
 ### Gates and provenance
 
 `tools/gates.py` catalogs every `check_*` function in this repo -- 62 of them

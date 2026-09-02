@@ -570,6 +570,30 @@ one), reverted, confirmed APPROVED again. This is the gate a second style
 pack (the SNES-flavoured one, or any future one) will have to clear before
 it's safe to generate a real asset library against.
 
+**Landed (PR #18, stacked on #17): the first real second style pack --
+`styles/snes_rpg/bible.yaml`, palette only.** Same computed-not-picked
+machinery as `cozy_ghibli` (`palette_forge.py` needed zero code changes,
+confirming the earlier research finding that it's genuinely style-agnostic)
+-- only new numbers. Targets 16-bit JRPG character/monster sprite work
+specifically (Chrono Trigger, Secret of Evermore), not that era's more
+Ghibli-adjacent background painting: fewer, harder-countable shading bands
+(4-5 steps per ramp instead of `cozy_ghibli`'s 5-7), far less aggressive
+chroma falloff (0.10 vs 0.26, so saturation holds toward both ends of a
+ramp instead of washing to pastel), hue held close to constant per ramp
+rather than painterly warm/cool-shifted (`cool_amount`/`warm_amount` at
+0.05 vs `cozy_ghibli`'s ~0.22-0.24), and `require_warm_cool_shift: false`
+in its own constraints -- an explicit opt-out of the one hard-coded rule in
+`palette_forge.validate()`, not a failure to meet it. One real collision
+found and fixed the same way `cozy_ghibli`'s own history recorded similar
+ones: `accent_read` at hue 8 landed 0.0121 apart from `rose`'s own mid-ramp
+(hue 6, similar lightness) against a 0.035 floor -- pushed to hue 30
+(orange) to separate. Visually reviewed against the rendered swatch sheet
+(`styles/snes_rpg/palette/palette.png`, committed) before being called
+done, same as every palette this repo has shipped. Character rig, materials
+and check-threshold wiring for this style are separate, not-yet-started
+work -- `style_approve.py --style snes_rpg` correctly reports NOT approved
+until they exist, which is the gate working as designed, not a bug.
+
 ---
 
 ## How this repo expects work to be done
