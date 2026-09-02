@@ -61,6 +61,15 @@ first backend, at zero marginal cost and no vendor decision.
         --reasoning "..." --judge claude-sonnet-5 \
         --producer render_room.py --scope proof/shop_big.png
 
+`tools/style_approve.py` is the "one of each class, approved, placed in
+engine" gate, computed entirely from `lock.json`: APPROVED requires a
+current, approved character-roster entry, a current, approved palette
+entry, and at least one current, approved `llm:focal_hierarchy` verdict.
+This is the bar a new style pack has to clear before it's safe to generate
+a real asset library against.
+
+    python tools/style_approve.py --style cozy_ghibli
+
 ## Why the palette is computed rather than picked
 
 Two properties become *checkable* instead of hoped for:
