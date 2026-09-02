@@ -984,6 +984,36 @@ and the other two have not yet been looked at closely enough to know
 whether they carry the same accepted-but-ignored risk; left for a future
 PR rather than assumed clean.
 
+**Landed (PR #31, stacked on #30): `art_review.py` audited, and given a
+`--style` convenience flag -- it turned out clean, not another instance of
+the accepted-but-ignored bug.** `art_review.py` never claimed `--style`
+support at all before this; it already took an arbitrary `--palette` path
+or variant name, and `load_palette()` reads any `palette.json` in that
+format regardless of which style produced it -- `--palette
+styles/snes_rpg/palette/palette.json` already worked, just not
+conveniently. The file's other palette-shaped default,
+`measured_symmetry(ramps=None)`, is a real optional parameter a caller
+already supplies explicitly (it is not reachable from `main()`'s own image-
+review path at all) -- not a CLI flag silently ignored by the check it
+claims to drive, which is the actual shape of the bug PRs #23/#24 fixed.
+Nothing to fix there.
+
+Added `--style NAME` as sugar for that same `--palette <path>` call,
+resolved via `style.load_style(name).palette_path`; `--palette` still wins
+if both are given, and an unknown style name surfaces `load_style`'s own
+error rather than a new one. Verified against both a default-style and a
+`snes_rpg` sprite, plus the unknown-style-name error path.
+
+`export_godot.py` deliberately NOT touched here: it stages real files into
+a generated, Godot-imported project tree (`godot_export/project/`) and
+shells out to an actual Godot binary for the import/build/round-trip-check
+steps. A second style's export needs a real design decision (a parallel
+project tree? a re-run of the headless import against a different staged
+source?) that a mechanical CLI-flag pass would be guessing at, not the kind
+of "same pattern nine times" plumbing the rest of this list has been --
+flagged as a boundary rather than attempted unscoped, same reasoning as
+`ui_forge.py`'s GPU dependency.
+
 ---
 
 ## How this repo expects work to be done
