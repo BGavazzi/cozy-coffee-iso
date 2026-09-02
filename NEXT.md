@@ -955,6 +955,35 @@ new scope for a CLI-plumbing PR). `tileset.py --style snes_rpg --proof`
 exits 1 on this finding, as it should -- a real, unfixed defect, not a
 silently-passing check.
 
+**Landed (PR #30, stacked on #29): `--style` for `render_batch.py`, the
+last GPU-free producer in the plumbing list.** Same mechanical pattern:
+`ramps` resolved from the active style instead of a bare `load_palette()`,
+`--out` defaults to `sprites/` for the default style (unchanged, its own
+existing gitignore line) or `out/sprites_<style>/` for a non-default one --
+deliberately nested under `out/`, not a new top-level `sprites_<style>/`,
+because `out/` is already blanket-ignored and a sibling directory next to
+`sprites/` would not be. Caught by checking `git status` after the first
+`--style snes_rpg` run and seeing the new directory as untracked rather
+than assuming the convention from `tileset.py`'s `out/tiles_<style>/`
+(which lives under `out/` already) would automatically carry over.
+
+Regression-checked byte-identical (`crate_cup_dir0.png`'s sha256, before
+and after the change, under the default style) both before this fix and
+again after it. `--style snes_rpg` renders the analytic test scene cleanly
+against the new palette -- visually checked, no material-collision finding
+here since the crate/cup scene's own materials were never audited against
+`tileset.py`'s wall trim in the first place.
+
+Every producer `NEXT.md`'s own migration-order plan named as GPU-free
+(`furnish.py`, `render_room.py`, `build_plan.py`, `character.py`,
+`portrait.py`, `manifest.py`, `ui_chrome.py`, `tileset.py`, now
+`render_batch.py`) has `--style` wired through its actual checks, not just
+its `--lock` bookkeeping. `ui_forge.py`/`art_review.py`/`export_godot.py`
+remain -- the first needs `concept.py`'s SDXL pipeline to run at all (GPU),
+and the other two have not yet been looked at closely enough to know
+whether they carry the same accepted-but-ignored risk; left for a future
+PR rather than assumed clean.
+
 ---
 
 ## How this repo expects work to be done
