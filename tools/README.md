@@ -29,14 +29,33 @@ and proportion values as function default arguments, which Python binds at
 packs: generalizing beyond one art direction", for the full status and what a
 second style pack needs next.
 
-`styles/snes_rpg/bible.yaml` is the first real second style pack -- palette
-only so far, everything else (character rig, materials/check wiring) still
-ahead. `palette_forge.py` needed zero code changes to forge it, which is the
-concrete proof the earlier "is the palette forge actually generic" research
-finding was right.
+`styles/snes_rpg/bible.yaml` is the first real second style pack. Its
+palette needed zero code changes to `palette_forge.py`, the concrete proof
+the earlier "is the palette forge actually generic" research finding was
+right. Its character rig is real too now: `tools/organic_rig.py`, a
+cylinder/sphere rig built as its own self-contained producer (same
+relationship `portrait.py` has to `character.py`) rather than a
+`character.py` rewrite, which means it sidesteps the import-order problem
+above entirely -- it reads `rig:` through `tools/style.py`, not through a
+module-level default argument. Materials/check-threshold wiring into
+`assetlib.py` itself is still ahead, still blocked on that same import-order
+problem.
 
     python tools/palette_forge.py --style snes_rpg
-    python tools/style_approve.py --style snes_rpg   # correctly NOT approved yet
+    python tools/organic_rig.py --check                # silhouette-swing measurement
+    python tools/organic_rig.py --demo                  # -> proof/organic_rig.png
+    python tools/style_approve.py --style snes_rpg      # one reason left: no composed-scene llm verdict yet
+
+A true circle (`add_cylinder`/`add_sphere`, one radius) turns out to beat
+the octagonal prism rig at its own game: `add_prism`'s docstring measures a
+box at 53% silhouette swing across azimuths and an octagon at ~8%, and a
+true circle's projected width is identical at every azimuth by
+construction. `organic_rig.py`'s `check_direction_stability` measures both
+rigs on the same 8 azimuths rather than asserting the claim. Building it
+also corrected `styles/snes_rpg/bible.yaml`'s `rig:` schema: the original
+`torso_rx`/`torso_ry`-style fields, copied from the prism rig, don't fit
+primitives that only take one radius -- now `torso_radius`/`head_radius`/
+`leg_radius`/`arm_radius`.
 
 ### Gates and provenance
 

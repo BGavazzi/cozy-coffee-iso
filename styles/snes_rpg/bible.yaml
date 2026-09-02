@@ -144,17 +144,32 @@ materials:
   floor_field: wood-1
 
 # --- Character rig -------------------------------------------------------
-# Recorded as data now; the organic cylinder/sphere rig this style actually
-# wants is separate, real geometry-authoring work -- see NEXT.md. Proportions
-# below are a first-pass target (rounder, slightly less elongated than
-# cozy_ghibli's chibi rig), not yet consumed by character.py.
+# Built for real in tools/organic_rig.py -- see NEXT.md, "Style packs", for
+# status. Not yet consumed by character.py itself (that is the deeper
+# import-order problem the same doc names); organic_rig.py is a separate,
+# self-contained producer that reads this block directly, the same relationship
+# portrait.py has to character.py's own rig.
+#
+# A single radius per part, not the prism rig's independent rx/ry -- and this
+# is a correction, not a simplification for its own sake. add_cylinder/
+# add_sphere (tools/mesh.py) only take one radius: a true circular
+# cross-section. That turns out to be strictly BETTER for the exact problem
+# the prism rig exists to solve, not a compromise -- mesh.py's own add_prism
+# docstring measures a box at 53% silhouette swing between face-on and
+# corner-on views, an octagon at ~8%, and a true circle's projected width is
+# IDENTICAL from every azimuth by construction (constant radius, no facets to
+# catch the camera at an angle). The earlier rx/ry pair was carried over from
+# the prism schema before this file's author had actually built anything
+# against it; building organic_rig.py is what surfaced that add_cylinder
+# does not take two radii, and there is no reason to fake ellipticity here
+# when true circularity is the whole point.
 rig:
   primitive: cylinder_sphere
   height: 1.55
-  torso_rx: 0.230
-  torso_ry: 0.200
-  head_rx: 0.220
-  head_ry: 0.205
+  torso_radius: 0.215
+  head_radius: 0.185
+  leg_radius: 0.095
+  arm_radius: 0.072
   head_z: 0.98
   hip_z: 0.46
   shoulder_z: 0.90

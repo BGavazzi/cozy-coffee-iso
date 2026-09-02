@@ -1,0 +1,25 @@
+{
+  "organic_rig.py:silhouette": {
+    "approved": true,
+    "gates": [
+      "check_direction_stability (organic_rig.py)"
+    ],
+    "producer": "organic_rig.py",
+    "recorded_at": "2026-09-02T07:45:34+00:00",
+    "scope": "silhouette",
+    "style": "snes_rpg",
+    "style_hash": "b35b39e59b56f2cd"
+  },
+  "palette_forge.py:palette+variants": {
+    "approved": true,
+    "gates": [
+      "validate",
+      "check_separation"
+    ],
+    "producer": "palette_forge.py",
+    "recorded_at": "2026-09-02T07:46:20+00:00",
+    "scope": "palette+variants",
+    "style": "snes_rpg",
+    "style_hash": "b35b39e59b56f2cd"
+  }
+}
