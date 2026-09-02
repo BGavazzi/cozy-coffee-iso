@@ -76,6 +76,7 @@ from ingest import fit, mesh_geometry  # noqa: E402
 from isorender import AZIMUTH_STEP  # noqa: E402
 from mesh import Mesh  # noqa: E402
 from pixelize import load_palette  # noqa: E402
+from style import DEFAULT_STYLE, load_style  # noqa: E402
 from render_batch import footprint, frame_all, render_sprite  # noqa: E402
 
 
@@ -398,7 +399,11 @@ def cmd_list(declared: dict[str, dict]) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=str(ROOT / "out" / "sprites"))
+    ap.add_argument("--style", default=DEFAULT_STYLE,
+                    help="which style pack's palette to render against")
+    ap.add_argument("--out", default=None,
+                    help="default: out/sprites, or out/sprites/<style> for "
+                         "a non-default --style")
     ap.add_argument("--target", type=int, default=64)
     ap.add_argument("--factor", type=int, default=4)
     ap.add_argument("--only", nargs="+", default=None,
@@ -422,9 +427,19 @@ def main() -> int:
             raise SystemExit(f"no recipe for: {bad}")
         todo = args.only
 
-    out = Path(args.out)
+    # geometry (assetlib.py's builders) is untouched by --style: its semantic
+    # material roles (WOOD, CERAMIC, ...) happen to name the same ramps in
+    # every style pack that exists today (see NEXT.md, "Style packs" -- a
+    # real prop rendered under snes_rpg's palette with zero assetlib.py
+    # changes was the proof). Only which palette gets loaded changes here.
+    if args.out:
+        out = Path(args.out)
+    else:
+        out = (ROOT / "out" / "sprites" if args.style == DEFAULT_STYLE
+              else ROOT / "out" / "sprites" / args.style)
     out.mkdir(parents=True, exist_ok=True)
-    ramps = load_palette()
+    style = load_style(args.style)
+    ramps = load_palette(style.palette_path)
 
     reports = []
     for i, asset_id in enumerate(todo, 1):
