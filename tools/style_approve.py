@@ -45,8 +45,15 @@ REQUIRED_PRODUCERS = {
     "palette_forge.py": "the palette was forged and validated",
 }
 # At least one of these producers must have an approved, current entry --
-# either is real evidence a character reads correctly in this style.
-REQUIRED_PRODUCERS_ANY_OF = ("character.py", "portrait.py")
+# any is real evidence a character reads correctly in this style.
+# `organic_rig.py` added alongside its own first style (`snes_rpg`): for a
+# style whose rig.primitive is cylinder_sphere, it is the ONLY one of the
+# three that actually builds that style's declared geometry today --
+# `character.py` still only knows box/prism (see NEXT.md, the import-order
+# gap), so requiring it specifically would make a cylinder/sphere style
+# permanently unapprovable on a technicality unrelated to whether its
+# characters actually read correctly.
+REQUIRED_PRODUCERS_ANY_OF = ("character.py", "portrait.py", "organic_rig.py")
 
 # At least one approved, current llm verdict using this rubric, on any scope.
 REQUIRED_LLM_RUBRICS = ("focal_hierarchy",)

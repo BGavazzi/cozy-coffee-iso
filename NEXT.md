@@ -594,6 +594,61 @@ and check-threshold wiring for this style are separate, not-yet-started
 work -- `style_approve.py --style snes_rpg` correctly reports NOT approved
 until they exist, which is the gate working as designed, not a bug.
 
+**Landed (PR #19, stacked on #18): the organic cylinder/sphere character
+rig, built and rendered for real.** `tools/organic_rig.py` -- a new,
+self-contained producer, not a `character.py` rewrite (same relationship
+`portrait.py` has to `character.py`), because it sidesteps the import-order
+problem entirely: it reads `styles/<name>/bible.yaml`'s `rig:` block
+directly through `tools/style.py` rather than through module-level default
+arguments bound at `def` time.
+
+Building it surfaced a real correction, not just new geometry: the earlier
+`rig:` schema carried over `torso_rx`/`torso_ry`-style independent radii
+from the prism rig, but `add_cylinder`/`add_sphere` (`tools/mesh.py`) only
+take ONE radius -- a true circle. That is strictly better for the exact
+property the prism rewrite exists for: `add_prism`'s own docstring measures
+a box at 53% silhouette swing between face-on and corner-on views and an
+octagon at ~8%, while a true circle's projected width is identical at every
+azimuth by construction. `styles/snes_rpg/bible.yaml`'s `rig:` block was
+corrected to `torso_radius`/`head_radius`/`leg_radius`/`arm_radius` (single
+values) to match. `check_direction_stability` in `organic_rig.py` measures
+this claim directly rather than asserting it -- both rigs' silhouette swing
+across the same 8 azimuths, organic against `character.BARISTA`'s own prism
+swing -- and the organic rig wins on the numbers, not just by construction.
+
+Scoped to a static standing figure (legs, torso, arms, head, minimal face,
+one hair cap) through the "upright, unposed" case only -- explicitly not
+the 15-clip pose system, seated/perched legs, or `character.hair`'s six
+styles. Each of those is a real, separate authoring pass the same size as
+this one; porting all of them at once would be an unreviewed batch, which
+is exactly what this repo's own process argues against.
+
+One real visual bug found by rendering and looking, same as everywhere else
+in this repo: the first hair sphere (1.08x head radius, offset 0.28 head
+radii up) was large enough to swallow nearly the entire head from every
+camera angle, reading as a grey metal helmet rather than hair -- worse, its
+material (`neutral+1`, a cool blue-grey ramp meant for metal surfaces) made
+it look even more like armor. Fixed by shrinking to 0.86x radius at a
+smaller +0.16 offset (crown-and-back coverage, face left clear) and
+switching to `wood-3` (dark brown, off the same ramp `SKIN` reads from,
+consistent with how the existing roster's own hair materials work). Visually
+confirmed at azimuth 90 -- eyes and blush read clearly, matching
+`portrait.py`'s own finding that a dead-on camera is what facial detail
+actually needs. Proof sheet: `proof/organic_rig.png`, all 8 azimuths, looked
+at before being called done.
+
+`style_approve.py`'s `REQUIRED_PRODUCERS_ANY_OF` gained `organic_rig.py`:
+for a `primitive: cylinder_sphere` style, it is the only one of the three
+character producers that builds that style's own declared geometry today,
+so requiring only `character.py`/`portrait.py` would make such a style
+permanently unapprovable on a technicality unrelated to whether its
+characters read correctly. With this plus a real `palette_forge.py --style
+snes_rpg --lock` entry, `style_approve.py --style snes_rpg` is down to one
+remaining reason (no `llm:focal_hierarchy` verdict) -- which correctly
+requires a real composed scene, itself blocked on `furnish.py`/
+`render_room.py` being wired to this style, still separate, not-yet-started
+work.
+
 ---
 
 ## How this repo expects work to be done
