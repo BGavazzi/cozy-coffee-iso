@@ -368,7 +368,14 @@ def main() -> int:
     ap.add_argument("--palette", default=None,
                     help="variant name (golden_hour, evening, night, "
                          "overcast) or a path to a palette.json. Defaults to "
-                         "the base palette.")
+                         "the base palette. Takes precedence over --style if "
+                         "both are given.")
+    ap.add_argument("--style", default=None,
+                    help="style pack name (e.g. snes_rpg) to review against "
+                         "that style's own palette -- a convenience for "
+                         "'--palette <styles/NAME/palette/palette.json>', "
+                         "which already worked since load_palette() takes any "
+                         "path in that format. Ignored if --palette is set.")
     args = ap.parse_args()
 
     # Art from `palette_swap.py` is palette-exact in ITS OWN palette and 100%
@@ -382,6 +389,11 @@ def main() -> int:
         pal_path = Path(args.palette)
         if not pal_path.exists() and "/" not in args.palette:
             pal_path = ROOT / "palette" / "variants" / f"{args.palette}.json"
+        if not pal_path.exists():
+            raise SystemExit(f"no palette at {pal_path}")
+    elif args.style:
+        from style import load_style
+        pal_path = load_style(args.style).palette_path
         if not pal_path.exists():
             raise SystemExit(f"no palette at {pal_path}")
     by_rgb, ramps, entries = load_palette(pal_path)
