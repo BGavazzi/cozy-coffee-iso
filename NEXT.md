@@ -703,10 +703,29 @@ class, approved, placed in engine" bar this repo set for itself. What's
 still real, separate, not-yet-started work: `character.py` itself does not
 yet build `snes_rpg`'s declared cylinder/sphere rig (the room above uses the
 existing prism customers, correctly re-shaded, not `organic_rig.py`'s
-figures merged into a scene); `build_plan.py`'s curated "shop_big" floor
-plan (as opposed to `render_room.py`'s own `build_room()`) has not been
-given the same `--style` wiring; and `character.hair`'s six styles have no
+figures merged into a scene); and `character.hair`'s six styles have no
 organic-rig equivalent yet.
+
+**Landed (PR #21, stacked on #20): `build_plan.py`'s curated floor plan
+gained the same `--style` wiring.** Same small, mechanical pattern as
+`furnish.py`/`render_room.py` -- a `--style` flag, `ramps` threaded through
+to the shared `render_room.render()` call, `--out` defaulting to a
+style-suffixed path. `build_plan.py --style snes_rpg` -> `proof/
+plan_room_snes_rpg.png`, a second, independently-generated composed scene
+(different layout topology than `render_room.py`'s own `build_room()`) --
+worth having because this is the actual producer `proof/shop_big.png`,
+the ORIGINAL `focal_hierarchy` verdict's scope, came from.
+
+Judged and recorded honestly: PASS, but the weaker of the two `snes_rpg`
+scenes so far (`+0.078` focal contrast vs the other scene's `+0.166`) --
+this layout's counter is a long, thin run rather than a compact cluster,
+and the magenta cushioned chairs scattered through the seating area compete
+with it more than the first scene's plants did. Recorded anyway, as
+additional real evidence rather than cherry-picking the stronger result --
+`style_approve.py` only needs one passing verdict to grant APPROVED, and it
+already had one; this is a second, independent data point, and an honest
+weaker-but-still-passing one is more useful than a hidden failed attempt
+would have been.
 
 ---
 
