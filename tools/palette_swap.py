@@ -88,8 +88,9 @@ def is_asset(p: Path) -> bool:
                 or p.name.endswith("_sheet.png"))
 
 
-def load_bible() -> dict:
-    return yaml.safe_load((ROOT / "style_bible.yaml").read_text(encoding="utf-8"))
+def load_bible(style: str = "cozy_ghibli") -> dict:
+    from style import load_style
+    return load_style(style).bible
 
 
 def swap_table(bible: dict, variant: str) -> dict[tuple, tuple]:
@@ -318,13 +319,14 @@ def main() -> int:
     ap.add_argument("--check", action="store_true",
                     help="audit the library and the tables, build nothing")
     ap.add_argument("--out", default=str(ROOT / "out" / "variants"))
+    ap.add_argument("--style", default="cozy_ghibli")
     args = ap.parse_args()
 
-    bible = load_bible()
+    bible = load_bible(args.style)
     variants = list(bible["palette"].get("variants", {}))
 
     if args.list:
-        print(f"{len(variants)} variants declared in style_bible.yaml\n")
+        print(f"{len(variants)} variants declared in {args.style}'s bible.yaml\n")
         for v in variants:
             spec = bible["palette"]["variants"][v]
             note = " ".join(str(spec.get("note", "")).split())

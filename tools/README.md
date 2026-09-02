@@ -10,6 +10,25 @@ it can gate CI. The `.gpl` loads directly into Aseprite and GIMP.
 `oklab.py` is the colour-space layer: OKLab/OKLCh conversion plus hue-preserving
 sRGB gamut mapping. Pure stdlib.
 
+## Style packs
+
+`style_bible.yaml` is the first of what `tools/style.py` calls a *style pack* --
+every producer's art direction, not just the palette: `art_direction` /
+`palette` / `rendering` / `decisions` (the original schema, unchanged) plus
+`materials:`, `rig:`, `checks:` (new). `cozy_ghibli` is that root file, kept
+exactly where every script already expects it; a second style pack lives at
+`styles/<name>/bible.yaml`.
+
+    python tools/style.py --list          # every style pack found
+    python tools/style.py --check NAME    # bible loads, required keys present
+
+Only `materials:`/`checks:`/`rig:` exist so far as *data* -- `assetlib.py` and
+`character.py` don't read them yet, because both hardcode their WOOD/CERAMIC/...
+and proportion values as function default arguments, which Python binds at
+`def` time, before any `--style` flag can be parsed. See `NEXT.md`, "Style
+packs: generalizing beyond one art direction", for the full status and what a
+second style pack needs next.
+
 ## Why the palette is computed rather than picked
 
 Two properties become *checkable* instead of hoped for:
