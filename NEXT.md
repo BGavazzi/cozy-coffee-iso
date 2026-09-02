@@ -535,6 +535,22 @@ staleness tracking covers both kinds identically -- verified a rejected
 verdict is stored but never flagged stale, since it was never approved in
 the first place.
 
+**Landed (PR #16, stacked on #15): two more real producers wired to
+`--lock`.** `character.py` and `palette_forge.py` each gained the same
+opt-in flag `portrait.py` did. `character.py --lock` records exactly the
+four checks its own `__main__` already ran (`check_contrast`,
+`check_palette_spread`, `check_waistline`, `check_direction_stability`) --
+honestly a subset of the nine `gates.py` catalogs for it, not silently
+expanded to all nine, since that would be a behaviour change past what was
+asked. `palette_forge.py --lock` records `validate` + `check_separation`,
+its real gate logic, even though `validate` doesn't match the `check_*`
+naming convention `gates.py`'s catalog scans for -- recorded under its real
+name rather than skipped for not fitting the pattern. Both verified
+byte-identical to their pre-`--lock` output when the flag is omitted.
+`lock.json` now carries four real, independently-recorded entries:
+`portrait.py:roster`, `character.py:roster`, `palette_forge.py:
+palette+variants`, `render_room.py:proof/shop_big.png`.
+
 ---
 
 ## How this repo expects work to be done

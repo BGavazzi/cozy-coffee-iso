@@ -1,4 +1,30 @@
 {
+  "character.py:roster": {
+    "approved": true,
+    "gates": [
+      "check_contrast",
+      "check_palette_spread",
+      "check_waistline",
+      "check_direction_stability"
+    ],
+    "producer": "character.py",
+    "recorded_at": "2026-09-02T07:21:49+00:00",
+    "scope": "roster",
+    "style": "cozy_ghibli",
+    "style_hash": "db3d2007125e8d1d"
+  },
+  "palette_forge.py:palette+variants": {
+    "approved": true,
+    "gates": [
+      "validate",
+      "check_separation"
+    ],
+    "producer": "palette_forge.py",
+    "recorded_at": "2026-09-02T07:22:38+00:00",
+    "scope": "palette+variants",
+    "style": "cozy_ghibli",
+    "style_hash": "db3d2007125e8d1d"
+  },
   "portrait.py:roster": {
     "approved": true,
     "gates": [
