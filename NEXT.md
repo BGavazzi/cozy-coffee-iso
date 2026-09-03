@@ -1014,6 +1014,48 @@ of "same pattern nine times" plumbing the rest of this list has been --
 flagged as a boundary rather than attempted unscoped, same reasoning as
 `ui_forge.py`'s GPU dependency.
 
+**Landed (PR #33, stacked on #31): the full 56-prop library, swept through
+`snes_rpg`, not just "one of each."** Every producer up to this point had
+been verified against a single representative asset per class (one
+character roster, one composed room, one tileset). `style_approve.py`'s own
+docstring says that's deliberate -- "one of each asset class" is the
+approval bar, not "every asset" -- but nobody had actually run the whole
+`furnish.py` catalogue through the new style and looked, so it remained an
+assumption rather than a measurement.
+
+`furnish.py --style snes_rpg` builds all 56 props, 448 sprites, zero
+crashes, zero footprint-cap surprises beyond the same 7 props that already
+cap under `cozy_ghibli` (identical list, same reasons -- a builder/fp-height
+mismatch unrelated to palette). `art_review.py --style snes_rpg --json` over
+the full set: 0 blockers, 72 `ramp-coherence` warnings, 96 `light-direction`
+notes.
+
+The number that matters is the comparison, not the count in isolation: the
+identical sweep against `cozy_ghibli` also produces exactly 72
+`ramp-coherence` warnings, on the exact same 17 props (`book_stack`,
+`pastry_case`, `plant_hanging`, `shelf_wall`, ... -- full list in the PR).
+Byte-for-byte the same defect set under both palettes, because
+`ramp-coherence` measures which MATERIAL ramps sit adjacent in the mesh,
+which is style-independent geometry, not a colour-legibility question a new
+palette could newly break. `light-direction`'s note count differs (96 vs
+134) but that's expected and not a defect -- it's graded on OKLab lightness
+percentile position, which a different palette's lightness distribution
+naturally shifts, and it's a NOTE, not a WARNING, precisely because the
+check's own docstring calls it "a rough check."
+
+Spot-checked two visual outliers before trusting the numbers alone, per this
+track's own discipline: `wall_art_framed` renders as a flat, detail-free
+canvas under `snes_rpg` -- confirmed identical under `cozy_ghibli` too, so
+it's how the prop is authored (a plain-colour canvas in a wood frame), not a
+style regression. A full 56-prop contact sheet was rendered and reviewed
+before writing this up; every prop reads as its own distinct, legible
+silhouette.
+
+Net finding: the prop library generalizes cleanly across styles with zero
+new defects at full scale, not just at the "one of each" sample size
+`style_approve.py` requires. No code changed -- this is a verification pass,
+and its result is that there was nothing here to fix.
+
 ---
 
 ## How this repo expects work to be done
