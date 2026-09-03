@@ -1106,7 +1106,7 @@ and its result is that there was nothing here to fix.
 
 ```
 .venv/Scripts/python.exe tools/manifest.py --check            # 26 checks, takes ~4 min, 1 currently fails
-.venv/Scripts/python.exe tools/build_plan.py --focal-scan 12  # slower, 1 of 12 currently fails
+.venv/Scripts/python.exe tools/build_plan.py --focal-scan 12  # slower, 2 of 12 currently fail
 ```
 
 Neither is clean right now, and both are the same underlying story: the
@@ -1114,8 +1114,15 @@ detail floor sits at exactly 0.0 with a measured 0.002-0.006 margin
 (`ART_CRITIQUE.md`, "The detail floor at 40 plans"), thin enough that small,
 unrelated changes flip a borderline room across it.
 
-- `build_plan.py --focal-scan 12` fails plan 10 by -0.002 — a real,
-  documented, accepted case.
+- `build_plan.py --focal-scan 12` fails plan 10 by -0.011 — a real,
+  documented, accepted case. (Corrected from an earlier "-0.002" recorded
+  here: re-measured while investigating a real concern -- that the 12-PR
+  style-pack stack landed on top of this file might have quietly shifted
+  the reading -- and bisected against `origin/main` before any of that
+  stack existed. Identical -0.011 there too, so this is pre-existing
+  baseline behaviour this file simply had a stale number for, not a
+  regression from anything in the style-pack track. The number was wrong;
+  the "accepted" verdict was right.)
 - `manifest.py --check`'s `check_focal_contrast` fails plan 1 (wall run) by
   -0.002 — this one is new as of the RNG-unification pass (`ART_CRITIQUE.md`,
   "`leafy_plant` unified onto `_mix`"): a different draw from `leafy_plant`'s
