@@ -209,7 +209,8 @@ def check_ui(man: dict) -> list[str]:
 def check(man: dict, style: str = "cozy_ghibli") -> int:
     """Validate the manifest against itself and the style bible."""
     from style import load_style
-    bible = load_style(style).bible
+    active = load_style(style)
+    bible = active.bible
     legal_ramps = set(bible["palette"]["ramps"]) | set(bible["palette"]["spot"])
     errs, warns = [], []
 
@@ -251,6 +252,15 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
     # for years while nothing in the rig knows how to stand at a machine.
     try:
         import character as _c
+        from pixelize import load_palette as _lp
+        # Resolved once against the active style, not cozy_ghibli always --
+        # every call below used to go through _lp() with no argument (always
+        # cozy_ghibli's palette) or a check's own ramps=None default (same
+        # thing, one level removed, via character._palette()), so
+        # `manifest.py --check --style snes_rpg` accepted the flag but
+        # measured cozy_ghibli's colours the whole time. Same bug class as
+        # character.py's and portrait.py's own --style (see NEXT.md).
+        ramps = _lp(active.palette_path)
         posable = set(_c.CLIPS)
         declared = set()
         fx_clips = 0
@@ -289,8 +299,7 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         # values, so two different ramps landing on the same step slip past it:
         # `elder` shipped with a wood shirt 0.004 in value from neutral
         # trousers and rendered as one column.
-        from pixelize import load_palette as _lp
-        for msg in _c.check_waistline(_lp()):
+        for msg in _c.check_waistline(ramps):
             errs.append(msg)
         # And a face needs eyes at every skin tone the generator may draw, not
         # only at the one the roster happens to use. This is the check that
@@ -298,25 +307,24 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         # vanished entirely below the middle of the range, so seven of the
         # seven tones were unusable and nobody had looked, because the roster
         # only ever asked for one.
-        for msg in _c.check_eye_legibility():
+        for msg in _c.check_eye_legibility(ramps):
             errs.append(msg)
         # And every dimension of the generator has to be drawn from. The two
         # that were not sat unremarked for eight passes beside five that were
         # producing seventeen to twenty-four values each, because a dimension
         # nobody varies is invisible in every downstream metric -- a cast can
         # differ in shirt and trousers and hair and still be one face.
-        for msg in _c.check_spec_coverage():
+        for msg in _c.check_spec_coverage(ramps=ramps):
             errs.append(msg)
         # The generated extras have to pass everything the hand-written roster
         # does. They are proposed against exactly these predicates, so a failure
         # here means the solver has stopped consulting one of them -- which is
         # invisible on the sheet, because the sheet only shows what was
         # accepted.
-        _ramps = _lp()
-        _extras = _c.generate_roster(12, seed=1, ramps=_ramps)
-        for msg in (_c.check_contrast(_ramps, _extras)
+        _extras = _c.generate_roster(12, seed=1, ramps=ramps)
+        for msg in (_c.check_contrast(ramps, _extras)
                     + _c.check_palette_spread(_extras)
-                    + _c.check_waistline(_ramps, _extras)):
+                    + _c.check_waistline(ramps, _extras)):
             errs.append(f"generated: {msg}")
         # And no two members of a cast may be the same person. The three checks
         # above are predicates on ONE spec; a generator can satisfy all three

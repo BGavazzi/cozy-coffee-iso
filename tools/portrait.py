@@ -323,8 +323,8 @@ def check_palette_exact(pngs: dict[str, list], ramps=None) -> list[str]:
     return out
 
 
-def check(roster=None) -> list[str]:
-    ramps = load_palette()
+def check(roster=None, ramps=None) -> list[str]:
+    ramps = ramps or load_palette()
     roster = roster if roster is not None else C.ROSTER
     pngs, blobs = {}, {}
     for spec in roster:
@@ -345,8 +345,9 @@ def check(roster=None) -> list[str]:
 
 # --- build ---------------------------------------------------------------------
 
-def build(roster=None, target: int = TARGET, factor: int = FACTOR) -> dict:
-    ramps = load_palette()
+def build(roster=None, target: int = TARGET, factor: int = FACTOR,
+         ramps=None) -> dict:
+    ramps = ramps or load_palette()
     roster = roster if roster is not None else C.ROSTER
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     manifest = {}
@@ -359,11 +360,11 @@ def build(roster=None, target: int = TARGET, factor: int = FACTOR) -> dict:
     return manifest
 
 
-def demo(roster=None, out: Path | None = None) -> str:
+def demo(roster=None, out: Path | None = None, ramps=None) -> str:
     """Contact sheet: the whole roster, at 3x nearest for review."""
     from PIL import Image
     roster = roster if roster is not None else C.ROSTER
-    ramps = load_palette()
+    ramps = ramps or load_palette()
     imgs = [(spec.name, render_bust(spec, ramps=ramps)[0]) for spec in roster]
     w, h = imgs[0][1].size
     cols = 5
@@ -396,11 +397,19 @@ def main() -> int:
     ap.add_argument("--style", default="cozy_ghibli")
     args = ap.parse_args()
 
+    # `--style` used to only pick which style's lock.json got the recorded
+    # result -- check()/build()/demo() all hardcoded load_palette() with no
+    # argument, i.e. always cozy_ghibli's palette, the same bug
+    # character.py's own --style had (see NEXT.md). Resolved once here and
+    # threaded through, so a --style snes_rpg run actually measures
+    # snes_rpg's colours rather than silently checking cozy_ghibli's.
+    from style import load_style
+    ramps = load_palette(load_style(args.style).palette_path)
+
     if args.check:
-        problems = check()
+        problems = check(ramps=ramps)
         if args.lock:
             from gates import by_producer
-            from style import load_style
             import lockfile
             gate_names = [g.name for g in by_producer("portrait.py")]
             entry = lockfile.record(load_style(args.style), "portrait.py",
@@ -417,10 +426,10 @@ def main() -> int:
         return 0
 
     if args.demo:
-        print(demo())
+        print(demo(ramps=ramps))
         return 0
 
-    manifest = build(target=args.target)
+    manifest = build(target=args.target, ramps=ramps)
     print(f"{len(manifest)} portraits -> {OUT_DIR}")
     return 0
 
