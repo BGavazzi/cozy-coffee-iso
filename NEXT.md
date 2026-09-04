@@ -898,6 +898,65 @@ has no more deliberately-deferred hairstyle work.
 
 ---
 
+**Landed (PR #44, stacked on #39-#43): `build_plan.py`'s roster generation
+was still hardcoded to `cozy_ghibli`, the same `--style`-ignored-by-a-check
+bug found in `character.py` (PR #23), `manifest.py`/`portrait.py` (PR #24)
+and `art_review.py` (PR #31) -- one more call site the sweep had not
+reached.** `main()` correctly built `ramps` from `--style` and threaded it
+into the final `render()` call, but `build(plan)` runs BEFORE that render
+call and is what actually creates the people: `build()` -> `_people()` ->
+`C.generate_roster(n, seed)`, called with no third argument, so it fell
+through to `generate_roster`'s own default, `ramps or _palette()`, which
+hardcodes `load_palette()` -- `cozy_ghibli`, unconditionally. Every barista,
+queue customer and seated customer in a `--style snes_rpg` room was
+generated against `cozy_ghibli`'s colours: `check_contrast`,
+`check_palette_spread` and `check_waistline` all ran on the wrong palette,
+same as PR #23 found for `character.py`'s own `--check` path, just reached
+through a different producer.
+
+Fixed by threading `ramps` one hop further than PR #21's own `--style`
+wiring did: `build(plan, ramps=None)` -> `_people(..., ramps=None)` ->
+`C.generate_roster(n, seed, ramps)`, and `main()`'s `ramps = load_palette(...)`
+block moved earlier, above the `build()` call it now feeds, rather than
+staying where it only fed `render()`. Default `ramps=None` preserved at
+every hop, so nothing about `cozy_ghibli` (or any caller that omits
+`--style`) changes -- `check_built_rooms`, `check_focal_contrast` and
+`_focal_scan` all call `build(plan)` with no ramps and are untouched by
+construction, not by re-verification alone.
+
+Audited every other `C.generate_roster(`/`C.generate_spec(` call site in the
+repo for the same gap: `animate.py`, `manifest.py` and
+`preview_characters.py` already pass `ramps` explicitly. `build_plan.py`'s
+`_people()` was the only silent fallback left.
+
+Verified both directions:
+
+- **The bug is real and the fix changes real output.** `build_plan.py
+  --style snes_rpg` rendered before and after the fix from the identical
+  plan seed: mesh vertex/triangle counts differ (47214/19994 before,
+  46974/19898 after) and multiple characters' garment/hair materials
+  visibly change colour -- a queue customer's shirt goes from cream to
+  magenta, a counter-side figure's trousers from grey to cream-and-green.
+  Proof: `proof/people_style_fix_before_after_snes_rpg.png` (full room) and
+  `proof/people_style_fix_before_after_snes_rpg_zoom.png` (3x crop on the
+  diff region). One honest side effect, disclosed rather than hidden: the
+  regenerated room's focal contrast reads `+0.000` ("DOES NOT lead the eye")
+  against the `+0.078` recorded in `styles/snes_rpg/lock.json`'s existing
+  `build_plan.py:proof/plan_room_snes_rpg.png` verdict -- a different,
+  correctly-styled roster standing at the counter reads differently under
+  `snes_rpg`'s harder value steps. The tracked proof PNG and its lock entry
+  were deliberately left untouched here (re-judging a room is
+  `style_approve.py`'s job, not a threading fix's), so that comparison is
+  reported, not silently shipped as a changed tracked asset.
+- **`cozy_ghibli` (the default) is byte-identical.** `build_plan.py --seed 3`
+  (no `--style`) rendered before and after: identical MD5. `manifest.py
+  --check` (1 error, 8 warnings, the known plan-1 wall-run case) and
+  `build_plan.py --focal-scan 12` (2 of 12 fail, plans 1 and 10) both
+  produced byte-identical stdout before and after, confirming this is a
+  pure threading fix with zero behaviour change for the shipped style.
+
+---
+
 ## How this repo expects work to be done
 
 **Environment**
