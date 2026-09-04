@@ -3490,15 +3490,34 @@ through two separate implementations.
   run reading +0.019, so the orientation is weak and not broken, and a rig
   boosted until the metric agreed would be a knob rather than a cause. The two
   rooms nearest the floor (+0.018, against 0.015) are both in this group.
-- The **focal reading still falls with render resolution** in generated rooms
-  and holds in the reference one, because contrast is a percentile spread over
-  37 quantized lightness levels. The scan and the suite check now at least
-  grade at the same 320; the delivered render is 480 and the gap is stated
-  rather than tuned away.
-- **Furniture screen spread** now has an owner for its *closest pair* (0.045,
+- ~~The **focal reading still falls with render resolution**...~~ **Resolved,
+  not the way this bullet expected.** Re-measured (see "Focal detail:
+  resolution-confirmed, not resolution-invariant"): contrast itself turned
+  out to have healed as a side effect of later, unrelated composition fixes
+  -- it no longer comes near its floor at any resolution from 160 to 480. The
+  same falls-with-resolution problem had moved to detail (edge density,
+  added after this bullet was written) instead, confirmed live: plan 1 failed
+  at 320 and passed at 480 with no content change. A ratio reformulation was
+  measured and proven unable to fix a verdict at a floor fixed at 0 (a
+  sign-preserving transform). Fixed at the decision-rule level instead: a
+  failure at 320 is now confirmed with one render at 480 before it is
+  reported, and only counts if it fails both (`FOCAL_CONFIRM_TARGET`,
+  `tools/build_plan.py`). This is resolution-*confirmed*, not
+  resolution-*invariant* -- a defect visible only at some third resolution
+  neither 320 nor 480 would still slip through, named honestly in that
+  section rather than claimed away.
+- ~~**Furniture screen spread** now has an owner for its *closest pair* (0.045,
   bracketed by measurement) but the mean-spread floor of 0.15 is still close to
   the original guess. It has never rejected anything the closest-pair floor did
-  not also reject, which is either redundancy or a floor set too low to fire.
+  not also reject, which is either redundancy or a floor set too low to fire.~~
+  **Resolved, not redundant.** Widening the survey from the 15 generators
+  `check_generator_range` gates to all 24 seeded builders in `assetlib.py`
+  found no case, on anything currently shipped, where the mean floor fires
+  and the closest-pair floor does not. Degrading the real `bookshelf`
+  generator on two independent axes did: silent at 15.4%, fires at 14.8%, a
+  measured 0.6-point bracket either side of 0.15. See "The screen-spread
+  floor's redundancy question, closed with a real generator instead of
+  synthetic noise" below.
 - ~~**The detail floor's bracket is 0.010 wide.**~~ Closed: see "The detail
   floor's bracket, closed: the noise is bigger than the signal" below. The
   0.010 never held even on the sample that produced it (two same-dressing
@@ -3507,6 +3526,113 @@ through two separate implementations.
   signal-to-noise gap no threshold placement closes. Left at 0.0 and
   recorded as a population-rate check (roughly 1 in 8-9 wall/L runs), not a
   per-room verdict.
+
+---
+
+# The screen-spread floor's redundancy question, closed with a real generator instead of synthetic noise
+
+The earlier close of this ("The mean spread floor: never fired is not the
+same question as redundant", above) settled it with 2000 synthetic pixels
+flipped at random -- a valid argument in principle, but not a shape anything
+in this repo ships, and the "Still open" list kept restating the question
+afterward anyway, floor number and all, because nothing tied the resolution
+back to the bullet. This closes it with the shipped `bookshelf` generator
+itself, degraded on purpose, and with the survey widened past the 15
+generators `check_generator_range` actually gates.
+
+## The full library, not just the 15 that are checked
+
+`check_generator_range` iterates `art_review.GENERATORS`, 15 entries.
+`assetlib.py` has 24 functions taking a `seed`; nine were never folded in --
+`leafy_plant`, `succulent`, `fridge_under`, `tip_jar`, `book_stack`,
+`pastry_plate`, `bean_sack`, `wall_art_framed`, `plant_hanging`. Running the
+same measurement `check_generator_range` uses (mean and closest-pair screen
+spread, 8 seeds) over all 24:
+
+| generator | mean | closest | mean fires (0.15) | closest fires (0.045) |
+|---|---|---|---|---|
+| `fridge_under` | 0.0% | 0.0% | fires | fires |
+| `tip_jar` | 0.0% | 0.0% | fires | fires |
+| `bean_sack` | 6.9% | 1.0% | fires | fires |
+| `pastry_plate` | 7.0% | 2.1% | fires | fires |
+| `counter` | 7.5% | -- | (own floor 0.04, clears) | exempt, own floor |
+| `wall_art_framed` | 36.5% | 0.0% | clears | **fires** |
+| `bookshelf` | 18.4% | 15.9% | clears | clears |
+| remaining 16 | 20.1%-91.2% | 5.2%-45.7% | clear | clear |
+
+Two findings outside the question asked, worth recording rather than quietly
+fixed: `fridge_under` and `tip_jar` both measure 0.0% on both floors because
+neither builder's body calls its own `rnd()` -- the `seed` parameter is
+accepted and never read. That is a real defect, and this floor gets no credit
+for it, because neither generator was ever in the set it runs against. Left
+for a follow-up in `NEXT.md` rather than fixed here -- wiring two generators'
+randomness is a different task than the one this section answers.
+`wall_art_framed` reproduces the expected *opposite* case from the original
+"Still open" note above (`proof/spread_floor_ungated.png`): mean 36.5%, closest
+0.0%, the closest-pair floor catching a defect the average washes out. On the
+question actually asked -- restricted to everything currently gated or
+gateable -- the mean floor still never fires alone on the shipped library.
+
+## "Never fired on the library" still isn't "cannot fire"
+
+Bracketing it the way the closest-pair floor was bracketed means building a
+defect, not describing one abstractly. Two independent knobs on the real
+`bookshelf` generator, both plausible regressions rather than synthetic
+noise: shrinking the amplitude of its own `rnd()` calls toward their midpoint
+(a variance leak), and truncating its spine palette (a material-variety
+collapse). Both run through the shipped `_books` helper unmodified -- these
+are real frames, not stand-ins. `proof/spread_floor_bracket.png`:
+
+| variant | mean | closest | mean fires | closest fires |
+|---|---|---|---|---|
+| bookshelf, shipped | 18.4% | 15.9% | | |
+| amplitude k=0.40 | 15.9% | 11.1% | | |
+| amplitude k=0.35 | 15.4% | 10.6% | | |
+| amplitude k=0.30 | 14.8% | 9.3% | **fires** | |
+| amplitude k=0.20 | 11.2% | 5.8% | **fires** | |
+| amplitude k=0.10 | 10.8% | 5.3% | **fires** | |
+| 3 of 10 spine colours | 15.2% | 11.6% | | |
+| 2 of 10 spine colours | 12.8% | 8.9% | **fires** | |
+| 1 of 10 spine colours | 5.8% | 3.0% | **fires** | **fires** |
+
+The floor sits exactly where the amplitude sweep crosses: k=0.35 (15.4%) is
+silent, k=0.30 (14.8%) fires, and 0.15 sits in the **0.6-point gap** between
+them -- tighter than the closest-pair floor's 2.3-point bracket, but real on
+both sides, held to the same standard the detail floor's 0.010-wide bracket
+was. The spine axis gives a second, independent bracket agreeing with the
+first rather than merely not contradicting it: silent at 3 of 10 (15.2%),
+fires at 2 of 10 (12.8%), 2.4 points wide.
+
+At both crossings the closest-pair floor stays silent -- 9.3% and 8.9%, both
+comfortably over 4.5% -- until the degradation is severe enough that both
+floors agree (1 of 10 spines: mean 5.8%, closest 3.0%). That is four separate
+constructed cases (k=0.30, k=0.20, k=0.10, 2-of-10 spines) where the mean
+floor catches a regression the closest-pair floor's own arithmetic cannot
+see by construction: closest pair only ever looks at the two most similar
+frames, and a generator whose whole population has drifted toward the middle
+can keep those two frames comfortably apart while every *other* pair has
+collapsed with them. `proof/spread_floor_bracket.png` shows this by eye --
+the shipped and k=0.40 rows carry cool colours (teal, sky-blue) the k=0.30
+row has lost almost entirely, eight columns of the same warm rose-brown.
+
+## Verdict: not redundant, floor unchanged
+
+**Set too low to fire** would mean 0.15 is loose, missing real regressions on
+the current library. It isn't: nothing in the shipped 24-generator library
+sits between 0.045 and 0.15 doing something both floors should have caught,
+and raising the floor would make it fire on `bookshelf`'s own shipped output
+(18.4%) before anything is actually wrong -- the same mistake this file has
+already made once tuning the *other* floor too tight, one level up.
+
+**Redundant** would mean the mean floor never disagrees with the closest-pair
+floor on anything real or realistic. It does, four separate times, on a
+generator this repo ships, degraded two independent and plausible ways. A
+redundant floor cannot do that by construction.
+
+The floor stays at **0.15**. The reason it has never fired on the real
+library is now demonstrated rather than assumed: not because it can't, but
+because none of the 24 generators currently ship the "differs a little, none
+differs much" failure it exists to catch.
 
 ---
 
@@ -4656,3 +4782,163 @@ see that, and none should be invented to: "is it the shape I asked for" is
 the human tier this repo has always said is the whole point. One clean, one
 correctly rejected, one that needs a person to look at it is an honest first
 result for a category that had nothing in it an hour ago.
+
+---
+
+## Focal detail: resolution-confirmed, not resolution-invariant
+
+The "Still open" list has carried one line unchanged since the sixth pass:
+contrast is a percentile spread, it falls with render resolution in generated
+rooms, the scan and the suite check grade at 320 while the shipped render is
+480, and the gap is "stated rather than tuned away." Re-measuring it end to
+end, on current code, found the original claim had quietly stopped being
+true and a different one had taken its place under the same name.
+
+### Contrast healed; nobody re-checked it
+
+Re-swept the sixth pass's own 160/320/480 table on today's code, across the
+suite check's own four-room sample (`check_focal_contrast(n=4, seed=1)`
+picks plans 1/2/3/8 -- one wall run, one peninsula, one island, one L run)
+plus the reference room:
+
+| room | 160 | 240 | 320 | 400 | 480 |
+|---|---|---|---|---|---|
+| reference | +0.178 | +0.133 | +0.133 | +0.133 | +0.133 |
+| plan 1, wall run | +0.146 | +0.101 | +0.101 | +0.101 | +0.101 |
+| plan 2, peninsula | +0.101 | +0.101 | +0.101 | +0.101 | +0.087 |
+| plan 3, island | +0.146 | +0.146 | +0.146 | +0.126 | +0.101 |
+| plan 8, L run | +0.138 | +0.146 | +0.101 | +0.101 | +0.101 |
+
+Every reading stays at least 0.047 clear of the 0.030 floor -- most 3-6x
+clear -- across the whole range. The sixth pass's steep collapse (seed 3:
++0.084 at 160 down to +0.014 at 480, nearly touching the floor) is gone.
+Nothing in this pass targeted contrast: the hull-clipped focal region, the
+wall shelf/sign dressing and the back-counter height/lamp retune (all landed
+since, for unrelated reasons) each changed how much of the frame is counter
+versus periphery, and between them the metric stopped being marginal. One
+softer signal survives -- plan 11's contrast margin compresses 0.087 to 0.047
+from 320 to 480 in the twelve-plan sample below, real but nowhere near
+crossing -- worth naming rather than rounding off. An unrelated set of
+composition fixes closed the measurement gap this bullet described, and it
+was never revisited to check.
+
+### The same mechanism moved to detail
+
+`check_focal_contrast`'s third reading -- edge density, added in the eighth
+pass, after this bullet was already written -- inherited exactly the
+resolution sensitivity contrast was measured to have and then apparently
+lost. Same rooms, same sweep, the detail LEAD (`di - do` from
+`render_room.focal_report`):
+
+| room | 160 | 240 | 320 | 400 | 480 |
+|---|---|---|---|---|---|
+| reference | +0.116 | +0.103 | +0.096 | +0.080 | +0.071 |
+| plan 1, wall run | +0.003 | +0.001 | −0.002 | −0.005 | +0.001 |
+| plan 8, L run | +0.107 | +0.071 | +0.064 | +0.056 | +0.044 |
+| plan 10, wall run | +0.022 | −0.013 | −0.011 | −0.010 | −0.013 |
+
+Every room's detail lead shrinks with resolution, the hand-authored
+reference room included (+0.116 to +0.071, −39% relative) -- this is not a
+generated-room-only effect. Confirmed directly against the live suite:
+`build_plan.py --focal-scan 12` at 320 (today's default) reads **2 of 12
+fail**; the identical twelve plans at 480 read **1 of 12**. Plan 1 is the
+difference -- −0.002 at 320 (FAIL, floor 0.0), +0.001 at 480 (pass) -- same
+seed, same dressing, same lighting, only the render target changed. That is
+the exact failure mode the original bullet described, on the metric that
+replaced the one it was written about. `manifest.py --check`'s own
+`check_focal_contrast()` (the fast suite gate, not just the deep scan) was
+already carrying this as a documented, accepted case -- NEXT.md's gate
+section names it directly ("`check_focal_contrast` fails plan 1 (wall run)
+by −0.002") -- so this was not a hypothetical, it was live in both gates.
+
+### A ratio reformulation was measured and rejected
+
+The natural fix for "a lead shrinks toward zero as resolution grows" is to
+normalize it: `(di - do) / (di + do)` instead of the raw difference, so a
+shrink common to both operands cancels. Swept alongside the raw numbers,
+same four rooms:
+
+| room | 160 | 240 | 320 | 400 | 480 |
+|---|---|---|---|---|---|
+| reference (norm) | +0.124 | +0.123 | +0.128 | +0.119 | +0.117 |
+| plan 1 (norm) | +0.002 | +0.003 | −0.003 | −0.008 | +0.002 |
+| plan 8 (norm) | +0.119 | +0.092 | +0.094 | +0.088 | +0.077 |
+| plan 10 (norm) | +0.026 | −0.019 | −0.018 | −0.018 | −0.026 |
+
+It works exactly as advertised for rooms that are not marginal: the
+reference room's relative range across 160-480 drops from 39% (raw) to 9%
+(normalized); plan 8's drops from 59% to roughly half that. It does nothing
+for plan 1's flip, or for any flip at a floor fixed at exactly 0 --
+`sign(a - b) == sign((a - b) / (a + b))` whenever `a + b > 0`, algebraically,
+so a sign-preserving transform of the statistic cannot move a room to the
+other side of a zero floor. Confirmed on the numbers, not just the algebra:
+plan 1's normalized lead is +0.002 / +0.003 / **−0.003** / −0.008 / +0.002 --
+it flips at the same targets as the raw lead, just with smaller digits. A
+real result and a genuine non-fix, recorded so the next pass does not
+re-propose it.
+
+### Why: the renderer, not the statistic
+
+Both `shade_toon`'s ordered dither (`pixelize.py`, `DITHER_LO/HI = 0.36,
+0.64`) and `mesh.py`'s world-space surface grain (`GRAIN_BY_RAMP`, 0.3-0.85
+of a ramp step) perturb the lambert value by an amount capped below one ramp
+step, with a footprint that is fixed in **world** units -- a dither band
+tied to the light geometry, a grain lattice tied to the material. The
+raster's `downsample_modal` (`factor=3`, constant regardless of target)
+resolves a perturbation once the real-world size of one output pixel
+(`camera span / target`) shrinks below that footprint's width; below that
+threshold the perturbation is outvoted by its neighbours and the surface
+reads flat. Raising `target` shrinks every output pixel's world footprint,
+so the same fixed-size dither/grain band crosses from "outvoted" to
+"resolved" at a different target for a large flat surface (the counter) than
+for the many small objects a busy periphery is made of -- which is exactly
+the asymmetry measured, on both contrast (originally) and detail (now).
+
+More resolution genuinely reveals more real, palette-quantized detail,
+unevenly between zones. That is correct rendering behaviour, not a bug, and
+no reformulation of a screen-space pixel statistic removes it -- the fix
+would have to grade composition off world-space material samples instead of
+raster pixels, immune to how many pixels a surface happens to occupy. That
+is a rearchitecture of what the check measures, not a tuning pass, and it is
+scoped and left for a future pass the same way the fifth topology and the
+style LoRA were.
+
+### The fix: confirm, don't normalize
+
+Since the number cannot be made resolution-invariant, the VERDICT is made
+resolution-independent a different way: a room that fails at `FOCAL_TARGET`
+(320) gets one confirming render at `FOCAL_CONFIRM_TARGET` (480 --
+`render_room.py`'s and this file's own delivery default), and is only
+reported if it fails at **both**. A room that passes at 320 never pays for
+the second render, so the common case (10 of 12 rooms) costs nothing extra;
+only actual failures do, and there are at most a handful per run.
+
+Verified on the live suite, both gates:
+
+```
+tools/build_plan.py --focal-scan 12
+  ...
+  plan  1  wall run   L +0.040  C +0.101  D -0.002   ok   RESCUED at 480 (L +0.039 C +0.101 D +0.001)
+  ...
+  plan 10  wall run   L +0.031  C +0.101  D -0.011   FAIL
+  ...
+  1 of 12 rooms fail the focal floors (8%), 1 rescued by the 480 confirmation
+```
+
+`check_focal_contrast()` -- the function `manifest.py --check` actually
+calls, n=4, picking plans 1/2/3/8 -- now returns **zero** messages, closing
+the case NEXT.md's gate section carried as an accepted failure. Plan 10, the
+one defect in the sample that is real (negative at every resolution from 240
+through 480, not just 320), still fires in both the scan and a direct call
+to `check_focal_contrast(seed=10, n=1)` -- the confirmation catches the
+resolution-dependent false positive without spending the real one a pass.
+Proof renders: `proof/focal_plan1_320.png` vs `proof/focal_plan1_480.png`
+(same room, the flip), `proof/focal_plan10_320.png` vs
+`proof/focal_plan10_480.png` (same room, still failing both ways).
+
+**Left honestly incomplete:** this is confirmation, not invariance. A room
+whose defect only shows up at some third resolution neither 320 nor 480
+would still slip through -- the fix trades "wrong at whichever resolution
+you happened to pick" for "wrong only if two specific, load-bearing
+resolutions agree it's wrong," which is the practical claim the delivered
+game actually needs, not the abstract one this bullet originally asked for.
