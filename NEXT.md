@@ -1014,7 +1014,7 @@ of "same pattern nine times" plumbing the rest of this list has been --
 flagged as a boundary rather than attempted unscoped, same reasoning as
 `ui_forge.py`'s GPU dependency.
 
-**Landed (PR #33, stacked on #31): the full 56-prop library, swept through
+**Landed (PR #34, stacked on #31): the full 56-prop library, swept through
 `snes_rpg`, not just "one of each."** Every producer up to this point had
 been verified against a single representative asset per class (one
 character roster, one composed room, one tileset). `style_approve.py`'s own
@@ -1242,6 +1242,125 @@ Every producer `NEXT.md`'s migration-order list named is now `--style`-wired
 except `animate.py` (never carried a `--style` flag to begin with, and
 picking up that gap is new scope, not a rider on this one) -- `ui_forge.py`
 landed the same way one PR earlier (#36, above).
+
+---
+
+**Landed (PR #38, stacked on #31): the import-order blocker solved for real,
+scoped to the one place with a measured defect -- `tools/tileset.py`'s wall
+trim -- not the much larger `assetlib.py`/`character.py` version of the same
+problem.** PR #29 found `wall_panel_x`/`wall_plain_x` failing `check_collapse`
+under `snes_rpg`: the picture rail and wainscot batten, hardcoded as literal
+`WOOD + "-1"`/`WOOD + "-2"` tokens imported from `assetlib.py` at module load,
+collapsed to the same colour as each other at that wall's lambert. Left as a
+recorded rejection rather than patched, because fixing it meant actually
+solving the import-order problem `style.py`'s own docstring has flagged since
+PR #12, not routing around it.
+
+**The choice, and why.** `style.py` names two fixes: an early `sys.argv`
+peek before the consuming module imports (so a module-level default can be
+bound correctly the first time), or converting bound-at-def-time defaults
+into a lazy, call-time lookup. Took the second, same reasoning `style.py`'s
+own docstring gives for preferring it -- an args-peek is a global side
+effect every future entry point has to know exists, a call-time lookup is
+local and unit-testable with no dependency on `sys.argv` ever having been
+parsed. Concretely: `tileset.py`'s `wall_plain`/`wall_panel` used to be
+module-level functions closed over `WOOD`/`WALL_FIELD`, imported once from
+`assetlib.py` at parse time -- literals no `--style` flag could ever reach,
+the identical shape of bug `assetlib.py`'s own `table(top=WOOD, ...)`-style
+defaults have, just one indirection further away. They're now built by a new
+factory, `make_wall_patterns(materials: dict)`, called once per `build()`
+run with the active style's OWN `materials:` dict and returning ordinary
+closures already bound to the right tokens -- `build()`, `room_corner()`
+and every check that takes a `pattern` function are otherwise unchanged,
+because the factory preserves the exact `pattern(t, z, v)` calling
+convention every wall/floor pattern function already shared. `room_corner()`
+gained a `wall_patterns: dict | None = None` parameter, resolved to
+`cozy_ghibli`'s own patterns if omitted -- the sentinel-resolved-at-call-time
+idiom applied one layer up, for the one caller (none, today) that might
+invoke it directly without going through `build()`.
+
+**Scope boundary, stated rather than assumed away:** this does NOT touch
+`assetlib.py`'s or `character.py`'s own def-time-bound material/rig
+constants (the original PR #12 finding) -- over 150 call sites across
+`assetlib.py` alone use `WOOD`/`CERAMIC`/`FABRIC`/... as function defaults.
+PR #20 already measured that none of them currently need a role remapped to
+a DIFFERENT ramp name (both style packs map every role to the same ramp,
+only the ramp's own RGB values differ), so rewriting all of them now would
+be exactly the "sweeping change nobody looked at" this track's own process
+argues against, for zero currently-measured benefit. What changed is
+narrower and load-bearing: `tileset.py`'s wall trim needed not just a
+different ramp's colours (already handled, for free, by `ramps` being
+resolved per-style) but a different OFFSET along that ramp per style, which
+`materials:` role names alone can't express without also carrying the tone
+offset -- exactly the `wall_field`/`floor_field` idiom already used, now
+extended to two more roles.
+
+**The actual fix, brute-forced against the measured requirement, not
+picked by eye.** Two new required material roles, `wall_trim` and
+`wall_trim_shadow` (`style.REQUIRED_MATERIAL_ROLES` now has eleven, not
+nine). `cozy_ghibli` got `wood-1`/`wood-2` -- the exact literals it already
+had, so its render is unchanged. `snes_rpg`'s bible carried the same two
+literals forward unexamined in PR #29 and they collided: at the x-wall's
+lambert (0.28511), `wood`'s 5-step ramp indexes to base step 1, so `wood-1`
+clamps to step 0 and `wood-2` ALSO clamps to step 0 (one step further down
+goes negative first) -- the ramp has no headroom below `wood-1` at this
+lambert, so the "further step" silently becomes the SAME step instead of a
+darker one. Brute-forced every `(ramp, offset1, offset2)` triple with both
+offsets in `[-4, +4]` across every multi-step ramp in the palette (200
+combinations cleared the bar of "`wall_field`, `wall_trim` and
+`wall_trim_shadow` resolve to three distinct colours" at BOTH the broken
+x-wall's lambert AND the already-working y-wall's lambert -- checking only
+the broken wall would risk silently breaking the one that already worked).
+Picked the smallest-magnitude survivor over the widest-margin one (several
+combinations forced the ramp's two endpoints regardless of lambert, a flat
+un-shaded trim -- a bigger visual change than this defect calls for):
+`wall_trim` stays `wood-1`, unchanged; only `wall_trim_shadow` moves, from
+`wood-2` to plain `wood` (offset 0 -- one real step lighter than `wood-1` at
+every lambert, since it can never clamp below `wood-1` the way `wood-2`
+did). Bracket: the floor is a hard "3 distinct colours, not 2", not a
+tunable number, and the weakest passing margin in the whole search was this
+exact pair -- oklab dE 0.152 at the x-wall, 0.154 at the y-wall -- the tight
+edge of the bracket, not a comfortable middle chosen after the fact.
+
+**A second bug the fix itself surfaced, caught by the check that exists for
+exactly this.** The first working version of `make_wall_patterns` still
+failed `check_manifest_placement` under `snes_rpg` -- 1152 pixels different
+between the projected room and the one rebuilt from `tileset.json` alone.
+Not a placement-arithmetic bug: `check_manifest_placement`'s own `ref =
+room_corner(width, ramps, n=n)` call didn't pass `wall_patterns` through,
+so it silently fell back to `room_corner`'s `cozy_ghibli` default while the
+`out` half of the same comparison read the REAL `snes_rpg` atlas PNGs
+already on disk -- comparing the right style's tiles against the wrong
+style's projection. Exactly the class of silent-default bug PR #23/#24
+found and fixed in `character.py`/`portrait.py`/`manifest.py`'s own
+`--style`-accepted-but-ignored pattern, rediscovered here one layer deeper.
+Fixed the same way: `wall_patterns` threaded through `check_manifest_placement`
+and `build()`'s call into it.
+
+**Regression, proven not asserted.** Hashed every file `tileset.py --proof`
+writes under `out/tiles/` (16 files: 3 floor atlases + proofs, 4 wall
+atlases + proofs, the room corner, `tileset.json`) against a build from
+before this change, twice -- once after the `make_wall_patterns` change
+alone, again after the `check_manifest_placement` fix -- sha256 identical
+both times, full stop, under the default `cozy_ghibli` style. `--style
+snes_rpg --proof` exits 0 for the first time on this track: `check_collapse`
+clean on both `wall_panel_x`/`wall_plain_x`, `check_manifest_placement`
+clean. Verified the check fails in both directions, not just found passing:
+rebuilt `wall_panel`'s closures with the OLD `wood-2` value swapped back in
+for `wall_trim_shadow` and confirmed `check_collapse` reports the exact same
+"3 materials resolve to only 2 colours ... (cream-2, wood-1, wood-2)"
+message PR #29 recorded, then confirmed it goes clean again with the shipped
+value -- the check can fail, and doesn't, for the right reason.
+
+**Looked at the render**, the discipline this whole track insists on:
+`out/tiles_snes_rpg/_room_corner.png`, both walls. Cropped and zoomed the
+top-of-wall picture-rail band on the x-axis (left) wall side by side against
+a render using the old, broken `wood-2` value -- the broken version's rail
+reads as a near-black sliver almost indistinguishable from the tile's own
+outline stroke; the fixed version's rail is a clearly lighter, distinctly
+separate band on BOTH walls now, not just the y-axis one PR #29 already had
+working. `out/tiles/_room_corner.png` (default style) visually unchanged
+from before, matching the byte-identical hash result.
 
 ---
 

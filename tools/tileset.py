@@ -76,7 +76,11 @@ OUT_DIR = ROOT / "out" / "tiles"
 
 # The floor's tone, and the reasoning behind it, live in assetlib -- imported
 # rather than restated so a tile and the room composite cannot drift apart.
-from assetlib import CERAMIC, FLOOR_FIELD, WALL_FIELD, WOOD  # noqa: E402
+# WOOD/WALL_FIELD are deliberately NOT imported here any more: the wall trim
+# they used to hand `wall_plain`/`wall_panel` needs to vary per style (see
+# `make_wall_patterns`), and assetlib's versions are the same def-time-bound
+# literal every style shares, which is exactly the thing being fixed.
+from assetlib import CERAMIC, FLOOR_FIELD  # noqa: E402
 from isorender import (  # noqa: E402
     DimetricCamera, camera_light, dot, norm, verify_projection,
 )
@@ -219,65 +223,96 @@ def _wall_basis(width: int, axis: str, height: float = WALL_HEIGHT):
     return to_wall, (w, h), step
 
 
-def wall_plain(t: float, z: float, v: int) -> str:
-    """Flat field with a skirting board and a top rail.
+def make_wall_patterns(materials: dict):
+    """Build this style's `wall_plain`/`wall_panel` pattern functions.
 
-    Both bands run the full length of the tile and depend only on z, so they
-    continue across a join with nothing to align -- which is the whole reason
-    a wall's detail wants to be horizontal rather than vertical.
+    **The import-order fix, and why this shape rather than the other one.**
+    `style.py`'s own docstring names two ways to make a semantic material
+    role genuinely vary per style, given that `--style` is only known after
+    `argparse` runs, well after any module-level code has already executed:
+    an early `sys.argv` peek before the consuming module is imported, or
+    converting bound-at-def-time defaults into a lazy, call-time lookup.
+
+    This picks the second, same reasoning `style.py` gives for preferring
+    it: an args-peek is a global side effect (parsing `sys.argv` a second
+    time, out of band, before `main()` ever runs) that every future entry
+    point has to remember exists, whereas a call-time lookup is local and
+    testable -- calling `make_wall_patterns({...})` directly, by hand, with
+    any materials dict, produces plain functions with no global state and
+    no dependence on `sys.argv` ever having been parsed at all. It also
+    composes with the one wrinkle unique to this file: `wall_plain`/
+    `wall_panel` are not called directly, they are looked up out of a
+    dict (`WALL_PATTERNS` before this change) by every one of
+    `render_wall_tile`/`check_collapse`/`wall_proof`/`room_corner`, which
+    all share the fixed `pattern(t, z, v)` calling convention. A bare
+    `materials=None` default parameter on `wall_plain` itself would need
+    every one of those call sites rewritten to pass it through -- this
+    factory keeps that convention untouched: `build()` resolves the active
+    style's materials ONCE, gets back two ordinary 3-argument functions
+    already closed over the right tokens, and every existing call site is
+    none the wiser.
     """
-    if z < 0.16:
-        return WOOD + "-1"                      # skirting
-    if z < 0.20:
-        return WOOD + "-2"                      # its shadow line
-    if z > WALL_HEIGHT - 0.08:
-        # A picture rail in timber, not a darker step of the wall. `cream-2`
-        # already resolves to step 0 of a 5-step ramp on the shadowed wall, so
-        # `-1` is the same colour and the rail simply vanishes there --
-        # invisible on one wall of a corner and correct on the other, which is
-        # the worst way for a detail to fail. `check_collapse` reports it.
-        return WOOD + "-2"
-    return WALL_FIELD
+    field = materials["wall_field"]
+    trim = materials["wall_trim"]
+    trim_shadow = materials["wall_trim_shadow"]
 
+    def wall_plain(t: float, z: float, v: int) -> str:
+        """Flat field with a skirting board and a top rail.
 
-def wall_panel(t: float, z: float, v: int) -> str:
-    """Wainscot: skirting, a chair rail, and a vertical batten per unit.
+        Both bands run the full length of the tile and depend only on z, so
+        they continue across a join with nothing to align -- which is the
+        whole reason a wall's detail wants to be horizontal rather than
+        vertical.
+        """
+        if z < 0.16:
+            return trim                          # skirting
+        if z < 0.20:
+            return trim_shadow                   # its shadow line
+        if z > WALL_HEIGHT - 0.08:
+            # A picture rail in timber, not a darker step of the wall. Under
+            # `cozy_ghibli` this and the skirting-shadow line share one
+            # token (`wood-2`) and it's fine; under `snes_rpg` that exact
+            # token collided with the skirting board itself at this wall's
+            # lambert (both clamped to the same ramp step) -- see
+            # `styles/snes_rpg/bible.yaml`'s `wall_trim_shadow` comment for
+            # the measured fix. `check_collapse` is what caught it.
+            return trim_shadow
+        return field
 
-    The batten sits at the tile's own edges rather than its middle, so a run
-    of them lands one world unit apart -- a real interval a room can be
-    measured in, instead of a pattern that only exists inside a tile.
-    """
-    base = wall_plain(t, z, v)
-    if base != WALL_FIELD:
+    def wall_panel(t: float, z: float, v: int) -> str:
+        """Wainscot: skirting, a chair rail, and a vertical batten per unit.
+
+        The batten sits at the tile's own edges rather than its middle, so a
+        run of them lands one world unit apart -- a real interval a room can
+        be measured in, instead of a pattern that only exists inside a tile.
+        """
+        base = wall_plain(t, z, v)
+        if base != field:
+            return base
+        rail = 1.05
+        if abs(z - rail) < 0.05:
+            return trim                          # chair rail
+        if z < rail:
+            if t < 0.055 or t > 0.945:
+                # The batten is a MATERIAL change, not a tone offset, and
+                # that is the fix for a real defect rather than a
+                # preference. It was `wall_field + "-1"` first, and on the
+                # +y wall the panel face and the batten both clamped to the
+                # same colour and the entire wainscot disappeared. It looked
+                # fine on the +x wall, which is what makes it the kind of
+                # defect `check_collapse` exists to catch. A different ramp
+                # has its own headroom.
+                return trim
+            # No tone lift on the panel face, for the same reason: a tone
+            # offset on `field` risks clamping into the same collapse this
+            # file has already hit twice. The wainscot reads from its
+            # battens and rails, which are timber and survive both walls.
+            # A detail that exists on half a corner is worse than a detail
+            # that does not exist.
+            return base
         return base
-    rail = 1.05
-    if abs(z - rail) < 0.05:
-        return WOOD + "-1"                      # chair rail
-    if z < rail:
-        if t < 0.055 or t > 0.945:
-            # The batten is a MATERIAL change, not a tone offset, and that is
-            # the fix for a real defect rather than a preference. It was
-            # `WALL_FIELD + "-1"` first, and on the +y wall -- lambert 0.285,
-            # so `cream-2` already resolves to step 0 of a 5-step ramp -- the
-            # batten and the panel face both clamped to the same colour and
-            # the entire wainscot disappeared. It looked fine on the +x wall,
-            # which is what makes it the kind of defect `check_collapse`
-            # exists to catch. A different ramp has its own headroom.
-            return WOOD + "-1"
-        # No tone lift on the panel face, for the same reason. `cream-2+1`
-        # also lands on step 0 of the shadowed wall, so the panels would read
-        # as recessed on the lit wall and as nothing at all on the dark one.
-        # The wainscot reads from its battens and rails, which are timber and
-        # survive both. A detail that exists on half a corner is worse than a
-        # detail that does not exist.
-        return base
-    return base
 
-
-WALL_PATTERNS = {
-    "wall_plain": (wall_plain, 1),
-    "wall_panel": (wall_panel, 1),
-}
+    return {"wall_plain": (wall_plain, 1), "wall_panel": (wall_panel, 1)}
 
 
 def render_wall_tile(pattern, variant: int, width: int, axis: str, ramps: dict):
@@ -603,7 +638,8 @@ def check_collapse(pattern, variants: int, width: int, ramps: dict,
 
 def room_corner(width: int, ramps: dict, n: int = 4,
                 floor_type: str = "floor_plank",
-                wall_type: str = "wall_panel"):
+                wall_type: str = "wall_panel",
+                wall_patterns: dict | None = None):
     """Assemble an `n` x `n` floor patch with both wall runs behind it.
 
     The per-type proofs answer "does this tile meet a copy of itself", which
@@ -616,8 +652,19 @@ def room_corner(width: int, ramps: dict, n: int = 4,
     Placement is done in world space and projected once, rather than by
     accumulating per-tile screen offsets, because accumulation is how the
     two sets would drift apart while each still passed its own proof.
+
+    `wall_patterns` is `None` by default and resolved here, lazily, against
+    `cozy_ghibli` if the caller doesn't supply one -- the same call-time
+    pattern `make_wall_patterns` itself exists for, applied one level up so
+    this function's signature (today's only caller is `build()`, which
+    always passes its own style's patterns explicitly) stays usable on its
+    own, e.g. from a REPL or a future script, without silently rendering
+    against the wrong style's trim.
     """
     from PIL import Image
+    if wall_patterns is None:
+        from style import DEFAULT_STYLE, load_style
+        wall_patterns = make_wall_patterns(load_style(DEFAULT_STYLE).materials)
     cam = DimetricCamera(45.0)
     s = width / math.sqrt(2.0)
 
@@ -645,7 +692,7 @@ def room_corner(width: int, ramps: dict, n: int = 4,
     placed = []
     fw, fh = _basis(width)[1]
     for axis in ("x", "y"):
-        px, ww, wh = render_wall_tile(WALL_PATTERNS[wall_type][0], 0, width,
+        px, ww, wh = render_wall_tile(wall_patterns[wall_type][0], 0, width,
                                       axis, ramps)
         img = Image.new("RGBA", (ww, wh), (0, 0, 0, 0))
         img.putdata([(c[0], c[1], c[2], 255) if c else (0, 0, 0, 0)
@@ -684,7 +731,8 @@ def room_corner(width: int, ramps: dict, n: int = 4,
 
 
 def check_manifest_placement(meta: dict, width: int, ramps: dict,
-                             n: int = 4, out_dir: Path | None = None) -> list[str]:
+                             n: int = 4, out_dir: Path | None = None,
+                             wall_patterns: dict | None = None) -> list[str]:
     """Can a consumer rebuild the room from the published numbers alone?
 
     `room_corner()` places tiles by projecting world coordinates, which is the
@@ -699,10 +747,22 @@ def check_manifest_placement(meta: dict, width: int, ramps: dict,
     atlas PNGs, and requires the result to be pixel-identical to the projected
     one. It is the difference between publishing numbers and publishing
     numbers that work.
+
+    `wall_patterns` MUST be the caller's own style's patterns, threaded
+    through to the `ref` projection below same as `build()`'s other calls --
+    the `atlas` half of this comparison is real PNGs already on disk under
+    `out_dir` (correctly style-specific), so if `ref` silently fell back to
+    `room_corner`'s own `cozy_ghibli` default instead, this check would
+    compare a non-default style's real tiles against the WRONG style's
+    projection and fail for a reason that has nothing to do with placement.
+    Caught by running this file's own `--style snes_rpg --proof` after the
+    `wall_trim` fix below: `check_collapse` started passing and this check
+    started failing with a full-corner-sized diff, which is exactly what a
+    silent-cozy_ghibli-fallback looks like -- fixed by passing it through.
     """
     from PIL import Image
     out_dir = out_dir if out_dir is not None else OUT_DIR
-    ref = room_corner(width, ramps, n=n)
+    ref = room_corner(width, ramps, n=n, wall_patterns=wall_patterns)
 
     dx, dy = meta["lattice_step_x"]
     ex, ey = meta["lattice_step_y"]
@@ -761,7 +821,11 @@ def build(width: int, proof: bool, style_name: str | None = None) -> int:
         return 1
 
     style_name = style_name or DEFAULT_STYLE
-    ramps = load_palette(load_style(style_name).palette_path)
+    style = load_style(style_name)
+    ramps = load_palette(style.palette_path)
+    # Resolved once per build, from THIS style's materials -- not a module
+    # constant bound at import time. See `make_wall_patterns`.
+    wall_patterns = make_wall_patterns(style.materials)
     out_dir = (OUT_DIR if style_name == DEFAULT_STYLE
               else OUT_DIR.parent / f"tiles_{style_name}")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -808,7 +872,7 @@ def build(width: int, proof: bool, style_name: str | None = None) -> int:
     meta["walls"] = {}
     for axis in sorted(WALL_AXES):
         _, (ww, wh), wstep = _wall_basis(width, axis)
-        for name, (fn, variants) in sorted(WALL_PATTERNS.items()):
+        for name, (fn, variants) in sorted(wall_patterns.items()):
             tid = f"{name}_{axis}"
             atlas = Image.new("RGBA", (ww * variants, wh), (0, 0, 0, 0))
             for v in range(variants):
@@ -851,9 +915,11 @@ def build(width: int, proof: bool, style_name: str | None = None) -> int:
     if proof:
         # The per-type proofs answer "does this meet a copy of itself". This
         # answers the one they cannot: do the floor and the wall agree.
-        room_corner(width, ramps).save(out_dir / "_room_corner.png")
+        room_corner(width, ramps, wall_patterns=wall_patterns).save(
+            out_dir / "_room_corner.png")
         print("  room corner: floor + both wall runs, one projection")
-        placement = check_manifest_placement(meta, width, ramps, out_dir=out_dir)
+        placement = check_manifest_placement(meta, width, ramps, out_dir=out_dir,
+                                             wall_patterns=wall_patterns)
         for msg in placement:
             print(f"  BLOCKER  {msg}", file=sys.stderr)
             problems.append(msg)

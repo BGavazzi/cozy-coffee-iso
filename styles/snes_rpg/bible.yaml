@@ -126,7 +126,7 @@ rendering:
     smooth_gradients: false
 
 # --- Material roles ---------------------------------------------------
-# Same nine roles cozy_ghibli declares, same tone-offset idiom
+# Same roles cozy_ghibli declares, same tone-offset idiom
 # (tools/pixelize.material) -- only which ramp/offset carries each role
 # changes. Glass and the two field roles keep the same STRUCTURAL choice
 # (glass reads near the top of its ramp, walls sit below plain cream,
@@ -142,6 +142,43 @@ materials:
   glass_edge: sky
   wall_field: cream-2
   floor_field: wood-1
+  # wall_trim/wall_trim_shadow (PR #38): tools/tileset.py's wall skirting,
+  # chair rail and batten. `cozy_ghibli` uses wood-1/wood-2 for these and
+  # they separate cleanly there, so PR #29's `--style snes_rpg` pass carried
+  # the same two literal tokens forward unexamined -- and they collide.
+  # Reason, measured, not guessed: at the x-axis wall's lambert (0.28511),
+  # `wood`'s 5-step ramp indexes to base step 1 (`round(0.28511 * 4) == 1`).
+  # `wood-1` clamps to step 0. `wood-2` ALSO clamps to step 0, because step
+  # 1 minus 2 goes negative first -- the ramp has no room below `wood-1` at
+  # this lambert, so asking for one step further down silently returns the
+  # exact same colour instead of a darker one. That is check_collapse's
+  # whole reason to exist, firing correctly.
+  #
+  # Brute-forced (not picked by eye) over every (ramp, offset1, offset2)
+  # triple with both offsets in [-4, +4] across every multi-step ramp in
+  # this palette, requiring wall_trim, wall_trim_shadow AND wall_field to
+  # resolve to three distinct colours at BOTH wall lamberts (x = 0.28511,
+  # the failing one, and y = 0.95867, the one that already worked -- a fix
+  # that only checks the broken wall could silently break the working one).
+  # 200 (ramp, offset1, offset2) triples cleared that bar; the search script
+  # and its full output are recorded in NEXT.md's landed entry for this PR.
+  #
+  # Picked the smallest-magnitude survivor rather than the widest-margin one
+  # (offset magnitude 4+4, forcing the ramp's two endpoints regardless of
+  # lambert -- a flat, un-shaded trim, which is a bigger visual change than
+  # this defect calls for): `wall_trim` stays `wood-1`, unchanged from
+  # cozy_ghibli and from this style's own prior (working) value. Only
+  # `wall_trim_shadow` moves, from `wood-2` (which clamps into `wall_trim`)
+  # to plain `wood` (offset 0, one real step lighter than `wood-1` at every
+  # lambert since it can never clamp below `wood-1` the way `wood-2` did).
+  # Bracket: the floor this has to clear is "3 distinct colours, not 2" --
+  # a hard pass/fail, not a tunable number -- and the weakest passing margin
+  # in the surviving set is oklab dE 0.152 (x-wall) / 0.154 (y-wall), the
+  # `(-1, 0)` pair itself; every other survivor was a strictly larger swing
+  # for no separation benefit, so this is the tight edge of the bracket, not
+  # a comfortable middle picked after the fact.
+  wall_trim: wood-1
+  wall_trim_shadow: wood
 
 # --- Character rig -------------------------------------------------------
 # Built for real in tools/organic_rig.py -- see NEXT.md, "Style packs", for
