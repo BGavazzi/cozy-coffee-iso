@@ -120,6 +120,59 @@ MIN_FOCAL_L = 0.015
 # metric reports it.
 MIN_FOCAL_DETAIL = 0.0
 
+# The resolution the check's failures get CONFIRMED at before being reported,
+# matching `render_room.py`'s and this file's own `main()` delivery default
+# (480). If that default ever moves, this should move with it -- it names the
+# thing that ships, not an independent number.
+#
+# "The focal reading falls with render resolution" was long-open (see
+# ART_CRITIQUE.md, "Still open") for the CONTRAST reading. Re-swept on current
+# code -- after the hull clip, the wall shelf/sign dressing and the
+# back-counter height/lamp tuning that landed since -- contrast no longer
+# comes close to its floor at any resolution tested (160-480, four topologies
+# plus the reference room): weakest reading 0.047 against a floor of 0.030,
+# most rooms 0.09-0.18. That old escape has closed, as a side effect of
+# unrelated composition fixes, never re-verified until now.
+#
+# It re-appeared on DETAIL -- added after that bullet was written, so never
+# checked against it. Every room's detail LEAD shrinks with resolution,
+# including the reference room's (+0.116 at 160 down to +0.071 at 480, a
+# generated L run's +0.107 down to +0.044) -- the same "periphery resolves as
+# much new detail as the centre" mechanism the original bullet named for
+# contrast, just measured on the metric that replaced it. Confirmed on the
+# live 12-plan scan with zero content changes: plan 1 reads -0.002 at 320
+# (FAILS) and +0.001 at 480 (passes) -- the exact resolution-dependent flip
+# this file has been tracking, just relocated.
+#
+# A ratio reformulation -- (di-do)/(di+do) instead of the raw difference --
+# was measured and rejected. It shrinks the DRIFT for healthy rooms (the
+# reference's relative range across 160-480 goes from 39% to 9%), but it
+# cannot change a single VERDICT: at a floor fixed at exactly 0, sign(a-b) ==
+# sign((a-b)/(a+b)) whenever a+b > 0, algebraically. Confirmed numerically --
+# plan 1 flips sign at the same targets under the normalized form too. Not a
+# fix, just a smaller number telling the same story.
+#
+# The root cause is the renderer, not the statistic. `shade_toon`'s ordered
+# dither and `mesh.py`'s world-space surface grain are both amplitude-capped
+# perturbations with a FIXED real-world footprint; `downsample_modal`'s
+# majority vote only resolves a band that wide once a block's real-world
+# footprint (span / target) shrinks below it -- which happens at a different
+# target for a large flat counter than for the many small objects a busy
+# periphery is made of. More resolution genuinely shows more real,
+# palette-quantized detail, unevenly between zones. No reformulation of a
+# screen-space pixel statistic removes that; it would take grading off
+# world-space material samples instead of raster pixels, which is a
+# rearchitecture, not a tuning pass -- scoped and left for a future pass,
+# the same way the fifth topology and the style LoRA were.
+#
+# So stability comes from the decision rule, not the number: a room already
+# failing at `target` gets ONE confirming render at `FOCAL_CONFIRM_TARGET`,
+# and only the sub-checks that fail at BOTH resolutions get reported. Rooms
+# that pass at `target` never pay for the second render. Verified: plan 1 (the
+# resolution-dependent false positive) drops out, plan 10 (the accepted real
+# defect -- negative at every one of 240/320/400/480) still fires.
+FOCAL_CONFIRM_TARGET = 480
+
 
 def light_rig(plan: F.Plan) -> LightRig:
     """Daylight at each window, a core over the till, and dark corners.
@@ -839,6 +892,7 @@ def check_stool_occupancy(n: int = 8, seed: int = 1,
 
 def check_focal_contrast(n: int = 4, seed: int = 1,
                          target: int = FOCAL_TARGET,
+                         confirm_target: int = FOCAL_CONFIRM_TARGET,
                          l_floor: float = MIN_FOCAL_L,
                          c_floor: float = MIN_FOCAL_CONTRAST,
                          d_floor: float = MIN_FOCAL_DETAIL) -> list[str]:
@@ -918,11 +972,33 @@ def check_focal_contrast(n: int = 4, seed: int = 1,
     obvious candidate, with the caveat this file already records -- darkening a
     corner ADDS ramp transitions, so it can only be used as a zone-versus-rest
     comparison and never to search for where the focal point is.
+
+    RESOLUTION-CONFIRMED, not resolution-invariant. See `FOCAL_CONFIRM_TARGET`
+    for the full measurement -- edge density (the third reading, `det`) turned
+    out to inherit exactly the resolution sensitivity contrast was once
+    dropped for, and a ratio reformulation cannot fix a verdict at a floor
+    fixed at 0 (it is a sign-preserving transform, proven and confirmed). So a
+    failure at `target` gets ONE confirming render at `confirm_target` --
+    `render_room.py`'s own delivery resolution -- and is reported only if it
+    fails at BOTH. A room that passes at `target` never pays for the second
+    render, so the common case costs nothing extra; only the failures do.
     """
     import io as _io
     import contextlib
     import re as _re
     from render_room import render
+
+    def read_room(plan, tgt):
+        L = build(plan)
+        buf = _io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            render(L, light_rig(plan), tgt, Path(tempfile.gettempdir())
+                   / "_focal_check.png", wear=L.wear_field(),
+                   focal=focal_box(plan))
+        hits = _re.findall(r"([+-]\d\.\d\d\d)", buf.getvalue())
+        return (float(hits[0]), float(hits[1]), float(hits[2])) \
+            if len(hits) >= 3 else None
+
     picks, seen = [], set()
     k = seed
     while len(picks) < n and k < seed + 60:
@@ -936,30 +1012,35 @@ def check_focal_contrast(n: int = 4, seed: int = 1,
         out.append(f"only {len(picks)} topologies found in 60 seeds, "
                    f"wanted {n} -- the generator has lost a branch")
     for k, plan in picks:
-        L = build(plan)
-        buf = _io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            render(L, light_rig(plan), target, Path(tempfile.gettempdir())
-                   / "_focal_check.png", wear=L.wear_field(),
-                   focal=focal_box(plan))
-        hits = _re.findall(r"([+-]\d\.\d\d\d)", buf.getvalue())
-        if len(hits) < 3:
+        got = read_room(plan, target)
+        if got is None:
             out.append(f"plan {k} ({plan.topology}): render reported no "
                        f"focal reading")
             continue
-        lead, con, det = float(hits[0]), float(hits[1]), float(hits[2])
+        lead, con, det = got
+        fails = []
         if lead < l_floor:
-            out.append(f"plan {k} ({plan.topology}): counter is only "
-                       f"{lead:+.3f} brighter than its room "
-                       f"(floor {l_floor:+.3f}) -- no centre")
+            fails.append(("brightness", f"counter is only "
+                          f"{lead:+.3f} brighter than its room "
+                          f"(floor {l_floor:+.3f}) -- no centre"))
         if con < c_floor:
-            out.append(f"plan {k} ({plan.topology}): counter is {con:+.3f} "
-                       f"in contrast against its room (floor {c_floor:+.3f})"
-                       f" -- the periphery has as much to look at")
+            fails.append(("contrast", f"counter is {con:+.3f} "
+                          f"in contrast against its room (floor {c_floor:+.3f})"
+                          f" -- the periphery has as much to look at"))
         if det < d_floor:
-            out.append(f"plan {k} ({plan.topology}): counter carries {det:+.3f} "
-                       f"detail against its room (floor {d_floor:+.3f}) -- the "
-                       f"busiest thing in frame is not the counter")
+            fails.append(("detail", f"counter carries {det:+.3f} "
+                          f"detail against its room (floor {d_floor:+.3f}) -- the "
+                          f"busiest thing in frame is not the counter"))
+        if fails and confirm_target and confirm_target != target:
+            got2 = read_room(plan, confirm_target)
+            if got2 is not None:
+                lead2, con2, det2 = got2
+                still_bad = {"brightness": lead2 < l_floor,
+                            "contrast": con2 < c_floor,
+                            "detail": det2 < d_floor}
+                fails = [(kind, msg) for kind, msg in fails if still_bad[kind]]
+        for _, msg in fails:
+            out.append(f"plan {k} ({plan.topology}): {msg}")
     return out
 
 
@@ -987,7 +1068,8 @@ def check_built_rooms(n: int = 6, seed: int = 1) -> list[str]:
     return out
 
 
-def _focal_scan(n: int, target: int) -> int:
+def _focal_scan(n: int, target: int,
+                confirm_target: int = FOCAL_CONFIRM_TARGET) -> int:
     """Every plan from 1 to n, graded against the focal floors.
 
     Exists because the suite check samples ONE ROOM PER TOPOLOGY -- four
@@ -1006,6 +1088,12 @@ def _focal_scan(n: int, target: int) -> int:
     Graded at FOCAL_TARGET, like the suite check. It used to default to 480
     while the check ran at 320, so the two gates disagreed by construction.
 
+    A failure here is now CONFIRMED at `confirm_target` (the delivery
+    resolution) before it counts -- see `FOCAL_CONFIRM_TARGET`. A room that
+    fails at `target` but passes at `confirm_target` prints RESCUED rather
+    than being silently dropped, so the resolution-dependent cases stay
+    visible instead of just disappearing from the count.
+
     Not folded into the suite because twelve rooms is several minutes, and a
     check nobody runs protects nothing.
     """
@@ -1013,25 +1101,40 @@ def _focal_scan(n: int, target: int) -> int:
     import contextlib
     import re as _re
     from render_room import render
-    bad = 0
-    for k in range(1, n + 1):
-        plan = F.generate(k)
+
+    def read_room(plan, tgt):
         L = build(plan)
         buf = _io.StringIO()
         with contextlib.redirect_stdout(buf):
-            render(L, light_rig(plan), target, Path(tempfile.gettempdir())
+            render(L, light_rig(plan), tgt, Path(tempfile.gettempdir())
                    / "_focal_scan.png", wear=L.wear_field(),
                    focal=focal_box(plan))
         hits = _re.findall(r"([+-]\d\.\d\d\d)", buf.getvalue())
-        lead, con, det = float(hits[0]), float(hits[1]), float(hits[2])
+        return float(hits[0]), float(hits[1]), float(hits[2])
+
+    bad = rescued = 0
+    for k in range(1, n + 1):
+        plan = F.generate(k)
+        lead, con, det = read_room(plan, target)
         fail = (lead < MIN_FOCAL_L or con < MIN_FOCAL_CONTRAST
                 or det < MIN_FOCAL_DETAIL)
+        note = ""
+        if fail and confirm_target and confirm_target != target:
+            lead2, con2, det2 = read_room(plan, confirm_target)
+            still = (lead2 < MIN_FOCAL_L or con2 < MIN_FOCAL_CONTRAST
+                     or det2 < MIN_FOCAL_DETAIL)
+            if not still:
+                fail = False
+                rescued += 1
+                note = (f"   RESCUED at {confirm_target} "
+                        f"(L {lead2:+.3f} C {con2:+.3f} D {det2:+.3f})")
         bad += fail
         print(f"  plan {k:2d}  {plan.topology:10s} L {lead:+.3f}  C {con:+.3f}"
-              f"  D {det:+.3f}   {'FAIL' if fail else 'ok'}")
+              f"  D {det:+.3f}   {'FAIL' if fail else 'ok'}{note}")
     print("")
     print(f"  {bad} of {n} rooms fail the focal floors "
-          f"({bad / n:.0%})")
+          f"({bad / n:.0%})" + (f", {rescued} rescued by the "
+          f"{confirm_target} confirmation" if rescued else ""))
 
 
 def main() -> int:
@@ -1053,10 +1156,16 @@ def main() -> int:
                          "exit; the suite check only samples one room per "
                          "topology, and this is how that sample was shown to "
                          "be optimistic")
+    ap.add_argument("--no-confirm", action="store_true",
+                    help="skip the FOCAL_CONFIRM_TARGET re-render on a "
+                         "failure -- for reproducing the single-resolution "
+                         "reading directly, not for normal use")
     args = ap.parse_args()
 
     if args.focal_scan:
-        return _focal_scan(args.focal_scan, args.target or FOCAL_TARGET)
+        return _focal_scan(args.focal_scan, args.target or FOCAL_TARGET,
+                           confirm_target=0 if args.no_confirm
+                           else FOCAL_CONFIRM_TARGET)
 
     plan = F.generate(args.seed)
     bad = F.check_plan(plan)

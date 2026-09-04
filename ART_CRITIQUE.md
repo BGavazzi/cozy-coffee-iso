@@ -3490,11 +3490,22 @@ through two separate implementations.
   run reading +0.019, so the orientation is weak and not broken, and a rig
   boosted until the metric agreed would be a knob rather than a cause. The two
   rooms nearest the floor (+0.018, against 0.015) are both in this group.
-- The **focal reading still falls with render resolution** in generated rooms
-  and holds in the reference one, because contrast is a percentile spread over
-  37 quantized lightness levels. The scan and the suite check now at least
-  grade at the same 320; the delivered render is 480 and the gap is stated
-  rather than tuned away.
+- ~~The **focal reading still falls with render resolution**...~~ **Resolved,
+  not the way this bullet expected.** Re-measured (see "Focal detail:
+  resolution-confirmed, not resolution-invariant"): contrast itself turned
+  out to have healed as a side effect of later, unrelated composition fixes
+  -- it no longer comes near its floor at any resolution from 160 to 480. The
+  same falls-with-resolution problem had moved to detail (edge density,
+  added after this bullet was written) instead, confirmed live: plan 1 failed
+  at 320 and passed at 480 with no content change. A ratio reformulation was
+  measured and proven unable to fix a verdict at a floor fixed at 0 (a
+  sign-preserving transform). Fixed at the decision-rule level instead: a
+  failure at 320 is now confirmed with one render at 480 before it is
+  reported, and only counts if it fails both (`FOCAL_CONFIRM_TARGET`,
+  `tools/build_plan.py`). This is resolution-*confirmed*, not
+  resolution-*invariant* -- a defect visible only at some third resolution
+  neither 320 nor 480 would still slip through, named honestly in that
+  section rather than claimed away.
 - **Furniture screen spread** now has an owner for its *closest pair* (0.045,
   bracketed by measurement) but the mean-spread floor of 0.15 is still close to
   the original guess. It has never rejected anything the closest-pair floor did
@@ -4568,3 +4579,163 @@ see that, and none should be invented to: "is it the shape I asked for" is
 the human tier this repo has always said is the whole point. One clean, one
 correctly rejected, one that needs a person to look at it is an honest first
 result for a category that had nothing in it an hour ago.
+
+---
+
+## Focal detail: resolution-confirmed, not resolution-invariant
+
+The "Still open" list has carried one line unchanged since the sixth pass:
+contrast is a percentile spread, it falls with render resolution in generated
+rooms, the scan and the suite check grade at 320 while the shipped render is
+480, and the gap is "stated rather than tuned away." Re-measuring it end to
+end, on current code, found the original claim had quietly stopped being
+true and a different one had taken its place under the same name.
+
+### Contrast healed; nobody re-checked it
+
+Re-swept the sixth pass's own 160/320/480 table on today's code, across the
+suite check's own four-room sample (`check_focal_contrast(n=4, seed=1)`
+picks plans 1/2/3/8 -- one wall run, one peninsula, one island, one L run)
+plus the reference room:
+
+| room | 160 | 240 | 320 | 400 | 480 |
+|---|---|---|---|---|---|
+| reference | +0.178 | +0.133 | +0.133 | +0.133 | +0.133 |
+| plan 1, wall run | +0.146 | +0.101 | +0.101 | +0.101 | +0.101 |
+| plan 2, peninsula | +0.101 | +0.101 | +0.101 | +0.101 | +0.087 |
+| plan 3, island | +0.146 | +0.146 | +0.146 | +0.126 | +0.101 |
+| plan 8, L run | +0.138 | +0.146 | +0.101 | +0.101 | +0.101 |
+
+Every reading stays at least 0.047 clear of the 0.030 floor -- most 3-6x
+clear -- across the whole range. The sixth pass's steep collapse (seed 3:
++0.084 at 160 down to +0.014 at 480, nearly touching the floor) is gone.
+Nothing in this pass targeted contrast: the hull-clipped focal region, the
+wall shelf/sign dressing and the back-counter height/lamp retune (all landed
+since, for unrelated reasons) each changed how much of the frame is counter
+versus periphery, and between them the metric stopped being marginal. One
+softer signal survives -- plan 11's contrast margin compresses 0.087 to 0.047
+from 320 to 480 in the twelve-plan sample below, real but nowhere near
+crossing -- worth naming rather than rounding off. An unrelated set of
+composition fixes closed the measurement gap this bullet described, and it
+was never revisited to check.
+
+### The same mechanism moved to detail
+
+`check_focal_contrast`'s third reading -- edge density, added in the eighth
+pass, after this bullet was already written -- inherited exactly the
+resolution sensitivity contrast was measured to have and then apparently
+lost. Same rooms, same sweep, the detail LEAD (`di - do` from
+`render_room.focal_report`):
+
+| room | 160 | 240 | 320 | 400 | 480 |
+|---|---|---|---|---|---|
+| reference | +0.116 | +0.103 | +0.096 | +0.080 | +0.071 |
+| plan 1, wall run | +0.003 | +0.001 | −0.002 | −0.005 | +0.001 |
+| plan 8, L run | +0.107 | +0.071 | +0.064 | +0.056 | +0.044 |
+| plan 10, wall run | +0.022 | −0.013 | −0.011 | −0.010 | −0.013 |
+
+Every room's detail lead shrinks with resolution, the hand-authored
+reference room included (+0.116 to +0.071, −39% relative) -- this is not a
+generated-room-only effect. Confirmed directly against the live suite:
+`build_plan.py --focal-scan 12` at 320 (today's default) reads **2 of 12
+fail**; the identical twelve plans at 480 read **1 of 12**. Plan 1 is the
+difference -- −0.002 at 320 (FAIL, floor 0.0), +0.001 at 480 (pass) -- same
+seed, same dressing, same lighting, only the render target changed. That is
+the exact failure mode the original bullet described, on the metric that
+replaced the one it was written about. `manifest.py --check`'s own
+`check_focal_contrast()` (the fast suite gate, not just the deep scan) was
+already carrying this as a documented, accepted case -- NEXT.md's gate
+section names it directly ("`check_focal_contrast` fails plan 1 (wall run)
+by −0.002") -- so this was not a hypothetical, it was live in both gates.
+
+### A ratio reformulation was measured and rejected
+
+The natural fix for "a lead shrinks toward zero as resolution grows" is to
+normalize it: `(di - do) / (di + do)` instead of the raw difference, so a
+shrink common to both operands cancels. Swept alongside the raw numbers,
+same four rooms:
+
+| room | 160 | 240 | 320 | 400 | 480 |
+|---|---|---|---|---|---|
+| reference (norm) | +0.124 | +0.123 | +0.128 | +0.119 | +0.117 |
+| plan 1 (norm) | +0.002 | +0.003 | −0.003 | −0.008 | +0.002 |
+| plan 8 (norm) | +0.119 | +0.092 | +0.094 | +0.088 | +0.077 |
+| plan 10 (norm) | +0.026 | −0.019 | −0.018 | −0.018 | −0.026 |
+
+It works exactly as advertised for rooms that are not marginal: the
+reference room's relative range across 160-480 drops from 39% (raw) to 9%
+(normalized); plan 8's drops from 59% to roughly half that. It does nothing
+for plan 1's flip, or for any flip at a floor fixed at exactly 0 --
+`sign(a - b) == sign((a - b) / (a + b))` whenever `a + b > 0`, algebraically,
+so a sign-preserving transform of the statistic cannot move a room to the
+other side of a zero floor. Confirmed on the numbers, not just the algebra:
+plan 1's normalized lead is +0.002 / +0.003 / **−0.003** / −0.008 / +0.002 --
+it flips at the same targets as the raw lead, just with smaller digits. A
+real result and a genuine non-fix, recorded so the next pass does not
+re-propose it.
+
+### Why: the renderer, not the statistic
+
+Both `shade_toon`'s ordered dither (`pixelize.py`, `DITHER_LO/HI = 0.36,
+0.64`) and `mesh.py`'s world-space surface grain (`GRAIN_BY_RAMP`, 0.3-0.85
+of a ramp step) perturb the lambert value by an amount capped below one ramp
+step, with a footprint that is fixed in **world** units -- a dither band
+tied to the light geometry, a grain lattice tied to the material. The
+raster's `downsample_modal` (`factor=3`, constant regardless of target)
+resolves a perturbation once the real-world size of one output pixel
+(`camera span / target`) shrinks below that footprint's width; below that
+threshold the perturbation is outvoted by its neighbours and the surface
+reads flat. Raising `target` shrinks every output pixel's world footprint,
+so the same fixed-size dither/grain band crosses from "outvoted" to
+"resolved" at a different target for a large flat surface (the counter) than
+for the many small objects a busy periphery is made of -- which is exactly
+the asymmetry measured, on both contrast (originally) and detail (now).
+
+More resolution genuinely reveals more real, palette-quantized detail,
+unevenly between zones. That is correct rendering behaviour, not a bug, and
+no reformulation of a screen-space pixel statistic removes it -- the fix
+would have to grade composition off world-space material samples instead of
+raster pixels, immune to how many pixels a surface happens to occupy. That
+is a rearchitecture of what the check measures, not a tuning pass, and it is
+scoped and left for a future pass the same way the fifth topology and the
+style LoRA were.
+
+### The fix: confirm, don't normalize
+
+Since the number cannot be made resolution-invariant, the VERDICT is made
+resolution-independent a different way: a room that fails at `FOCAL_TARGET`
+(320) gets one confirming render at `FOCAL_CONFIRM_TARGET` (480 --
+`render_room.py`'s and this file's own delivery default), and is only
+reported if it fails at **both**. A room that passes at 320 never pays for
+the second render, so the common case (10 of 12 rooms) costs nothing extra;
+only actual failures do, and there are at most a handful per run.
+
+Verified on the live suite, both gates:
+
+```
+tools/build_plan.py --focal-scan 12
+  ...
+  plan  1  wall run   L +0.040  C +0.101  D -0.002   ok   RESCUED at 480 (L +0.039 C +0.101 D +0.001)
+  ...
+  plan 10  wall run   L +0.031  C +0.101  D -0.011   FAIL
+  ...
+  1 of 12 rooms fail the focal floors (8%), 1 rescued by the 480 confirmation
+```
+
+`check_focal_contrast()` -- the function `manifest.py --check` actually
+calls, n=4, picking plans 1/2/3/8 -- now returns **zero** messages, closing
+the case NEXT.md's gate section carried as an accepted failure. Plan 10, the
+one defect in the sample that is real (negative at every resolution from 240
+through 480, not just 320), still fires in both the scan and a direct call
+to `check_focal_contrast(seed=10, n=1)` -- the confirmation catches the
+resolution-dependent false positive without spending the real one a pass.
+Proof renders: `proof/focal_plan1_320.png` vs `proof/focal_plan1_480.png`
+(same room, the flip), `proof/focal_plan10_320.png` vs
+`proof/focal_plan10_480.png` (same room, still failing both ways).
+
+**Left honestly incomplete:** this is confirmation, not invariance. A room
+whose defect only shows up at some third resolution neither 320 nor 480
+would still slip through -- the fix trades "wrong at whichever resolution
+you happened to pick" for "wrong only if two specific, load-bearing
+resolutions agree it's wrong," which is the practical claim the delivered
+game actually needs, not the abstract one this bullet originally asked for.
