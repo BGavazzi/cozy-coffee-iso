@@ -299,15 +299,30 @@ measured. Re-running `factory.py subjects_c1.yaml` is the way to settle it.
 **The calibration backlog is untouched across all four passes, not
 forgotten** — see `ART_CRITIQUE.md`'s most recent "Still open" list: counter
 orientation (0.04 focal-lead cost), the focal-reading-falls-with-resolution
-gap, furniture screen spread's possibly-redundant floor, and the detail
-floor's 0.010-wide bracket. None of the four passes touched a generator,
-check, or threshold in the sprite/room pipeline, so check these before
-assuming anything moved.
+gap, and the detail floor's 0.010-wide bracket. None of the four passes
+touched a generator, check, or threshold in the sprite/room pipeline, so
+check these before assuming anything moved.
+
+**Furniture screen spread's possibly-redundant floor is resolved** (branch
+`spread-floor-audit`): not redundant, floor stays at 0.15. Write-up:
+`ART_CRITIQUE.md`, "The screen-spread floor's redundancy question, closed
+with a real generator instead of synthetic noise". Found along the way and
+worth its own item: `assetlib.fridge_under` and `assetlib.tip_jar` both take
+a `seed` and never read it inside their body — every seed renders the
+identical mesh, measured 0.0% mean and 0.0% closest-pair spread. Neither is
+in `art_review.GENERATORS`, so nothing currently gates it; `check_generator_range`
+covers 15 of the 24 seeded builders in `assetlib.py`. Not fixed here — wiring
+two generators' randomness and deciding whether to widen `GENERATORS` to the
+other 9 seeded builders (`leafy_plant`, `succulent`, `book_stack`,
+`pastry_plate`, `bean_sack`, `wall_art_framed`, `plant_hanging`, plus the two
+above) is a separate task from the floor question this branch answered.
 
 ---
 
-**The list below (A1, B1, C1, C2, D1, B2) is done and written up in
-`ART_CRITIQUE.md`.** One-line status:
+**The list below (A1, B1, C1, C2, D1) is done and written up in
+`ART_CRITIQUE.md`; B2 is done too, written up in its own bullet below
+instead (the `galley-multicounter` PR, not yet folded into
+`ART_CRITIQUE.md`).** One-line status:
 
 - A1 key-light drift — diagnosed: `camera_light()` is correctly per-azimuth;
   the check's own fix message was wrong and is now corrected. Measurement
@@ -324,10 +339,70 @@ assuming anything moved.
   2.2x wall run's, weak -0.245 correlation with detail within L run) but a
   direct counter-example (plan 38: largest box, near-best detail) rules it
   out as a sufficient explanation. Left open, one layer deeper than before.
-- B2 double-run topology — scoped correctly this time and NOT built: 8
-  places in `build_plan.py` consume `plan.of("service")`/`plan.of("backbar")`,
-  4 hard-coded to `[0]`. A naive build renders one lit counter and one bare
-  one. Real cost is a `build_plan.py` audit, left for a dedicated pass.
+- B2 double-run (galley) topology — built. The audit found every `[0]` site
+  named plus one the earlier scoping pass missed (`main()`'s own inlined
+  copy of `focal_box`), and each needed a genuinely different fix rather
+  than one "loop it" patch: `light_rig` sums pools per run and ranks dark
+  corners by distance to the NEAREST run; `build()`'s whole counter-fill
+  section (kit, back counter, back bar shelving, menu boards, counter-top
+  clutter) moved inside a `for run_idx, run in enumerate(runs)` loop, paired
+  with its own back bar by list position; `_people()` places a barista and
+  a queue per run, splitting the roster instead of every queue drawing the
+  same two customers. N==1 verified byte-identical first: the 12-plan focal
+  scan's L/C/D readings matched the pre-refactor run to three decimals,
+  topology for topology, including both documented failures, BEFORE the
+  galley branch was added to `floorplan.generate()`.
+  Galley's own proposal-level acceptance rate is 76.5% (17 tried, 13 kept
+  over 400 seeds) — inside the other four's 56–77% range, so the branch
+  isn't fighting its own constraints. Its SHARE of `generate()`'s output is
+  lower (13/400, 3.2%) than the other four (14–35%), but that is its lower
+  draw probability (0.22, same as island) times "first proposal to pass
+  wins" starving a rarer branch of turns, not poor tuning — `check_plan_range`
+  and `check_generated_plans(40)` both still read clean.
+  Verification caught one real bug: kit items (espresso machine, grinder,
+  register) on the mirrored far run floated with nothing underneath them.
+  Every existing topology's kit placement anchors near the wall and trusts
+  the mesh to extend toward the customer from there; a mirrored run's wall
+  is on the opposite (high-coordinate) edge, so the same anchor pushed the
+  item's bulk past the counter into open floor. Fixed with the same
+  centre-and-rotate technique the counter modules already needed, anchored
+  to the run's own depth midpoint instead of a wall-relative offset.
+  One real, left-open finding: `focal_box` unions every service/backbar/
+  service_return zone, which for a galley spans the ENTIRE room depth (both
+  runs are on opposite walls) rather than a strip near one. Over the 12-plan
+  scan this reads as designed on contrast (all 3 galley plans clear +0.045,
+  floor +0.030) but weak on mean L (2 of 3 fail: -0.012, -0.019, sole pass
+  +0.031) and weaker still on detail (3 of 3 fail: -0.019, -0.042, -0.013)
+  — so all 3 galley plans miss at least one floor, a 100% fail rate over
+  the topology's only 3 occurrences in the sample. Widened to a 40-plan
+  scan to see if a bigger sample would soften this: it didn't — no new
+  galley seed appeared in plans 13-40 (13/400 ≈ 3.2% share means ~1-2
+  expected over 28 more plans, so 0 is unlucky but not alarming on its
+  own), and the 3 existing galley plans reproduced their 12-plan numbers
+  exactly, still 3/3 failing. The other four topologies' 40-plan fail rates
+  — wall run 1/12, peninsula 1/13, island 1/6, L run 2/6 — sit in the same
+  band as their known pre-existing baseline noise (e.g. plan 10's -0.011,
+  corrected in this pass from a stale -0.002); galley's 3/3 is categorically
+  different, a structural miss tied to focal_box's box size, not scan luck.
+  This is very likely D1's box-size-vs-detail relationship, now much more
+  pronounced because a galley's box is a genuine two-counter union rather
+  than one wide L run — not fixed here, because loosening `MIN_FOCAL_L`/
+  `MIN_FOCAL_DETAIL` to admit it would be tuning the instrument to the
+  answer. `check_focal_contrast`'s `n` moved 4→5 instead, so galley enters
+  the "one room per topology" suite check rather than being silently
+  skipped by scan order (at seed=1 it now sorts ahead of wall run in the
+  scan, which would otherwise have dropped wall run from the sample
+  instead) — `manifest.py --check` now reports galley's L/detail miss
+  alongside the two already-documented failures, honestly rather than
+  quietly.
+  Rendered and viewed both orientations: `proof/galley_room.png` (seed 8,
+  horizontal) and `proof/galley_room_vertical.png` (seed 12, vertical) —
+  the vertical one reads clean at a glance, both counters staffed and lit
+  with seating between them; the horizontal one's far counter visibly reads
+  flatter, consistent with the finding above. Neither is "one lit counter
+  and one bare one" — `check_built_rooms`-equivalent checks (collisions,
+  grounded, seating-faces-tables, screen occlusion) are clean across all 13
+  galley seeds found in the first 400.
 
 Kept below as a record, not an open queue. Read `ART_CRITIQUE.md`'s final
 "Still open" section before touching anything that produces art — it is a
