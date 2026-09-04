@@ -185,7 +185,7 @@ materials:
   # One step down from bare wood -- not a colour choice, a value choice, so the
   # floor is the quietest surface everything else is measured up from.
   floor_field: wood-1
-  # tools/tileset.py's wall skirting/chair-rail/batten (PR #37). `wood-1` and
+  # tools/tileset.py's wall skirting/chair-rail/batten (PR #38). `wood-1` and
   # `wood-2` are the literal tokens `wall_panel()`/`wall_plain()` hardcoded
   # before this pack's own `materials:` was wired to supply them -- unchanged
   # here, since this style's own check_collapse already passed against these

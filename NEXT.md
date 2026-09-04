@@ -1245,7 +1245,7 @@ landed the same way one PR earlier (#36, above).
 
 ---
 
-**Landed (PR #38, stacked on #37): the import-order blocker solved for real,
+**Landed (PR #38, stacked on #31): the import-order blocker solved for real,
 scoped to the one place with a measured defect -- `tools/tileset.py`'s wall
 trim -- not the much larger `assetlib.py`/`character.py` version of the same
 problem.** PR #29 found `wall_panel_x`/`wall_plain_x` failing `check_collapse`

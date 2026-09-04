@@ -20,7 +20,7 @@ schema `style_bible.yaml` already used (`art_direction` / `palette` /
     materials:  semantic role -> material token. Replaces `assetlib.py`'s
                 WOOD/CERAMIC/GLASS/... constants, which today hardcode this
                 palette's literal ramp names. Still NOT WIRED into
-                `assetlib.py`/`character.py` themselves (PR #37 did not
+                `assetlib.py`/`character.py` themselves (PR #38 did not
                 touch either) -- see their module docstrings for why
                 (function default arguments bind at *def* time, before any
                 `--style` flag has been parsed, so switching them needs
@@ -30,7 +30,7 @@ schema `style_bible.yaml` already used (`art_direction` / `palette` /
                 `tools/tileset.py` is the one consumer that DOES read
                 `materials:` live now, call-time-resolved rather than
                 def-time-bound, for the two roles (`wall_trim`,
-                `wall_trim_shadow`) added in PR #37 to fix a real, measured
+                `wall_trim_shadow`) added in PR #38 to fix a real, measured
                 `check_collapse` failure under `snes_rpg` -- see that file's
                 `make_wall_patterns` for the mechanism and why it was chosen
                 over the args-peek alternative.
@@ -68,7 +68,7 @@ DEFAULT_STYLE = "cozy_ghibli"
 # fails loudly at load time rather than silently rendering through whatever a
 # stale default happens to point at.
 #
-# `wall_trim`/`wall_trim_shadow` are the two newest roles (PR #37), not from
+# `wall_trim`/`wall_trim_shadow` are the two newest roles (PR #38), not from
 # assetlib.py at all -- they're tools/tileset.py's wall skirting/chair-rail/
 # batten tokens (previously the literal WOOD + "-1"/"-2" this file's own
 # `materials:` block was built to replace). Same idiom as `wall_field`/

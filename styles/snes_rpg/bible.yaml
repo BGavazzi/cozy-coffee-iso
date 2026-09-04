@@ -142,7 +142,7 @@ materials:
   glass_edge: sky
   wall_field: cream-2
   floor_field: wood-1
-  # wall_trim/wall_trim_shadow (PR #37): tools/tileset.py's wall skirting,
+  # wall_trim/wall_trim_shadow (PR #38): tools/tileset.py's wall skirting,
   # chair rail and batten. `cozy_ghibli` uses wood-1/wood-2 for these and
   # they separate cleanly there, so PR #29's `--style snes_rpg` pass carried
   # the same two literal tokens forward unexamined -- and they collide.
