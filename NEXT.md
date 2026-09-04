@@ -287,6 +287,37 @@ done.** They landed as two separate PRs against roughly the same base, so:
   `MIN_FILL`'s error in a better disguise. Recorded as a warning-grade
   signal; any future attempt must clear the overlap table in
   `ART_CRITIQUE.md`, "Answering that question", not just a correlation.
+- **`fridge_under` and `tip_jar` fixed; `check_generator_range`'s `GENERATORS`
+  widened from 15 to 24 seeded builders, each decision measured rather than
+  assumed.** Found in passing while bracketing `DEFAULT_SPREAD_FLOOR`
+  (`spread-floor-audit`, unmerged as of this branch): `assetlib.fridge_under`
+  and `assetlib.tip_jar` both took a `seed` parameter and never read it in the
+  body — every seed rendered the identical mesh (measured 0.0% mean, 0.0%
+  closest-pair spread). Both now vary geometry the same way their file's
+  other seeded generators do (`fridge_under`: handle position/length, plinth
+  height; `tip_jar`: coin-fill height, jar radius, label-band height).
+  `GENERATORS` covered 15 of the file's 24 seeded builders; the other 9 —
+  `leafy_plant`, `succulent`, `book_stack`, `pastry_plate`, `bean_sack`,
+  `wall_art_framed`, `plant_hanging`, plus the two fixed above — were each
+  rendered across six independent 8-seed windows and run through the check's
+  own spread math before deciding. Four (`leafy_plant`, `succulent`,
+  `book_stack`, `plant_hanging`) clear both default floors with wide margin,
+  added unconditionally. Five are real but small by design — `pastry_plate`
+  (pastry radius only, ±3%), `bean_sack` (base radius only, ±4%),
+  `fridge_under` and `tip_jar` (the fix above), `wall_art_framed` (a 4-way
+  categorical hue pick whose closest pair is 0.0% in every window by the
+  pigeonhole principle, not by defect) — each added with an `own` floor
+  bracketed against 0.0% (what the fixed bug actually measured) rather than
+  excluded outright, following `counter`'s existing exemption pattern.
+  Verified failable both ways: all five `own`-gated generators, simulated
+  with the exact pre-fix bug (seed pinned regardless of loop index), measured
+  0.0% and were caught; the shipped, fixed code passes clean,
+  `check_generator_range()` returns zero findings. `tools/manifest.py
+  --check` and `tools/build_plan.py --focal-scan 12` verified byte-identical
+  pass/fail against `origin/main` via `git stash`, both directions. Proof:
+  `proof/generators.png`, regenerated with all 24 rows. Write-up:
+  `ART_CRITIQUE.md`, "`fridge_under` and `tip_jar`: a seed parameter that did
+  nothing, and nine generators put through the same measurement".
 
 **Not yet started**: no subject in `subjects_c1.yaml` (or any shipped
 subject list) actually uses a reference image yet -- this built and
