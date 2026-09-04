@@ -59,6 +59,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+from style import DEFAULT_STYLE, load_style  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 UI_DIR = ROOT / "out" / "ui"
@@ -556,7 +557,7 @@ def _check(px, w: int, h: int, ramps) -> tuple[list[str], float, float]:
     return out, ratio, rep["pixels"] / float(w * h)
 
 
-def build(name: str, scale: float, ramps: dict) -> dict:
+def build(name: str, scale: float, ramps: dict, out_dir: Path | None = None) -> dict:
     fn, insets = CHROME[name]
     c = fn(scale)
     result = {"name": name, "ok": True, "detail": "", "procedural": True,
@@ -574,11 +575,12 @@ def build(name: str, scale: float, ramps: dict) -> dict:
     for msg in msgs:
         result["ok"] = False
         result["detail"] += msg + "; "
-    UI_DIR.mkdir(parents=True, exist_ok=True)
+    out_dir = out_dir or UI_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
     from PIL import Image
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     img.putdata([(p[0], p[1], p[2], 255) if p else (0, 0, 0, 0) for p in px])
-    img.save(UI_DIR / f"{name}.png")
+    img.save(out_dir / f"{name}.png")
     return result
 
 
@@ -588,10 +590,15 @@ def main() -> int:
     ap.add_argument("--target", type=int, default=64,
                     help="size of a square piece in px (default 64); "
                          "rectangular pieces scale by the same factor")
+    ap.add_argument("--style", default=DEFAULT_STYLE,
+                    help="which style pack's palette to draw against")
     args = ap.parse_args()
 
     from pixelize import load_palette
-    ramps = load_palette()
+    style = load_style(args.style)
+    ramps = load_palette(style.palette_path)
+    ui_dir = (UI_DIR if args.style == DEFAULT_STYLE
+             else UI_DIR.parent / f"ui_{args.style}")
     scale = args.target / 64.0
 
     wanted = list(CHROME)
@@ -605,7 +612,7 @@ def main() -> int:
 
     results = []
     for name in wanted:
-        r = build(name, scale, ramps)
+        r = build(name, scale, ramps, out_dir=ui_dir)
         results.append(r)
         tag = "OK" if r["ok"] else "FAIL"
         nine = f"  nine-slice {r['nine_slice']}" if "nine_slice" in r else ""
@@ -616,12 +623,12 @@ def main() -> int:
 
     nine = {r["name"]: r["nine_slice"] for r in results if "nine_slice" in r}
     if nine:
-        (UI_DIR / "nine_slice.json").write_text(json.dumps(nine, indent=2),
+        (ui_dir / "nine_slice.json").write_text(json.dumps(nine, indent=2),
                                                 encoding="utf-8")
-    (UI_DIR / "chrome_report.json").write_text(json.dumps(results, indent=2),
+    (ui_dir / "chrome_report.json").write_text(json.dumps(results, indent=2),
                                                encoding="utf-8")
     ok = sum(1 for r in results if r["ok"])
-    print(f"\n{ok}/{len(results)} chrome pieces -> {UI_DIR}")
+    print(f"\n{ok}/{len(results)} chrome pieces -> {ui_dir}")
     return 0 if ok == len(results) else 1
 
 
