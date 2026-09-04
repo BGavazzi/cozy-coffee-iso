@@ -299,10 +299,23 @@ measured. Re-running `factory.py subjects_c1.yaml` is the way to settle it.
 **The calibration backlog is untouched across all four passes, not
 forgotten** — see `ART_CRITIQUE.md`'s most recent "Still open" list: counter
 orientation (0.04 focal-lead cost), the focal-reading-falls-with-resolution
-gap, furniture screen spread's possibly-redundant floor, and the detail
-floor's 0.010-wide bracket. None of the four passes touched a generator,
-check, or threshold in the sprite/room pipeline, so check these before
-assuming anything moved.
+gap, and the detail floor's 0.010-wide bracket. None of the four passes
+touched a generator, check, or threshold in the sprite/room pipeline, so
+check these before assuming anything moved.
+
+**Furniture screen spread's possibly-redundant floor is resolved** (branch
+`spread-floor-audit`): not redundant, floor stays at 0.15. Write-up:
+`ART_CRITIQUE.md`, "The screen-spread floor's redundancy question, closed
+with a real generator instead of synthetic noise". Found along the way and
+worth its own item: `assetlib.fridge_under` and `assetlib.tip_jar` both take
+a `seed` and never read it inside their body — every seed renders the
+identical mesh, measured 0.0% mean and 0.0% closest-pair spread. Neither is
+in `art_review.GENERATORS`, so nothing currently gates it; `check_generator_range`
+covers 15 of the 24 seeded builders in `assetlib.py`. Not fixed here — wiring
+two generators' randomness and deciding whether to widen `GENERATORS` to the
+other 9 seeded builders (`leafy_plant`, `succulent`, `book_stack`,
+`pastry_plate`, `bean_sack`, `wall_art_framed`, `plant_hanging`, plus the two
+above) is a separate task from the floor question this branch answered.
 
 ---
 

@@ -3495,14 +3495,129 @@ through two separate implementations.
   37 quantized lightness levels. The scan and the suite check now at least
   grade at the same 320; the delivered render is 480 and the gap is stated
   rather than tuned away.
-- **Furniture screen spread** now has an owner for its *closest pair* (0.045,
+- ~~**Furniture screen spread** now has an owner for its *closest pair* (0.045,
   bracketed by measurement) but the mean-spread floor of 0.15 is still close to
   the original guess. It has never rejected anything the closest-pair floor did
-  not also reject, which is either redundancy or a floor set too low to fire.
+  not also reject, which is either redundancy or a floor set too low to fire.~~
+  **Resolved, not redundant.** Widening the survey from the 15 generators
+  `check_generator_range` gates to all 24 seeded builders in `assetlib.py`
+  found no case, on anything currently shipped, where the mean floor fires
+  and the closest-pair floor does not. Degrading the real `bookshelf`
+  generator on two independent axes did: silent at 15.4%, fires at 14.8%, a
+  measured 0.6-point bracket either side of 0.15. See "The screen-spread
+  floor's redundancy question, closed with a real generator instead of
+  synthetic noise" below.
 - **The detail floor's bracket is 0.010 wide.** Three measured defects at
   −0.005 to −0.009 against a weakest good room at +0.005. It is the tightest
   floor in the suite and the first one whose margin is smaller than the
   difference between two adjacent rooms.
+
+---
+
+# The screen-spread floor's redundancy question, closed with a real generator instead of synthetic noise
+
+The earlier close of this ("The mean spread floor: never fired is not the
+same question as redundant", above) settled it with 2000 synthetic pixels
+flipped at random -- a valid argument in principle, but not a shape anything
+in this repo ships, and the "Still open" list kept restating the question
+afterward anyway, floor number and all, because nothing tied the resolution
+back to the bullet. This closes it with the shipped `bookshelf` generator
+itself, degraded on purpose, and with the survey widened past the 15
+generators `check_generator_range` actually gates.
+
+## The full library, not just the 15 that are checked
+
+`check_generator_range` iterates `art_review.GENERATORS`, 15 entries.
+`assetlib.py` has 24 functions taking a `seed`; nine were never folded in --
+`leafy_plant`, `succulent`, `fridge_under`, `tip_jar`, `book_stack`,
+`pastry_plate`, `bean_sack`, `wall_art_framed`, `plant_hanging`. Running the
+same measurement `check_generator_range` uses (mean and closest-pair screen
+spread, 8 seeds) over all 24:
+
+| generator | mean | closest | mean fires (0.15) | closest fires (0.045) |
+|---|---|---|---|---|
+| `fridge_under` | 0.0% | 0.0% | fires | fires |
+| `tip_jar` | 0.0% | 0.0% | fires | fires |
+| `bean_sack` | 6.9% | 1.0% | fires | fires |
+| `pastry_plate` | 7.0% | 2.1% | fires | fires |
+| `counter` | 7.5% | -- | (own floor 0.04, clears) | exempt, own floor |
+| `wall_art_framed` | 36.5% | 0.0% | clears | **fires** |
+| `bookshelf` | 18.4% | 15.9% | clears | clears |
+| remaining 16 | 20.1%-91.2% | 5.2%-45.7% | clear | clear |
+
+Two findings outside the question asked, worth recording rather than quietly
+fixed: `fridge_under` and `tip_jar` both measure 0.0% on both floors because
+neither builder's body calls its own `rnd()` -- the `seed` parameter is
+accepted and never read. That is a real defect, and this floor gets no credit
+for it, because neither generator was ever in the set it runs against. Left
+for a follow-up in `NEXT.md` rather than fixed here -- wiring two generators'
+randomness is a different task than the one this section answers.
+`wall_art_framed` reproduces the expected *opposite* case from the original
+"Still open" note above (`proof/spread_floor_ungated.png`): mean 36.5%, closest
+0.0%, the closest-pair floor catching a defect the average washes out. On the
+question actually asked -- restricted to everything currently gated or
+gateable -- the mean floor still never fires alone on the shipped library.
+
+## "Never fired on the library" still isn't "cannot fire"
+
+Bracketing it the way the closest-pair floor was bracketed means building a
+defect, not describing one abstractly. Two independent knobs on the real
+`bookshelf` generator, both plausible regressions rather than synthetic
+noise: shrinking the amplitude of its own `rnd()` calls toward their midpoint
+(a variance leak), and truncating its spine palette (a material-variety
+collapse). Both run through the shipped `_books` helper unmodified -- these
+are real frames, not stand-ins. `proof/spread_floor_bracket.png`:
+
+| variant | mean | closest | mean fires | closest fires |
+|---|---|---|---|---|
+| bookshelf, shipped | 18.4% | 15.9% | | |
+| amplitude k=0.40 | 15.9% | 11.1% | | |
+| amplitude k=0.35 | 15.4% | 10.6% | | |
+| amplitude k=0.30 | 14.8% | 9.3% | **fires** | |
+| amplitude k=0.20 | 11.2% | 5.8% | **fires** | |
+| amplitude k=0.10 | 10.8% | 5.3% | **fires** | |
+| 3 of 10 spine colours | 15.2% | 11.6% | | |
+| 2 of 10 spine colours | 12.8% | 8.9% | **fires** | |
+| 1 of 10 spine colours | 5.8% | 3.0% | **fires** | **fires** |
+
+The floor sits exactly where the amplitude sweep crosses: k=0.35 (15.4%) is
+silent, k=0.30 (14.8%) fires, and 0.15 sits in the **0.6-point gap** between
+them -- tighter than the closest-pair floor's 2.3-point bracket, but real on
+both sides, held to the same standard the detail floor's 0.010-wide bracket
+was. The spine axis gives a second, independent bracket agreeing with the
+first rather than merely not contradicting it: silent at 3 of 10 (15.2%),
+fires at 2 of 10 (12.8%), 2.4 points wide.
+
+At both crossings the closest-pair floor stays silent -- 9.3% and 8.9%, both
+comfortably over 4.5% -- until the degradation is severe enough that both
+floors agree (1 of 10 spines: mean 5.8%, closest 3.0%). That is four separate
+constructed cases (k=0.30, k=0.20, k=0.10, 2-of-10 spines) where the mean
+floor catches a regression the closest-pair floor's own arithmetic cannot
+see by construction: closest pair only ever looks at the two most similar
+frames, and a generator whose whole population has drifted toward the middle
+can keep those two frames comfortably apart while every *other* pair has
+collapsed with them. `proof/spread_floor_bracket.png` shows this by eye --
+the shipped and k=0.40 rows carry cool colours (teal, sky-blue) the k=0.30
+row has lost almost entirely, eight columns of the same warm rose-brown.
+
+## Verdict: not redundant, floor unchanged
+
+**Set too low to fire** would mean 0.15 is loose, missing real regressions on
+the current library. It isn't: nothing in the shipped 24-generator library
+sits between 0.045 and 0.15 doing something both floors should have caught,
+and raising the floor would make it fire on `bookshelf`'s own shipped output
+(18.4%) before anything is actually wrong -- the same mistake this file has
+already made once tuning the *other* floor too tight, one level up.
+
+**Redundant** would mean the mean floor never disagrees with the closest-pair
+floor on anything real or realistic. It does, four separate times, on a
+generator this repo ships, degraded two independent and plausible ways. A
+redundant floor cannot do that by construction.
+
+The floor stays at **0.15**. The reason it has never fired on the real
+library is now demonstrated rather than assumed: not because it can't, but
+because none of the 24 generators currently ship the "differs a little, none
+differs much" failure it exists to catch.
 
 ---
 
