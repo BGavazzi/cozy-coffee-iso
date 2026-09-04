@@ -287,10 +287,11 @@ done.** They landed as two separate PRs against roughly the same base, so:
   `MIN_FILL`'s error in a better disguise. Recorded as a warning-grade
   signal; any future attempt must clear the overlap table in
   `ART_CRITIQUE.md`, "Answering that question", not just a correlation.
-- **`fridge_under` and `tip_jar` fixed; `check_generator_range`'s `GENERATORS`
-  widened from 15 to 24 seeded builders, each decision measured rather than
-  assumed.** Found in passing while bracketing `DEFAULT_SPREAD_FLOOR`
-  (`spread-floor-audit`, unmerged as of this branch): `assetlib.fridge_under`
+- **Landed (PR #43): `fridge_under` and `tip_jar` fixed;
+  `check_generator_range`'s `GENERATORS` widened from 15 to 24 seeded
+  builders, each decision measured rather than assumed.** Found in passing
+  while bracketing `DEFAULT_SPREAD_FLOOR` (PR #40, `spread-floor-audit`,
+  unmerged as of this branch): `assetlib.fridge_under`
   and `assetlib.tip_jar` both took a `seed` parameter and never read it in the
   body — every seed rendered the identical mesh (measured 0.0% mean, 0.0%
   closest-pair spread). Both now vary geometry the same way their file's
