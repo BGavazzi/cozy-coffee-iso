@@ -19,12 +19,21 @@ schema `style_bible.yaml` already used (`art_direction` / `palette` /
 
     materials:  semantic role -> material token. Replaces `assetlib.py`'s
                 WOOD/CERAMIC/GLASS/... constants, which today hardcode this
-                palette's literal ramp names. NOT YET WIRED into assetlib.py
-                -- see the module docstring there for why (function default
-                arguments bind at *def* time, before any `--style` flag has
-                been parsed, so switching them needs either an early args-peek
-                or converting every default to a lazy lookup; that is real,
-                separate work, not done here).
+                palette's literal ramp names. Still NOT WIRED into
+                `assetlib.py`/`character.py` themselves (PR #37 did not
+                touch either) -- see their module docstrings for why
+                (function default arguments bind at *def* time, before any
+                `--style` flag has been parsed, so switching them needs
+                either an early args-peek or converting every default to a
+                lazy lookup, across well over a hundred call sites that, per
+                PR #20, do not currently need it -- real, separate work).
+                `tools/tileset.py` is the one consumer that DOES read
+                `materials:` live now, call-time-resolved rather than
+                def-time-bound, for the two roles (`wall_trim`,
+                `wall_trim_shadow`) added in PR #37 to fix a real, measured
+                `check_collapse` failure under `snes_rpg` -- see that file's
+                `make_wall_patterns` for the mechanism and why it was chosen
+                over the args-peek alternative.
     rig:        character proportions + primitive vocabulary + target
                 resolution. Recorded for `cozy_ghibli` with values identical
                 to `character.py`'s own module constants, kept in sync by
@@ -55,12 +64,23 @@ DEFAULT_STYLE = "cozy_ghibli"
 
 # assetlib.py's material-role constants, unchanged in meaning -- see that
 # module's WOOD/CERAMIC/PLANT/FABRIC/METAL/GLASS/GLASS_EDGE/WALL_FIELD/
-# FLOOR_FIELD. Every style pack must declare all nine so a missing role fails
-# loudly at load time rather than silently rendering through whatever a stale
-# default happens to point at.
+# FLOOR_FIELD. Every style pack must declare all of these so a missing role
+# fails loudly at load time rather than silently rendering through whatever a
+# stale default happens to point at.
+#
+# `wall_trim`/`wall_trim_shadow` are the two newest roles (PR #37), not from
+# assetlib.py at all -- they're tools/tileset.py's wall skirting/chair-rail/
+# batten tokens (previously the literal WOOD + "-1"/"-2" this file's own
+# `materials:` block was built to replace). Same idiom as `wall_field`/
+# `floor_field` above: a full material token (ramp name, optionally with a
+# tone offset), not a bare ramp name -- because the whole reason these two
+# roles exist is that the RIGHT offset for a given wall's lambert is a
+# per-style question, not a universal one. See tileset.py's
+# `make_wall_patterns` docstring for the defect this closed.
 REQUIRED_MATERIAL_ROLES = (
     "wood", "ceramic", "plant", "fabric", "metal",
     "glass", "glass_edge", "wall_field", "floor_field",
+    "wall_trim", "wall_trim_shadow",
 )
 
 

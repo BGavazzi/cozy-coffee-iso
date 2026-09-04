@@ -163,7 +163,7 @@ palette:
 # The semantic vocabulary tools/assetlib.py's prop builders and tools/character.py
 # author against -- what "the wood of a chair" or "a window pane" IS, not which
 # ramp happens to carry it in this palette. Every style pack must declare all
-# nine; a missing one means a prop or figure silently reads through whatever
+# of these; a missing one means a prop or figure silently reads through whatever
 # ramp a stale default points at, which is a wrong-looking room, not an error.
 # Values are material tokens as tools/pixelize.material() parses them: a ramp
 # name from `palette.ramps` above, optionally with a `+N`/`-N` tone offset.
@@ -185,6 +185,13 @@ materials:
   # One step down from bare wood -- not a colour choice, a value choice, so the
   # floor is the quietest surface everything else is measured up from.
   floor_field: wood-1
+  # tools/tileset.py's wall skirting/chair-rail/batten (PR #37). `wood-1` and
+  # `wood-2` are the literal tokens `wall_panel()`/`wall_plain()` hardcoded
+  # before this pack's own `materials:` was wired to supply them -- unchanged
+  # here, since this style's own check_collapse already passed against these
+  # exact values (verified byte-identical after the change, not just assumed).
+  wall_trim: wood-1
+  wall_trim_shadow: wood-2
 
 # --- Character rig -------------------------------------------------------
 # tools/character.py's proportions, recorded as data. NOT YET CONSUMED by
