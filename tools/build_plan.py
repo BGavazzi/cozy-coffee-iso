@@ -130,8 +130,15 @@ def light_rig(plan: F.Plan) -> LightRig:
     builds a centre, because the counter is already near the top of its ramp
     and cannot simply be brightened.
     """
-    run = plan.of("service")[0]
-    cx, cy = (run.x0 + run.x1) / 2, (run.y0 + run.y1) / 2
+    # ONE CORE AND ONE WASH PER RUN, not per plan. This is the site the last
+    # pass named when it refused to build the double-run topology: a rig keyed
+    # to `service[0]` renders one lit counter and one bare one, and the bare one
+    # is exactly as dark as the corners the negatives are there to sink. The
+    # pools are appended in the same order as before, so a one-run plan gets a
+    # byte-identical rig -- the loop body below is exactly the single-run
+    # computation the previous version did, just no longer discarded after
+    # the last run.
+    #
     # ON the counter, not half a tile in front of it. The reference room's two
     # hand-placed pools sit at y 1.20 and 1.35 over a run spanning 0.85 to
     # 1.85 -- that is its centre and a touch behind. Generalising them picked
@@ -145,12 +152,26 @@ def light_rig(plan: F.Plan) -> LightRig:
     # Perpendicular to the run, too. A vertical run's customer side is +x, and
     # a fixed +y offset slid the pool ALONG such a counter rather than across
     # it -- which is why the vertical-run rooms looked fine and hid the bug.
-    if run.facing == 0.0:
-        core, wash = (cx, cy - 0.15), (cx, cy)
-    else:
-        core, wash = (cx - 0.15, cy), (cx, cy)
-    pools = [Pool((core[0], core[1], 1.26), 2.6, 0.66),
-             Pool((wash[0], wash[1], 1.05), 4.6, 0.30)]
+    #
+    # `AWAY` is "away from the customer", by facing: 0 faces +y so its wall
+    # side is -y, 90 faces +x so its wall side is -x, and 180/270 -- the
+    # galley's far run, the first zone in this file ever built with them --
+    # are exactly those two negated. One table instead of an `if run.facing
+    # == 0.0` / `else` because that pair only ever had to distinguish two of
+    # four directions; a third branch guessing at the other two is exactly
+    # the kind of unexercised code this audit exists to not add.
+    AWAY = {0.0: (0.0, -1.0), 90.0: (-1.0, 0.0),
+            180.0: (0.0, 1.0), 270.0: (1.0, 0.0)}
+    runs = plan.of("service")
+    pools = []
+    run_centres = []
+    for run in runs:
+        cx, cy = (run.x0 + run.x1) / 2, (run.y0 + run.y1) / 2
+        run_centres.append((cx, cy))
+        ax, ay = AWAY[run.facing % 360]
+        core, wash = (cx + ax * 0.15, cy + ay * 0.15), (cx, cy)
+        pools.append(Pool((core[0], core[1], 1.26), 2.6, 0.66))
+        pools.append(Pool((wash[0], wash[1], 1.05), 4.6, 0.30))
     for t in plan.win_x:
         pools.append(Pool((t + 0.5, 0.30, 0.95), 3.0, 0.40))
     for t in plan.win_y:
@@ -169,9 +190,17 @@ def light_rig(plan: F.Plan) -> LightRig:
     for z in lit[:max(1, round(plan.w * plan.d / LAMP_AREA))]:
         pools.append(Pool(((z.x0 + z.x1) / 2, (z.y0 + z.y1) / 2, 1.24),
                           3.6, 0.62))
+    # Ranked by distance to the NEAREST run, not to a single (cx, cy). One run
+    # reduces this to exactly the old formula (the min of one element is that
+    # element), so a one-run plan's ranking is unchanged. A galley's four
+    # corners are each near one of its two runs -- there is no corner "far
+    # from the service run" the way a wall run has one -- so what the negatives
+    # actually sink for it is whichever corner is least claimed by either run,
+    # which is the honest generalisation of the same rule.
     corners = sorted(((0.4, 0.4), (plan.w - 0.4, 0.4),
                       (0.4, plan.d - 0.4), (plan.w - 0.4, plan.d - 0.4)),
-                     key=lambda c: -((c[0] - cx) ** 2 + (c[1] - cy) ** 2))
+                     key=lambda c: -min((c[0] - rcx) ** 2 + (c[1] - rcy) ** 2
+                                        for rcx, rcy in run_centres))
     # Three, not two. The reference room takes light out of three of its four
     # corners and the generated rig only did two, which leaves one corner as
     # bright as the counter and gives the eye a second place to land.
@@ -211,8 +240,15 @@ def build(plan: F.Plan) -> Layout:
         name="wall", track=False)
     L.warp_default = 0.030
 
-    run = plan.of("service")[0]
-    horizontal = run.facing == 0.0
+    runs = plan.of("service")
+    backs_all = plan.of("backbar")
+    # Position, not kind, is what pairs a run with its own back bar --
+    # `floorplan.generate()` appends each run's own [run, back, queue] triple
+    # together, so `runs[i]` and `backs_all[i]` are one counter's two halves.
+    # Every multi-run topology built so far (only `galley`) keeps that order;
+    # a generator that ever emitted them out of step would need this comment
+    # updated, not just the code.
+    #
     # A peninsula juts into the room, so its back bar does not hug the wall
     # that its run is parallel to. Everything below that used to say "the wall"
     # has to say "the back bar zone" instead: shelving was going to x=0.15
@@ -225,286 +261,397 @@ def build(plan: F.Plan) -> Layout:
     # DOES hug a wall rather than as a list of exceptions, because the last
     # time a new topology arrived this line said `!= "peninsula"` and quietly
     # gave the island two chalkboards on a wall across the room.
-    on_wall = plan.topology in ("wall run", "L run")
-    length = run.w if horizontal else run.d
-    # What stands on the counter, and how much of the run it eats. Tallied
-    # before the back bar goes in rather than after, because the back bar has
-    # to start past it -- shelving behind the machine measured 97% hidden, and
-    # behind the grinder 37%.
-    kit = [(A.espresso_machine, 2.0, "espresso"), (A.grinder, 0.8, "grinder"),
-           (A.register, 0.9, "register")]
-    # The kit stops short of the end of the run by DRESSING_RESERVE rather
-    # than by a token 0.3, because the kit and the clutter compete for the same
-    # counter and the kit is the low-contrast half of it. The machine's own
-    # docstring records that a plain one is "a single featureless grey mass";
-    # three grey boxes in a row is that argument three times.
     #
-    # Measured: the one room in eight that fitted all three fitted only three
-    # clutter items against the others' five to seven, and it is the one room
-    # whose counter fails to lead the frame. The reference room, which holds
-    # +0.133 at every render size, runs two kit items and ELEVEN pieces of
-    # clutter. A cafe with a short counter owns a machine and a till, not a
-    # machine and a till and a grinder.
-    #
-    # Decided ONCE, into `kit`, rather than tallied here and re-decided at
-    # placement time. Those were two loops with the same `length - 0.3` in
-    # them, and changing the reserve in one of them changed nothing: the tally
-    # dropped the grinder and the placement loop put it down anyway. That is
-    # the third time in this file that two copies of a rule have behaved as one
-    # rule and one bug -- after the support test and the shelving span -- and
-    # the fix is the same each time.
-    kit_extent = 0.35
-    fits = []
-    for entry in kit:
-        if kit_extent + entry[1] > length - DRESSING_RESERVE:
-            break
-        fits.append(entry)
-        kit_extent += entry[1] + 0.55
-    kit = fits
+    # A galley is neither exception nor member: its near run hugs the y=0 (or
+    # x=0) wall exactly like a wall run, but its far run backs onto nothing --
+    # `build()` only ever draws walls at x=0 and y=0 (the two `A.wall_run`
+    # calls above), so there is no far wall for the second run's shelving to
+    # hang on. It gets the free-standing back COUNTER an island uses instead,
+    # for the same reason an island does: a run with nothing behind it still
+    # needs the lit mass, and there is no wall to put it against.
+    ON_WALL_TOPOLOGIES = ("wall run", "L run")
 
-    # --- the service run, as one-tile modules tiled flush along the zone
-    n = max(1, int(round(run.w if horizontal else run.d)))
-    for i in range(n):
+    def run_on_wall(run_idx: int) -> bool:
+        if plan.topology in ON_WALL_TOPOLOGIES:
+            return True
+        if plan.topology == "galley":
+            return run_idx == 0
+        return False
+
+    on_bar = 0
+    for run_idx, run in enumerate(runs):
+        # An AXIS (0 or 180 is horizontal), not just "facing exactly 0". The
+        # single-run branches never needed the distinction -- they only ever
+        # built facing 0 or 90 -- but a galley's far run is the first zone in
+        # this file with facing 180 or 270, and `== 0.0` would silently treat
+        # a 180 run as vertical, tiling its counter across the room instead
+        # of along it.
+        horizontal = run.facing in (0.0, 180.0)
+        # MIRROR is the half of the four facings this file never built before
+        # today: a run whose wall/back side is at the zone's HIGH coordinate
+        # rather than its low one, because it backs onto the far run of a
+        # galley rather than a real wall. Every placement below that used to
+        # assume "low coordinate = back of counter" asks `mirror` first now.
+        mirror = run.facing in (180.0, 270.0)
+        # The rotation that makes a `front="y"`/`front="x"` mesh -- baked with
+        # its detail on the local +y or +x face -- show that detail on the
+        # correct side once `mirror` has put the wall on the other one.
+        # `centre=True` is what makes this rotation safe: `Layout.add`'s own
+        # docstring warns a rotation about the local origin lands nowhere near
+        # the coordinates written for it, and every one of these meshes used
+        # to be placed by its corner. `rot0` is 0 for the two facings this
+        # file already shipped, so every centred call below reproduces the
+        # old corner-anchored placement exactly when `mirror` is False --
+        # verified by the focal scan matching pre-refactor, not just argued
+        # here.
+        rot0 = 180.0 if mirror else 0.0
+        on_wall = run_on_wall(run_idx)
+        length = run.w if horizontal else run.d
+        back = backs_all[run_idx] if run_idx < len(backs_all) else None
+
+        # The wall/back edge of THIS run, by facing rather than by axis.
+        # Every placement that used to read `run.y0` (or `run.x0`) as "the
+        # back of the counter" reads this instead -- for the two facings this
+        # file already had, `wall_edge` IS `run.y0`/`run.x0`, so nothing
+        # downstream changes; for a galley's mirrored run the wall is at
+        # y1/x1 instead, and everything anchored to it flips with it.
         if horizontal:
-            at = (run.x0 + i, run.y0, 0)
-            m = A.counter(seed=4 + i, front="y")
+            wall_edge = run.y1 if mirror else run.y0
         else:
-            at = (run.x0, run.y0 + i, 0)
-            m = A.counter(seed=4 + i, front="x")
-        # `bar_` because the run and the back bar it serves are ONE fitted
-        # group, and `screen_occlusion` already knows what to do with those:
-        # how much of each other two members of a group cover is a property of
-        # the group's geometry, not of anyone's placement. See the back
-        # counter below for why that matters here.
-        add(m, at=at, name=f"counter#bar_{i}")
+            wall_edge = run.x1 if mirror else run.x0
+        # +1 steps AWAY from the wall, toward the customer, in world space;
+        # for a mirrored run that is the negative direction.
+        away = -1.0 if mirror else 1.0
 
-    # Placed BEFORE the back bar, not after. The shelves go in with
-    # `add_seeded`, which rejects a seed whose result is hidden -- but it can
-    # only see what is already in the layout, and the kit used to arrive
-    # afterwards. So every shelf was checked against an empty counter and
-    # passed, and three rooms in eight shipped a shelf 45% behind a grinder.
-    # Ordering is part of a constraint solver's correctness: a check that runs
-    # before the thing it constrains is a check that always passes.
-    # --- the kit itself, spaced along the run rather than at coordinates
-    top = run.y0 + 0.10 if horizontal else run.x0 + 0.10
-    used = 0.35
-    for factory, width, tag in kit:
-        pos = (run.x0 + used, top + 0.05, 0.92) if horizontal else (
-            top + 0.05, run.y0 + used, 0.92)
-        try:
-            L.add_seeded(lambda k, f=factory: f(seed=k), range(1, 10),
-                         at=pos, name=f"prop#{tag}")
-        except TypeError:
-            add(factory(), at=pos, name=f"prop#{tag}")
-        used += width + 0.55
+        # What stands on the counter, and how much of the run it eats. Tallied
+        # before the back bar goes in rather than after, because the back bar has
+        # to start past it -- shelving behind the machine measured 97% hidden, and
+        # behind the grinder 37%.
+        kit = [(A.espresso_machine, 2.0, "espresso"), (A.grinder, 0.8, "grinder"),
+               (A.register, 0.9, "register")]
+        # The kit stops short of the end of the run by DRESSING_RESERVE rather
+        # than by a token 0.3, because the kit and the clutter compete for the same
+        # counter and the kit is the low-contrast half of it. The machine's own
+        # docstring records that a plain one is "a single featureless grey mass";
+        # three grey boxes in a row is that argument three times.
+        #
+        # Measured: the one room in eight that fitted all three fitted only three
+        # clutter items against the others' five to seven, and it is the one room
+        # whose counter fails to lead the frame. The reference room, which holds
+        # +0.133 at every render size, runs two kit items and ELEVEN pieces of
+        # clutter. A cafe with a short counter owns a machine and a till, not a
+        # machine and a till and a grinder.
+        #
+        # Decided ONCE, into `kit`, rather than tallied here and re-decided at
+        # placement time. Those were two loops with the same `length - 0.3` in
+        # them, and changing the reserve in one of them changed nothing: the tally
+        # dropped the grinder and the placement loop put it down anyway. That is
+        # the third time in this file that two copies of a rule have behaved as one
+        # rule and one bug -- after the support test and the shelving span -- and
+        # the fix is the same each time.
+        kit_extent = 0.35
+        fits = []
+        for entry in kit:
+            if kit_extent + entry[1] > length - DRESSING_RESERVE:
+                break
+            fits.append(entry)
+            kit_extent += entry[1] + 0.55
+        kit = fits
 
-    # --- the return arm of an L, tiled the same way the run is. Built from
-    # the zone rather than inferred from the run's end, because the plan
-    # already decided which end it turns at and inferring it here would be a
-    # second copy of that decision.
-    for ri, z in enumerate(plan.of("service_return")):
-        along_x = z.w >= z.d
-        n_ret = max(1, int(round(z.w if along_x else z.d)))
-        for i in range(n_ret):
-            at = (z.x0 + i, z.y0, 0) if along_x else (z.x0, z.y0 + i, 0)
-            add(A.counter(seed=40 + ri * 5 + i,
-                          front="y" if along_x else "x"),
-                at=at, name=f"counter#ret{ri}_{i}")
+        # --- the service run, as one-tile modules tiled flush along the zone.
+        # Anchored and rotated about its own centre rather than its corner, so
+        # `rot0` can flip which local face carries the detail without also
+        # sliding the footprint -- a corner-anchored rotation would move the
+        # whole module half a tile, per `Layout.add`'s own warning.
+        n = max(1, int(round(run.w if horizontal else run.d)))
+        for i in range(n):
+            if horizontal:
+                at = (run.x0 + i + 0.5, run.y0 + 0.5, 0)
+                m = A.counter(seed=4 + run_idx * 100 + i, front="y")
+            else:
+                at = (run.x0 + 0.5, run.y0 + i + 0.5, 0)
+                m = A.counter(seed=4 + run_idx * 100 + i, front="x")
+            # `bar_` because the run and the back bar it serves are ONE fitted
+            # group, and `screen_occlusion` already knows what to do with those:
+            # how much of each other two members of a group cover is a property of
+            # the group's geometry, not of anyone's placement. See the back
+            # counter below for why that matters here. `run_idx` sits INSIDE
+            # that group tag (`bar{run_idx}_`), so a galley's two runs form two
+            # separate groups instead of one group spanning both counters.
+            add(m, at=at, rot=rot0, centre=True,
+                name=f"counter#bar{run_idx}_{i}")
 
-    # --- back counter: what an island has instead of a wall
-    # The exclusion below is right about TALL shelving and was wrong to leave
-    # the zone empty. A back bar is a counter before it is a shelf, and a run
-    # with nothing behind it loses the one surface a wall run gets for free:
-    # roughly 1.5 m of lit vertical mass directly behind the till, inside the
-    # focal region, holding the eye there. At 0.92 it is under eye level from
-    # either side, so it is not the partition the tall stack would be.
-    #
-    # Anchored to the edge the back bar SHARES with the run, because the tile
-    # is 1.0 deep against a 0.8 zone and the 0.2 has to overflow away from the
-    # counter it serves. Flush the other way puts it 0.2 inside the service
-    # run and every tile is a collision.
-    if not on_wall:
-        for z in plan.of("backbar"):
+        # Placed BEFORE the back bar, not after. The shelves go in with
+        # `add_seeded`, which rejects a seed whose result is hidden -- but it can
+        # only see what is already in the layout, and the kit used to arrive
+        # afterwards. So every shelf was checked against an empty counter and
+        # passed, and three rooms in eight shipped a shelf 45% behind a grinder.
+        # Ordering is part of a constraint solver's correctness: a check that runs
+        # before the thing it constrains is a check that always passes.
+        # --- the kit itself, spaced along the run rather than at coordinates
+        #
+        # The non-mirror placement below is corner-anchored (no `centre`),
+        # matching every kit item's own local origin sitting near its front
+        # edge and extending further along `away` from there -- true for
+        # every kit factory, not just measured on one, since it is exactly
+        # the geometry that kept an unrotated espresso machine off the floor
+        # for every existing topology. `top + away*0.05` puts that origin
+        # just off the wall, so the item's bulk lands mid-counter.
+        #
+        # For a mirrored run that same corner anchor is wrong in the other
+        # direction: the item still extends along `away`, but `away` is now
+        # NEGATIVE, so anchoring near the wall pushes the item's bulk PAST
+        # the counter's own far edge into open floor. Measured directly on
+        # seed 8's galley: an unrotated grinder at y 9.34-9.76 against a
+        # run spanning 8.25-9.20, floating with nothing under it --
+        # `check_built_rooms`' `grounded()` catches exactly this. Centring
+        # the mesh and rotating it 180, the same fix the counter modules
+        # above use, and anchoring to the run's own depth MIDPOINT rather
+        # than a wall offset puts its bulk back over the counter regardless
+        # of which kit item it is or how deep that item happens to be.
+        top = wall_edge + away * 0.10
+        used = 0.35
+        mid = (run.y0 + run.y1) / 2 if horizontal else (run.x0 + run.x1) / 2
+        for factory, width, tag in kit:
+            along = run.x0 + used if horizontal else run.y0 + used
+            depth = mid if mirror else top + away * 0.05
+            pos = (along, depth, 0.92) if horizontal else (depth, along, 0.92)
+            kw = {"rot": rot0, "centre": True} if mirror else {}
+            try:
+                L.add_seeded(lambda k, f=factory: f(seed=k),
+                             range(1 + run_idx * 10, 10 + run_idx * 10),
+                             at=pos, name=f"prop#{tag}{run_idx}", **kw)
+            except TypeError:
+                add(factory(), at=pos, name=f"prop#{tag}{run_idx}", **kw)
+            used += width + 0.55
+
+        # --- the return arm of an L, tiled the same way the run is. Built from
+        # the zone rather than inferred from the run's end, because the plan
+        # already decided which end it turns at and inferring it here would be a
+        # second copy of that decision. An L run is always a single service run
+        # (`SERVICE_RUNS` in `floorplan.py` defaults to 1), so this only ever
+        # fires once regardless of the outer loop; it stays inside the loop
+        # rather than after it so a one-run plan's placement order -- and so
+        # its solver outcomes -- are untouched.
+        for ri, z in enumerate(plan.of("service_return")):
+            along_x = z.w >= z.d
+            n_ret = max(1, int(round(z.w if along_x else z.d)))
+            for i in range(n_ret):
+                at = (z.x0 + i, z.y0, 0) if along_x else (z.x0, z.y0 + i, 0)
+                add(A.counter(seed=40 + ri * 5 + i,
+                              front="y" if along_x else "x"),
+                    at=at, name=f"counter#ret{ri}_{i}")
+
+        # --- back counter: what an island (or a galley's far run) has
+        # instead of a wall
+        # The exclusion below is right about TALL shelving and was wrong to leave
+        # the zone empty. A back bar is a counter before it is a shelf, and a run
+        # with nothing behind it loses the one surface a wall run gets for free:
+        # roughly 1.5 m of lit vertical mass directly behind the till, inside the
+        # focal region, holding the eye there. At 0.92 it is under eye level from
+        # either side, so it is not the partition the tall stack would be.
+        #
+        # Anchored to the edge the back bar SHARES with the run, because the tile
+        # is 1.0 deep against a 0.8 zone and the 0.2 has to overflow away from the
+        # counter it serves. Flush the other way puts it 0.2 inside the service
+        # run and every tile is a collision.
+        #
+        # Which edge is shared used to be READ from geometry (`abs(z.y1 -
+        # run.y0) < 0.05`), because every not-on_wall run so far was an island
+        # or a peninsula and both only ever built their back bar below/left of
+        # the run. `mirror` says it directly instead: a galley's far run has
+        # its back bar ABOVE it, the geometric mirror image, and the old
+        # geometric read would have flushed the module to the wrong edge and
+        # left it unrotated, showing the aisle a plain back instead of a front.
+        if not on_wall and back is not None:
+            z = back
             along_x = z.w >= z.d
             n_bc = max(1, int(round(z.w if along_x else z.d)))
             for i in range(n_bc):
                 if along_x:
-                    y = z.y1 - 1.0 if abs(z.y1 - run.y0) < 0.05 else z.y0
-                    at = (z.x0 + i, y, 0)
+                    y0 = z.y0 if mirror else z.y1 - 1.0
+                    at = (z.x0 + i + 0.5, y0 + 0.5, 0)
                 else:
-                    x = z.x1 - 1.0 if abs(z.x1 - run.x0) < 0.05 else z.x0
-                    at = (x, z.y0 + i, 0)
-                add(A.counter(seed=70 + i, front="y" if along_x else "x",
-                              h=BACK_COUNTER_H),
-                    at=at, name=f"counter#bar_back{i}")
+                    x0 = z.x0 if mirror else z.x1 - 1.0
+                    at = (x0 + 0.5, z.y0 + i + 0.5, 0)
+                add(A.counter(seed=70 + run_idx * 10 + i,
+                              front="y" if along_x else "x", h=BACK_COUNTER_H),
+                    at=at, rot=rot0, centre=True,
+                    name=f"counter#bar{run_idx}_back{i}")
 
-    # --- back bar: shelving against the wall behind the run
-    # Tall shelving only where there is a wall to put it against. A 1.9 stack
-    # standing free on an island is a partition between the barista and the
-    # room, which is the one thing an island exists not to be.
-    back = plan.of("backbar") if on_wall else []
-    if back:
-        b = back[0]
-        # Shelving runs along the back bar's own long axis and sits inside it,
-        # rather than against whichever wall the reference room happened to
-        # use. `A.bookshelf` is 0.9 wide and 0.3 deep, so it fits the 0.8 strip.
-        along_x = b.w >= b.d
-        span = b.w if along_x else b.d
-        # Started from the FAR end of the run. Shelving from the near end sat
-        # directly behind the espresso machine and `screen_occlusion` reported
-        # 97% of it hidden -- geometry nobody can see, which is the most
-        # expensive kind. The machine takes the first two tiles of any run, so
-        # the back bar takes the rest.
-        # Only the MACHINE is subtracted, not the whole kit. Subtracting all
-        # three left `span - 5.7` on a six-tile run and the rooms shipped with
-        # no back bar at all -- invisible, because an empty wall behind a
-        # counter looks like a decision. The grinder and the register top out
-        # at 1.3 against a 1.9 shelf; the machine reaches 1.74 and is the only
-        # one that hides anything.
-        # The offset is searched, not computed. `add_seeded` cannot rescue
-        # this placement -- every `A.bookshelf` seed has the same 0.9 x 0.3
-        # footprint, so no seed moves the shelf out from behind the grinder,
-        # and the fallback quietly shipped one 45% hidden in three rooms of
-        # eight. When the solver's only lever does not move the failing
-        # quantity, give it the lever that does: here that is where along the
-        # run the shelf goes, so the loop proposes offsets and keeps the ones
-        # the occlusion rule accepts.
-        want = max(0, int((span - MACHINE_SPAN - 0.6) / 1.6))
-        taken, placed_i = [], 0
-        off = span - 1.7
-        while off > 0.3 and placed_i < want:
-            if any(abs(off - t) < 1.5 for t in taken):
+        # --- back bar: shelving against the wall behind the run
+        # Tall shelving only where there is a wall to put it against. A 1.9 stack
+        # standing free on an island is a partition between the barista and the
+        # room, which is the one thing an island exists not to be.
+        if on_wall and back is not None:
+            b = back
+            # Shelving runs along the back bar's own long axis and sits inside it,
+            # rather than against whichever wall the reference room happened to
+            # use. `A.bookshelf` is 0.9 wide and 0.3 deep, so it fits the 0.8 strip.
+            along_x = b.w >= b.d
+            span = b.w if along_x else b.d
+            # Started from the FAR end of the run. Shelving from the near end sat
+            # directly behind the espresso machine and `screen_occlusion` reported
+            # 97% of it hidden -- geometry nobody can see, which is the most
+            # expensive kind. The machine takes the first two tiles of any run, so
+            # the back bar takes the rest.
+            # Only the MACHINE is subtracted, not the whole kit. Subtracting all
+            # three left `span - 5.7` on a six-tile run and the rooms shipped with
+            # no back bar at all -- invisible, because an empty wall behind a
+            # counter looks like a decision. The grinder and the register top out
+            # at 1.3 against a 1.9 shelf; the machine reaches 1.74 and is the only
+            # one that hides anything.
+            # The offset is searched, not computed. `add_seeded` cannot rescue
+            # this placement -- every `A.bookshelf` seed has the same 0.9 x 0.3
+            # footprint, so no seed moves the shelf out from behind the grinder,
+            # and the fallback quietly shipped one 45% hidden in three rooms of
+            # eight. When the solver's only lever does not move the failing
+            # quantity, give it the lever that does: here that is where along the
+            # run the shelf goes, so the loop proposes offsets and keeps the ones
+            # the occlusion rule accepts.
+            want = max(0, int((span - MACHINE_SPAN - 0.6) / 1.6))
+            taken, placed_i = [], 0
+            off = span - 1.7
+            while off > 0.3 and placed_i < want:
+                if any(abs(off - t) < 1.5 for t in taken):
+                    off -= 0.35
+                    continue
+                at = ((b.x0 + off, b.y0 + 0.08, 0) if along_x
+                      else (b.x0 + 0.08, b.y0 + off, 0))
+                name = f"prop#backbar{run_idx}_{placed_i}"
+                L.add(A.bookshelf(seed=3 + placed_i), at=at,
+                      rot=0 if along_x else 270, name=name)
+                cand = L.items.pop()
+                if L._conflicts(cand, 45.0, 0.35):
+                    L.rots.pop(name, None)
+                else:
+                    L.items.append(cand)
+                    taken.append(off)
+                    placed_i += 1
                 off -= 0.35
-                continue
-            at = ((b.x0 + off, b.y0 + 0.08, 0) if along_x
-                  else (b.x0 + 0.08, b.y0 + off, 0))
-            name = f"prop#backbar{placed_i}"
-            L.add(A.bookshelf(seed=3 + placed_i), at=at,
-                  rot=0 if along_x else 270, name=name)
+
+        # --- menu boards above the counter, on solid wall and never over glass.
+        # The reference room learned both halves of that the hard way: at counter
+        # height the espresso machine covered 82% of the board, and hung over a
+        # window a board both hid the daylight and lost its own contrast against
+        # it. Here the plan already knows where the glass is, so the rule is a
+        # filter rather than a comment about which tiles happen to be solid.
+        # Past the machine, not merely on solid wall. `add_seeded` could not fix
+        # this one: it varies which machine, and every machine is the same 2.0
+        # tiles wide, so no seed moves it off the board. When the solver has no
+        # move to make, the constraint belongs in the proposal -- which is the same
+        # conclusion the floor plan reached about windows and the back bar.
+        #
+        # `on_wall` runs are never `mirror` -- the only wall this file ever
+        # draws is at x=0/y=0, and both places that back a run against a real
+        # wall (a wall/L run's single run, a galley's near run) reach it with
+        # the unmirrored facing -- so `run.x0`/`run.y0` (not `wall_edge`) are
+        # still the right anchor here, unchanged.
+        lo = (run.x0 if horizontal else run.y0) + 2.5
+        hi = run.x1 if horizontal else run.y1
+        glass = plan.win_x if horizontal else plan.win_y
+        solid = [t for t in range(int(lo), int(hi) + 1) if t not in glass]
+        # Only when the run is parallel to the wall it backs onto. A peninsula
+        # meets the wall end-on, so there is no stretch of wall behind it to hang a
+        # board on -- and hanging one anyway put two chalkboards across the room
+        # from the counter they price.
+
+        # --- the rest of the back wall: open shelving, and the sign.
+        #
+        # Found by measuring edge density -- material transitions per pixel -- in
+        # the focal region rather than by looking for missing assets. Every
+        # generated WALL RUN reads at or below its own periphery on that metric
+        # (three of five are negative) while the reference room, which is also a
+        # wall run, reads +0.092. The wall is what makes the difference in both
+        # directions: it hands a wall run 1.5 m of lit vertical mass, which is why
+        # those rooms read brightest, and it is 1.5 m of one flat ramp step, which
+        # is why they read flattest. A wall behind a counter is a surface that has
+        # to be USED, and the generator was leaving the band between the counter
+        # top and the menu boards empty.
+        #
+        # `A.wall_shelf` puts a row of alternating jars on it, which is transitions
+        # rather than mass -- the metric and the fix agree about what is missing.
+        # Proposed and tested rather than allocated. Handing out tiles by index --
+        # menus 0 and 1, shelves 2 and 3, the sign in the middle -- put the sign
+        # through a shelf in three rooms and through a menu board in three more,
+        # because a 1.6 shelf is two tiles wide and an index is not a footprint.
+        # The back bar shelving above already learned this; the rule is the same
+        # rule, so it is the same loop.
+        def try_wall(mesh, at, rot, name):
+            L.add(mesh, at=at, rot=rot, name=name)
             cand = L.items.pop()
             if L._conflicts(cand, 45.0, 0.35):
                 L.rots.pop(name, None)
+                return False
+            L.items.append(cand)
+            return True
+
+        # The sign goes first and takes the middle, because it is the one object
+        # here that has a place it needs to be. `A.wall_sign` has sat in the
+        # library since the second pass with a docstring calling it "the one
+        # bright, high-contrast object over the interaction zone, which is how the
+        # composition tells the player where to look" -- and no generated room has
+        # ever had one. The reference has had one all along. A focal device the
+        # focal check never saw.
+        if on_wall and solid:
+            mid = solid[len(solid) // 2]
+            at = (mid + 0.05, 0.0, 0) if horizontal else (0.0, mid + 0.05, 0)
+            try_wall(A.wall_sign(), at, 0 if horizontal else 270,
+                    f"decor#sign{run_idx}")
+
+        placed_m = 0
+        for t in (solid if on_wall else []):
+            if placed_m >= 2:
+                break
+            at = (t + 0.12, 0.04, 0.62) if horizontal else (0.04, t + 0.12, 0.62)
+            if try_wall(A.menu_board(), at, 0 if horizontal else 270,
+                        f"decor#menu{run_idx}_{placed_m}"):
+                placed_m += 1
+
+        placed_s = 0
+        for t in (solid if on_wall else []):
+            if placed_s >= 2:
+                break
+            at = (t + 0.10, 0.10, 0.66) if horizontal else (0.10, t + 0.10, 0.66)
+            if try_wall(A.wall_shelf(1.6, "x" if horizontal else "y"), at, 0,
+                        f"decor#wshelf{run_idx}_{placed_s}"):
+                placed_s += 1
+
+        # --- the counter top. The reference room carries ELEVEN clutter items
+        # within 3.5 tiles of its till -- cups, a cake stand, vases, a clutter
+        # cluster -- and the generated rooms carried none. That is where the focal
+        # gap actually was, and it took three wrong answers to find: depth staging,
+        # ramp balance and accent spread all came back matching, prop density per
+        # square metre did not predict contrast either (the room with the densest
+        # periphery reads strongest), and a mid-field negative pool would have been
+        # a knob rather than a cause. The counter was simply bare, and a bare
+        # counter has nothing for the eye to land ON once it has been sent there.
+        #
+        # Placed by the solver, in the gaps the kit leaves, so nothing lands behind
+        # the machine or on top of the till.
+        top_z = 0.92
+        dress = (lambda k: A.cake_stand(), lambda k: A.cup_and_saucer(),
+                 lambda k: A.flower_vase(seed=190 + k),
+                 lambda k: A.table_clutter("counter"),
+                 lambda k: A.cup_and_saucer())
+        step, di = 0.42, 0
+        reach = length - 0.35
+        off = 0.35
+        while off < reach and di < 7:
+            along = run.x0 + off if horizontal else run.y0 + off
+            depth = wall_edge + away * 0.42
+            at = ((along, depth, top_z) if horizontal
+                  else (depth, along, top_z))
+            nm = f"clutter#bar{run_idx}_{di}"
+            L.add(dress[di % len(dress)](di), at=at, name=nm, centre=True)
+            cand = L.items.pop()
+            if L._conflicts(cand, 45.0, 0.35):
+                L.rots.pop(nm, None)
             else:
                 L.items.append(cand)
-                taken.append(off)
-                placed_i += 1
-            off -= 0.35
-
-    # --- menu boards above the counter, on solid wall and never over glass.
-    # The reference room learned both halves of that the hard way: at counter
-    # height the espresso machine covered 82% of the board, and hung over a
-    # window a board both hid the daylight and lost its own contrast against
-    # it. Here the plan already knows where the glass is, so the rule is a
-    # filter rather than a comment about which tiles happen to be solid.
-    # Past the machine, not merely on solid wall. `add_seeded` could not fix
-    # this one: it varies which machine, and every machine is the same 2.0
-    # tiles wide, so no seed moves it off the board. When the solver has no
-    # move to make, the constraint belongs in the proposal -- which is the same
-    # conclusion the floor plan reached about windows and the back bar.
-    lo = (run.x0 if horizontal else run.y0) + 2.5
-    hi = run.x1 if horizontal else run.y1
-    glass = plan.win_x if horizontal else plan.win_y
-    solid = [t for t in range(int(lo), int(hi) + 1) if t not in glass]
-    # Only when the run is parallel to the wall it backs onto. A peninsula
-    # meets the wall end-on, so there is no stretch of wall behind it to hang a
-    # board on -- and hanging one anyway put two chalkboards across the room
-    # from the counter they price.
-
-    # --- the rest of the back wall: open shelving, and the sign.
-    #
-    # Found by measuring edge density -- material transitions per pixel -- in
-    # the focal region rather than by looking for missing assets. Every
-    # generated WALL RUN reads at or below its own periphery on that metric
-    # (three of five are negative) while the reference room, which is also a
-    # wall run, reads +0.092. The wall is what makes the difference in both
-    # directions: it hands a wall run 1.5 m of lit vertical mass, which is why
-    # those rooms read brightest, and it is 1.5 m of one flat ramp step, which
-    # is why they read flattest. A wall behind a counter is a surface that has
-    # to be USED, and the generator was leaving the band between the counter
-    # top and the menu boards empty.
-    #
-    # `A.wall_shelf` puts a row of alternating jars on it, which is transitions
-    # rather than mass -- the metric and the fix agree about what is missing.
-    # Proposed and tested rather than allocated. Handing out tiles by index --
-    # menus 0 and 1, shelves 2 and 3, the sign in the middle -- put the sign
-    # through a shelf in three rooms and through a menu board in three more,
-    # because a 1.6 shelf is two tiles wide and an index is not a footprint.
-    # The back bar shelving above already learned this; the rule is the same
-    # rule, so it is the same loop.
-    def try_wall(mesh, at, rot, name):
-        L.add(mesh, at=at, rot=rot, name=name)
-        cand = L.items.pop()
-        if L._conflicts(cand, 45.0, 0.35):
-            L.rots.pop(name, None)
-            return False
-        L.items.append(cand)
-        return True
-
-    # The sign goes first and takes the middle, because it is the one object
-    # here that has a place it needs to be. `A.wall_sign` has sat in the
-    # library since the second pass with a docstring calling it "the one
-    # bright, high-contrast object over the interaction zone, which is how the
-    # composition tells the player where to look" -- and no generated room has
-    # ever had one. The reference has had one all along. A focal device the
-    # focal check never saw.
-    if on_wall and solid:
-        mid = solid[len(solid) // 2]
-        at = (mid + 0.05, 0.0, 0) if horizontal else (0.0, mid + 0.05, 0)
-        try_wall(A.wall_sign(), at, 0 if horizontal else 270, "decor#sign")
-
-    placed_m = 0
-    for t in (solid if on_wall else []):
-        if placed_m >= 2:
-            break
-        at = (t + 0.12, 0.04, 0.62) if horizontal else (0.04, t + 0.12, 0.62)
-        if try_wall(A.menu_board(), at, 0 if horizontal else 270,
-                    f"decor#menu{placed_m}"):
-            placed_m += 1
-
-    placed_s = 0
-    for t in (solid if on_wall else []):
-        if placed_s >= 2:
-            break
-        at = (t + 0.10, 0.10, 0.66) if horizontal else (0.10, t + 0.10, 0.66)
-        if try_wall(A.wall_shelf(1.6, "x" if horizontal else "y"), at, 0,
-                    f"decor#wshelf{placed_s}"):
-            placed_s += 1
-
-    # --- the counter top. The reference room carries ELEVEN clutter items
-    # within 3.5 tiles of its till -- cups, a cake stand, vases, a clutter
-    # cluster -- and the generated rooms carried none. That is where the focal
-    # gap actually was, and it took three wrong answers to find: depth staging,
-    # ramp balance and accent spread all came back matching, prop density per
-    # square metre did not predict contrast either (the room with the densest
-    # periphery reads strongest), and a mid-field negative pool would have been
-    # a knob rather than a cause. The counter was simply bare, and a bare
-    # counter has nothing for the eye to land ON once it has been sent there.
-    #
-    # Placed by the solver, in the gaps the kit leaves, so nothing lands behind
-    # the machine or on top of the till.
-    top_z = 0.92
-    on_bar = 0
-    dress = (lambda k: A.cake_stand(), lambda k: A.cup_and_saucer(),
-             lambda k: A.flower_vase(seed=190 + k),
-             lambda k: A.table_clutter("counter"),
-             lambda k: A.cup_and_saucer())
-    step, di = 0.42, 0
-    reach = length - 0.35
-    off = 0.35
-    while off < reach and di < 7:
-        along = run.x0 + off if horizontal else run.y0 + off
-        at = ((along, run.y0 + 0.42, top_z) if horizontal
-              else (run.x0 + 0.42, along, top_z))
-        nm = f"clutter#bar{di}"
-        L.add(dress[di % len(dress)](di), at=at, name=nm, centre=True)
-        cand = L.items.pop()
-        if L._conflicts(cand, 45.0, 0.35):
-            L.rots.pop(nm, None)
-        else:
-            L.items.append(cand)
-            on_bar += 1
-            di += 1
-        off += step
+                on_bar += 1
+                di += 1
+            off += step
 
     # --- window bar: a run of stools facing the glass
     for bi, z in enumerate(plan.of("window_bar")):
@@ -671,9 +818,10 @@ def _people(L: Layout, plan: F.Plan, n: int = 7, seed: int = 1,
     """
     seat_z = seat_z or {}
     roster = C.generate_roster(n, seed)
-    run = plan.of("service")[0]
-    horizontal = run.facing == 0.0
+    runs = plan.of("service")
+    queues = plan.of("queue")
     placed = 0
+    consumed = 0
 
     def put(mesh, at, rot, name):
         nonlocal placed
@@ -689,27 +837,47 @@ def _people(L: Layout, plan: F.Plan, n: int = 7, seed: int = 1,
         L.items.append(cand)
         placed += 1
 
-    # Barista, on the staff side of the run, facing the customers.
-    if horizontal:
-        put(C.build(C.BARISTA), ((run.x0 + run.x1) / 2, run.y0 - 0.42, 0.0),
-            180, "char#barista")
-    else:
-        put(C.build(C.BARISTA), (run.x0 - 0.42, (run.y0 + run.y1) / 2, 0.0),
-            90, "char#barista")
+    # A barista and a queue PER RUN, paired the same way `build()` pairs a
+    # run with its own back bar -- position in `plan.of(...)`, not a kind
+    # lookup. A galley has two of each; every other topology has one, so the
+    # loop below reduces to exactly the old single-barista, single-queue
+    # behaviour when `runs` has one element.
+    for ri, run in enumerate(runs):
+        horizontal = run.facing in (0.0, 180.0)
+        mirror = run.facing in (180.0, 270.0)
+        # Barista, on the staff side of the run, facing the customers. The
+        # base rotations (180 horizontal, 90 vertical) are this rig's own
+        # zero-point, not `Zone.facing`'s -- flipping 180 degrees for a
+        # mirrored run is correct regardless of which convention the base
+        # values came from, because a half-turn is a half-turn either way.
+        if horizontal:
+            by = run.y1 + 0.42 if mirror else run.y0 - 0.42
+            brot = 0.0 if mirror else 180.0
+            put(C.build(C.BARISTA), ((run.x0 + run.x1) / 2, by, 0.0),
+                brot, f"char#barista{ri}")
+        else:
+            bx = run.x1 + 0.42 if mirror else run.x0 - 0.42
+            brot = 270.0 if mirror else 90.0
+            put(C.build(C.BARISTA), (bx, (run.y0 + run.y1) / 2, 0.0),
+                brot, f"char#barista{ri}")
 
-    # The queue, stepped along the screen-horizontal so nobody hides anybody.
-    q = plan.of("queue")
-    if q:
-        band = q[0]
-        for i, spec in enumerate(roster[:2]):
-            t = 0.30 + 0.34 * i
-            if horizontal:
-                at = (band.x0 + band.w * t, band.y0 + 0.45 + i * 0.30, 0.0)
-                rot = 180
-            else:
-                at = (band.x0 + 0.45 + i * 0.30, band.y0 + band.d * t, 0.0)
-                rot = 90
-            put(C.build(spec), at, rot, f"char#queue{i}")
+        # The queue, stepped along the screen-horizontal so nobody hides
+        # anybody. Each run gets its own two roster slots rather than every
+        # queue drawing from the same `roster[:2]` -- a galley's two queues
+        # would otherwise be the same two people, dressed identically, one
+        # tile apart on two different counters.
+        if ri < len(queues):
+            band = queues[ri]
+            for i, spec in enumerate(roster[consumed:consumed + 2]):
+                t = 0.30 + 0.34 * i
+                if horizontal:
+                    at = (band.x0 + band.w * t, band.y0 + 0.45 + i * 0.30, 0.0)
+                    rot = 180
+                else:
+                    at = (band.x0 + 0.45 + i * 0.30, band.y0 + band.d * t, 0.0)
+                    rot = 90
+                put(C.build(spec), at, rot, f"char#queue{ri}_{i}")
+            consumed += 2
 
     # Everyone else sits. Seats are taken in a strided order rather than the
     # first few, because scatter fills a zone at a time and the first few are
@@ -727,7 +895,11 @@ def _people(L: Layout, plan: F.Plan, n: int = 7, seed: int = 1,
     # and the row along the glass stayed empty in all twelve rooms, which is
     # not a cafe, it is a showroom.
     stools = [q for q in L.items if q.name.startswith("seat#stool")]
-    rest = list(roster[2:])
+    # `consumed` is how many roster slots the queue loop above actually used
+    # -- 2 per run for every topology so far, but read rather than assumed,
+    # so a future run with no queue band (`ri >= len(queues)`) does not
+    # starve seating of two people who were never drawn to begin with.
+    rest = list(roster[consumed:])
     if seats:
         stride = max(1, len(seats) // max(1, len(rest) - len(stools[:2])))
         for i, spec in enumerate(rest[:max(0, len(rest) - 2)]):
@@ -837,7 +1009,7 @@ def check_stool_occupancy(n: int = 8, seed: int = 1,
     return []
 
 
-def check_focal_contrast(n: int = 4, seed: int = 1,
+def check_focal_contrast(n: int = 5, seed: int = 1,
                          target: int = FOCAL_TARGET,
                          l_floor: float = MIN_FOCAL_L,
                          c_floor: float = MIN_FOCAL_CONTRAST,
@@ -888,6 +1060,14 @@ def check_focal_contrast(n: int = 4, seed: int = 1,
     the very next change to the generator shifted it, leaving seeds 1 to 4 as
     two wall runs, a peninsula and an island, with the L run unwatched. A
     comment predicting a bug is not a fix for it.
+
+    `n` moved from 4 to 5 the day `galley` shipped, for the reason just
+    above: with 5 topologies and `n` still 4, the scan stops as soon as it
+    has found any four of them, and which one gets left out depends on scan
+    order rather than on anything about the topology. Concretely, at seed=1
+    the galley now sorts ahead of wall run in that order -- adding a branch
+    silently dropped an existing one from the one check built to guarantee
+    every branch gets watched.
 
     What both agree on is direction: every room got worse on both under the
     broken rig. A check that only ever sees one version of a room cannot use
@@ -1087,10 +1267,14 @@ def main() -> int:
     # peninsula the box swept a strip of empty floor into the focal region.
     # Changed because the old box was wrong, not because the new one scores
     # better -- an instrument chosen for its reading is not an instrument.
-    run = plan.of("service")[0]
-    back = plan.of("backbar")[0]
-    focal = ((min(run.x0, back.x0), max(run.x1, back.x1)),
-             (min(run.y0, back.y0), max(run.y1, back.y1)), (0.0, 1.50))
+    # `focal_box(plan)`, not a second copy of it. This was a hand-inlined
+    # duplicate hard-coded to `service[0]`/`backbar[0]` -- one lit counter and
+    # one bare one for any topology with more than one run, and a second
+    # place that would have had to be remembered and edited alongside
+    # `focal_box` itself. `focal_box` already unions every service, backbar
+    # and service_return zone, so calling it here is both the fix and a
+    # simplification.
+    focal = focal_box(plan)
     ramps = None
     if args.style:
         from pixelize import load_palette
