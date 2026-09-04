@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Full factory-output -> Godot pipeline: stage, import, build.
 
-    python tools/export_godot.py [--godot-bin PATH]
+    python tools/export_godot.py [--godot-bin PATH] [--style NAME]
 
 Three steps, each a real dependency of the next (see ART_CRITIQUE.md /
 NEXT.md "Godot export" notes for why the order matters -- Godot's resource
@@ -32,10 +32,24 @@ reference):
 Needs a Godot 4.3 binary. Resolved in this order: --godot-bin, $GODOT_BIN,
 then D:/vibes/.godot-tool/Godot_v4.3-stable_win64_console.exe (the portable
 build downloaded for this project, kept outside the repo).
+
+Style packs (`--style NAME`, default `cozy_ghibli`): a second style gets its
+OWN project directory, `godot_export/project_<style>/`, never sharing
+`godot_export/project/` with the default. That design decision -- and why it
+is a directory-per-style rather than one shared project alternately
+restaged -- is recorded in full next to `stage_style_project()` below, which
+is the one new piece of machinery it requires: `build_all.gd`/`verify_*.gd`
+carry no style-specific logic at all (confirmed by reading them, not
+assumed), so rather than maintaining N independently-tracked copies of
+identical GDScript, there is exactly one tracked copy
+(`godot_export/project/`'s own) and it is copied, fresh, into a non-default
+style's project directory every run -- the same "regenerated from source
+every time" contract `assets/`/`resources/` already have.
 """
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -43,6 +57,52 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PROJECT_DIR = ROOT / "godot_export" / "project"
 DEFAULT_GODOT = Path("D:/vibes/.godot-tool/Godot_v4.3-stable_win64_console.exe")
+
+# The four tracked files a Godot project needs to be a valid --path target
+# and to run this pipeline's build + round-trip checks. Copied verbatim into
+# a non-default style's project directory by stage_style_project() -- see
+# that function's docstring for why copying beats a second tracked set.
+STYLE_PROJECT_FILES = ("project.godot", "build_all.gd", "verify_font.gd",
+                       "verify_palette.gd")
+
+
+def project_dir_for(style_name: str) -> Path:
+    """godot_export/project/ for the default style, a style-suffixed sibling
+    otherwise -- same suffix convention `tileset.py`/`ui_chrome.py` already
+    established for their own per-style output directories."""
+    sys.path.insert(0, str(ROOT / "tools"))
+    from style import DEFAULT_STYLE
+    return (PROJECT_DIR if style_name == DEFAULT_STYLE
+            else PROJECT_DIR.parent / f"project_{style_name}")
+
+
+def stage_style_project(project_dir: Path) -> None:
+    """Materialise a non-default style's Godot project shell.
+
+    `build_all.gd`, `verify_font.gd` and `verify_palette.gd` were read in
+    full before this was written, specifically to answer whether a second
+    style needs its own tracked copies of them: none of the three contains a
+    style-specific path, constant, or branch. They address everything
+    through `res://`, which Godot resolves against whatever directory
+    `--path` names, and they read their inputs (`build_manifest.json`,
+    `assets/`) from that same directory -- so the exact same script,
+    pointed at a different `--path`, builds and verifies a different style's
+    staged assets with zero modification. `project.godot` is equally inert
+    per style: its one real setting (nearest-filter canvas textures) is a
+    global engine default, not an asset reference.
+
+    Two INDEPENDENTLY tracked copies of files with identical behaviour would
+    be a pure drift risk -- a future fix landing in one and not the other --
+    with no offsetting benefit, since there is nothing for a second copy to
+    say differently. So there is exactly one tracked source
+    (`godot_export/project/`'s own four files) and this function copies them
+    into the style's own, gitignored project directory on every run, before
+    Godot ever sees it -- the identical "regenerated from source every time"
+    contract `package_godot.stage()` already applies to `assets/`.
+    """
+    project_dir.mkdir(parents=True, exist_ok=True)
+    for name in STYLE_PROJECT_FILES:
+        shutil.copyfile(PROJECT_DIR / name, project_dir / name)
 
 
 def find_godot(explicit: str | None) -> Path:
@@ -54,8 +114,9 @@ def find_godot(explicit: str | None) -> Path:
     return DEFAULT_GODOT
 
 
-def run_godot(godot_bin: Path, args: list[str]) -> None:
-    cmd = [str(godot_bin), "--headless", "--path", str(PROJECT_DIR)] + args
+def run_godot(godot_bin: Path, args: list[str],
+             project_dir: Path = PROJECT_DIR) -> None:
+    cmd = [str(godot_bin), "--headless", "--path", str(project_dir)] + args
     print("$", " ".join(cmd))
     result = subprocess.run(cmd, capture_output=True, text=True)
     print(result.stdout)
@@ -64,7 +125,8 @@ def run_godot(godot_bin: Path, args: list[str]) -> None:
         raise SystemExit(f"godot exited {result.returncode}: {' '.join(cmd)}")
 
 
-def check_nine_slice_roundtrip(build: dict) -> list[str]:
+def check_nine_slice_roundtrip(build: dict,
+                               project_dir: Path = PROJECT_DIR) -> list[str]:
     """Do the margins in the written .tres match the insets that were drawn?
 
     Godot names its four texture margins left/top/right/bottom and
@@ -88,7 +150,7 @@ def check_nine_slice_roundtrip(build: dict) -> list[str]:
     for name, info in sorted(icons.items()):
         if "nine_slice" not in info:
             continue
-        tres = PROJECT_DIR / "resources" / "ui" / f"{name}.tres"
+        tres = project_dir / "resources" / "ui" / f"{name}.tres"
         if not tres.exists():
             out.append(f"{name}: declares nine-slice insets but no "
                        f"StyleBoxTexture was written to {tres}")
@@ -112,7 +174,9 @@ def check_nine_slice_roundtrip(build: dict) -> list[str]:
     return out
 
 
-def check_palette_lut_godot(godot_bin: Path, build: dict) -> list[str]:
+def check_palette_lut_godot(godot_bin: Path, build: dict,
+                            project_dir: Path = PROJECT_DIR,
+                            style_name: str = "cozy_ghibli") -> list[str]:
     """Does the ENGINE see the palettes Python forged, and see them unfiltered?
 
     `package_godot.check_palette_lut` already reads the written PNG back, but
@@ -132,10 +196,10 @@ def check_palette_lut_godot(godot_bin: Path, build: dict) -> list[str]:
     resolves to `rendering/rendering/textures/...` and changed nothing. The
     setting read back as 1 and this check is the only reason that was noticed.
     """
-    script = PROJECT_DIR / "verify_palette.gd"
+    script = project_dir / "verify_palette.gd"
     if not script.exists() or "palettes" not in build:
         return []
-    cmd = [str(godot_bin), "--headless", "--path", str(PROJECT_DIR),
+    cmd = [str(godot_bin), "--headless", "--path", str(project_dir),
            "--script", script.name]
     result = subprocess.run(cmd, capture_output=True, text=True)
     line = next((l for l in result.stdout.splitlines()
@@ -153,7 +217,7 @@ def check_palette_lut_godot(godot_bin: Path, build: dict) -> list[str]:
     sys.path.insert(0, str(ROOT / "tools"))
     import palette_forge as PF
     import palette_swap as PS
-    bible = PS.load_bible()
+    bible = PS.load_bible(style_name)
     for row in got["rows"]:
         want = [s.hex for s in
                 PF.forge(bible, None if row["name"] == "base" else row["name"])]
@@ -168,7 +232,8 @@ def check_palette_lut_godot(godot_bin: Path, build: dict) -> list[str]:
     return out
 
 
-def check_font_layout(godot_bin: Path, build: dict) -> list[str]:
+def check_font_layout(godot_bin: Path, build: dict,
+                      project_dir: Path = PROJECT_DIR) -> list[str]:
     """Does Godot lay these glyphs out where `bitmap_font` says it will?
 
     The nine-slice round-trip re-reads margins out of a `.tres` and confirms
@@ -194,7 +259,7 @@ def check_font_layout(godot_bin: Path, build: dict) -> list[str]:
     sys.path.insert(0, str(ROOT / "tools"))
     import bitmap_font
 
-    cmd = [str(godot_bin), "--headless", "--path", str(PROJECT_DIR),
+    cmd = [str(godot_bin), "--headless", "--path", str(project_dir),
            "--script", "verify_font.gd"]
     result = subprocess.run(cmd, capture_output=True, text=True)
     tag = "VERIFY_FONT_JSON:"
@@ -221,7 +286,17 @@ def check_font_layout(godot_bin: Path, build: dict) -> list[str]:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--godot-bin", default=None, help="path to Godot 4.3 executable")
+    ap.add_argument("--style", default=None,
+                    help="style pack to export (default: cozy_ghibli); builds "
+                         "into godot_export/project_<style>/ for a "
+                         "non-default style, godot_export/project/ unchanged "
+                         "for the default")
     args = ap.parse_args()
+
+    sys.path.insert(0, str(ROOT / "tools"))
+    from style import DEFAULT_STYLE
+    style_name = args.style or DEFAULT_STYLE
+    project_dir = project_dir_for(style_name)
 
     godot_bin = find_godot(args.godot_bin)
     if not godot_bin.exists():
@@ -231,27 +306,34 @@ def main():
             f"{DEFAULT_GODOT}"
         )
 
-    sys.path.insert(0, str(ROOT / "tools"))
     import package_godot
-    build = package_godot.stage()
+    build = package_godot.stage(style_name)
     print(package_godot.summarise(build))
 
+    if style_name != DEFAULT_STYLE:
+        # godot_export/project/ ships project.godot/build_all.gd/verify_*.gd
+        # tracked in git; a non-default style's project directory needs the
+        # same four files to be a valid --path target at all, and gets them
+        # copied fresh rather than independently tracked -- see
+        # stage_style_project()'s docstring for why.
+        stage_style_project(project_dir)
+
     print("\n-- import pass --")
-    run_godot(godot_bin, ["--import"])
+    run_godot(godot_bin, ["--import"], project_dir)
 
     print("\n-- build pass --")
-    run_godot(godot_bin, ["--script", "build_all.gd"])
+    run_godot(godot_bin, ["--script", "build_all.gd"], project_dir)
 
     print("\n-- round-trip check --")
-    problems = check_nine_slice_roundtrip(build)
-    problems += check_palette_lut_godot(godot_bin, build)
-    problems += check_font_layout(godot_bin, build)
+    problems = check_nine_slice_roundtrip(build, project_dir)
+    problems += check_palette_lut_godot(godot_bin, build, project_dir, style_name)
+    problems += check_font_layout(godot_bin, build, project_dir)
     for p in problems:
         print(f"  BLOCKER  {p}", file=sys.stderr)
 
-    resources = sorted((PROJECT_DIR / "resources").rglob("*.tres"))
+    resources = sorted((project_dir / "resources").rglob("*.tres"))
     print(f"\n{len(resources)} resources written to "
-          f"{PROJECT_DIR / 'resources'}")
+          f"{project_dir / 'resources'}")
     return 1 if problems else 0
 
 

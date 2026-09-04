@@ -1056,6 +1056,108 @@ new defects at full scale, not just at the "one of each" sample size
 `style_approve.py` requires. No code changed -- this is a verification pass,
 and its result is that there was nothing here to fix.
 
+**Landed (PR #34, stacked on #33): `--style` for `export_godot.py`, the
+design decision PR #31 deliberately left unattempted.** The real question
+PR #31 flagged -- does a second style's export get its own Godot project
+tree, or does one tree get re-staged and re-imported per run -- was decided
+with evidence, not guessed: `build_all.gd`, `verify_font.gd` and
+`verify_palette.gd` were read in full, and none of the three contains a
+style-specific path, constant, or branch. All three address everything
+through `res://`, which Godot resolves against whatever directory `--path`
+names, and read their inputs (`build_manifest.json`, `assets/`) from that
+same directory -- so the exact same three files, unmodified, build and
+verify whichever style's assets were staged into whatever project they're
+pointed at.
+
+That finding decided both halves of the design at once. First,
+`godot_export/project_<style>/` -- a full, separate sibling project
+directory per non-default style, `godot_export/project/` untouched for the
+default -- rather than one project re-staged in place per run, because a
+shared tree would make each style's build overwrite the other's on disk and
+tie the default's own regression bar to "nobody ran a different style more
+recently," which is exactly the kind of fragile coupling this track's
+discipline exists to avoid. Second, because the tracked GDScript is
+genuinely style-agnostic, that per-style directory does NOT get its own
+independently-tracked copies of `project.godot`/`build_all.gd`/
+`verify_*.gd` -- two tracked copies of files with identical behaviour is a
+pure drift risk (a fix landing in one and not the other) with nothing to
+show for it. Instead `export_godot.stage_style_project()` copies the four
+files from `godot_export/project/`'s own tracked originals into the style
+directory fresh on every run, the same "regenerated from source every time"
+contract `assets/`/`resources/` already have. `godot_export/project_*/` was
+added to `.gitignore` as a whole tree (not the assets/resources/.godot
+subset `project/` uses), since nothing under a style directory is tracked.
+Checked with `git status --porcelain --ignored` after the first `--style
+snes_rpg` run and confirmed `godot_export/project_snes_rpg/` shows `!!`
+(ignored) with nothing untracked -- PR #30's own gitignore-gap mistake, not
+repeated.
+
+`package_godot.stage()` gained a `style_name` parameter and a new
+`style_paths()` helper resolving `manifest_path`/`sprites_dir`/
+`project_dir`/`ui_dir`/`tiles_dir`. It deliberately does NOT invent one
+uniform per-style convention -- it matches whichever convention each
+upstream producer's OWN `--style` flag already committed to on disk:
+`furnish.py`'s nested `out/sprites/<style>/`, and `tileset.py`/
+`ui_chrome.py`'s sibling-with-suffix `out/tiles_<style>/`/`out/ui_<style>/`.
+`sprites/atlas.json` (`animate.py`'s output) is the one input left
+unparameterized: `animate.py` has no `--style` flag at all yet, unlike
+every other producer this file stages from, so there is no per-style atlas
+to resolve to -- staying with the one fixed path is accurate, not an
+oversight, and the animation section simply stages nothing for either style
+until that producer is generalized too (a real, separate, not-yet-started
+gap, same shape as `ui_forge.py`'s GPU dependency).
+
+Regression evidence, and a real finding about the bar itself: comparing
+`.tres` output byte-for-byte turned out not to be possible AT ALL, even
+between two consecutive runs of fully unmodified code -- Godot's own
+`ResourceSaver` assigns a random hash suffix to every `ext_resource`/
+`sub_resource` id on every save (confirmed by running the untouched
+pre-change code twice in a row and diffing the output: only those id
+tokens differed). The real bar applied instead: `build_manifest.json`
+(pure JSON, no Godot-assigned ids) came back byte-identical, same sha256,
+across three separate runs -- unmodified code twice, this change's code
+once. All 56 `.tres` files came back structurally identical between
+unmodified and modified code once the random id tokens are canonicalized
+by first-appearance order (a small normalizing script, not a semantic
+diff) -- 0 mismatches across all 56 files. `godot_export/project/` itself
+is untouched by any `--style snes_rpg` run, by construction, so the
+default's own tree was never at risk of drifting regardless.
+
+The real `snes_rpg` pipeline run, staged from the 448-sprite sweep PR #33
+already produced: stage, headless import, headless build and both
+round-trip checks all passed cleanly, 56 resources written to
+`godot_export/project_snes_rpg/resources/`. Looked at, not just counted:
+`armchair.tres` references `res://assets/armchair/armchair_dir0.png`
+correctly inside its own project tree, and that staged PNG is byte-identical
+to `out/sprites/snes_rpg/armchair_dir0.png` (and differs from the default
+style's own `armchair_dir0.png`, confirming the two styles' assets never
+cross-contaminate). The palette LUT's pixel values were read back directly
+and compared against a fresh `palette_forge.forge()` call for `snes_rpg`'s
+own bible -- exact match -- independently of `verify_palette.gd`'s own
+in-engine check reporting the same thing ("Godot reads all 1 palettes x 32
+colours exactly, at nearest filtering"). That "1 palette" is a real fact
+about `snes_rpg`'s current `bible.yaml`, not a bug: it declares no
+`golden_hour`/`evening`/`night`/`overcast` variants yet, unlike
+`cozy_ghibli`'s five rows -- day/night palette variants for this style are
+separate, not-yet-started work.
+
+Two honest gaps, not fixed here because fixing them is out of this PR's
+scope: `out/ui/` (and `out/ui_snes_rpg/`) don't exist in this environment
+-- `ui_forge.py --style` is separate, in-flight work -- so the nine-slice
+round-trip and font-layout checks both no-op cleanly for both styles
+(empty `ui`/`font` sections in the build manifest, not a failure) rather
+than being exercised against real content; and `sprites/atlas.json`
+(`animate.py`'s output) was missing from `ROOT/sprites/` in this
+environment (only a stray, differently-nested `sprites/sprites/atlas.json`
+existed), so the `anim` section staged nothing for either style -- exactly
+the gap `package_godot.stage()`'s existing `atlas_path.exists()` guard is
+already built to degrade through, not a new failure this PR introduced.
+
+Every producer `NEXT.md`'s migration-order list named is now `--style`-wired
+except `ui_forge.py` (GPU-bound, deliberately deferred) and `animate.py`
+(never carried a `--style` flag to begin with, and picking up that gap is
+new scope, not a rider on this one).
+
 ---
 
 ## How this repo expects work to be done
