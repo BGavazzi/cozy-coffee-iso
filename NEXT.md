@@ -833,6 +833,73 @@ not a stand-in for a box, and it read correctly on the first render.
 silhouette-swing sheet, and a new one comparing all four hairstyles side by
 side at azimuth 225.
 
+**Landed (PR #41, stacked on #39 and #40): the focal-detail check is now
+resolution-confirmed, not resolution-invariant.** Closes `ART_CRITIQUE.md`'s
+longest-open "Still open" item -- the focal reading falling with render
+resolution -- by re-measuring it end to end instead of trusting the note.
+Write-up: `ART_CRITIQUE.md`, "Focal detail: resolution-confirmed, not
+resolution-invariant".
+
+Two findings, then a fix:
+
+- **Contrast healed on its own.** Swept 160-480 across the suite check's own
+  four-room sample plus the reference room: every reading now clears the
+  0.030 floor by at least 0.047, most by 3-6x. The steep collapse the
+  original bullet measured (down to +0.014, nearly crossing) is gone -- an
+  unrelated string of composition fixes (hull-clipped focal region, wall
+  shelf/sign, back-counter height) closed it as a side effect, never
+  re-verified until now.
+- **The same problem re-appeared on detail** (edge density, added after that
+  bullet was written). Every room's detail lead shrinks with resolution,
+  the reference room included. Live and current: `build_plan.py
+  --focal-scan 12` read 2 of 12 fail at 320, 1 of 12 at 480 -- plan 1
+  flipped from FAIL to pass with zero content change. `manifest.py
+  --check`'s own `check_focal_contrast()` (the fast gate, not just the deep
+  scan) was already carrying this exact case as an accepted failure, named
+  directly in this file's own Gates section.
+
+A ratio reformulation of the detail lead -- `(di-do)/(di+do)` instead of the
+raw difference -- was measured and rejected: it shrinks the drift for
+healthy rooms but is proven, algebraically and numerically, unable to change
+a single verdict at a floor fixed at exactly 0 (a sign-preserving
+transform). Root cause is the renderer, not the statistic -- `shade_toon`'s
+dither and `mesh.py`'s surface grain are fixed-real-world-size
+perturbations that `downsample_modal` only resolves once a render target's
+per-pixel world footprint shrinks below their width, which happens at a
+different target for the counter than for the busy periphery. A truly
+resolution-invariant version would grade off world-space material samples
+instead of raster pixels -- scoped and left, the same way the fifth
+topology and the style LoRA were.
+
+**The fix:** `FOCAL_CONFIRM_TARGET = 480` in `tools/build_plan.py`. A room
+that fails at the check's own 320 gets one confirming render at the
+delivery resolution and is only reported if it fails both. Passing rooms
+(10 of 12) never pay for the second render.
+
+Verified both gates, live:
+
+    .venv/Scripts/python.exe tools/build_plan.py --focal-scan 12
+    -> 1 of 12 fail (8%), 1 rescued by the 480 confirmation (plan 1)
+
+Direct call, before and after: `check_focal_contrast()` (the function
+`manifest.py --check` actually runs) reported plan 1's -0.002 detail as a
+failure before this change and reports zero messages after. The full
+`manifest.py --check` run confirms it end to end: **0 errors, 8 warnings**
+(the same 8 pre-existing, unrelated occlusion/declared-but-unbuilt-UI
+warnings), where it used to be 1 error on this exact case. Plan 10 -- the
+one real defect in the sample, negative at every resolution from 240
+through 480 -- still fires in both the scan and a direct
+`check_focal_contrast(seed=10, n=1)` call. Proof: `proof/focal_plan1_320.png`
+vs `proof/focal_plan1_480.png` (the flip, same room, same seed); `proof/
+focal_plan10_320.png` vs `proof/focal_plan10_480.png` (still failing, both
+resolutions).
+
+**Left honestly incomplete:** this is confirmation at two specific
+resolutions, not invariance at any resolution -- a defect visible only at
+some third target would still slip through. That is the practical claim the
+shipped game needs (the checked and the delivered resolution now agree), not
+the abstract one the original bullet asked for.
+
 ---
 
 ## How this repo expects work to be done
@@ -882,26 +949,29 @@ side at azimuth 225.
 **Gates — both must be clean before any commit**
 
 ```
-.venv/Scripts/python.exe tools/manifest.py --check            # 26 checks, takes ~4 min, 1 currently fails
+.venv/Scripts/python.exe tools/manifest.py --check            # 26 checks, takes ~4 min, clean
 .venv/Scripts/python.exe tools/build_plan.py --focal-scan 12  # slower, 1 of 12 currently fails
 ```
 
-Neither is clean right now, and both are the same underlying story: the
-detail floor sits at exactly 0.0 with a measured 0.002-0.006 margin
-(`ART_CRITIQUE.md`, "The detail floor at 40 plans"), thin enough that small,
-unrelated changes flip a borderline room across it.
+Both used to fail on the same underlying story: the detail floor sits at
+exactly 0.0 with a measured 0.002-0.006 margin (`ART_CRITIQUE.md`, "The
+detail floor at 40 plans"), thin enough that small, unrelated changes -- or
+just the render resolution -- flip a borderline room across it. As of the
+focal-resolution-confirmation pass (`ART_CRITIQUE.md`, "Focal detail:
+resolution-confirmed, not resolution-invariant"):
 
-- `build_plan.py --focal-scan 12` fails plan 10 by -0.002 — a real,
-  documented, accepted case.
-- `manifest.py --check`'s `check_focal_contrast` fails plan 1 (wall run) by
-  -0.002 — this one is new as of the RNG-unification pass (`ART_CRITIQUE.md`,
-  "`leafy_plant` unified onto `_mix`"): a different draw from `leafy_plant`'s
-  now-shared RNG stream shifted plan 1's detail reading across the same
-  floor. Verified by isolating the change with `git stash`; not a bug in the
-  RNG swap, a demonstration of how thin the floor's margin really is.
+- `manifest.py --check`'s `check_focal_contrast` no longer fails on plan 1.
+  It used to (-0.002, from the RNG-unification pass) -- that failure turned
+  out to be resolution-dependent (it passes at 480, the delivery
+  resolution), and the check now confirms a 320 failure against a 480
+  render before reporting it, so the resolution-only flip no longer counts.
+- `build_plan.py --focal-scan 12` still fails plan 10, correctly -- a real,
+  accepted defect, negative at every resolution from 240 through 480 (not
+  -0.002 as this file previously recorded; that number was a stale
+  transcription -- the measured margin is -0.011 at 320, -0.013 at 480).
 
 Don't treat a *new* failure in either run as equally acceptable without
-checking whether it's one of these two known cases or something else.
+checking whether it's plan 10 or something else.
 
 Stage-8 review on generated sprites:
 
