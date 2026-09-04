@@ -896,6 +896,353 @@ side puffs -- and both leave the eyes visible in every view checked.
 `HAIR_STYLES` now has all six of `character.hair`'s styles; `organic_rig.py`
 has no more deliberately-deferred hairstyle work.
 
+**Landed (PR #28, stacked on #26): a real eye-visibility check for
+`organic_rig.py`'s roster, and the bug it caught -- `archivist` shipping
+with invisible eyes.** `check_roster` (PR #22) only ever ran
+`character.check_contrast`/`check_waistline` against `ROSTER` -- both test
+hair-vs-skin and shirt-vs-trousers, neither tests hair colour against
+`C.EYE` itself. `archivist`'s `hair_mat="neutral-3"` sat one step from
+`C.EYE`'s `neutral-2` on this style's own compressed neutral ramp, and
+`bob`'s full head-wrap coverage put that hair directly behind the eye
+boxes: found by zooming into the rendered portrait and seeing two blank
+sockets, not by any check failing.
+
+`check_eyes_visible` closes the gap, ported from `portrait.py`'s own
+version of the same check: build the figure (torso, head, hair, arms) with
+NO eyes, then again with exactly one eye box added, render both, count
+differing pixels. No axis assumption about which half of frame is which
+eye, no other feature's contrast to hide behind -- if adding the eye
+changed fewer than `MIN_EYE_PIXELS` (3, same floor `portrait.py` uses), it
+isn't visibly there, whether the cause is hair occlusion or colour
+collision. Wired into `check()` alongside `check_direction_stability` and
+`check_roster`, and into `--lock`'s recorded gate list, so this class of
+bug is caught automatically on every future roster edit, not just by
+manual visual spot-check.
+
+Fix: `archivist.hair_mat` -> `wood-4` (already proven safe by
+`check_contrast`/`check_waistline` for every other roster member). Full
+roster -- `check_eyes_visible` included -- passes; re-rendered
+`proof/organic_rig.png` shows archivist's eyes clearly against the bob
+hair, visually confirmed alongside the numeric pass.
+
+**Landed (PR #29, stacked on #28): `--style` for `tileset.py`, plus one more
+honest, measured rejection under `snes_rpg`.** Mechanical wiring, same
+pattern as `furnish.py`/`render_room.py`/`build_plan.py`/`ui_chrome.py`:
+`build()` resolves `ramps` from the active style's palette instead of a bare
+`load_palette()`, and writes to `out/tiles_<style>/` for a non-default style
+rather than overwriting `out/tiles/`. `check_manifest_placement` gained an
+`out_dir` parameter for the same reason. Regression-checked byte-identical
+against `out/tiles/` under the default style before touching anything else.
+
+Running it for real against `snes_rpg` surfaced a genuine finding, not a
+wiring bug: `wall_panel_x`/`wall_plain_x` both fail `check_collapse` --
+`cream-2` (the picture rail), `wood-1` and `wood-2` (the panel trim) resolve
+to only 2 distinguishable colours at that wall's lambert value under this
+style's compressed lightness range. `wall_panel()`'s literal ramp-name
+choices were authored for `cozy_ghibli` and never touched since -- the same
+"shared content, never chosen for this style" shape as `character.CUSTOMERS`
+(PR #23) and `portrait.ROSTER` (PR #24), not the "hair colour vs. this
+style's own new roster" shape PR #28 just fixed. Confirmed visually, not
+just numerically: `out/tiles_snes_rpg/_room_corner.png`'s left (x-axis)
+wall shows the picture rail and trim blurring together, while the right
+(y-axis) wall -- clear of this collision -- reads distinctly banded.
+
+Left as a recorded, honest rejection rather than patched: `wall_panel`'s
+three trim colours are hardcoded literals, not sourced from a per-style
+`materials:` role (that generalization is the same deferred
+`assetlib.py`/`character.py` import-order work PR #12 already flagged, not
+new scope for a CLI-plumbing PR). `tileset.py --style snes_rpg --proof`
+exits 1 on this finding, as it should -- a real, unfixed defect, not a
+silently-passing check.
+
+**Landed (PR #30, stacked on #29): `--style` for `render_batch.py`, the
+last GPU-free producer in the plumbing list.** Same mechanical pattern:
+`ramps` resolved from the active style instead of a bare `load_palette()`,
+`--out` defaults to `sprites/` for the default style (unchanged, its own
+existing gitignore line) or `out/sprites_<style>/` for a non-default one --
+deliberately nested under `out/`, not a new top-level `sprites_<style>/`,
+because `out/` is already blanket-ignored and a sibling directory next to
+`sprites/` would not be. Caught by checking `git status` after the first
+`--style snes_rpg` run and seeing the new directory as untracked rather
+than assuming the convention from `tileset.py`'s `out/tiles_<style>/`
+(which lives under `out/` already) would automatically carry over.
+
+Regression-checked byte-identical (`crate_cup_dir0.png`'s sha256, before
+and after the change, under the default style) both before this fix and
+again after it. `--style snes_rpg` renders the analytic test scene cleanly
+against the new palette -- visually checked, no material-collision finding
+here since the crate/cup scene's own materials were never audited against
+`tileset.py`'s wall trim in the first place.
+
+Every producer `NEXT.md`'s own migration-order plan named as GPU-free
+(`furnish.py`, `render_room.py`, `build_plan.py`, `character.py`,
+`portrait.py`, `manifest.py`, `ui_chrome.py`, `tileset.py`, now
+`render_batch.py`) has `--style` wired through its actual checks, not just
+its `--lock` bookkeeping. `ui_forge.py`/`art_review.py`/`export_godot.py`
+remain -- the first needs `concept.py`'s SDXL pipeline to run at all (GPU),
+and the other two have not yet been looked at closely enough to know
+whether they carry the same accepted-but-ignored risk; left for a future
+PR rather than assumed clean.
+
+**Landed (PR #31, stacked on #30): `art_review.py` audited, and given a
+`--style` convenience flag -- it turned out clean, not another instance of
+the accepted-but-ignored bug.** `art_review.py` never claimed `--style`
+support at all before this; it already took an arbitrary `--palette` path
+or variant name, and `load_palette()` reads any `palette.json` in that
+format regardless of which style produced it -- `--palette
+styles/snes_rpg/palette/palette.json` already worked, just not
+conveniently. The file's other palette-shaped default,
+`measured_symmetry(ramps=None)`, is a real optional parameter a caller
+already supplies explicitly (it is not reachable from `main()`'s own image-
+review path at all) -- not a CLI flag silently ignored by the check it
+claims to drive, which is the actual shape of the bug PRs #23/#24 fixed.
+Nothing to fix there.
+
+Added `--style NAME` as sugar for that same `--palette <path>` call,
+resolved via `style.load_style(name).palette_path`; `--palette` still wins
+if both are given, and an unknown style name surfaces `load_style`'s own
+error rather than a new one. Verified against both a default-style and a
+`snes_rpg` sprite, plus the unknown-style-name error path.
+
+`export_godot.py` deliberately NOT touched here: it stages real files into
+a generated, Godot-imported project tree (`godot_export/project/`) and
+shells out to an actual Godot binary for the import/build/round-trip-check
+steps. A second style's export needs a real design decision (a parallel
+project tree? a re-run of the headless import against a different staged
+source?) that a mechanical CLI-flag pass would be guessing at, not the kind
+of "same pattern nine times" plumbing the rest of this list has been --
+flagged as a boundary rather than attempted unscoped, same reasoning as
+`ui_forge.py`'s GPU dependency.
+
+**Landed (PR #33, stacked on #31): the full 56-prop library, swept through
+`snes_rpg`, not just "one of each."** Every producer up to this point had
+been verified against a single representative asset per class (one
+character roster, one composed room, one tileset). `style_approve.py`'s own
+docstring says that's deliberate -- "one of each asset class" is the
+approval bar, not "every asset" -- but nobody had actually run the whole
+`furnish.py` catalogue through the new style and looked, so it remained an
+assumption rather than a measurement.
+
+`furnish.py --style snes_rpg` builds all 56 props, 448 sprites, zero
+crashes, zero footprint-cap surprises beyond the same 7 props that already
+cap under `cozy_ghibli` (identical list, same reasons -- a builder/fp-height
+mismatch unrelated to palette). `art_review.py --style snes_rpg --json` over
+the full set: 0 blockers, 72 `ramp-coherence` warnings, 96 `light-direction`
+notes.
+
+The number that matters is the comparison, not the count in isolation: the
+identical sweep against `cozy_ghibli` also produces exactly 72
+`ramp-coherence` warnings, on the exact same 17 props (`book_stack`,
+`pastry_case`, `plant_hanging`, `shelf_wall`, ... -- full list in the PR).
+Byte-for-byte the same defect set under both palettes, because
+`ramp-coherence` measures which MATERIAL ramps sit adjacent in the mesh,
+which is style-independent geometry, not a colour-legibility question a new
+palette could newly break. `light-direction`'s note count differs (96 vs
+134) but that's expected and not a defect -- it's graded on OKLab lightness
+percentile position, which a different palette's lightness distribution
+naturally shifts, and it's a NOTE, not a WARNING, precisely because the
+check's own docstring calls it "a rough check."
+
+Spot-checked two visual outliers before trusting the numbers alone, per this
+track's own discipline: `wall_art_framed` renders as a flat, detail-free
+canvas under `snes_rpg` -- confirmed identical under `cozy_ghibli` too, so
+it's how the prop is authored (a plain-colour canvas in a wood frame), not a
+style regression. A full 56-prop contact sheet was rendered and reviewed
+before writing this up; every prop reads as its own distinct, legible
+silhouette.
+
+Net finding: the prop library generalizes cleanly across styles with zero
+new defects at full scale, not just at the "one of each" sample size
+`style_approve.py` requires. No code changed -- this is a verification pass,
+and its result is that there was nothing here to fix.
+
+**Landed (PR #36, stacked on #35): `--style` for `ui_forge.py`, the last
+GPU-bound producer in the plumbing list, and a real run against `snes_rpg`
+rather than a paper wiring change.** Same mechanical pattern as every other
+producer on this list: `ramps` resolved from `load_style(args.style)
+.palette_path` instead of a bare `load_palette()`, threaded through
+`forge()`'s existing quantize/outline call via a new `ui_dir` parameter
+(default `UI_DIR`, unchanged for the default style). Output nesting matches
+`furnish.py`'s own `out/sprites/<style>` convention specifically --
+`out/ui/<style>` for a non-default style -- rather than `tileset.py`/
+`render_batch.py`'s `_<style>` suffix convention; both live under `out/`,
+already blanket-gitignored, so this was a convention to match rather than a
+gitignore gap to fix. PR #30's `sprites/`-has-its-own-line gap doesn't apply
+here: `UI_DIR` was `out/ui` from day one.
+
+Regression-checked for the default style two ways, since a fresh clone had
+no prior `out/ui/` content to hash against. First: `load_palette(load_style
+("cozy_ghibli").palette_path)` is dict-equal to the old bare `load_palette()`
+call -- both resolve to the same `palette/palette.json` and parse it the same
+way -- so the deterministic quantize/outline stage runs on an identical
+ramps object before and after this change, by construction, not just by
+argument. Second: a live run (`--only ui_icon_espresso --retry-seeds 0`, no
+`--style` flag) passed on the first seed and wrote to the unchanged
+`out/ui/` path.
+
+Ran the full 14-icon batch for real against `snes_rpg` (default
+`--retry-seeds 2`, so 3 seeds per icon): **9/14 passed the speckle gate.**
+Looked at all fourteen, not just the count -- `proof/ui_forge_snes_rpg.png`,
+gated icons included via a reconstructed quantize/outline pass over their
+last attempted seed's concept image (never written to disk on failure,
+since `forge()` only saves the final PNG on success), so a gated icon's
+actual shape is visible next to its failure reason rather than trusted blind:
+
+- The five drinks (`ui_icon_cappuccino`, `ui_icon_cold_brew`,
+  `ui_icon_espresso`, `ui_icon_latte`, `ui_icon_tea`) pass and read
+  correctly -- the same "5 drinks usable" finding `cozy_ghibli`'s own UI
+  pass recorded, reproduced under a second palette. A direct
+  `ui_icon_espresso` cozy_ghibli-vs-snes_rpg comparison (same proof sheet)
+  confirms the quantize/outline/palette stage re-shades a correctly-read
+  icon cleanly, no cross-ramp bleeding.
+- `ui_dialogue_frame` and `ui_nameplate` pass the metric with the wrong
+  shape -- `ui_dialogue_frame` renders as a blue technical dial/gadget icon,
+  not a speech bubble; `ui_nameplate` renders as a cassette-player-style
+  device panel, not a banner. Same class of gate-proxy false positive
+  `ART_CRITIQUE.md` already recorded for these two ids under `cozy_ghibli`
+  ("photographed pictures-in-frames" and "a framed panel" respectively),
+  reproduced under a second palette rather than newly discovered -- the
+  metric's blindness to shape is style-independent by construction, since
+  `check_icon` never inspects the palette at all.
+- `ui_coin` and `ui_icon_pastry` gate for the same documented reasons as
+  under `cozy_ghibli`: the coin renders muddy, and the pastry's lamination
+  is exactly the high-frequency-detail-quantizes-to-speckle ceiling
+  `ART_CRITIQUE.md`'s "clearest proof yet" entry already named. Not new, not
+  style-specific, not chased further for the same reason it wasn't chased
+  there.
+- `ui_star_rating` gates worse than under `cozy_ghibli` (34.2% isolated) on
+  the same burst-shaped-rather-than-star ceiling.
+- `ui_clock_day` and `ui_heart_mood` are the one genuinely new finding: both
+  passed under `cozy_ghibli` (after one and two reseeds respectively) but
+  fail all three seeds under `snes_rpg` at the same `--retry-seeds 2`
+  budget -- and looking at them, both are still legible, correctly-shaped
+  icons (a clock face with tick marks, a heart with internal linework), not
+  the wrong-shape or missing-subject failures above. `concept()` takes no
+  style or palette argument, so the raw SDXL image for a given seed is
+  bit-identical between the two style runs -- the entire difference in
+  outcome is produced by the quantize/outline stage, i.e. by the palette
+  alone, which rules out seed luck as the explanation. `snes_rpg`'s bible
+  deliberately specifies fewer, harder-edged shading bands (4-5 steps vs
+  `cozy_ghibli`'s 5-7) and far less chroma falloff (PR #18), which quantizes
+  the same fine internal linework these two subjects carry into more
+  isolated pixels than `cozy_ghibli`'s softer palette does. Recorded as a
+  genuine, style-specific defect and left that way -- lowering
+  `MAX_ISOLATED` or raising `--retry-seeds` to make it disappear would be
+  exactly the proxy-gaming this file's own comment on `--retry-seeds`
+  already warns against.
+
+`ui_forge.py` was the last GPU-bound producer `NEXT.md`'s migration-order
+plan named; every producer on that original plumbing list (`furnish.py`,
+`render_room.py`, `build_plan.py`, `character.py`, `portrait.py`,
+`manifest.py`, `ui_chrome.py`, `tileset.py`, `render_batch.py`,
+`art_review.py`, now `ui_forge.py`) has `--style` wired through its real
+checks. `export_godot.py` remains the one deliberately-flagged boundary
+case (PR #31).
+
+---
+
+**Landed (PR #37, stacked on #36): `--style` for `export_godot.py`, the
+design decision PR #31 deliberately left unattempted.** The real question
+PR #31 flagged -- does a second style's export get its own Godot project
+tree, or does one tree get re-staged and re-imported per run -- was decided
+with evidence, not guessed: `build_all.gd`, `verify_font.gd` and
+`verify_palette.gd` were read in full, and none of the three contains a
+style-specific path, constant, or branch. All three address everything
+through `res://`, which Godot resolves against whatever directory `--path`
+names, and read their inputs (`build_manifest.json`, `assets/`) from that
+same directory -- so the exact same three files, unmodified, build and
+verify whichever style's assets were staged into whatever project they're
+pointed at.
+
+That finding decided both halves of the design at once. First,
+`godot_export/project_<style>/` -- a full, separate sibling project
+directory per non-default style, `godot_export/project/` untouched for the
+default -- rather than one project re-staged in place per run, because a
+shared tree would make each style's build overwrite the other's on disk and
+tie the default's own regression bar to "nobody ran a different style more
+recently," which is exactly the kind of fragile coupling this track's
+discipline exists to avoid. Second, because the tracked GDScript is
+genuinely style-agnostic, that per-style directory does NOT get its own
+independently-tracked copies of `project.godot`/`build_all.gd`/
+`verify_*.gd` -- two tracked copies of files with identical behaviour is a
+pure drift risk (a fix landing in one and not the other) with nothing to
+show for it. Instead `export_godot.stage_style_project()` copies the four
+files from `godot_export/project/`'s own tracked originals into the style
+directory fresh on every run, the same "regenerated from source every time"
+contract `assets/`/`resources/` already have. `godot_export/project_*/` was
+added to `.gitignore` as a whole tree (not the assets/resources/.godot
+subset `project/` uses), since nothing under a style directory is tracked.
+Checked with `git status --porcelain --ignored` after the first `--style
+snes_rpg` run and confirmed `godot_export/project_snes_rpg/` shows `!!`
+(ignored) with nothing untracked -- PR #30's own gitignore-gap mistake, not
+repeated.
+
+`package_godot.stage()` gained a `style_name` parameter and a new
+`style_paths()` helper resolving `manifest_path`/`sprites_dir`/
+`project_dir`/`ui_dir`/`tiles_dir`. It deliberately does NOT invent one
+uniform per-style convention -- it matches whichever convention each
+upstream producer's OWN `--style` flag already committed to on disk:
+`furnish.py`'s nested `out/sprites/<style>/`, and `tileset.py`/
+`ui_chrome.py`'s sibling-with-suffix `out/tiles_<style>/`/`out/ui_<style>/`.
+`sprites/atlas.json` (`animate.py`'s output) is the one input left
+unparameterized: `animate.py` has no `--style` flag at all yet, unlike
+every other producer this file stages from, so there is no per-style atlas
+to resolve to -- staying with the one fixed path is accurate, not an
+oversight, and the animation section simply stages nothing for either style
+until that producer is generalized too (a real, separate, not-yet-started
+gap, same shape as `ui_forge.py`'s GPU dependency).
+
+Regression evidence, and a real finding about the bar itself: comparing
+`.tres` output byte-for-byte turned out not to be possible AT ALL, even
+between two consecutive runs of fully unmodified code -- Godot's own
+`ResourceSaver` assigns a random hash suffix to every `ext_resource`/
+`sub_resource` id on every save (confirmed by running the untouched
+pre-change code twice in a row and diffing the output: only those id
+tokens differed). The real bar applied instead: `build_manifest.json`
+(pure JSON, no Godot-assigned ids) came back byte-identical, same sha256,
+across three separate runs -- unmodified code twice, this change's code
+once. All 56 `.tres` files came back structurally identical between
+unmodified and modified code once the random id tokens are canonicalized
+by first-appearance order (a small normalizing script, not a semantic
+diff) -- 0 mismatches across all 56 files. `godot_export/project/` itself
+is untouched by any `--style snes_rpg` run, by construction, so the
+default's own tree was never at risk of drifting regardless.
+
+The real `snes_rpg` pipeline run, staged from the 448-sprite sweep PR #33
+already produced: stage, headless import, headless build and both
+round-trip checks all passed cleanly, 56 resources written to
+`godot_export/project_snes_rpg/resources/`. Looked at, not just counted:
+`armchair.tres` references `res://assets/armchair/armchair_dir0.png`
+correctly inside its own project tree, and that staged PNG is byte-identical
+to `out/sprites/snes_rpg/armchair_dir0.png` (and differs from the default
+style's own `armchair_dir0.png`, confirming the two styles' assets never
+cross-contaminate). The palette LUT's pixel values were read back directly
+and compared against a fresh `palette_forge.forge()` call for `snes_rpg`'s
+own bible -- exact match -- independently of `verify_palette.gd`'s own
+in-engine check reporting the same thing ("Godot reads all 1 palettes x 32
+colours exactly, at nearest filtering"). That "1 palette" is a real fact
+about `snes_rpg`'s current `bible.yaml`, not a bug: it declares no
+`golden_hour`/`evening`/`night`/`overcast` variants yet, unlike
+`cozy_ghibli`'s five rows -- day/night palette variants for this style are
+separate, not-yet-started work.
+
+Two honest gaps, not fixed here because fixing them is out of this PR's
+scope: `out/ui/` (and `out/ui_snes_rpg/`) don't exist in this environment
+-- `ui_forge.py --style` is separate, in-flight work -- so the nine-slice
+round-trip and font-layout checks both no-op cleanly for both styles
+(empty `ui`/`font` sections in the build manifest, not a failure) rather
+than being exercised against real content; and `sprites/atlas.json`
+(`animate.py`'s output) was missing from `ROOT/sprites/` in this
+environment (only a stray, differently-nested `sprites/sprites/atlas.json`
+existed), so the `anim` section staged nothing for either style -- exactly
+the gap `package_godot.stage()`'s existing `atlas_path.exists()` guard is
+already built to degrade through, not a new failure this PR introduced.
+
+Every producer `NEXT.md`'s migration-order list named is now `--style`-wired
+except `animate.py` (never carried a `--style` flag to begin with, and
+picking up that gap is new scope, not a rider on this one) -- `ui_forge.py`
+landed the same way one PR earlier (#36, above).
+
 ---
 
 ## How this repo expects work to be done
