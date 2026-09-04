@@ -524,6 +524,18 @@ def check_member_thickness(mesh, name="asset", ppu=ROOM_PX_PER_UNIT,
 # separate them, which a redundant floor cannot do by definition. The current
 # library has never tripped it because nothing in it is that regression, which
 # is the outcome a working floor is supposed to produce, not a case against it.
+#
+# Re-asked with a real generator instead of 2000 random pixels, and widened
+# past the 15 GENERATORS entries to all 24 seeded builders in assetlib.py
+# (ART_CRITIQUE.md, "The screen-spread floor's redundancy question, closed
+# with a real generator instead of synthetic noise"): still never fires alone
+# on anything shipped, but degrading the real `bookshelf` two independent
+# ways -- rnd() amplitude shrunk toward its midpoint, spine palette
+# truncated -- brackets this floor for real. Silent at 15.4% (amplitude
+# k=0.35), fires at 14.8% (k=0.30): a measured 0.6-point gap either side of
+# 0.15, agreeing with a second, independent bracket on the spine axis (silent
+# 15.2% at 3 colours, fires 12.8% at 2). Four constructed cases fire the mean
+# floor while the closest-pair floor stays over 8.5%.
 DEFAULT_SPREAD_FLOOR = 0.15
 
 # How different the two most similar instances of one generator must be.

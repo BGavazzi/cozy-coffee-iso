@@ -331,15 +331,30 @@ measured. Re-running `factory.py subjects_c1.yaml` is the way to settle it.
 **The calibration backlog is untouched across all four passes, not
 forgotten** — see `ART_CRITIQUE.md`'s most recent "Still open" list: counter
 orientation (0.04 focal-lead cost), the focal-reading-falls-with-resolution
-gap, furniture screen spread's possibly-redundant floor, and the detail
-floor's 0.010-wide bracket. None of the four passes touched a generator,
-check, or threshold in the sprite/room pipeline, so check these before
-assuming anything moved.
+gap, and the detail floor's 0.010-wide bracket. None of the four passes
+touched a generator, check, or threshold in the sprite/room pipeline, so
+check these before assuming anything moved.
+
+**Furniture screen spread's possibly-redundant floor is resolved** (branch
+`spread-floor-audit`): not redundant, floor stays at 0.15. Write-up:
+`ART_CRITIQUE.md`, "The screen-spread floor's redundancy question, closed
+with a real generator instead of synthetic noise". Found along the way and
+worth its own item: `assetlib.fridge_under` and `assetlib.tip_jar` both take
+a `seed` and never read it inside their body — every seed renders the
+identical mesh, measured 0.0% mean and 0.0% closest-pair spread. Neither is
+in `art_review.GENERATORS`, so nothing currently gates it; `check_generator_range`
+covers 15 of the 24 seeded builders in `assetlib.py`. Not fixed here — wiring
+two generators' randomness and deciding whether to widen `GENERATORS` to the
+other 9 seeded builders (`leafy_plant`, `succulent`, `book_stack`,
+`pastry_plate`, `bean_sack`, `wall_art_framed`, `plant_hanging`, plus the two
+above) is a separate task from the floor question this branch answered.
 
 ---
 
-**The list below (A1, B1, C1, C2, D1, B2) is done and written up in
-`ART_CRITIQUE.md`.** One-line status:
+**The list below (A1, B1, C1, C2, D1) is done and written up in
+`ART_CRITIQUE.md`; B2 is done too, written up in its own bullet below
+instead (the `galley-multicounter` PR, not yet folded into
+`ART_CRITIQUE.md`).** One-line status:
 
 - A1 key-light drift — diagnosed: `camera_light()` is correctly per-azimuth;
   the check's own fix message was wrong and is now corrected. Measurement
@@ -356,10 +371,70 @@ assuming anything moved.
   2.2x wall run's, weak -0.245 correlation with detail within L run) but a
   direct counter-example (plan 38: largest box, near-best detail) rules it
   out as a sufficient explanation. Left open, one layer deeper than before.
-- B2 double-run topology — scoped correctly this time and NOT built: 8
-  places in `build_plan.py` consume `plan.of("service")`/`plan.of("backbar")`,
-  4 hard-coded to `[0]`. A naive build renders one lit counter and one bare
-  one. Real cost is a `build_plan.py` audit, left for a dedicated pass.
+- B2 double-run (galley) topology — built. The audit found every `[0]` site
+  named plus one the earlier scoping pass missed (`main()`'s own inlined
+  copy of `focal_box`), and each needed a genuinely different fix rather
+  than one "loop it" patch: `light_rig` sums pools per run and ranks dark
+  corners by distance to the NEAREST run; `build()`'s whole counter-fill
+  section (kit, back counter, back bar shelving, menu boards, counter-top
+  clutter) moved inside a `for run_idx, run in enumerate(runs)` loop, paired
+  with its own back bar by list position; `_people()` places a barista and
+  a queue per run, splitting the roster instead of every queue drawing the
+  same two customers. N==1 verified byte-identical first: the 12-plan focal
+  scan's L/C/D readings matched the pre-refactor run to three decimals,
+  topology for topology, including both documented failures, BEFORE the
+  galley branch was added to `floorplan.generate()`.
+  Galley's own proposal-level acceptance rate is 76.5% (17 tried, 13 kept
+  over 400 seeds) — inside the other four's 56–77% range, so the branch
+  isn't fighting its own constraints. Its SHARE of `generate()`'s output is
+  lower (13/400, 3.2%) than the other four (14–35%), but that is its lower
+  draw probability (0.22, same as island) times "first proposal to pass
+  wins" starving a rarer branch of turns, not poor tuning — `check_plan_range`
+  and `check_generated_plans(40)` both still read clean.
+  Verification caught one real bug: kit items (espresso machine, grinder,
+  register) on the mirrored far run floated with nothing underneath them.
+  Every existing topology's kit placement anchors near the wall and trusts
+  the mesh to extend toward the customer from there; a mirrored run's wall
+  is on the opposite (high-coordinate) edge, so the same anchor pushed the
+  item's bulk past the counter into open floor. Fixed with the same
+  centre-and-rotate technique the counter modules already needed, anchored
+  to the run's own depth midpoint instead of a wall-relative offset.
+  One real, left-open finding: `focal_box` unions every service/backbar/
+  service_return zone, which for a galley spans the ENTIRE room depth (both
+  runs are on opposite walls) rather than a strip near one. Over the 12-plan
+  scan this reads as designed on contrast (all 3 galley plans clear +0.045,
+  floor +0.030) but weak on mean L (2 of 3 fail: -0.012, -0.019, sole pass
+  +0.031) and weaker still on detail (3 of 3 fail: -0.019, -0.042, -0.013)
+  — so all 3 galley plans miss at least one floor, a 100% fail rate over
+  the topology's only 3 occurrences in the sample. Widened to a 40-plan
+  scan to see if a bigger sample would soften this: it didn't — no new
+  galley seed appeared in plans 13-40 (13/400 ≈ 3.2% share means ~1-2
+  expected over 28 more plans, so 0 is unlucky but not alarming on its
+  own), and the 3 existing galley plans reproduced their 12-plan numbers
+  exactly, still 3/3 failing. The other four topologies' 40-plan fail rates
+  — wall run 1/12, peninsula 1/13, island 1/6, L run 2/6 — sit in the same
+  band as their known pre-existing baseline noise (e.g. plan 10's -0.011,
+  corrected in this pass from a stale -0.002); galley's 3/3 is categorically
+  different, a structural miss tied to focal_box's box size, not scan luck.
+  This is very likely D1's box-size-vs-detail relationship, now much more
+  pronounced because a galley's box is a genuine two-counter union rather
+  than one wide L run — not fixed here, because loosening `MIN_FOCAL_L`/
+  `MIN_FOCAL_DETAIL` to admit it would be tuning the instrument to the
+  answer. `check_focal_contrast`'s `n` moved 4→5 instead, so galley enters
+  the "one room per topology" suite check rather than being silently
+  skipped by scan order (at seed=1 it now sorts ahead of wall run in the
+  scan, which would otherwise have dropped wall run from the sample
+  instead) — `manifest.py --check` now reports galley's L/detail miss
+  alongside the two already-documented failures, honestly rather than
+  quietly.
+  Rendered and viewed both orientations: `proof/galley_room.png` (seed 8,
+  horizontal) and `proof/galley_room_vertical.png` (seed 12, vertical) —
+  the vertical one reads clean at a glance, both counters staffed and lit
+  with seating between them; the horizontal one's far counter visibly reads
+  flatter, consistent with the finding above. Neither is "one lit counter
+  and one bare one" — `check_built_rooms`-equivalent checks (collisions,
+  grounded, seating-faces-tables, screen occlusion) are clean across all 13
+  galley seeds found in the first 400.
 
 Kept below as a record, not an open queue. Read `ART_CRITIQUE.md`'s final
 "Still open" section before touching anything that produces art — it is a
@@ -790,6 +865,73 @@ not a stand-in for a box, and it read correctly on the first render.
 silhouette-swing sheet, and a new one comparing all four hairstyles side by
 side at azimuth 225.
 
+**Landed (PR #41, stacked on #39 and #40): the focal-detail check is now
+resolution-confirmed, not resolution-invariant.** Closes `ART_CRITIQUE.md`'s
+longest-open "Still open" item -- the focal reading falling with render
+resolution -- by re-measuring it end to end instead of trusting the note.
+Write-up: `ART_CRITIQUE.md`, "Focal detail: resolution-confirmed, not
+resolution-invariant".
+
+Two findings, then a fix:
+
+- **Contrast healed on its own.** Swept 160-480 across the suite check's own
+  four-room sample plus the reference room: every reading now clears the
+  0.030 floor by at least 0.047, most by 3-6x. The steep collapse the
+  original bullet measured (down to +0.014, nearly crossing) is gone -- an
+  unrelated string of composition fixes (hull-clipped focal region, wall
+  shelf/sign, back-counter height) closed it as a side effect, never
+  re-verified until now.
+- **The same problem re-appeared on detail** (edge density, added after that
+  bullet was written). Every room's detail lead shrinks with resolution,
+  the reference room included. Live and current: `build_plan.py
+  --focal-scan 12` read 2 of 12 fail at 320, 1 of 12 at 480 -- plan 1
+  flipped from FAIL to pass with zero content change. `manifest.py
+  --check`'s own `check_focal_contrast()` (the fast gate, not just the deep
+  scan) was already carrying this exact case as an accepted failure, named
+  directly in this file's own Gates section.
+
+A ratio reformulation of the detail lead -- `(di-do)/(di+do)` instead of the
+raw difference -- was measured and rejected: it shrinks the drift for
+healthy rooms but is proven, algebraically and numerically, unable to change
+a single verdict at a floor fixed at exactly 0 (a sign-preserving
+transform). Root cause is the renderer, not the statistic -- `shade_toon`'s
+dither and `mesh.py`'s surface grain are fixed-real-world-size
+perturbations that `downsample_modal` only resolves once a render target's
+per-pixel world footprint shrinks below their width, which happens at a
+different target for the counter than for the busy periphery. A truly
+resolution-invariant version would grade off world-space material samples
+instead of raster pixels -- scoped and left, the same way the fifth
+topology and the style LoRA were.
+
+**The fix:** `FOCAL_CONFIRM_TARGET = 480` in `tools/build_plan.py`. A room
+that fails at the check's own 320 gets one confirming render at the
+delivery resolution and is only reported if it fails both. Passing rooms
+(10 of 12) never pay for the second render.
+
+Verified both gates, live:
+
+    .venv/Scripts/python.exe tools/build_plan.py --focal-scan 12
+    -> 1 of 12 fail (8%), 1 rescued by the 480 confirmation (plan 1)
+
+Direct call, before and after: `check_focal_contrast()` (the function
+`manifest.py --check` actually runs) reported plan 1's -0.002 detail as a
+failure before this change and reports zero messages after. The full
+`manifest.py --check` run confirms it end to end: **0 errors, 8 warnings**
+(the same 8 pre-existing, unrelated occlusion/declared-but-unbuilt-UI
+warnings), where it used to be 1 error on this exact case. Plan 10 -- the
+one real defect in the sample, negative at every resolution from 240
+through 480 -- still fires in both the scan and a direct
+`check_focal_contrast(seed=10, n=1)` call. Proof: `proof/focal_plan1_320.png`
+vs `proof/focal_plan1_480.png` (the flip, same room, same seed); `proof/
+focal_plan10_320.png` vs `proof/focal_plan10_480.png` (still failing, both
+resolutions).
+
+**Left honestly incomplete:** this is confirmation at two specific
+resolutions, not invariance at any resolution -- a defect visible only at
+some third target would still slip through. That is the practical claim the
+shipped game needs (the checked and the delivered resolution now agree), not
+the abstract one the original bullet asked for.
+
 ---
 
 ## How this repo expects work to be done
@@ -839,32 +981,67 @@ side at azimuth 225.
 **Gates — both must be clean before any commit**
 
 ```
-.venv/Scripts/python.exe tools/manifest.py --check            # 26 checks, takes ~4 min, 1 currently fails
+.venv/Scripts/python.exe tools/manifest.py --check            # 26 checks, takes ~4 min, clean
 .venv/Scripts/python.exe tools/build_plan.py --focal-scan 12  # slower, 1 of 12 currently fails
 ```
 
-Neither is clean right now, and both are the same underlying story: the
-detail floor sits at exactly 0.0 with a measured 0.002-0.006 margin
-(`ART_CRITIQUE.md`, "The detail floor at 40 plans"), thin enough that small,
-unrelated changes flip a borderline room across it.
+Both used to fail on the same underlying story: the detail floor sits at
+exactly 0.0, and its per-dressing-state noise (0.075-0.145 at n=50) runs
+3-6x a shelf's own mean effect (~0.02-0.03) -- closed out at scale as a
+population-rate check rather than tracked as an open margin
+(`ART_CRITIQUE.md`, "The detail floor's bracket, closed: the noise is bigger
+than the signal", PR #42). As of the focal-resolution-confirmation pass
+(`ART_CRITIQUE.md`, "Focal detail: resolution-confirmed, not
+resolution-invariant", PR #41):
 
-- `build_plan.py --focal-scan 12` fails plan 10 by -0.002 — a real,
-  documented, accepted case.
-- `manifest.py --check`'s `check_focal_contrast` fails plan 1 (wall run) by
-  -0.002 — this one is new as of the RNG-unification pass (`ART_CRITIQUE.md`,
-  "`leafy_plant` unified onto `_mix`"): a different draw from `leafy_plant`'s
-  now-shared RNG stream shifted plan 1's detail reading across the same
-  floor. Verified by isolating the change with `git stash`; not a bug in the
-  RNG swap, a demonstration of how thin the floor's margin really is.
+- `manifest.py --check`'s `check_focal_contrast` no longer fails on plan 1.
+  It used to (-0.002, from the RNG-unification pass) -- that failure turned
+  out to be resolution-dependent (it passes at 480, the delivery
+  resolution), and the check now confirms a 320 failure against a 480
+  render before reporting it, so the resolution-only flip no longer counts.
+- `build_plan.py --focal-scan 12` still fails plan 10, correctly -- a real,
+  accepted defect, negative at every resolution from 240 through 480 (not
+  -0.002 as this file previously recorded; that number was a stale
+  transcription -- the measured margin is -0.011 at 320, -0.013 at 480).
 
 Don't treat a *new* failure in either run as equally acceptable without
-checking whether it's one of these two known cases or something else.
+checking whether it's plan 10 or something else.
 
 Stage-8 review on generated sprites:
 
 ```
 .venv/Scripts/python.exe tools/review_queue.py build "out/sprites/*_dir*.png"
 ```
+
+---
+
+**Landed (PR #42, stacked on #39, #40, #41): the detail floor's "Still open"
+bracket, closed.** `ART_CRITIQUE.md` had carried `MIN_FOCAL_DETAIL`'s bracket
+as "0.010 wide" since the wall-shelf/sign fix, never revisited even after two
+later, unrelated passes (`leafy_plant` unified onto `_mix`; the L-run-corner
+dilution check) each independently brushed against the same margin without
+closing the bullet out. Re-measured at n=50 (`proof/detail_floor_scan50.txt`)
+instead of the original 12: the rate holds (14% vs B4's 12.5% on 40 plans)
+but the bracket does not — weakest fail/pass gap is 0.002-0.004, not 0.010,
+and two rooms sharing the *identical* back-wall dressing state (sign, two
+menus, zero shelves) land 0.072 apart (plan 10 at -0.011, plan 22 at +0.061;
+proof: `proof/detail_floor_plan10_fail.png`, `proof/
+detail_floor_plan22_pass.png`, both confirmed at the shipped 480px target
+too). Grouped by dressing state, the per-state spread (0.075-0.145) runs
+3-6x the shelf's own mean effect (~0.02-0.03) — a signal-to-noise ratio no
+single threshold between -0.017 and +0.061 can resolve without either
+punishing peninsulas/islands for a defect they're structurally incapable of
+(no wall to dress) or losing rooms with the actual defect.
+
+**Verdict: left at 0.0**, same constant, correction is to the claim rather
+than the number — recorded as a population-rate check (~1 in 8-9 wall/L
+runs), not a per-room verdict; a lone borderline failure is not proof that
+specific room is under-dressed. `tools/build_plan.py`'s `MIN_FOCAL_DETAIL`
+comment and `ART_CRITIQUE.md`'s "Still open" list are both updated in place
+rather than left to drift further. No logic changed —
+`manifest.py --check` (1 error, 8 warnings) and `build_plan.py --focal-scan
+12` (2 of 12 fail: plan 1 -0.002, plan 10 -0.011) are byte-for-byte the same
+before and after this branch's diff.
 
 ---
 
