@@ -180,7 +180,7 @@ def light_rig(plan: F.Plan) -> LightRig:
     return LightRig(pools)
 
 
-def build(plan: F.Plan) -> Layout:
+def build(plan: F.Plan, ramps=None) -> Layout:
     L = Layout()
     add = L.add
     # name -> the height of the surface someone sits on. Kept beside the
@@ -596,7 +596,7 @@ def build(plan: F.Plan) -> Layout:
     # that a person may stand in front of a plant; here it is that a person
     # gets the seat and the plant goes somewhere else. People are the subject
     # and dressing fills what is left, in both senses.
-    made += _people(L, plan, seat_z=seat_z, perch_rail=perch_rail)
+    made += _people(L, plan, seat_z=seat_z, perch_rail=perch_rail, ramps=ramps)
 
     # --- dressing in whatever is left, against the far walls where clutter
     # belongs: the near sides are open to the camera.
@@ -654,7 +654,7 @@ def _remember(table: dict, name: str, mesh):
 
 def _people(L: Layout, plan: F.Plan, n: int = 7, seed: int = 1,
              perch_rail: dict | None = None,
-            seat_z: dict | None = None) -> int:
+            seat_z: dict | None = None, ramps=None) -> int:
     """A barista, a queue, and customers in whatever seats were placed.
 
     The cast is `C.generate_roster`, so the two generators meet here: the
@@ -670,7 +670,7 @@ def _people(L: Layout, plan: F.Plan, n: int = 7, seed: int = 1,
     along x + y is one person with extra depth.
     """
     seat_z = seat_z or {}
-    roster = C.generate_roster(n, seed)
+    roster = C.generate_roster(n, seed, ramps)
     run = plan.of("service")[0]
     horizontal = run.facing == 0.0
     placed = 0
@@ -1062,7 +1062,19 @@ def main() -> int:
     bad = F.check_plan(plan)
     print(f"plan seed {args.seed}: " + ("clean" if not bad else "; ".join(bad)))
     print(F.describe(plan))
-    L = build(plan)
+    # Resolved before `build()` runs, not after: `build()` is what generates
+    # the roster (`_people()` -> `C.generate_roster()`), and a roster proposed
+    # against the wrong palette's contrast/waistline checks is a roster that
+    # can pass checks it would have failed under the palette it actually
+    # renders with. Same bug class as `main()`'s own `ramps` used to be for
+    # the render call alone -- computed too late to reach every place a style
+    # decision needs to land.
+    ramps = None
+    if args.style:
+        from pixelize import load_palette
+        from style import load_style
+        ramps = load_palette(load_style(args.style).palette_path)
+    L = build(plan, ramps=ramps)
     print(f"  {L.generated} props placed by constraint, "
           f"{len(L.items)} tracked in all")
     for msg in L.collisions() + L.grounded():
@@ -1091,11 +1103,6 @@ def main() -> int:
     back = plan.of("backbar")[0]
     focal = ((min(run.x0, back.x0), max(run.x1, back.x1)),
              (min(run.y0, back.y0), max(run.y1, back.y1)), (0.0, 1.50))
-    ramps = None
-    if args.style:
-        from pixelize import load_palette
-        from style import load_style
-        ramps = load_palette(load_style(args.style).palette_path)
     out_path = args.out or (str(ROOT / "proof" / "plan_room.png") if not args.style
                             else str(ROOT / "proof" / f"plan_room_{args.style}.png"))
     from render_room import render
