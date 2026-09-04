@@ -1056,6 +1056,89 @@ new defects at full scale, not just at the "one of each" sample size
 `style_approve.py` requires. No code changed -- this is a verification pass,
 and its result is that there was nothing here to fix.
 
+**Landed (PR #34, stacked on #33): `--style` for `ui_forge.py`, the last
+GPU-bound producer in the plumbing list, and a real run against `snes_rpg`
+rather than a paper wiring change.** Same mechanical pattern as every other
+producer on this list: `ramps` resolved from `load_style(args.style)
+.palette_path` instead of a bare `load_palette()`, threaded through
+`forge()`'s existing quantize/outline call via a new `ui_dir` parameter
+(default `UI_DIR`, unchanged for the default style). Output nesting matches
+`furnish.py`'s own `out/sprites/<style>` convention specifically --
+`out/ui/<style>` for a non-default style -- rather than `tileset.py`/
+`render_batch.py`'s `_<style>` suffix convention; both live under `out/`,
+already blanket-gitignored, so this was a convention to match rather than a
+gitignore gap to fix. PR #30's `sprites/`-has-its-own-line gap doesn't apply
+here: `UI_DIR` was `out/ui` from day one.
+
+Regression-checked for the default style two ways, since a fresh clone had
+no prior `out/ui/` content to hash against. First: `load_palette(load_style
+("cozy_ghibli").palette_path)` is dict-equal to the old bare `load_palette()`
+call -- both resolve to the same `palette/palette.json` and parse it the same
+way -- so the deterministic quantize/outline stage runs on an identical
+ramps object before and after this change, by construction, not just by
+argument. Second: a live run (`--only ui_icon_espresso --retry-seeds 0`, no
+`--style` flag) passed on the first seed and wrote to the unchanged
+`out/ui/` path.
+
+Ran the full 14-icon batch for real against `snes_rpg` (default
+`--retry-seeds 2`, so 3 seeds per icon): **9/14 passed the speckle gate.**
+Looked at all fourteen, not just the count -- `proof/ui_forge_snes_rpg.png`,
+gated icons included via a reconstructed quantize/outline pass over their
+last attempted seed's concept image (never written to disk on failure,
+since `forge()` only saves the final PNG on success), so a gated icon's
+actual shape is visible next to its failure reason rather than trusted blind:
+
+- The five drinks (`ui_icon_cappuccino`, `ui_icon_cold_brew`,
+  `ui_icon_espresso`, `ui_icon_latte`, `ui_icon_tea`) pass and read
+  correctly -- the same "5 drinks usable" finding `cozy_ghibli`'s own UI
+  pass recorded, reproduced under a second palette. A direct
+  `ui_icon_espresso` cozy_ghibli-vs-snes_rpg comparison (same proof sheet)
+  confirms the quantize/outline/palette stage re-shades a correctly-read
+  icon cleanly, no cross-ramp bleeding.
+- `ui_dialogue_frame` and `ui_nameplate` pass the metric with the wrong
+  shape -- `ui_dialogue_frame` renders as a blue technical dial/gadget icon,
+  not a speech bubble; `ui_nameplate` renders as a cassette-player-style
+  device panel, not a banner. Same class of gate-proxy false positive
+  `ART_CRITIQUE.md` already recorded for these two ids under `cozy_ghibli`
+  ("photographed pictures-in-frames" and "a framed panel" respectively),
+  reproduced under a second palette rather than newly discovered -- the
+  metric's blindness to shape is style-independent by construction, since
+  `check_icon` never inspects the palette at all.
+- `ui_coin` and `ui_icon_pastry` gate for the same documented reasons as
+  under `cozy_ghibli`: the coin renders muddy, and the pastry's lamination
+  is exactly the high-frequency-detail-quantizes-to-speckle ceiling
+  `ART_CRITIQUE.md`'s "clearest proof yet" entry already named. Not new, not
+  style-specific, not chased further for the same reason it wasn't chased
+  there.
+- `ui_star_rating` gates worse than under `cozy_ghibli` (34.2% isolated) on
+  the same burst-shaped-rather-than-star ceiling.
+- `ui_clock_day` and `ui_heart_mood` are the one genuinely new finding: both
+  passed under `cozy_ghibli` (after one and two reseeds respectively) but
+  fail all three seeds under `snes_rpg` at the same `--retry-seeds 2`
+  budget -- and looking at them, both are still legible, correctly-shaped
+  icons (a clock face with tick marks, a heart with internal linework), not
+  the wrong-shape or missing-subject failures above. `concept()` takes no
+  style or palette argument, so the raw SDXL image for a given seed is
+  bit-identical between the two style runs -- the entire difference in
+  outcome is produced by the quantize/outline stage, i.e. by the palette
+  alone, which rules out seed luck as the explanation. `snes_rpg`'s bible
+  deliberately specifies fewer, harder-edged shading bands (4-5 steps vs
+  `cozy_ghibli`'s 5-7) and far less chroma falloff (PR #18), which quantizes
+  the same fine internal linework these two subjects carry into more
+  isolated pixels than `cozy_ghibli`'s softer palette does. Recorded as a
+  genuine, style-specific defect and left that way -- lowering
+  `MAX_ISOLATED` or raising `--retry-seeds` to make it disappear would be
+  exactly the proxy-gaming this file's own comment on `--retry-seeds`
+  already warns against.
+
+`ui_forge.py` was the last GPU-bound producer `NEXT.md`'s migration-order
+plan named; every producer on that original plumbing list (`furnish.py`,
+`render_room.py`, `build_plan.py`, `character.py`, `portrait.py`,
+`manifest.py`, `ui_chrome.py`, `tileset.py`, `render_batch.py`,
+`art_review.py`, now `ui_forge.py`) has `--style` wired through its real
+checks. `export_godot.py` remains the one deliberately-flagged boundary
+case (PR #31).
+
 ---
 
 ## How this repo expects work to be done
