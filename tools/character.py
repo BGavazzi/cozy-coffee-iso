@@ -1162,7 +1162,19 @@ def main() -> int:
     ap.add_argument("--style", default="cozy_ghibli")
     args = ap.parse_args()
 
-    ramps = load_palette()
+    # `--style` used to only pick which style's lock.json got the result --
+    # the roster's own material choices (`BARISTA`, `CUSTOMERS`, ...) were
+    # always checked against cozy_ghibli's palette regardless, which means a
+    # `--style snes_rpg --lock` run recorded a pass/fail that never actually
+    # measured snes_rpg's own colours. A check that cannot fail for the
+    # style it claims to certify is worse than no check (NEXT.md's own
+    # rule). The geometry is still cozy_ghibli's box/prism rig either way --
+    # character.py doesn't consume rig: yet, see NEXT.md -- but the contrast/
+    # spread/waistline checks are genuinely about whether THIS style's
+    # colours, applied to the same material roles, still separate correctly,
+    # which is a real question with a real answer per style.
+    from style import load_style
+    ramps = load_palette(load_style(args.style).palette_path)
     gate_fns = ("check_contrast", "check_palette_spread", "check_waistline",
                "check_direction_stability")
     problems = (check_contrast(ramps) + check_palette_spread()

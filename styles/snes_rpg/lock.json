@@ -15,6 +15,20 @@
     "style": "snes_rpg",
     "style_hash": "b35b39e59b56f2cd"
   },
+  "character.py:roster": {
+    "approved": false,
+    "gates": [
+      "check_contrast",
+      "check_palette_spread",
+      "check_waistline",
+      "check_direction_stability"
+    ],
+    "producer": "character.py",
+    "recorded_at": "2026-09-02T08:15:44+00:00",
+    "scope": "roster",
+    "style": "snes_rpg",
+    "style_hash": "b35b39e59b56f2cd"
+  },
   "organic_rig.py:silhouette": {
     "approved": true,
     "gates": [
