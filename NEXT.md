@@ -1,5 +1,35 @@
 # Next
 
+## Where the open work actually is — read this first
+
+`ART_CRITIQUE.md`'s **final "Still open" section** is the live queue. Nothing
+else in this file is. At the time of writing it holds:
+
+- **Stages 1-3** (SDXL concept -> TRELLIS 2 mesh -> UniRig rig) need a GPU and
+  model weights. The seam (`ingest.py`) is built and checked; nothing feeds it.
+- **Counter orientation costs the focal lead 0.04** and nothing compensates.
+  Deliberately not "fixed" -- a rig boosted until the metric agreed would be a
+  knob rather than a cause.
+- **The focal reading falls with render resolution** in generated rooms and
+  holds in the reference one. The gap is stated rather than tuned away.
+- **Furniture screen spread's mean floor (0.15)** has never rejected anything
+  its closest-pair floor (0.045) did not also reject -- redundancy, or a floor
+  set too low to fire.
+- **The detail floor's bracket is 0.010 wide** -- the tightest in the suite,
+  and the first whose margin is smaller than the gap between two adjacent
+  rooms.
+
+Plus one prerequisite recorded in the status list below: the **`build_plan.py`
+multi-counter audit** (5 sites hard-code `plan.of("service")[0]`), which is
+what actually blocks the double-run topology.
+
+**The Tier A/B/C/D sections far below are CLOSED and preserved only as a
+record of what was once asked.** Their headings still advertise open work
+("nobody has looked at it yet", "ready to build", "still open") because the
+text is kept verbatim. Reading them as a backlog has already cost one pass
+real effort on work finished long before. Start from the list above instead.
+
+
 **Both halves of "prompts and examples in, engine-usable assets out" are
 done.** They landed as two separate PRs against roughly the same base, so:
 
@@ -836,7 +866,19 @@ Stage-8 review on generated sprites:
 
 ---
 
-## Tier A — one finding nobody has looked at yet
+## Tier A — CLOSED (historical record, not open work)
+
+> **These four Tier sections are CLOSED.** Every item below (A1, B1, C1, C2,
+> D1, B2) was completed or deliberately resolved, and each one's outcome is
+> in the status list further up this file and written up in full in
+> `ART_CRITIQUE.md`. The task text is preserved verbatim as a record of what
+> was asked, which is why it still reads in the imperative and still says
+> things like "nobody has looked at it since" — that was true when written
+> and is not true now.
+>
+> **Do not pick work from here.** The live queue is `ART_CRITIQUE.md`'s final
+> "Still open" section. Reading these headings as a backlog has already cost
+> one pass real effort on work that was finished months earlier.
 
 ### A1. Key light drifts across the direction set, and it's never been triaged
 
@@ -867,7 +909,7 @@ the object rotates."*
 
 ---
 
-## Tier B — scoped last pass, ready to build
+## Tier B — CLOSED (historical record, not open work)
 
 ### B1. Split `MAX_SOFT_ALPHA` into what it's actually catching
 
@@ -922,7 +964,7 @@ the one layout where two runs face opposite directions in the same room).
 
 ---
 
-## Tier C — small, well-scoped instrumentation
+## Tier C — CLOSED (historical record, not open work)
 
 ### C1. Log bind dE per subject, the same way albedo shift already is
 
@@ -958,7 +1000,7 @@ generator copy-pasted from `leafy_plant` inherits the inconsistency.
 
 ---
 
-## Tier D — one real lead, still open
+## Tier D — CLOSED (historical record, not open work)
 
 ### D1. B4's L-run concentration is unexplained
 
