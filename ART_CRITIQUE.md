@@ -4783,6 +4783,123 @@ the human tier this repo has always said is the whole point. One clean, one
 correctly rejected, one that needs a person to look at it is an honest first
 result for a category that had nothing in it an hour ago.
 
+## `fridge_under` and `tip_jar`: a seed parameter that did nothing, and nine generators put through the same measurement
+
+PR #40's screen-spread audit found this in passing while bracketing
+`DEFAULT_SPREAD_FLOOR`: `assetlib.fridge_under(seed)` and `assetlib.tip_jar
+(seed)` both take a `seed` argument and never read it in the body -- no
+`_mix(seed)` call, no `rnd()` closure, every seed rendering the byte-identical
+mesh (measured 0.0% mean spread, 0.0% closest pair, both ways of asking the
+same question). The same audit found `check_generator_range`'s `GENERATORS`
+list covers 15 of `assetlib.py`'s 24 seeded builders (functions taking
+`seed: int | None = None`, one exception -- `leafy_plant` and `plant_hanging`
+default to a concrete int rather than `None`, and are seeded builders anyway),
+nine ungated: `leafy_plant`, `succulent`, `book_stack`, `pastry_plate`,
+`bean_sack`, `wall_art_framed`, `plant_hanging`, `fridge_under`, `tip_jar`.
+Both findings were flagged and deliberately not fixed on that branch. This
+entry is that fix.
+
+**The fix itself is the pattern every other seeded generator in the file
+already uses.** `book_stack`, `bean_sack` and `pastry_plate` sit a few
+hundred lines away from both broken functions using exactly the
+`st = None if seed is None else _mix(seed)` / `rnd()` closure pattern that
+was missing -- this wasn't a design question, it was two functions that
+skipped a step every neighbour took.
+
+`fridge_under` varies handle height (0.66-0.76) and length (0.09-0.14), plus
+plinth height (0.03-0.05) -- the same scale of change `counter`'s own front
+treatments get, deliberately, because a closed appliance's silhouette is
+fixed by design and only the value detail on its face is supposed to move.
+`tip_jar` varies coin-fill height (0.05-0.19, the dominant term -- a jar an
+hour into a shift and one at closing are the same object at different fill),
+jar radius (+/-1.5%) and label-band height (0.13-0.18), all bounded so the
+label never clears the glass rim.
+
+**Measuring whether to widen `GENERATORS`, not assuming it.** Each of the
+nine ungated builders was rendered across six independent 8-seed windows
+(seeds 1-8, 9-16, 17-24, 51-58, 101-108, 201-208) and run through
+`check_generator_range`'s own `screen_materials` / `_screen_spread` /
+`_pair_disagreement` math, at a per-generator `span` sized from each mesh's
+actual projected extent at azimuth 45 (the same way the existing 15 entries'
+spans were evidently sized -- projected width/height times a ~1.0-1.15
+margin matched against `chair`, `crate`, `armchair`, `stool`, `bookshelf`'s
+own span/extent ratios):
+
+    generator          mean spread (range across 6 windows)   closest pair
+    leafy_plant        46.9% - 53.1%                           30.0% - 37.4%
+    succulent          29.9% - 34.3%                           14.0% - 22.2%
+    book_stack         86.1% - 94.3%                           44.9% - 53.3%
+    plant_hanging      57.0% - 67.1%                           35.3% - 47.9%
+    wall_art_framed    26.8% - 37.9%                            0.0% (every window)
+    tip_jar             8.7% - 12.8% (pre-fix: 0.0%)             0.3% - 3.6%
+    pastry_plate        5.7% -  9.0% (pre-fix: 0.0%)             0.4% - 2.6%
+    bean_sack           4.4% -  8.1%                             0.0% - 0.7%
+    fridge_under         1.0% -  1.6% (pre-fix: 0.0%)            0.0% - 0.5%
+
+Four (`leafy_plant`, `succulent`, `book_stack`, `plant_hanging`) clear both
+`DEFAULT_SPREAD_FLOOR` (0.15) and `CLOSEST_PAIR_FLOOR` (0.045) with wide,
+stable margin across every window -- added with no `own` override, same as
+the 15 already there.
+
+The other five are real but genuinely subtle by design, the exact shape that
+let `fridge_under`/`tip_jar`'s total-silence bug go unnoticed. Rather than
+leave them out on that basis alone, each got an `own` floor bracketed between
+0.0% (the measured value of the actual pre-fix bug -- what "seed silently
+ignored" looks like on this instrument) and its own weakest mean across the
+six windows, set at roughly half the weakest value:
+
+- `pastry_plate` (own 0.03): only pastry radius varies, +/-3% of a
+  0.10-0.13 range -- the module's own docstring says laminated detail
+  quantizes to speckle, so value steps carry the object, not shape change.
+- `bean_sack` (own 0.02): only base radius varies, +/-4% of a 0.30-0.34
+  range -- a sack's slump is supposed to read as the same sack every time.
+- `fridge_under` (own 0.005): the fix above, on a fixed-silhouette closed
+  box -- a few pixels of handle and plinth move against a large flat face.
+- `tip_jar` (own 0.05): the fix above; `own` is also load-bearing here for
+  a second reason -- two of the six windows drew a closest pair under 1%,
+  well under `CLOSEST_PAIR_FLOOR`, by chance rather than by defect, so the
+  pair check needs to be off, not just the mean bar loosened.
+
+`wall_art_framed` is a different case from the other four: its mean (26.8%
+-37.9%) comfortably clears the *default* floor unassisted. Its closest pair
+is 0.0% in **every** one of the six windows, and that is structural, not
+incidental -- the picture's hue is one of four categorical choices (`sky-1`,
+`foliage-1`, `rose-1`, `wood+1`), so eight draws from four buckets collide by
+the pigeonhole principle almost every time. `own` is set to the *unchanged*
+default mean floor (0.15) purely to invoke the "an `own` override skips the
+pair check" mechanism `counter` already established ("counter's modules are
+meant to tile flush and two identical ones are the point") -- here, two
+identical hues are the expected outcome of a 4-way enum, not a defect, and
+gating on the pair floor here would fire on every healthy run.
+
+**Verified failable both ways**, the discipline this repo asks for on every
+new gate: simulated the exact pre-fix bug on all five `own`-gated generators
+(calling each with a fixed `seed=1` regardless of the loop index, which is
+what "seed silently ignored" looks like from the outside) -- all five
+measured 0.0% mean and were correctly caught by their new floor. All nine
+also pass clean on the actual shipped, fixed code: `check_generator_range()`
+returns zero findings.
+
+`proof/generators.png` (regenerated by `tools/preview_generators.py`, which
+reads its rows straight from `GENERATORS`) carries all 24 seeded builders
+now instead of 15+1 -- looked at directly rather than trusted from the
+numbers: `fridge_under`'s row genuinely does look like eight nearly-identical
+fridges at a glance, which is correct for a closed appliance and is exactly
+why it needed the tightest floor of the nine rather than exclusion; `tip_jar`
+visibly varies coin-fill level across its row; `wall_art_framed` visibly
+cycles through distinct hues; the four unconditional adds show clearly
+different silhouettes seed to seed.
+
+**Verified no regression.** `tools/manifest.py --check` and
+`tools/build_plan.py --focal-scan 12`, run against `origin/main` via `git
+stash` and again with this diff applied: byte-identical outcomes both ways
+-- `manifest.py --check` 1 error / 8 warnings (the known plan-1 wall-run
+`-0.002` case), `build_plan.py --focal-scan 12` 2 of 12 fail (plan 1
+`-0.002`, plan 10 `-0.011`) -- both pre-existing on `origin/main`, matching
+PR #40's own re-measurement of that baseline (not `NEXT.md`'s stale "1 of
+12"), neither introduced here. `check_generator_range`'s nine new entries
+add zero new warnings either way, because they all pass.
+
 ---
 
 ## Focal detail: resolution-confirmed, not resolution-invariant

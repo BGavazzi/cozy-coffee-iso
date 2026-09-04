@@ -287,6 +287,38 @@ done.** They landed as two separate PRs against roughly the same base, so:
   `MIN_FILL`'s error in a better disguise. Recorded as a warning-grade
   signal; any future attempt must clear the overlap table in
   `ART_CRITIQUE.md`, "Answering that question", not just a correlation.
+- **Landed (PR #43): `fridge_under` and `tip_jar` fixed;
+  `check_generator_range`'s `GENERATORS` widened from 15 to 24 seeded
+  builders, each decision measured rather than assumed.** Found in passing
+  while bracketing `DEFAULT_SPREAD_FLOOR` (PR #40, `spread-floor-audit`,
+  unmerged as of this branch): `assetlib.fridge_under`
+  and `assetlib.tip_jar` both took a `seed` parameter and never read it in the
+  body — every seed rendered the identical mesh (measured 0.0% mean, 0.0%
+  closest-pair spread). Both now vary geometry the same way their file's
+  other seeded generators do (`fridge_under`: handle position/length, plinth
+  height; `tip_jar`: coin-fill height, jar radius, label-band height).
+  `GENERATORS` covered 15 of the file's 24 seeded builders; the other 9 —
+  `leafy_plant`, `succulent`, `book_stack`, `pastry_plate`, `bean_sack`,
+  `wall_art_framed`, `plant_hanging`, plus the two fixed above — were each
+  rendered across six independent 8-seed windows and run through the check's
+  own spread math before deciding. Four (`leafy_plant`, `succulent`,
+  `book_stack`, `plant_hanging`) clear both default floors with wide margin,
+  added unconditionally. Five are real but small by design — `pastry_plate`
+  (pastry radius only, ±3%), `bean_sack` (base radius only, ±4%),
+  `fridge_under` and `tip_jar` (the fix above), `wall_art_framed` (a 4-way
+  categorical hue pick whose closest pair is 0.0% in every window by the
+  pigeonhole principle, not by defect) — each added with an `own` floor
+  bracketed against 0.0% (what the fixed bug actually measured) rather than
+  excluded outright, following `counter`'s existing exemption pattern.
+  Verified failable both ways: all five `own`-gated generators, simulated
+  with the exact pre-fix bug (seed pinned regardless of loop index), measured
+  0.0% and were caught; the shipped, fixed code passes clean,
+  `check_generator_range()` returns zero findings. `tools/manifest.py
+  --check` and `tools/build_plan.py --focal-scan 12` verified byte-identical
+  pass/fail against `origin/main` via `git stash`, both directions. Proof:
+  `proof/generators.png`, regenerated with all 24 rows. Write-up:
+  `ART_CRITIQUE.md`, "`fridge_under` and `tip_jar`: a seed parameter that did
+  nothing, and nine generators put through the same measurement".
 
 **Not yet started**: no subject in `subjects_c1.yaml` (or any shipped
 subject list) actually uses a reference image yet -- this built and
@@ -971,6 +1003,20 @@ resolution-invariant", PR #41):
   accepted defect, negative at every resolution from 240 through 480 (not
   -0.002 as this file previously recorded; that number was a stale
   transcription -- the measured margin is -0.011 at 320, -0.013 at 480).
+
+**Correction, found while sorting merge conflicts across the open PR stack
+(not yet root-caused, flagging rather than guessing):** the "clean" claim
+above holds for PR #41 checked against its own narrower base, but running
+`manifest.py --check` at the tip of the fully-combined stack through PR #43
+(which also includes PR #39's galley/multi-counter topology) is **not**
+clean -- it currently reports 3 errors: plan 1 (L run) fails
+`check_focal_contrast`'s detail floor by -0.001, and plan 8 (galley) fails
+it twice, -0.012 against the centre floor and -0.019 against the detail
+floor. This looks like a real interaction between the galley topology's
+known focal-contrast weakness (see `NEXT.md`'s galley entry above) and the
+now-razor-thin detail floor (PR #42, left at exactly 0.0) rather than a bug
+in either PR alone, but that is a hypothesis, not a measurement -- needs its
+own follow-up pass once this stack is merged, not fixed blind here.
 
 Don't treat a *new* failure in either run as equally acceptable without
 checking whether it's plan 10 or something else.
