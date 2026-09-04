@@ -1004,6 +1004,20 @@ resolution-invariant", PR #41):
   -0.002 as this file previously recorded; that number was a stale
   transcription -- the measured margin is -0.011 at 320, -0.013 at 480).
 
+**Correction, found while sorting merge conflicts across the open PR stack
+(not yet root-caused, flagging rather than guessing):** the "clean" claim
+above holds for PR #41 checked against its own narrower base, but running
+`manifest.py --check` at the tip of the fully-combined stack through PR #43
+(which also includes PR #39's galley/multi-counter topology) is **not**
+clean -- it currently reports 3 errors: plan 1 (L run) fails
+`check_focal_contrast`'s detail floor by -0.001, and plan 8 (galley) fails
+it twice, -0.012 against the centre floor and -0.019 against the detail
+floor. This looks like a real interaction between the galley topology's
+known focal-contrast weakness (see `NEXT.md`'s galley entry above) and the
+now-razor-thin detail floor (PR #42, left at exactly 0.0) rather than a bug
+in either PR alone, but that is a hypothesis, not a measurement -- needs its
+own follow-up pass once this stack is merged, not fixed blind here.
+
 Don't treat a *new* failure in either run as equally acceptable without
 checking whether it's plan 10 or something else.
 
