@@ -758,6 +758,144 @@ not a stand-in for a box, and it read correctly on the first render.
 silhouette-swing sheet, and a new one comparing all four hairstyles side by
 side at azimuth 225.
 
+**Landed (PR #23, stacked on #22): a real correctness bug in `character.py
+--style`, fixed, plus the negative result it uncovered, recorded honestly.**
+`character.py`'s `main()` accepted `--style` since PR #16 but only used it
+to pick which style's `lock.json` got the recorded result -- the roster's
+own material checks (`check_contrast`, `check_waistline`) always loaded
+`load_palette()` with no argument, i.e. always `cozy_ghibli`'s palette,
+regardless of `--style`. `character.py --check --style snes_rpg` therefore
+always passed, because it never actually measured `snes_rpg`'s colours --
+a check that cannot fail for the thing it claims to certify, which this
+file's own discipline rule (below) says is worse than no check. Fixed:
+`ramps = load_palette(load_style(args.style).palette_path)`.
+
+Running it for real immediately found a genuine, measured failure:
+`character.CUSTOMERS`'s hardcoded material choices -- written and tuned
+against `cozy_ghibli`'s palette -- do NOT all clear `character.py`'s own
+contrast/waistline floors under `snes_rpg`'s punchier, more compressed
+lightness distribution. Four blockers: `elder`'s hair sits 0.088 from skin
+(needs 0.13), and `reader`/`regular`/`writer` each have a shirt/trousers
+pair too close in value for a waistline to read (0.022/0.040/0.080 against
+an 0.085 floor).
+
+Not fixed, and deliberately not: neither the roster's material choices nor
+the check floors. Lowering the floor to make the failures disappear would
+defeat the check's own purpose -- insufficient contrast is a real visual
+defect regardless of which style is being validated, and this file's own
+discipline rule 1 says never pick a threshold because it makes a problem go
+away. Editing the roster's colours to satisfy `snes_rpg` risks quietly
+breaking `cozy_ghibli`'s own currently-clean pass, for a spec list that
+isn't even the geometry that ships for `snes_rpg` in the first place --
+`character.CUSTOMERS` is `character.py`'s own box/prism roster,
+`organic_rig.py` is what actually ships for a `cylinder_sphere` style. The
+honest conclusion, recorded rather than hidden (`styles/snes_rpg/
+lock.json`, `character.py:roster` entry, `approved: false`): this specific
+roster is cozy_ghibli-specific, and that's fine, because `style_approve.py`
+already derives `snes_rpg`'s character-roster evidence from
+`organic_rig.py` instead -- confirmed unaffected, still APPROVED. This is
+exactly why `REQUIRED_PRODUCERS_ANY_OF` is an "any of" set rather than
+requiring `character.py` specifically.
+
+**Landed (PR #24, stacked on #23): the same `--style`-ignored-by-the-actual-
+check bug, found and fixed in `portrait.py` and `manifest.py` too.** Having
+just found it once in `character.py`, checked every other producer
+accepting `--style` for the same pattern rather than assuming it was
+isolated. It was not: `portrait.py`'s `check()`/`build()`/`demo()` and
+`manifest.py`'s `check()` all hardcoded `load_palette()` with no argument
+in one or more places, so `--style snes_rpg` picked which `lock.json` a
+result went into without ever measuring `snes_rpg`'s actual colours.
+
+Both fixed the same way -- `ramps` resolved once from the active style and
+threaded through every call site (`check`/`build`/`demo` in `portrait.py`
+each gained a `ramps=None` parameter; `manifest.py`'s `check()` resolves
+`ramps` once and passes it to `check_waistline`, `check_eye_legibility`,
+`check_spec_coverage`, `check_contrast`, and `generate_roster`, replacing a
+half-dozen bare `load_palette()`/`_lp()` calls). `check_ui`'s own
+`load_palette()` is untouched and correctly so: it audits files already on
+disk under `out/ui/`, which `ui_forge.py`/`ui_chrome.py` never claimed to
+build per-style in the first place -- a different, larger, genuinely
+not-yet-started gap, not a bug in this one.
+
+Running both for real found more of the same honest picture:
+
+- `portrait.py --check --style snes_rpg`: `reader`'s left eye renders 0px
+  against bare skin. Its `hair_mat` (`neutral-2`) and `character.EYE`
+  (also `neutral-2`) are literally the same ramp+offset -- under
+  `cozy_ghibli`'s specific RGB values that pair still separates enough to
+  read; under `snes_rpg`'s darker, more compressed `neutral` ramp it
+  doesn't. Same root cause as PR #23's finding, different check, different
+  specific collision.
+- `manifest.py --check --style snes_rpg`: the same three waistline
+  failures PR #23 already found (consistent -- both producers measure the
+  same roster against the same palette), plus three new near-misses:
+  `check_eye_legibility` measures eyes 0.147 from the face at skin tones
+  `skin-4`/`skin-3`/`skin-2` against a 0.15 floor -- close, not a wide miss,
+  but a real one specific to this palette's darker skin steps.
+
+None of these threaten either style's approval: `style_approve.py` doesn't
+require `portrait.py` or `manifest.py` to pass, only `character.py` OR
+`portrait.py` OR `organic_rig.py` for the character-roster requirement, and
+`organic_rig.py`'s entry already satisfies it. Recorded honestly rather
+than suppressed, same as PR #23 -- `styles/snes_rpg/lock.json` now has a
+real `portrait.py:roster` entry with `approved: false`.
+
+**Landed (PR #25, stacked on #24): `--style` for `ui_chrome.py` -- the last
+producer that could take it without needing the GPU.** `ui_forge.py` (SDXL
+icons) and `ui_chrome.py` (procedural chrome -- dialogue frames, coins, star
+ratings) were the two remaining producers with no `--style` at all, not the
+accepts-but-ignores bug the last two PRs fixed. `ui_forge.py` needs `concept.
+_pipe()` (SDXL, the GPU stage NEXT.md's own environment section flags) to
+even run, so wiring and verifying it belongs with the GPU-bound work, not
+this compute-light thread. `ui_chrome.py` has no such dependency -- purely
+procedural, same category as `assetlib.py`'s builders -- so it got the same
+small, mechanical `--style` treatment as `furnish.py`/`render_room.py`/
+`build_plan.py`: a flag, `ramps` resolved from the active style and threaded
+into `build()` (which gained an `out_dir` parameter, default `UI_DIR`, so a
+non-default style writes to `out/ui_<style>` instead of silently sharing
+the default style's output directory).
+
+Verified by rendering three chrome pieces (`ui_dialogue_frame`, `ui_coin`,
+`ui_star_rating`) under both styles side by side: all six pass their own
+checks, and `snes_rpg`'s render is visibly, coherently punchier -- brighter
+cream, a harder maroon outline in place of the muted rose one, sharper gold
+on the coin -- not just a different-looking accident.
+
+**Landed (PR #26, stacked on #25): `bob` and `curly`, the last two of
+`character.hair`'s six styles, ported to `organic_rig.py` -- and the claim
+that they needed new primitive code, corrected.** PR #22 held both back on
+the stated reason that both rely on a partial (non-360deg) ring the
+box/prism original has, which `add_cylinder`/`add_sphere` cannot express.
+That claim was never actually tested against the real geometry -- it was
+tried here, and it was wrong for both:
+
+- `character.hair`'s `curly` never used a partial ring at all. It is a
+  bigger cap plus two small FULL-sphere puffs at the sides -- the same
+  full-ring idiom `bun` already uses, just two of them, symmetric. Ported
+  directly, no new geometry needed.
+- `character.hair`'s `bob` box only ever occupies the region a full,
+  head-centred cylinder ALSO occupies once the head sphere's own opacity
+  is accounted for. A centred cylinder sized at or past the head's own
+  radius is invisible wherever it falls inside the head's silhouette (the
+  head draws in front of it) and visible only where it pokes past that
+  silhouette -- which is exactly "wraps around the sides and back, stays
+  clear of the front" without clipping anything. This only works because
+  the hair sits within the head sphere's own z-range (crown to jaw); it
+  would NOT generalize to something that needs to hang lower, which is
+  why `long`'s own back-offset technique (PR #19) is still the right one
+  for its case -- two different problems that happen to want two different
+  solutions, not one technique that should have been used for both.
+
+Verified at both the back-corner azimuth (`organic_rig.py --demo`'s own
+row, now six styles wide) and dead-on (`azimuth 90`, checked separately,
+not shown in the committed sheet): both new styles read as visibly, clearly
+distinct from `short` and from each other -- `bob` noticeably fuller
+coverage toward the jaw, `curly` a distinctly bumpier silhouette from the
+side puffs -- and both leave the eyes visible in every view checked.
+
+`HAIR_STYLES` now has all six of `character.hair`'s styles; `organic_rig.py`
+has no more deliberately-deferred hairstyle work.
+
 ---
 
 ## How this repo expects work to be done

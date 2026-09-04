@@ -8,7 +8,7 @@
       "check_direction_stability"
     ],
     "producer": "character.py",
-    "recorded_at": "2026-09-02T07:21:49+00:00",
+    "recorded_at": "2026-09-02T08:15:45+00:00",
     "scope": "roster",
     "style": "cozy_ghibli",
     "style_hash": "db3d2007125e8d1d"
@@ -34,7 +34,7 @@
       "check_palette_exact"
     ],
     "producer": "portrait.py",
-    "recorded_at": "2026-09-02T07:10:49+00:00",
+    "recorded_at": "2026-09-02T08:24:02+00:00",
     "scope": "roster",
     "style": "cozy_ghibli",
     "style_hash": "db3d2007125e8d1d"

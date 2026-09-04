@@ -165,15 +165,25 @@ def face(skin: str, head_cz: float, head_r: float, blush: bool = True) -> Mesh:
     return m
 
 
-HAIR_STYLES = ("short", "long", "bun", "cap")
+HAIR_STYLES = ("short", "long", "bun", "cap", "bob", "curly")
 
 
 def hair(mat: str, head_cz: float, head_r: float, style: str = "short") -> Mesh:
-    """Four of `character.hair`'s six styles, ported to sphere/cylinder.
-    `bob` and `curly` are not here yet -- both rely on a partial (non-360deg)
-    ring in the box/prism original, which `add_cylinder`/`add_sphere` cannot
-    express without new primitive code; a real, separate job, not attempted
-    by guessing at it here.
+    """All six of `character.hair`'s styles, ported to sphere/cylinder.
+
+    `bob` and `curly` were held back from the first pass (PR #22) on the
+    claim that both need a partial, non-360deg ring the box/prism original
+    has, which `add_cylinder`/`add_sphere` cannot express. That claim was
+    wrong, found wrong by actually trying it rather than by re-reading the
+    original geometry more carefully: `character.hair`'s `curly` never used
+    a partial ring at all (two small full-sphere puffs, same idiom as
+    `bun`), and `bob`'s box panel only ever occupies the region a full
+    cylinder ALSO occupies once the head sphere's own opacity is accounted
+    for -- a centred, head-sized-or-bigger cylinder is invisible wherever it
+    falls inside the head's own silhouette (the head simply draws in front
+    of it) and visible only where it pokes past that silhouette, which is
+    exactly "hair wraps around the sides and back, not the front" without
+    needing to clip anything. No new primitive code was needed for either.
 
     Every style is built from full rings placed either well above the eye
     line (the crown) or well behind it (negative y, the back of the skull) --
@@ -220,6 +230,26 @@ def hair(mat: str, head_cz: float, head_r: float, style: str = "short") -> Mesh:
         # closer in just thickened the cap instead of adding a second shape.
         m.add_sphere((0.0, -0.85 * head_r, head_cz + head_r * 0.62),
                      0.34 * head_r, mat + "+1", segments=14, rings=10)
+    elif style == "bob":
+        # Centred, not offset back -- relies on the head sphere's own
+        # opacity to hide the front, the same reasoning that makes this
+        # style possible without a partial-ring primitive (see docstring).
+        # Radius bigger than the head itself (1.05x) so the sides visibly
+        # poke past the head's own silhouette rather than staying tucked
+        # inside it; bottom at -0.55r reaches toward the jaw, top at +0.30r
+        # near the crown, roughly the same span `character.hair`'s own bob
+        # box covers (HEAD_Z+0.02 to top-0.28).
+        m.add_cylinder((0.0, 0.0, head_cz - 0.55 * head_r), head_r * 1.05,
+                       0.85 * head_r, mat, segments=18)
+    elif style == "curly":
+        # Two small full spheres at the outer edges of the crown -- exactly
+        # `character.hair`'s own curly idiom (two small full prisms flanking
+        # a bigger cap), not a stand-in for something a partial ring would
+        # do differently.
+        for sx in (-1.0, 1.0):
+            m.add_sphere((sx * head_r * 0.88, -0.05 * head_r,
+                         head_cz + head_r * 0.20), head_r * 0.40, mat,
+                         segments=14, rings=10)
     elif style == "cap":
         # A literal hat: a short wide cylinder for the brim, a smaller one
         # for the crown -- the one style a cylinder is the obviously correct

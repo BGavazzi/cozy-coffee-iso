@@ -15,13 +15,27 @@
     "style": "snes_rpg",
     "style_hash": "b35b39e59b56f2cd"
   },
+  "character.py:roster": {
+    "approved": false,
+    "gates": [
+      "check_contrast",
+      "check_palette_spread",
+      "check_waistline",
+      "check_direction_stability"
+    ],
+    "producer": "character.py",
+    "recorded_at": "2026-09-02T08:15:44+00:00",
+    "scope": "roster",
+    "style": "snes_rpg",
+    "style_hash": "b35b39e59b56f2cd"
+  },
   "organic_rig.py:silhouette": {
     "approved": true,
     "gates": [
       "check_direction_stability (organic_rig.py)"
     ],
     "producer": "organic_rig.py",
-    "recorded_at": "2026-09-02T08:11:37+00:00",
+    "recorded_at": "2026-09-02T12:27:03+00:00",
     "scope": "silhouette",
     "style": "snes_rpg",
     "style_hash": "b35b39e59b56f2cd"
@@ -35,6 +49,20 @@
     "producer": "palette_forge.py",
     "recorded_at": "2026-09-02T07:46:20+00:00",
     "scope": "palette+variants",
+    "style": "snes_rpg",
+    "style_hash": "b35b39e59b56f2cd"
+  },
+  "portrait.py:roster": {
+    "approved": false,
+    "gates": [
+      "check_eyes_visible",
+      "check_distinct",
+      "check_determinism",
+      "check_palette_exact"
+    ],
+    "producer": "portrait.py",
+    "recorded_at": "2026-09-02T08:23:03+00:00",
+    "scope": "roster",
     "style": "snes_rpg",
     "style_hash": "b35b39e59b56f2cd"
   },
