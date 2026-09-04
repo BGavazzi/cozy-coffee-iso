@@ -954,11 +954,13 @@ the abstract one the original bullet asked for.
 ```
 
 Both used to fail on the same underlying story: the detail floor sits at
-exactly 0.0 with a measured 0.002-0.006 margin (`ART_CRITIQUE.md`, "The
-detail floor at 40 plans"), thin enough that small, unrelated changes -- or
-just the render resolution -- flip a borderline room across it. As of the
-focal-resolution-confirmation pass (`ART_CRITIQUE.md`, "Focal detail:
-resolution-confirmed, not resolution-invariant"):
+exactly 0.0, and its per-dressing-state noise (0.075-0.145 at n=50) runs
+3-6x a shelf's own mean effect (~0.02-0.03) -- closed out at scale as a
+population-rate check rather than tracked as an open margin
+(`ART_CRITIQUE.md`, "The detail floor's bracket, closed: the noise is bigger
+than the signal", PR #42). As of the focal-resolution-confirmation pass
+(`ART_CRITIQUE.md`, "Focal detail: resolution-confirmed, not
+resolution-invariant", PR #41):
 
 - `manifest.py --check`'s `check_focal_contrast` no longer fails on plan 1.
   It used to (-0.002, from the RNG-unification pass) -- that failure turned
@@ -978,6 +980,36 @@ Stage-8 review on generated sprites:
 ```
 .venv/Scripts/python.exe tools/review_queue.py build "out/sprites/*_dir*.png"
 ```
+
+---
+
+**Landed (PR #42, stacked on #39, #40, #41): the detail floor's "Still open"
+bracket, closed.** `ART_CRITIQUE.md` had carried `MIN_FOCAL_DETAIL`'s bracket
+as "0.010 wide" since the wall-shelf/sign fix, never revisited even after two
+later, unrelated passes (`leafy_plant` unified onto `_mix`; the L-run-corner
+dilution check) each independently brushed against the same margin without
+closing the bullet out. Re-measured at n=50 (`proof/detail_floor_scan50.txt`)
+instead of the original 12: the rate holds (14% vs B4's 12.5% on 40 plans)
+but the bracket does not — weakest fail/pass gap is 0.002-0.004, not 0.010,
+and two rooms sharing the *identical* back-wall dressing state (sign, two
+menus, zero shelves) land 0.072 apart (plan 10 at -0.011, plan 22 at +0.061;
+proof: `proof/detail_floor_plan10_fail.png`, `proof/
+detail_floor_plan22_pass.png`, both confirmed at the shipped 480px target
+too). Grouped by dressing state, the per-state spread (0.075-0.145) runs
+3-6x the shelf's own mean effect (~0.02-0.03) — a signal-to-noise ratio no
+single threshold between -0.017 and +0.061 can resolve without either
+punishing peninsulas/islands for a defect they're structurally incapable of
+(no wall to dress) or losing rooms with the actual defect.
+
+**Verdict: left at 0.0**, same constant, correction is to the claim rather
+than the number — recorded as a population-rate check (~1 in 8-9 wall/L
+runs), not a per-room verdict; a lone borderline failure is not proof that
+specific room is under-dressed. `tools/build_plan.py`'s `MIN_FOCAL_DETAIL`
+comment and `ART_CRITIQUE.md`'s "Still open" list are both updated in place
+rather than left to drift further. No logic changed —
+`manifest.py --check` (1 error, 8 warnings) and `build_plan.py --focal-scan
+12` (2 of 12 fail: plan 1 -0.002, plan 10 -0.011) are byte-for-byte the same
+before and after this branch's diff.
 
 ---
 

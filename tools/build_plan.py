@@ -118,6 +118,17 @@ MIN_FOCAL_L = 0.015
 # because the wall behind a counter is lit vertical mass. It is also one flat
 # ramp step, which is the same fact seen from the other side, and only this
 # metric reports it.
+#
+# The "tight on purpose" bracket above did not survive being re-measured at
+# scale (ART_CRITIQUE.md, "The detail floor's bracket, closed"). At n=50, two
+# rooms sharing the identical back-wall dressing state landed 0.072 apart
+# (-0.011 and +0.061), and the per-dressing-state spread (0.075-0.145) runs
+# 3-6x a shelf's own mean effect (~0.02-0.03). No threshold between -0.017 and
+# +0.061 separates the two populations cleanly, so 0.0 stays -- moving it only
+# trades which rooms get miscategorized. Read this as a POPULATION check
+# (roughly 1 in 8-9 wall/L runs reads under-detailed, stable across three
+# sample sizes), not a per-room one: a lone room failing by a few thousandths
+# is not proof that room specifically is under-dressed.
 MIN_FOCAL_DETAIL = 0.0
 
 # The resolution the check's failures get CONFIRMED at before being reported,

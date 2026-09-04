@@ -3518,10 +3518,14 @@ through two separate implementations.
   measured 0.6-point bracket either side of 0.15. See "The screen-spread
   floor's redundancy question, closed with a real generator instead of
   synthetic noise" below.
-- **The detail floor's bracket is 0.010 wide.** Three measured defects at
-  −0.005 to −0.009 against a weakest good room at +0.005. It is the tightest
-  floor in the suite and the first one whose margin is smaller than the
-  difference between two adjacent rooms.
+- ~~**The detail floor's bracket is 0.010 wide.**~~ Closed: see "The detail
+  floor's bracket, closed: the noise is bigger than the signal" below. The
+  0.010 never held even on the sample that produced it (two same-dressing
+  rooms were already 0.028 apart), and at n=50 the per-dressing-state spread
+  is 0.075-0.145 against a shelf's own ~0.02-0.03 mean effect -- a 3-6x
+  signal-to-noise gap no threshold placement closes. Left at 0.0 and
+  recorded as a population-rate check (roughly 1 in 8-9 wall/L runs), not a
+  per-room verdict.
 
 ---
 
@@ -3860,6 +3864,90 @@ eventually builds the double-run topology (B2), since that layout's focal
 box would be larger still by the same mechanism, deliberately, and would
 test whether "the box got bigger" was ever really the story or just the one
 variable this pass had a way to measure.
+
+---
+
+## The detail floor's bracket, closed: the noise is bigger than the signal
+
+The "Still open" list above carried the bracket as **0.010 wide** -- three
+measured defects at -0.005 to -0.009 against a weakest good room at +0.005,
+on the 12-plan sample the wall-shelf/sign fix was measured against. Two
+things have happened to that number since it was written, both already on
+record separately (`leafy_plant` unified onto `_mix`; `NEXT.md`'s Gates
+section) but never brought back to close this bullet out: the same 12 plans
+now read plan 1 at -0.002 and plan 10 at -0.011, two rooms the original
+bracket counted as "good," on unmodified shipped code. The bracket has
+already been crossed by ordinary codebase churn, not by anyone touching the
+counter's composition. That is worth stating plainly before re-measuring:
+whatever number this section lands on next, it will not stay put either.
+
+Widened to the same n=50 the original 12-plan sample never got (raw data:
+`proof/detail_floor_scan50.txt`, same `build()`/`render()` calls
+`check_focal_contrast`/`_focal_scan` make, target 320): 7 of 50 negative
+(14%, plans 1, 10, 16, 18, 23, 24, 37) -- close to B4's 12.5% on 40 plans,
+so the rate itself has held up. The bracket has not: weakest fail is plan
+1 at -0.002, weakest pass is plan 6 (peninsula, +0.002) or plan 29 (wall
+run, +0.004) -- a 0.002-0.004 gap, not 0.010, echoing B4's own 40-plan
+finding (0.002-0.006) on a completely different generator state. Three
+independent samples now (12, 40, 50), three different points in this
+file's history, and the margin has never once come back wider than it went
+in.
+
+**The reason isn't the threshold -- it's the signal-to-noise ratio.** Group
+the 50 by the back-wall dressing they actually received (`decor#wshelf`
+count; peninsulas and islands never qualify for a shelf at all, `on_wall`
+is false for them):
+
+| dressing state | n | detail lead range | mean |
+|---|---|---|---|
+| wall/L run, 0 shelves, sign+2 menus | 5 | -0.014 to +0.061 | +0.0116 |
+| wall/L run, 1 shelf, sign+2 menus | 21 | -0.017 to +0.128 | +0.0369 |
+
+The causal signal reproduces cleanly at this scale -- a shelf still adds
+about 0.02-0.03 to the mean, matching the original 60-seed correlation
+(+0.0154 vs +0.0383) to within rounding. But the **spread inside a single
+dressing state** is 0.075 for zero shelves and 0.145 for one -- three to six
+times the signal a shelf is worth. Plan 10 (no shelf) fails at -0.011; plan
+22, the identical dressing state -- sign, two menus, no shelf, same wall-run
+topology -- passes at +0.061, a 0.072 gap between two rooms whose back wall
+carries the literal same objects. Rendered both
+(`proof/detail_floor_plan10_fail.png`, `proof/detail_floor_plan22_pass.png`)
+at the shipped 480px target, not just the check's 320: plan 10 reads -0.013,
+plan 22 reads +0.037, so the gap survives resolution too -- this is not
+the 320-vs-480 instability PR #41 fixed, it is a second, independent source
+of margin loss on top of it. Plan 16 sharpens the same point from the other
+side: it HAS a shelf and still reads -0.017, worse than plan 10's shelf-less
+-0.011 -- having the fix present is not sufficient either, in a population
+this noisy.
+
+**No threshold placement fixes a 3-6x signal-to-noise gap.** Verified rather
+than asserted: raising the floor to clear plan 1's -0.002 (say, +0.010)
+would newly reject plan 6, a peninsula at +0.002 with no wall behind its
+counter to dress in the first place -- punishing a topology for a defect it
+is structurally incapable of having. Lowering it to clear plan 16's -0.017
+would stop catching plan 10 and plan 23 without recovering anything, since
+both are already the genuine article the floor exists for (zero shelves,
+negative at both resolutions). Every number between -0.017 and +0.061 either
+lets a real shelf-less room through or fails a room that was never eligible
+for a shelf at all, because both populations already overlap at every point
+in that range.
+
+**Left at 0.0.** Not because 0.010 was ever real margin -- it wasn't, even
+on the sample that produced it, as plan 4 and plan 10 show: both zero
+shelves, both measured on the very same commit the 0.010 bracket cites,
+already 0.028 apart (+0.033 vs +0.005) before any RNG churn touched either
+one. The floor was never resting on a 0.010 cushion; it was resting on a
+12-room sample too small to show that the cushion was already thinner than
+the noise. What changes here is the claim, not the constant: this check
+answers a population question (roughly one wall/L run in eight to nine
+reads under-detailed, consistently across three sample sizes and two
+generator states) and does not answer a per-room one. A single room failing
+within a few thousandths of 0.0 is not evidence of a defect in that room
+specifically -- plan 22 sitting 0.072 away from plan 10's identical dressing
+proves the metric cannot tell them apart at that resolution. Treat a
+near-boundary `check_focal_contrast` detail failure the way this file
+already treats a near-boundary contrast reading: as the weaker, honest
+question, not the stronger one the number's precision implies.
 
 ---
 
