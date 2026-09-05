@@ -82,23 +82,29 @@ def style_paths(style_name: str) -> dict:
     why a second style gets its own project directory rather than sharing
     `godot_export/project/` with the default.
 
-    `sprites/atlas.json` (animate.py's output) has no per-style variant at
-    all -- `animate.py` has no `--style` flag yet, unlike every other
-    producer this pipeline stages from -- so it is NOT resolved per style
-    here; a non-default style simply gets whatever the one atlas on disk
-    contains, same as today, until that producer is generalised too.
+    `sprites/atlas.json` (animate.py's output) now DOES have a per-style
+    variant, following `animate.py --style`'s own `--out` convention exactly
+    (verified by running it, not assumed): `sprites/atlas.json` for the
+    default style, unchanged, and `out/sprites_<style>/atlas.json` for a
+    non-default one -- a third convention, distinct from both this file's
+    `sprites_dir` (`furnish.py`'s nested `out/sprites/<style>/`) and
+    `tiles_dir`/`ui_dir` (the sibling-with-suffix `out/tiles_<style>/` /
+    `out/ui_<style>/`), because that is the path `animate.py`'s own `--out`
+    default resolves to, not a scheme invented here.
     """
     sys.path.insert(0, str(Path(__file__).parent))
     from style import DEFAULT_STYLE
     if style_name == DEFAULT_STYLE:
         return dict(manifest_path=SPRITES_MANIFEST, sprites_dir=SPRITES_DIR,
-                    project_dir=PROJECT_DIR, ui_dir=UI_DIR, tiles_dir=TILES_DIR)
+                    project_dir=PROJECT_DIR, ui_dir=UI_DIR, tiles_dir=TILES_DIR,
+                    atlas_path=ATLAS)
     return dict(
         manifest_path=SPRITES_DIR / style_name / "manifest.json",
         sprites_dir=SPRITES_DIR / style_name,
         project_dir=PROJECT_DIR.parent / f"project_{style_name}",
         ui_dir=UI_DIR.parent / f"ui_{style_name}",
         tiles_dir=TILES_DIR.parent / f"tiles_{style_name}",
+        atlas_path=ROOT / "out" / f"sprites_{style_name}" / "atlas.json",
     )
 
 
@@ -428,7 +434,7 @@ def stage(style_name: str | None = None,
           manifest_path: Path | None = None,
           sprites_dir: Path | None = None,
           project_dir: Path | None = None,
-          atlas_path: Path = ATLAS,
+          atlas_path: Path | None = None,
           ui_dir: Path | None = None,
           tiles_dir: Path | None = None) -> dict:
     """Clear `assets/`, stage all three producers, write the build manifest.
@@ -445,12 +451,15 @@ def stage(style_name: str | None = None,
     of style data about -- resolving it inside the call, instead, costs one
     `or` and sidesteps the trap entirely.
 
-    Any of the five path arguments can still be passed explicitly, same as
+    Any of the six path arguments can still be passed explicitly, same as
     before this gained style-awareness; an explicit value always wins over
     the style-derived default, so an unflagged call with no arguments at all
-    resolves to the exact five constants it always did and stages into the
-    exact `godot_export/project/` tree it always did -- the default style's
-    export is unchanged, byte for byte, by any of this.
+    resolves to the exact six constants it always did (`atlas_path` included
+    -- it used to be a hardcoded default of `ATLAS`, now it is resolved
+    through `style_paths()` same as the rest, but for the default style that
+    resolves to the exact same `ATLAS` constant) and stages into the exact
+    `godot_export/project/` tree it always did -- the default style's export
+    is unchanged, byte for byte, by any of this.
     """
     sys.path.insert(0, str(Path(__file__).parent))
     from style import DEFAULT_STYLE
@@ -461,6 +470,7 @@ def stage(style_name: str | None = None,
     project_dir = project_dir or defaults["project_dir"]
     ui_dir = ui_dir or defaults["ui_dir"]
     tiles_dir = tiles_dir or defaults["tiles_dir"]
+    atlas_path = atlas_path or defaults["atlas_path"]
 
     assets_dir = project_dir / "assets"
     if assets_dir.exists():

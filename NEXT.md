@@ -1433,6 +1433,80 @@ difference is this is now the *only* remaining gap, not one of several.
 
 ---
 
+**Landed (PR #50, stacked on #47-#49): `package_godot.py` resolves a
+per-style atlas, closing the one gap PR #37's own writeup flagged as
+"real, separate, not-yet-started."** `animate.py` picked up `--style` in
+PR #27 (landed on `animate-style`); this is the other half PR #37 declined
+to guess at rather than invent.
+
+**The convention, verified by running it, not assumed.** `animate.py
+--style snes_rpg --only barista` was actually run against this checkout: it
+wrote to `out/sprites_snes_rpg/atlas.json`, not a path this PR picked by
+analogy to `furnish.py`'s nested `out/sprites/<style>/` or
+`tileset.py`/`ui_chrome.py`'s `out/tiles_<style>/` — a third convention,
+matching `animate.py`'s own `--out` default exactly. `style_paths()` (the
+helper PR #47/#48 already built, extended here rather than duplicated) now
+returns an `atlas_path` key alongside its five existing ones: `ATLAS`
+(`sprites/atlas.json`, unchanged) for the default style,
+`out/sprites_<style>/atlas.json` for any other. `stage()`'s `atlas_path`
+parameter changed from a hardcoded `= ATLAS` default to `= None`, resolved
+through `style_paths()` the same way its other four path arguments already
+were — an explicit caller-supplied value still wins, same contract as
+before.
+
+**A real bug, caught before it shipped, not a hypothetical.** Running
+`package_godot.py --style snes_rpg` against the pre-fix code (to get a
+baseline) showed `1 characters + 0 effects, 7 clips, 336 frames` in the
+summary — looked like it was already working. It wasn't: the staged
+`godot_export/project_snes_rpg/assets/anim/barista.png` sha256
+(`1b272042...`) matched the *default* style's `sprites/barista.png`
+byte-for-byte, not `out/sprites_snes_rpg/barista.png`
+(`d9eab0d8...`) — the old hardcoded `ATLAS` constant was silently staging
+`cozy_ghibli`'s animation sheet into a `snes_rpg` export, the "worse" case
+this gap's own writeup named but hadn't measured. After the fix, the same
+byte comparison confirms the staged PNG now matches the real `snes_rpg`
+atlas and no longer matches the default's.
+
+**Clean degrade, checked per style, not just for the default.** Renamed
+`out/sprites_snes_rpg/atlas.json` out of the way and re-ran
+`package_godot.py --style snes_rpg`: exit 0, no `anim` key in
+`build_manifest.json`, same no-op behaviour the `atlas_path.exists()` guard
+already gave the default style before this change — a style with no
+`animate.py` run yet degrades the same way a missing atlas always has,
+rather than crashing.
+
+**Real Godot run, not just staged files.** `out/`'s manifests don't exist
+in this checkout (`furnish.py` had never been run here) — built a minimal
+two-prop scope (`furnish.py --only grinder_burr chair_wood`, both styles)
+to get real inputs rather than fabricate them. `export_godot.py --style
+snes_rpg` then ran the full three-step pipeline against the real Godot 4.3
+binary at `D:/vibes/.godot-tool/...`: stage, headless `--import`, headless
+`build_all.gd`, both round-trip checks, exit 0. `build_all.gd` reported
+"built 2 prop SpriteFrames, **1 animation SpriteFrames**" — before this
+fix, per PR #37's own honest record, that number was 0 for every
+non-default style. `godot_export/project_snes_rpg/resources/anim/
+barista.tres` now exists and its `ext_resource` correctly points at
+`res://assets/anim/barista.png`, the byte-verified `snes_rpg` sheet.
+
+**Regression, both halves.** Default style: `package_godot.py` (no
+`--style`) staged into `godot_export/project/assets` with every file's
+sha256 identical to a pre-change baseline, `build_manifest.json` included —
+zero behaviour change, because `atlas_path`'s style-resolved default for
+`cozy_ghibli` is the exact same `ATLAS` constant it always was. Ran the
+real Godot pipeline against the default style too (`export_godot.py`, no
+`--style`): "built 2 prop SpriteFrames, 1 animation SpriteFrames" — same
+count as before this change, since the default's atlas was already being
+found via the old hardcoded path.
+
+**Scope boundary, stated rather than assumed away.** `out/ui/` and
+`out/tiles/` (default and per-style) don't exist in this environment
+either, same gap PR #37 already recorded — the `ui`/`font`/`tiles`
+sections of `build_manifest.json` stay empty and no-op cleanly for both
+styles, not exercised against real content here. This PR closes exactly
+the one gap it names (the atlas), nothing wider.
+
+---
+
 ## How this repo expects work to be done
 
 **Environment**
