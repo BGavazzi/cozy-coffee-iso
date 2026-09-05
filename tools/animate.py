@@ -29,6 +29,7 @@ from mesh import ShadowMap, rasterize  # noqa: E402
 from pixelize import (  # noqa: E402
     apply_outline, downsample_modal, load_palette, shade_toon,
 )
+from style import DEFAULT_STYLE, load_style  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -240,13 +241,20 @@ def fx_sheets(ramps, target, factor, outdir, atlas):
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default="sprites")
+    ap.add_argument("--out", default=None,
+                    help="default: sprites/, or out/sprites_<style>/ for a "
+                         "non-default --style (sprites/ has its own "
+                         "gitignore line; out/ is blanket-ignored, so a "
+                         "non-default style's output lives there instead of "
+                         "a new untracked top-level directory)")
     ap.add_argument("--target", type=int, default=64)
     ap.add_argument("--factor", type=int, default=4)
     ap.add_argument("--gif", action="store_true", help="also write GIF previews")
     ap.add_argument("--only", default=None, help="one character by name")
     ap.add_argument("--fx", action="store_true", help="also render effects")
     ap.add_argument("--fx-only", action="store_true", help="effects only")
+    ap.add_argument("--style", default=DEFAULT_STYLE,
+                    help="which style pack's palette to render against")
     # The point of the whole pipeline, expressed as an integer. Extras are not
     # written down anywhere: `generate_spec` proposes one and tests it against
     # the promoted character checks until it passes, so `--extras 40` costs
@@ -256,9 +264,11 @@ def main() -> int:
     ap.add_argument("--extras-seed", type=int, default=1)
     args = ap.parse_args()
 
-    ramps = load_palette()
-    outdir = ROOT / args.out
-    outdir.mkdir(exist_ok=True)
+    ramps = load_palette(load_style(args.style).palette_path)
+    outdir = Path(args.out) if args.out else (
+        ROOT / "sprites" if args.style == DEFAULT_STYLE
+        else ROOT / "out" / f"sprites_{args.style}")
+    outdir.mkdir(parents=True, exist_ok=True)
 
     # Clips per role, mirroring assets.yaml. Only clips with a pose function are
     # emitted; the rest are declared but unbuilt, and the summary says so rather

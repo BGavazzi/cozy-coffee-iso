@@ -898,6 +898,75 @@ has no more deliberately-deferred hairstyle work.
 
 ---
 
+**Landed (PR #27, stacked on #26): `--style` for `animate.py`, the last
+producer without it.** Same mechanical pattern every other producer in the
+list has used: `ramps` resolved via `load_palette(load_style(args.style)
+.palette_path)` instead of the bare `load_palette()` the module hardcoded at
+line ~259 (always `cozy_ghibli`, regardless of any flag, because there was
+no flag). `--extras`/`--extras-seed` already threaded `ramps` into
+`C.generate_roster` correctly before this change — verified by reading, not
+assumed, and confirmed again here with a live `--extras` render under
+`snes_rpg` (`out/sprites_snes_rpg_extras_smoke3/extra07.png`, later
+cleaned up as gitignored scratch output).
+
+Output path follows the convention PR #30 established for `render_batch.py`,
+not a new one invented for this file: `--out` defaults to `sprites/` for the
+default style (unchanged — its own existing `.gitignore` line) or
+`out/sprites_<style>/` for a non-default one, nested under the
+blanket-ignored `out/` rather than a sibling top-level directory. Verified
+directly rather than assumed: `--style snes_rpg` (no `--out`) wrote to
+`out/sprites_snes_rpg/`, and `git status --porcelain --ignored` afterward
+showed only `!! out/` — nothing untracked, confirmed with
+`git check-ignore -v` against the written files.
+
+**Regression check.** Default style, same character/seed/clip
+(`--only barista`, no `--extras`): sha256 of `sprites/barista.png` identical
+before and after the change (`1b2720429fd49528f485050d5c07becc76888f6bbf8d57dbc005dbefbb866a83`)
+— a pure threading change, zero behaviour change for the shipped style.
+
+**Real render, visually confirmed.** `animate.py --only barista --style
+snes_rpg` produced a full sheet against the new palette; a side-by-side of
+the `walk`/`s` frame strip under both styles is at
+`proof/animate_style_compare_barista_walk_s.png` — `snes_rpg` reads
+visibly harder-edged and more saturated (magenta dress, darker cooler
+shadow steps) against `cozy_ghibli`'s softer pastel pink/cream, as expected
+from the two palettes' own bibles.
+
+**The four-name roster finding (PR #23) reproduces exactly, not
+differently.** `animate.py`'s `ROSTER` uses `character.py`'s hardcoded
+`CharacterSpec`s, which resolve against ramp *role* names and so pick up any
+style's palette automatically — but `character.py --style snes_rpg`'s own
+`check_contrast`/`check_waistline` still fail the same four specs PR #23
+already found and left as an accepted, not-fixed-by-design finding: `elder`
+(hair/skin 0.088 vs 0.13 needed), `reader` (0.022 vs 0.085), `regular`
+(0.040 vs 0.085), `writer` (0.080 vs 0.085). Re-run here as a consistency
+check, not a new investigation — `animate.py` doesn't call those checks
+itself (it renders whatever `character.build()` hands it, geometry and all),
+so this PR neither fixes nor worsens that finding. It is still true that
+fixing the roster's colours risks breaking `cozy_ghibli`'s clean pass, and
+that fixing the check floors would defeat their purpose.
+
+**`package_godot.py` scope decision, stated rather than left implicit.**
+This checkout's `package_godot.py` and `export_godot.py` currently carry
+*zero* `--style` wiring — no `--style` flag, no style-suffixed path, on
+either file (confirmed: `grep -n style tools/package_godot.py
+tools/export_godot.py` matches nothing). `package_godot.py`'s `stage_anim`
+reads a single fixed `ATLAS = ROOT / "sprites" / "atlas.json"`, which is now
+only half the story: a `--style snes_rpg` run of `animate.py` writes its
+atlas to `out/sprites_snes_rpg/atlas.json` instead, and nothing stages it.
+Fixing that coherently means giving `package_godot.py` its own `--style`
+(to pick the atlas path) and `export_godot.py` — the actual three-step
+orchestrator per its own docstring — a matching flag and a style-suffixed
+project tree, which is a real, separate feature (not a rider on a CLI-
+plumbing PR), the same size of change PR #30's own writeup deferred for
+`ui_forge.py`/`art_review.py`/`export_godot.py` at the time. Left undone
+here, on purpose, not silently: the Godot export path stages nothing for a
+non-default style until that pair of files is generalized together, same
+as it staged nothing for `animate.py`'s clips before this PR — the
+difference is this is now the *only* remaining gap, not one of several.
+
+---
+
 ## How this repo expects work to be done
 
 **Environment**
