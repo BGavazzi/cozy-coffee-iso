@@ -1569,6 +1569,58 @@ That claim is not made here.
 
 ---
 
+**Landed (PR #53): `ingest.py` closes the follow-up PR #52 explicitly
+noted and declined to fix inline.** PR #52 wired `--style` for
+`factory.py`'s CLI plumbing and, in its "Noted, not fixed" section, named
+a second instance of the exact same bug class one level deeper: `ingest()`
+had a bare `ramps = load_palette()`, always resolving `cozy_ghibli`
+regardless of caller intent — but `ingest()` is a shared library module
+with its own callers, not a CLI-plumbing rider, so PR #52 scoped it out
+on purpose rather than folding it in unreviewed.
+
+**Worse than the surface-level version of this bug, because `ingest()`
+doesn't just render the wrong colour — it can pick the wrong material
+entirely.** `bind_vertex_colours()` and `rebind()` use `ramps` to find the
+nearest-matching ramp for a raw RGB colour, and `cozy_ghibli` and
+`snes_rpg` have different actual RGB values per ramp name. A colour that
+lands on `neutral` under one palette can land on `sky` under the other —
+a material *label* assigned once, at ingest time, that nothing downstream
+re-derives even when the final render does pick up the right style's
+colours.
+
+**Fixed the one function in this file that didn't already follow its own
+idiom.** `check_roundtrip`, `check_transform`, and `check_albedo_regression`
+all already wrote `ramps = ramps or load_palette()`; `ingest()` was the
+holdout. Gave it `ramps: dict | None = None` with the same idiom, added
+`--style NAME` to `main()` (default `cozy_ghibli`, resolved the same way
+`render_batch.py`/`build_plan.py` already do), and threaded the fix
+through to `factory.py`: `run_subject()` already received a `ramps`
+parameter from `main()`'s own `load_palette()` call but dropped it before
+calling `I.ingest()` — same bug, one hop further down the call chain. Now
+passed through rather than re-derived.
+
+**Real, not hypothetical — measured through the actual `ingest()` call,
+not `bind_colour()` in isolation.** Bound `(0, 72, 96)` against both real
+palette JSONs: `ramps=None` and explicit `ramps=cozy_ghibli` both land it
+on `neutral-2` (dE 0.065, confirming the default is unchanged); explicit
+`ramps=snes_rpg` lands the identical colour on `sky-2` (dE 0.007) — a
+different ramp identity, and both bindings sit well inside the 0.16 bind
+tolerance, so neither is an edge-of-tolerance replacement being mistaken
+for a real divergence. A broader 24-step RGB grid scan found 266 colours
+where `cozy_ghibli` and `snes_rpg` disagree on the nearest ramp; the
+reported pair was chosen because both sides bind cleanly.
+
+**Regression, checked by stash, not by inspection.** Captured `ingest()`'s
+full output — geometry, verts, faces, vcolors, and report, across both the
+MTL/rebind path (the same adversarial Y-up/scaled/offset/renamed-material
+round trip `check_transform` uses) and the vertex-colour path, plus the
+three self-tests — with no `ramps` argument, the only calling convention
+that exists anywhere in the repo today. Ran it against the working tree,
+`git stash` to the pre-change code, ran it again, `git stash pop` to
+restore the fix: the two JSON snapshots are byte-identical.
+
+---
+
 ## How this repo expects work to be done
 
 **Environment**
