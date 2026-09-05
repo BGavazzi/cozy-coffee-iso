@@ -145,17 +145,28 @@ def _proud_y(radius: float, centre_z: float, at_z: float, margin: float) -> floa
     return math.sqrt(max(radius * radius - dz * dz, 0.0)) + margin
 
 
+EYE_LINE_FRAC = 0.22   # eye line, above head centre for a cozy read
+
+
+def _eye_box(sx: float, head_cz: float, head_r: float) -> Mesh:
+    """One eye, alone -- no brow, mouth or blush to contaminate the signal.
+    Same placement `face()` builds with, not a re-derived copy, so
+    `check_eyes_visible` can never drift from what actually gets built (the
+    exact failure mode `portrait.py`'s own `_eye_box` docstring warns about)."""
+    m = Mesh()
+    ez = head_cz + head_r * EYE_LINE_FRAC
+    y = _proud_y(head_r, head_cz, ez, 0.006)
+    m.add_box((sx - 0.036, y, ez - 0.036), (sx + 0.036, y + 0.013, ez + 0.036), C.EYE)
+    return m
+
+
 def face(skin: str, head_cz: float, head_r: float, blush: bool = True) -> Mesh:
     """Eyes and blush as tone-offset boxes, same idiom as `character.face` --
     value detail, not geometry detail, still holds at sprite scale for a
     round head exactly as it does for a faceted one. Placement differs only
     in how "proud of the surface" is computed (`_proud_y`)."""
-    m = Mesh()
-    ez = head_cz + head_r * 0.22   # eye line, above centre for a cozy read
-    y = _proud_y(head_r, head_cz, ez, 0.006)
-    for sx in (-0.072, 0.072):
-        m.add_box((sx - 0.036, y, ez - 0.036), (sx + 0.036, y + 0.013, ez + 0.036),
-                  C.EYE)
+    m = merge(_eye_box(-0.072, head_cz, head_r), _eye_box(0.072, head_cz, head_r))
+    ez = head_cz + head_r * EYE_LINE_FRAC
     if blush:
         bz = head_cz + head_r * 0.02
         yb = _proud_y(head_r, head_cz, bz, 0.005)
@@ -290,6 +301,115 @@ def build(rig: dict, skin: str = SKIN, shirt: str = SHIRT,
     return out
 
 
+def build_from_spec(rig: dict, spec: "C.CharacterSpec") -> Mesh:
+    """`build()`, driven by a `character.CharacterSpec` instead of loose
+    kwargs -- lets `ROSTER` below reuse `character.check_contrast`/
+    `check_waistline` unmodified rather than re-deriving the same maths for
+    a second spec shape. Fields this rig has no use for yet (`accessory_kind`,
+    `leg_len`, `stance`) are simply not read; a spec built for the prism rig
+    is still a valid organic-rig spec, just a partially-idle one."""
+    return build(rig, skin=spec.skin, shirt=spec.shirt, trousers=spec.trousers,
+                hair_mat=spec.hair_mat, hair_style=spec.hair_style,
+                bulk=spec.bulk, blush=spec.blush)
+
+
+# --- roster -----------------------------------------------------------------
+# `character.py` has BARISTA plus eight CUSTOMERS; this rig had exactly one
+# hardcoded figure until now, which is a proof of concept, not a roster. Four
+# archetypes below, one per hairstyle family this file didn't already show off
+# together (`cap`, `bob`, `long`, `curly` -- `short`/`bun` are the module's own
+# default and PR #22's own bun already got a demo row).
+#
+# Colours were NOT picked by eye and then hoped to pass -- they were searched:
+# `character.check_contrast`/`check_waistline` measure real OKLab-derived
+# lightness gaps against `snes_rpg`'s actual palette, and the first three
+# guesses for `smith`'s shirt/trousers pair all failed by a real, measured
+# margin (0.062, 0.078, then 0.030 apart in value, against an 0.085 floor)
+# before a brute-force search over ramp/offset pairs found `wood-3`/`cream-3`.
+# That is the same lesson PR #23 found from the other direction -- this
+# style's compressed lightness range makes intuition about which colours
+# separate unreliable, and the fix is to measure, not to guess harder.
+ROSTER = [
+    C.CharacterSpec("scout", shirt="foliage-2", trousers="wood-1",
+                    hair_style="cap", hair_mat="wood-4", skin="skin+1"),
+    # hair_mat was `neutral-3` originally -- one step from `C.EYE`'s own
+    # `neutral-2` on this style's compressed neutral ramp, which rendered
+    # eyes completely invisible against `bob`'s hair (found by zooming into
+    # the rendered portrait, then confirmed numerically by
+    # `check_eyes_visible` below). `check_contrast`/`check_waistline` never
+    # caught it -- neither tests hair-vs-eye-colour, only hair-vs-skin and
+    # shirt-vs-trousers -- which is exactly the gap `check_eyes_visible`
+    # exists to close.
+    C.CharacterSpec("archivist", shirt="sky-2", trousers="neutral+1",
+                    hair_style="bob", hair_mat="wood-4", skin="skin-1"),
+    C.CharacterSpec("drifter", shirt="rose-2", trousers="wood-3",
+                    hair_style="long", hair_mat="wood-4", skin="skin"),
+    C.CharacterSpec("smith", shirt="wood-3", trousers="cream-3",
+                    hair_style="curly", hair_mat="wood-4", skin="skin+2"),
+]
+
+
+def check_roster(style_name: str = "snes_rpg", roster=None) -> list[str]:
+    """Real contrast/waistline evidence for THIS rig's own cast, not
+    borrowed from `character.CUSTOMERS` (PR #23 found that roster's colours
+    don't hold under this style -- expected, since they were never chosen
+    for it). Reuses `character.check_contrast`/`check_waistline` directly:
+    both operate on `CharacterSpec.shirt`/`trousers`/`hair_mat`/`skin`
+    fields alone, which `ROSTER`'s entries have regardless of which rig
+    built the geometry."""
+    style = load_style(style_name)
+    ramps = load_palette(style.palette_path)
+    roster = roster if roster is not None else ROSTER
+    return C.check_contrast(ramps, roster) + C.check_waistline(ramps, roster)
+
+
+MIN_EYE_PIXELS = 3  # same floor portrait.py's own check_eyes_visible uses
+
+
+def check_eyes_visible(style_name: str = "snes_rpg", roster=None) -> list[str]:
+    """Does EACH eye render enough pixels to read as an eye, once hair and
+    head geometry are actually in the frame? `check_roster` above never
+    tests this -- `check_contrast`/`check_waistline` only compare
+    hair-vs-skin and shirt-vs-trousers -- which is exactly how `archivist`
+    shipped with invisible eyes: `hair_mat="neutral-3"` sat one step from
+    `C.EYE`'s own `neutral-2` on this style's compressed neutral ramp.
+
+    Same isolation technique as `portrait.py`'s own `check_eyes_visible`:
+    build the figure with hair but WITHOUT eyes, then WITH one eye added,
+    render both, count differing pixels. No other feature's contrast to
+    hide behind, no assumption about which half of the frame is which eye --
+    just "did adding this eye change any pixels at all."
+    """
+    style = load_style(style_name)
+    ramps = load_palette(style.palette_path)
+    rig = style.rig
+    roster = roster if roster is not None else ROSTER
+    out = []
+    for spec in roster:
+        head_m, head_cz, head_r = head(spec.skin, rig)
+        bare = merge(
+            torso(spec.shirt, rig, spec.bulk),
+            head_m,
+            hair(spec.hair_mat, head_cz, head_r, spec.hair_style),
+            arms(spec.shirt, spec.skin, rig, spec.bulk),
+        )
+        span, centre = frame_all(bare)
+        _, plain = render_sprite(bare, 90.0, TARGET, FACTOR, ramps,
+                                 span=span, centre=centre)
+        for side, sx in (("left", -0.072), ("right", 0.072)):
+            one_eye = merge(bare, _eye_box(sx, head_cz, head_r))
+            _, eyed = render_sprite(one_eye, 90.0, TARGET, FACTOR, ramps,
+                                    span=span, centre=centre)
+            n = sum(1 for a, b in zip(plain, eyed)
+                   if a is not None and b is not None and a != b)
+            if n < MIN_EYE_PIXELS:
+                out.append(f"{spec.name}: {side} eye renders {n}px against bare "
+                          f"head+hair (need {MIN_EYE_PIXELS}) -- occluded by "
+                          f"hair, or indistinguishable from {C.EYE!r} against "
+                          f"this style's own palette")
+    return out
+
+
 # --- checks -------------------------------------------------------------------
 
 MIN_SILHOUETTE_PX = 6  # same floor character.check_direction_stability uses
@@ -339,7 +459,8 @@ def check_direction_stability(style_name: str = "snes_rpg",
 
 
 def check(style_name: str = "snes_rpg") -> list[str]:
-    return check_direction_stability(style_name)
+    return (check_direction_stability(style_name) + check_roster(style_name)
+           + check_eyes_visible(style_name))
 
 
 # --- demo -----------------------------------------------------------------
@@ -360,8 +481,15 @@ def demo(style_name: str = "snes_rpg", out: Path | None = None) -> str:
 
     pad, label, scale = 8, 20, 3
     cell = TARGET * scale
+    # +label at the end, not just +pad: each row's own caption is drawn
+    # BELOW its cell, so the canvas needs room for a fourth row's worth of
+    # label text after the third row's cells, not just a gap. The first cut
+    # of this omitted it, which put the roster row's own name captions 2px
+    # past the bottom edge -- invisible, not just clipped -- caught by
+    # cropping and looking at the saved file rather than trusting the
+    # computed height.
     sheet = Image.new("RGB", (8 * (cell + pad) + pad,
-                              2 * (cell + label + pad) + pad + 24),
+                              3 * (cell + label + pad) + pad + label + 24),
                       (18, 16, 22))
     d = ImageDraw.Draw(sheet)
     d.text((pad, 6), f"organic_rig ({style_name}): 8 azimuths, cylinder/sphere",
@@ -398,6 +526,21 @@ def demo(style_name: str = "snes_rpg", out: Path | None = None) -> str:
         sheet.paste(bg.resize((cell, cell), Image.NEAREST), (x, y1))
         d.text((x + 2, y1 + cell + 2), sty, fill=(214, 208, 218))
 
+    y2 = y1 + cell + label + pad + 14
+    d.text((pad, y2 - 16), f"ROSTER, azimuth 90 (face-on) -- {len(ROSTER)} specs, "
+                           f"contrast/waistline checked against this style's own palette",
+           fill=(150, 145, 158))
+    for k, spec in enumerate(ROSTER):
+        rm = build_from_spec(style.rig, spec)
+        rspan, rcentre = frame_all(rm)
+        img, _ = render_sprite(rm, 90.0, TARGET, FACTOR, ramps, span=rspan,
+                               centre=rcentre)
+        bg = Image.new("RGB", (TARGET, TARGET), (30, 27, 36))
+        bg.paste(img, (0, 0), img)
+        x = pad + k * (cell + pad)
+        sheet.paste(bg.resize((cell, cell), Image.NEAREST), (x, y2))
+        d.text((x + 2, y2 + cell + 2), spec.name, fill=(214, 208, 218))
+
     out = out or ROOT / "proof" / "organic_rig.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     sheet.save(out)
@@ -423,11 +566,14 @@ def main() -> int:
         for p in problems:
             print(f"  - {p}")
     else:
-        print("organic rig: silhouette stability holds, beats the prism rig")
+        print(f"organic rig: silhouette stability holds, beats the prism rig; "
+             f"{len(ROSTER)}-spec roster clears contrast/waistline")
 
     if args.lock:
         import lockfile
-        gate_names = ["check_direction_stability (organic_rig.py)"]
+        gate_names = ["check_direction_stability (organic_rig.py)",
+                     "check_roster (organic_rig.py)",
+                     "check_eyes_visible (organic_rig.py)"]
         entry = lockfile.record(load_style(args.style), "organic_rig.py",
                                 "silhouette", gate_names, approved=not problems)
         state = "approved" if entry["approved"] else "REJECTED"

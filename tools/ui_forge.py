@@ -38,6 +38,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from oklab import srgb_to_oklab  # noqa: E402
+from style import DEFAULT_STYLE, load_style  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 UI_DIR = ROOT / "out" / "ui"
@@ -214,14 +215,14 @@ def check_icon(px, target: int, ramps: dict) -> list[str]:
 
 
 def forge(name: str, prompt: str, target: int, ramps, pipe, seed: int = 1,
-          retries: int = 2) -> dict:
+          retries: int = 2, ui_dir: Path = UI_DIR) -> dict:
     """One icon, generate through pixels. Returns a result dict, never raises."""
     import concept as C
     from PIL import Image
 
     result = {"name": name, "ok": False, "detail": "", "seed_used": seed}
-    UI_DIR.mkdir(parents=True, exist_ok=True)
-    raw_png = UI_DIR / f"{name}_concept.png"
+    ui_dir.mkdir(parents=True, exist_ok=True)
+    raw_png = ui_dir / f"{name}_concept.png"
 
     try:
         for attempt in range(retries + 1):
@@ -246,7 +247,7 @@ def forge(name: str, prompt: str, target: int, ramps, pipe, seed: int = 1,
 
     img = Image.new("RGBA", (target, target), (0, 0, 0, 0))
     img.putdata([(c[0], c[1], c[2], 255) if c else (0, 0, 0, 0) for c in px])
-    img.save(UI_DIR / f"{name}.png")
+    img.save(ui_dir / f"{name}.png")
     result["ok"] = True
     return result
 
@@ -266,6 +267,8 @@ def main() -> int:
     ap.add_argument("--retry-seeds", type=int, default=2,
                     help="extra seeds to try on a gated icon (default 2; "
                          "raising it buys proxy-gaming, not quality)")
+    ap.add_argument("--style", default=DEFAULT_STYLE,
+                    help="which style pack's palette to render against")
     args = ap.parse_args()
 
     wanted = dict(UI_PROMPTS)
@@ -280,21 +283,31 @@ def main() -> int:
     print(f"{len(wanted)} icons. Loading SDXL once...")
     import concept as C
     from pixelize import load_palette
-    ramps = load_palette()
+    style = load_style(args.style)
+    ramps = load_palette(style.palette_path)
+    # Same nesting furnish.py uses for its own out/sprites/<style>, not the
+    # out/tiles_<style> / out/sprites_<style> suffix tileset.py and
+    # render_batch.py picked -- out/ already blanket-ignores everything under
+    # it either way, so this is purely which existing convention to match,
+    # not a new gitignore entry to add (see PR #30's real gap: sprites/ had
+    # its own top-level gitignore line and a *sibling* sprites_<style>/ would
+    # have needed one too; UI_DIR was already under out/ from day one).
+    ui_dir = (UI_DIR if args.style == DEFAULT_STYLE
+              else ROOT / "out" / "ui" / args.style)
     pipe = C._pipe()
 
     results = []
     for name, prompt in sorted(wanted.items()):
         print(f"\n=== {name} ===")
         r = forge(name, prompt, args.target, ramps, pipe, seed=args.seed,
-                  retries=args.retry_seeds)
+                  retries=args.retry_seeds, ui_dir=ui_dir)
         results.append(r)
         print(f"  {'OK' if r['ok'] else 'GATED'}"
               + (f": {r['detail']}" if r["detail"] else ""))
 
     ok = [r for r in results if r["ok"]]
-    print(f"\n{len(ok)}/{len(results)} icons built -> {UI_DIR}")
-    (UI_DIR / "ui_report.json").write_text(json.dumps(results, indent=2),
+    print(f"\n{len(ok)}/{len(results)} icons built -> {ui_dir}")
+    (ui_dir / "ui_report.json").write_text(json.dumps(results, indent=2),
                                            encoding="utf-8")
     return 0 if len(ok) == len(results) else 1
 

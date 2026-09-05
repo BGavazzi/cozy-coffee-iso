@@ -24,6 +24,7 @@ from mesh import compute_vertex_normals, load_obj, rasterize  # noqa: E402
 from pixelize import (  # noqa: E402
     apply_outline, downsample_modal, load_palette, shade_toon,
 )
+from style import DEFAULT_STYLE, load_style  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -110,17 +111,26 @@ def footprint(px, target):
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=str(ROOT / "sprites"))
+    ap.add_argument("--out", default=None,
+                    help="default: sprites/, or out/sprites_<style>/ for a "
+                         "non-default --style (sprites/ has its own "
+                         "gitignore line; out/ is blanket-ignored, so a "
+                         "non-default style's output lives there instead of "
+                         "a new untracked top-level directory)")
     ap.add_argument("--target", type=int, default=64)
     ap.add_argument("--factor", type=int, default=4)
     ap.add_argument("--mesh", help="OBJ to render; omit to use the analytic test scene")
     ap.add_argument("--name", default=None, help="asset name for output files")
     ap.add_argument("--smooth", action="store_true", help="interpolate vertex normals")
+    ap.add_argument("--style", default=DEFAULT_STYLE,
+                    help="which style pack's palette to render against")
     args = ap.parse_args()
 
-    out = Path(args.out)
+    out = Path(args.out) if args.out else (
+        ROOT / "sprites" if args.style == DEFAULT_STYLE
+        else ROOT / "out" / f"sprites_{args.style}")
     out.mkdir(parents=True, exist_ok=True)
-    ramps = load_palette()
+    ramps = load_palette(load_style(args.style).palette_path)
     if args.mesh:
         source = load_obj(args.mesh)
         asset = args.name or Path(args.mesh).stem

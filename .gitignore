@@ -19,3 +19,12 @@ godot_export/project/resources/
 godot_export/project/build_manifest.json
 godot_export/project/.godot/
 godot_export/test_proj/
+
+# a non-default --style export gets its own godot_export/project_<style>/
+# tree (see export_godot.py's module docstring / NEXT.md "Style packs").
+# Unlike godot_export/project/ above, NOTHING in it is tracked -- even
+# project.godot/build_all.gd/verify_*.gd are copied in fresh from
+# godot_export/project/'s own tracked copies by
+# export_godot.stage_style_project() every run, so the whole tree is
+# generated output, not just the assets/resources/build-manifest subset.
+godot_export/project_*/

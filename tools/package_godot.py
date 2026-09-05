@@ -64,6 +64,50 @@ ASSETS_DIR = PROJECT_DIR / "assets"
 BUILD_MANIFEST = PROJECT_DIR / "build_manifest.json"
 
 
+def style_paths(style_name: str) -> dict:
+    """Where a given style's staging inputs and Godot project tree live.
+
+    Every producer upstream of this file picked its own per-style path
+    convention independently, and none of them agree with each other:
+    `furnish.py` nests a non-default style UNDER the default's own directory
+    (`out/sprites/<style>/`), while `tileset.py`/`ui_chrome.py` use a
+    sibling-with-suffix (`out/tiles_<style>/`, `out/ui_<style>/`). Both are
+    matched here exactly rather than papered over with one "consistent"
+    scheme this file invents, because these are the paths those producers'
+    OWN `--style` runs actually write to on disk -- inventing a third
+    convention here would mean staging from a path nothing ever populates.
+
+    `godot_export/project_<style>/` (this file's own output) follows the
+    suffix convention: see `export_godot.py`'s module docstring / NEXT.md for
+    why a second style gets its own project directory rather than sharing
+    `godot_export/project/` with the default.
+
+    `sprites/atlas.json` (animate.py's output) now DOES have a per-style
+    variant, following `animate.py --style`'s own `--out` convention exactly
+    (verified by running it, not assumed): `sprites/atlas.json` for the
+    default style, unchanged, and `out/sprites_<style>/atlas.json` for a
+    non-default one -- a third convention, distinct from both this file's
+    `sprites_dir` (`furnish.py`'s nested `out/sprites/<style>/`) and
+    `tiles_dir`/`ui_dir` (the sibling-with-suffix `out/tiles_<style>/` /
+    `out/ui_<style>/`), because that is the path `animate.py`'s own `--out`
+    default resolves to, not a scheme invented here.
+    """
+    sys.path.insert(0, str(Path(__file__).parent))
+    from style import DEFAULT_STYLE
+    if style_name == DEFAULT_STYLE:
+        return dict(manifest_path=SPRITES_MANIFEST, sprites_dir=SPRITES_DIR,
+                    project_dir=PROJECT_DIR, ui_dir=UI_DIR, tiles_dir=TILES_DIR,
+                    atlas_path=ATLAS)
+    return dict(
+        manifest_path=SPRITES_DIR / style_name / "manifest.json",
+        sprites_dir=SPRITES_DIR / style_name,
+        project_dir=PROJECT_DIR.parent / f"project_{style_name}",
+        ui_dir=UI_DIR.parent / f"ui_{style_name}",
+        tiles_dir=TILES_DIR.parent / f"tiles_{style_name}",
+        atlas_path=ROOT / "out" / f"sprites_{style_name}" / "atlas.json",
+    )
+
+
 def stage_sprites(manifest_path: Path, sprites_dir: Path,
                   assets_dir: Path) -> dict:
     """Static props: 8 direction frames each, copied one file per frame."""
@@ -305,7 +349,7 @@ def stage_tiles(tiles_dir: Path, assets_dir: Path) -> dict:
     return meta
 
 
-def stage_palettes(assets_dir: Path) -> dict:
+def stage_palettes(assets_dir: Path, style_name: str = "cozy_ghibli") -> dict:
     """Every palette as one lookup texture: 40 columns, one row per time of day.
 
     The art itself is NOT re-exported per variant. `palette_swap.py` can write
@@ -330,7 +374,7 @@ def stage_palettes(assets_dir: Path) -> dict:
     import palette_forge as PF
     import palette_swap as PS
 
-    bible = PS.load_bible()
+    bible = PS.load_bible(style_name)
     names = ["base"] + list(bible["palette"].get("variants", {}))
     rows = [PF.forge(bible, None if n == "base" else n) for n in names]
     width = len(rows[0])
@@ -352,7 +396,8 @@ def stage_palettes(assets_dir: Path) -> dict:
     }
 
 
-def check_palette_lut(build: dict, assets_dir: Path) -> list[str]:
+def check_palette_lut(build: dict, assets_dir: Path,
+                      style_name: str = "cozy_ghibli") -> list[str]:
     """Read the written texture back and require it to BE the palettes.
 
     Writing a lookup table and trusting it is how a lookup table goes wrong:
@@ -369,7 +414,7 @@ def check_palette_lut(build: dict, assets_dir: Path) -> list[str]:
     import palette_forge as PF
     import palette_swap as PS
 
-    bible = PS.load_bible()
+    bible = PS.load_bible(style_name)
     with Image.open(assets_dir / "palette" / "lut.png") as im:
         px = list(im.convert("RGBA").getdata())
         w, h = im.size
@@ -385,18 +430,48 @@ def check_palette_lut(build: dict, assets_dir: Path) -> list[str]:
     return out
 
 
-def stage(manifest_path: Path = SPRITES_MANIFEST,
-          sprites_dir: Path = SPRITES_DIR,
-          project_dir: Path = PROJECT_DIR,
-          atlas_path: Path = ATLAS,
-          ui_dir: Path = UI_DIR,
-          tiles_dir: Path = TILES_DIR) -> dict:
+def stage(style_name: str | None = None,
+          manifest_path: Path | None = None,
+          sprites_dir: Path | None = None,
+          project_dir: Path | None = None,
+          atlas_path: Path | None = None,
+          ui_dir: Path | None = None,
+          tiles_dir: Path | None = None) -> dict:
     """Clear `assets/`, stage all three producers, write the build manifest.
 
     The clear happens once, here, rather than inside each stager -- three
     functions each rmtree-ing a shared directory is a bug waiting for the
     first person who reorders the calls.
+
+    `style_name` resolves every path default through `style_paths()` (see
+    that function's docstring for the per-producer convention it mirrors).
+    It defaults to `None` rather than `style.DEFAULT_STYLE` directly because
+    the latter would bind the style module at `def` time, the exact
+    import-order trap `style.py`'s own docstring warns every OTHER consumer
+    of style data about -- resolving it inside the call, instead, costs one
+    `or` and sidesteps the trap entirely.
+
+    Any of the six path arguments can still be passed explicitly, same as
+    before this gained style-awareness; an explicit value always wins over
+    the style-derived default, so an unflagged call with no arguments at all
+    resolves to the exact six constants it always did (`atlas_path` included
+    -- it used to be a hardcoded default of `ATLAS`, now it is resolved
+    through `style_paths()` same as the rest, but for the default style that
+    resolves to the exact same `ATLAS` constant) and stages into the exact
+    `godot_export/project/` tree it always did -- the default style's export
+    is unchanged, byte for byte, by any of this.
     """
+    sys.path.insert(0, str(Path(__file__).parent))
+    from style import DEFAULT_STYLE
+    style_name = style_name or DEFAULT_STYLE
+    defaults = style_paths(style_name)
+    manifest_path = manifest_path or defaults["manifest_path"]
+    sprites_dir = sprites_dir or defaults["sprites_dir"]
+    project_dir = project_dir or defaults["project_dir"]
+    ui_dir = ui_dir or defaults["ui_dir"]
+    tiles_dir = tiles_dir or defaults["tiles_dir"]
+    atlas_path = atlas_path or defaults["atlas_path"]
+
     assets_dir = project_dir / "assets"
     if assets_dir.exists():
         shutil.rmtree(assets_dir)
@@ -416,8 +491,8 @@ def stage(manifest_path: Path = SPRITES_MANIFEST,
         tiles = stage_tiles(tiles_dir, assets_dir)
         if tiles.get("tiles"):
             build["tiles"] = tiles
-    build["palettes"] = stage_palettes(assets_dir)
-    for problem in check_palette_lut(build, assets_dir):
+    build["palettes"] = stage_palettes(assets_dir, style_name)
+    for problem in check_palette_lut(build, assets_dir, style_name):
         raise SystemExit(f"BLOCKER  {problem}")
 
     project_dir.mkdir(parents=True, exist_ok=True)
@@ -465,14 +540,26 @@ def summarise(build: dict) -> str:
 
 
 def main():
-    if not SPRITES_MANIFEST.exists():
-        print(f"no manifest at {SPRITES_MANIFEST} -- run the factory first",
-              file=sys.stderr)
+    import argparse
+    sys.path.insert(0, str(Path(__file__).parent))
+    from style import DEFAULT_STYLE
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--style", default=None,
+                    help="style pack to stage (default: cozy_ghibli); stages "
+                         "into godot_export/project_<style>/ for a "
+                         "non-default style")
+    args = ap.parse_args()
+    style_name = args.style or DEFAULT_STYLE
+
+    paths = style_paths(style_name)
+    if not paths["manifest_path"].exists():
+        print(f"no manifest at {paths['manifest_path']} -- run the factory "
+              f"first (furnish.py --style {style_name})", file=sys.stderr)
         return 1
-    build = stage()
+    build = stage(style_name)
     print(summarise(build))
-    print(f"-> {ASSETS_DIR}")
-    print(f"wrote {BUILD_MANIFEST}")
+    print(f"-> {paths['project_dir'] / 'assets'}")
+    print(f"wrote {paths['project_dir'] / 'build_manifest.json'}")
     return 0
 
 
