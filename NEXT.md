@@ -1505,6 +1505,68 @@ sections of `build_manifest.json` stay empty and no-op cleanly for both
 styles, not exercised against real content here. This PR closes exactly
 the one gap it names (the atlas), nothing wider.
 
+**Landed (PR #52): `--style` for `factory.py` — found by an external
+review, not this session's own audit, and worth recording as two separate
+findings.** `factory.py` had zero `--style` support: no flag in `main()`'s
+argparse, and a bare `ramps = load_palette()` at line ~271 that always
+resolved `cozy_ghibli` regardless of caller intent. This wasn't caught by
+the systematic style-flag sweep earlier in this session because
+`factory.py` is a different pipeline category — SDXL concept -> TripoSR
+mesh -> sprite (`concept.py`/`lift.py`/`ingest.py`) — from the procedural
+`assetlib.py` builders that sweep covered. An external architecture review
+found it instead; independently confirmed by reading the code.
+
+**Fixing the bare `load_palette()` call alone would have been cosmetic.**
+`run_subject(spec, pipe, model, ramps, retries)`'s `ramps` parameter is
+never actually consumed for rendering — stages 1–3 (concept/lift/ingest)
+touch no palette at all, and stage 4–8, the only place a palette matters,
+happens in a `subprocess.run([..., "render_batch.py", ...])` call that
+wasn't being told which style to use, at all, before this PR. Threaded
+`style` and a resolved `sprite_dir` through `run_subject`'s signature so
+the subprocess actually receives `--style` — the real wire, not the
+decorative one.
+
+**Output convention: `furnish.py`'s, not `render_batch.py`'s own.** Sprites
+now land in `out/sprites/` for the default style, `out/sprites/<style>/`
+for anything else, matching `furnish.py`'s nested convention for the same
+"generated props" category — not `render_batch.py`'s own standalone
+`out/sprites_<style>/` (that convention exists because *its* default lives
+at a differently-gitignored top-level `sprites/`; `factory.py`'s sprite
+output was already entirely under `out/`, so no new `.gitignore` line was
+needed — confirmed with `git check-ignore -v` against a scratch file at the
+new path).
+
+**Concept/mesh caching stays shared across styles, correctly.**
+`concept.py`, `lift.py`, and `ingest.py` take no style parameter at all, so
+a `teapot.png`/`teapot.obj`/`teapot_bound.obj` from one `--style` run is
+byte-identical to another's — verified by reading all three signatures, not
+assumed. No per-style nesting needed there, and reusing the cache is
+correct, not a collision risk.
+
+**Noted, not fixed: the same bug class survives one level deeper.**
+`ingest.py`'s own `ingest()` (line ~620) has a bare `ramps = load_palette()`
+too, used to decide which material each vertex binds to — so the bind
+*label* is always chosen against `cozy_ghibli`'s palette even under a
+non-default `--style`; only the final render's colours vary. Left alone:
+fixing it means changing a shared library function with its own other
+callers, a separate piece of work, not a rider on this CLI-plumbing PR.
+
+**Verification is honest about its GPU limitation, not padded.** No SDXL/
+TripoSR pipeline run happened in this pass — the GPU was assumed busy
+elsewhere and the task explicitly ruled out loading either model. What was
+checked instead: `import factory` and `python -m py_compile` both succeed;
+`factory.py --help` builds the parser and shows the new flag without
+touching GPU code; `grep -n "load_palette(" tools/factory.py` shows exactly
+one call site, style-resolved, no bare calls left; the default-style path
+is provably byte-identical by inspection (`load_style("cozy_ghibli")
+.palette_path` resolves to the exact same `ROOT/"palette"/"palette.json"`
+bare `load_palette()` always used; `sprite_dir` for the default style is
+the same constant as before; the subprocess's added `--style cozy_ghibli`
+is a no-op, matching `render_batch.py`'s own default). What genuinely
+cannot be confirmed without a GPU, stated plainly: whether a real `--style
+snes_rpg` run actually produces sprites shaded in that palette end-to-end.
+That claim is not made here.
+
 ---
 
 ## How this repo expects work to be done
