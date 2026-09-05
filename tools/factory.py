@@ -58,6 +58,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+from style import DEFAULT_STYLE, load_style  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 CONCEPT_DIR = ROOT / "out" / "concept"
@@ -142,7 +143,8 @@ def _clear(name: str) -> None:
         p.unlink(missing_ok=True)
 
 
-def run_subject(spec: dict, pipe, model, ramps, retries: int = RETRY_SEEDS) -> dict:
+def run_subject(spec: dict, pipe, model, ramps, style: str, sprite_dir: Path,
+                retries: int = RETRY_SEEDS) -> dict:
     """Concept -> lift -> ingest -> render, skipping stages already done.
 
     Returns a result dict rather than raising, because one bad subject in a
@@ -155,6 +157,22 @@ def run_subject(spec: dict, pipe, model, ramps, retries: int = RETRY_SEEDS) -> d
     `out/concept/<name>.png` is respected exactly as before, because "skip
     what is already done" is what makes a half-finished batch resumable.
     Use `--force <name>` to redo one from scratch.
+
+    `ramps` is NOT consumed directly in this function -- concept (stage 1)
+    and lift/ingest (stages 2-3) are pure geometry/image stages with no
+    style-pack awareness at all (see NEXT.md, "Style packs": neither
+    `concept.py` nor `lift.py` nor `ingest.py` takes a style argument), so a
+    `teapot.png`/`teapot.obj`/`teapot_bound.obj` produced under one --style
+    is byte-identical to one produced under another and is safely shared
+    cache between them -- no per-style nesting, no collision. The palette
+    only matters at the final render stage, which shells out to
+    `render_batch.py` as a subprocess (stage 4-8 all happen there): `style`
+    and `sprite_dir` exist on this signature to reach that subprocess call,
+    not to be read directly here. `ramps` itself is kept as a parameter
+    (loaded once in `main()`, not reloaded per subject) purely so a future
+    caller that needs the resolved ramps table in-process -- rather than by
+    re-deriving it from `style` a second time -- has it without a second
+    `load_style`/`load_palette` round trip.
     """
     import concept as C
     import ingest as I
@@ -224,7 +242,8 @@ def run_subject(spec: dict, pipe, model, ramps, retries: int = RETRY_SEEDS) -> d
         proc = subprocess.run(
             [sys.executable, str(ROOT / "tools" / "render_batch.py"),
              "--mesh", str(bound_obj), "--name", name,
-             "--out", str(SPRITE_DIR), "--target", "64"],
+             "--out", str(sprite_dir), "--target", "64",
+             "--style", style],
             capture_output=True, text=True, timeout=300)
         if proc.returncode != 0:
             result.update(stage="render", detail=proc.stderr[-500:])
@@ -248,6 +267,12 @@ def main() -> int:
                     help=f"extra seeds to try when a concept fails the "
                          f"stage-1 gate (default {RETRY_SEEDS}; 0 restores "
                          f"the old one-shot behaviour)")
+    ap.add_argument("--style", default=DEFAULT_STYLE,
+                    help="which style pack's palette to render the final "
+                         "sprites against (default: cozy_ghibli); concept "
+                         "images and meshes are style-agnostic and shared "
+                         "across styles -- only the sprite output directory "
+                         "and the render stage's palette change")
     args = ap.parse_args()
 
     subjects = _load_subjects(Path(args.subjects))
@@ -268,12 +293,24 @@ def main() -> int:
     from pixelize import load_palette
     pipe = C._pipe()
     model = L._model()
-    ramps = load_palette()
+    ramps = load_palette(load_style(args.style).palette_path)
+
+    # Matches furnish.py's convention (props are the same output category):
+    # out/sprites/ for the default style, out/sprites/<style>/ nested beneath
+    # it for anything else. Both live entirely under out/, which .gitignore
+    # already blanket-ignores -- unlike render_batch.py's own standalone
+    # default (top-level sprites/, which has its own gitignore line and so
+    # needed the out/sprites_<style> redirect), factory.py always passes an
+    # explicit --out to that subprocess and never touches the top-level
+    # sprites/ directory at all.
+    sprite_dir = (SPRITE_DIR if args.style == DEFAULT_STYLE
+                 else SPRITE_DIR / args.style)
 
     results = []
     for spec in subjects:
         print(f"\n=== {spec['name']} ===")
-        r = run_subject(spec, pipe, model, ramps, retries=args.retry_seeds)
+        r = run_subject(spec, pipe, model, ramps, args.style, sprite_dir,
+                        retries=args.retry_seeds)
         results.append(r)
         status = "OK" if r["ok"] else f"GATED at {r['stage']}"
         print(f"  {status}" + (f": {r['detail']}" if r["detail"] else ""))
@@ -286,7 +323,7 @@ def main() -> int:
         # review_queue.build() globs relative to cwd -- Path().glob rejects an
         # absolute pattern outright -- so this assumes factory.py is invoked
         # from the repo root, the same assumption every other tool here makes.
-        rel_sprites = SPRITE_DIR.relative_to(ROOT)
+        rel_sprites = sprite_dir.relative_to(ROOT)
         patterns = [str(rel_sprites / f"{r['name']}_dir*.png") for r in ok]
         proc = subprocess.run(
             [sys.executable, str(ROOT / "tools" / "review_queue.py"),
