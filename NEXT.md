@@ -1657,7 +1657,71 @@ byte-identical before and after (stash-based before/after).
 
 ---
 
-## How this repo expects work to be done
+**Landed (PR #54, stacked on #50): `manifest.py`'s `check_ui` finally reads
+the active `--style`, closing the one gap PR #24 explicitly left alone.**
+PR #24 fixed every other bare `load_palette()` in this file but named
+`check_ui`'s hardcoded `ui_dir = ROOT / "out" / "ui"` and `load_palette()`
+as "a different, larger, genuinely not-yet-started gap, not a bug in this
+one" — its stated reason being that `ui_forge.py`/`ui_chrome.py` "never
+claimed to build per-style in the first place." That prerequisite is gone:
+PR #25 gave `ui_chrome.py` `--style`, PR #36 gave `ui_forge.py` the same.
+This is that deferred follow-up, now that there is real per-style content
+for `check_ui` to find.
+
+**Two directories, not one, because the two producers never agreed on a
+convention.** `ui_forge.py` nests a non-default style under the default's
+own directory, matching `furnish.py` — `out/ui/<style>/`. `ui_chrome.py`
+uses a sibling-with-suffix, matching `tileset.py` — `out/ui_<style>/`.
+`package_godot.py`'s `style_paths()` (PR #47/#48) already documented this
+exact split for its own purposes and made the same call this PR makes —
+match each producer's own real convention rather than invent a third — but
+it only threads the suffix half through its single `ui_dir` field, so it
+silently stages nothing from `ui_forge.py`'s nested directory for a
+non-default style. That's a real, separate gap in `package_godot.py`, not
+introduced or fixed here — noted below, not chased, because fixing it means
+touching a different, working, shipped file for a problem this PR's scope
+is auditing, not staging.
+
+`check_ui` now resolves both directories from the active `style.Style` (the
+same object `check()` already loads, threaded through rather than
+re-resolved) and checks a declared id against both — a CHROME id
+(`ui_dialogue_frame`, `ui_nameplate`, `ui_upgrade_frame`, `ui_ticket`,
+`ui_star_rating`, `ui_star_rating_empty`, `ui_coin`) is found in the suffix
+directory, a forge-only id (the drink icons, the clock, the heart) in the
+nested one — rather than checking one and silently missing the other's
+output. For the default style both conventions collapse to the same
+`out/ui/`, unchanged from before. `ui_font` stays pointed at
+`out/ui/font/font.json` regardless of style: `bitmap_font.py` has no
+`--style` flag at all yet, a separate not-yet-started gap of its own, the
+same category `check_ui` itself was in before this PR.
+
+**Verified against real on-disk assets, not just by code reading.** Ran
+`tools/ui_chrome.py --style snes_rpg` for real (purely procedural, no GPU) —
+7/7 chrome pieces built to `out/ui_snes_rpg/`. GPU turned out to be
+available in this environment, so `tools/ui_forge.py --only
+ui_coin,ui_icon_espresso --retry-seeds 0 --style snes_rpg` was also run for
+real, not skipped: `ui_icon_espresso` built to `out/ui/snes_rpg/`,
+`ui_coin` gated on the same documented speckle ceiling PR #36 already
+recorded for it. `manifest.py --check --style snes_rpg` against that real
+on-disk state, before this fix, reported the exact same wrong thing as
+`--check` with no `--style` at all — "15 declared but not built," including
+`ui_icon_espresso` even though it was sitting on disk, because the old code
+never looked anywhere but the hardcoded default `out/ui/`. After the fix,
+the same command correctly reports "7 declared but not built" (exactly the
+seven ids genuinely not yet built for `snes_rpg`: the five remaining
+drinks, the clock, the heart) and zero off-palette or isolated-pixel
+warnings for the eight it found — confirming both that it now locates
+files in either real directory and that it audits them against
+`snes_rpg`'s actual palette rather than `cozy_ghibli`'s.
+
+**Regression, checked the way PR #36/#52 did it: real output, not
+assumption.** `manifest.py --check` (no `--style`) captured in full before
+and after this change, same on-disk state both times (git-stash-based
+before/after, not a fresh clone, since `out/ui/` already existed from the
+`snes_rpg` run above by the time of capture) — **byte-identical**,
+including the pre-existing `ui: 15 declared but not built` warning and
+`ui_font` warning, neither of which this PR touches the wording of for the
+default style.
 
 **Environment**
 
