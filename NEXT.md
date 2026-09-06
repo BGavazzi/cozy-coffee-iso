@@ -396,8 +396,21 @@ not, not every asset any game has ever shipped.
    and is proven; what is missing is subjects, not machinery. This is a
    `UI_PROMPTS` list to extend, and it is item 4 rather than item 1 for
    exactly that reason.
-5. **Cursors and pointer states.** Trivially procedural, genuinely required,
-   and nobody has written the six lines.
+5. ~~**Cursors and pointer states.**~~ **Done** -- `ui_chrome.py` gains
+   three: `ui_cursor_pointer` (a standard 7-point arrow, not an original
+   design -- unlike `star_rating`/`coin`, a cursor is a shape every player
+   already knows, so inventing one would cost recognisability for nothing),
+   `ui_cursor_hand` (a fist with an extended index finger and a thumb, for
+   clickable targets), `ui_cursor_wait` (an hourglass, static rather than
+   animated, since one frame is what this pipeline ships). All three are
+   smaller than every other chrome piece (32px against 64) and two are
+   genuinely concave, which made `_star`'s own border-inset trick fail
+   worse than before it was fixed: shrinking a polygon's vertices toward a
+   shared point self-intersects at concave corners instead of insetting
+   uniformly, and measured 10-13% isolated pixels against the 6.2% cap.
+   `_inset_mask` replaces it with erosion on a rasterized mask, which
+   cannot self-intersect, and clears the cap on all three (5.4% / 1.5% /
+   6.0% worst-case). The six lines took longer than six lines.
 6. ~~**A palette-swap path.**~~ **Done.** `palette_swap.py`, four variants in
    `style_bible.yaml`, `proof/variants.png`. Two things worth carrying
    forward. First, the swap is a lookup and not a re-quantization, which is

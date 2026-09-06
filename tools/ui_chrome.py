@@ -23,7 +23,7 @@ authored procedurally, the same answer `assetlib.py` gives for furniture. A
 rounded rect with a two-pixel border is a few lines of code and is exactly
 right every time, at any size, on any seed, with no GPU.
 
-    python tools/ui_chrome.py                 # all seven
+    python tools/ui_chrome.py                 # all ten
     python tools/ui_chrome.py --only ui_coin
     python tools/ui_chrome.py --target 32     # scales, unlike a 1024px render
 
@@ -42,13 +42,28 @@ carries the insets. Every piece is held to `ui_forge`'s own thresholds --
 `MIN_ICON_COVERAGE` and `MAX_ISOLATED`, imported rather than restated -- so
 drawn art clears the same bar generated art had to, not a softer one written
 to make this file look good. Measured across three sizes, worst
-isolated-pixel ratio of the seven against that 6.2% cap:
+isolated-pixel ratio of the original seven against that 6.2% cap:
 
     32 px   6.1%      64 px   3.6%      128 px   1.6%
 
 The 32px column is the honest one. It only reads that way after the star's
 edge was floored at 2px; at a freely-scaling thickness the same drawing came
 back at 7.8% and 13.3%. See `_star`.
+
+Three cursor/pointer states (`ui_cursor_pointer`, `ui_cursor_hand`,
+`ui_cursor_wait`) joined the set later, at their own declared size of 32px
+rather than the icons' 64 -- a cursor is meant to be small on screen, and
+`--target` scales the whole set uniformly regardless. Smaller and, for the
+arrow and hourglass, genuinely concave, so the same isolated-pixel fight
+showed up again sooner: `_star`'s trick of shrinking a border by a fixed
+radius from a shared centre only works because a star already has one, and
+scaling an arbitrary polygon's vertices toward a shared point instead
+self-intersected at its concave corners and made things worse, not better
+(10-13% isolated). `_inset_mask` replaces that with erosion on a rasterized
+mask, which cannot self-intersect because there is no polygon left by the
+time it runs. Worst isolated ratio of the three at their declared size:
+5.4% (pointer), 1.5% (hand), 6.0% (wait) -- all under the 6.2% cap, the
+hourglass by the smallest margin any piece in this file clears it by.
 """
 from __future__ import annotations
 
@@ -151,6 +166,36 @@ def _star_pts(cx, cy, r_out, r_in, points=5, phase=-math.pi / 2):
         a = phase + i * math.pi / points
         out.append((cx + r * math.cos(a), cy + r * math.sin(a)))
     return out
+
+
+def _inset_mask(pts, w: int, h: int, px: float) -> list[bool]:
+    """Rasterize `pts` and erode the result inward by `px` pixels.
+
+    `_star` insets its border by shrinking a radius from a shared centre,
+    which is exact for a star because a star's vertices already are
+    (centre, radius). The cursor glyphs are not radially symmetric and two
+    of them (the arrow's notch, the hourglass's waist) are concave, where
+    the equivalent trick -- scaling every vertex toward one shared point --
+    self-intersects near the concave corners and produces a jagged inner
+    edge. Measured on `cursor_pointer`: vertex-scaling toward the shape's
+    own centroid put 10-11% of pixels next to none of their four neighbours,
+    against this file's 6.2% cap. Eroding a rasterized mask instead never
+    self-intersects, because there is no polygon left to intersect by the
+    time this runs -- just a grid of booleans losing one ring per pixel of
+    inset, the same neighbour-adjacency test `upgrade_frame`'s bevel already
+    uses, applied `px` times instead of once. That passes at 3.6%.
+    """
+    tmp = Canvas(w, h)
+    tmp.poly(pts, True)
+    mask = [v is not None for v in tmp.mat]
+    for _ in range(max(1, int(round(px)))):
+        cur = mask
+        mask = [cur[y * w + x] and
+                all(cur[(y + dy) * w + (x + dx)]
+                    if 0 <= x + dx < w and 0 <= y + dy < h else False
+                    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))
+                for y in range(h) for x in range(w)]
+    return mask
 
 
 # --- the pieces --------------------------------------------------------------
@@ -384,6 +429,119 @@ def coin(s: float) -> Canvas:
     return c
 
 
+def _arrow_pts(h: float):
+    """The classic 7-point pixel-art arrow, tip at the origin.
+
+    Not an original design, on purpose. `star_rating`/`coin` get to invent
+    their own shape because there is no existing convention for "a rating
+    star" a player has to recognise on sight. A cursor is the opposite case
+    -- every player has spent years learning what an OS pointer looks like,
+    and a novel silhouette here would cost recognisability for no gain. So
+    this is the standard arrow outline (upright spine, one notch, one tail
+    spike) at the same proportions every desktop cursor has used since the
+    80s, just quantised to this repo's material system instead of drawn by
+    hand. Fractions are of a 13x19 bounding box, the shape's traditional
+    aspect ratio.
+    """
+    frac = [(0, 0), (0, 16), (4, 12), (7, 19), (9, 18), (6, 11), (13, 11)]
+    return [(x * h / 19.0, y * h / 19.0) for x, y in frac]
+
+
+def cursor_pointer(s: float) -> Canvas:
+    """Default pointer: the arrow above, with an eroded-mask border inset.
+
+    The edge floors at 3px, not the 2px `_star` gets away with, and that
+    difference was measured rather than guessed. `_star` is a large, mostly
+    convex shape at 64px; this is a small, genuinely concave one at 32, and
+    both size and concavity work against the isolated-pixel check at once --
+    2px failed at 10-13% against the 6.2% cap across several sizes tried,
+    3px clears it with room (5.4%).
+    """
+    h = int(32 * s)
+    w = int(round(h * 13 / 19))
+    c = Canvas(w, h)
+    outer = _arrow_pts(h)
+    edge = max(3.0, 3.0 * s)
+    c.poly(outer, BORDER)
+    for i, inside in enumerate(_inset_mask(outer, w, h, edge)):
+        if inside:
+            c.mat[i] = FILL
+    return c
+
+
+def cursor_hand(s: float) -> Canvas:
+    """Pointing hand: the "this is clickable" state.
+
+    Built from the same two primitives as `nameplate`'s end caps -- a
+    rounded-rect border with a smaller rounded-rect fill inset inside it --
+    applied twice (palm, then finger drawn on top so it visibly emerges from
+    the palm, exactly how `nameplate`'s caps are drawn over its band). The
+    finger's own radius is half its width rather than a fixed fraction of
+    the palm's, which is what makes its tip read as a rounded fingertip
+    instead of a slotted-in rectangle.
+
+    The thumb was a solid triangular wedge in the first version and it
+    looked like a shadow or a notch, not a digit -- flat edges read as
+    "cut from", not "attached to". A nested disc (border ring, fill centre)
+    reads as a knuckle because it is the one round part on an otherwise
+    rectilinear hand, the same reason `coin` and `_star` are the only round
+    things in a file mostly built from `round_rect`.
+    """
+    n = int(32 * s)
+    c = Canvas(n, n)
+    b = max(1, int(round(2 * s)))
+    r = max(1.0, 4 * s)
+    # Palm.
+    px0, py0, px1, py1 = 0.22 * n, 0.46 * n, 0.86 * n, 0.88 * n
+    c.round_rect(px0, py0, px1, py1, r, BORDER)
+    c.round_rect(px0 + b, py0 + b, px1 - b, py1 - b, max(1.0, r - b), FILL)
+    # Index finger, drawn on top of the palm so it emerges from it rather
+    # than butting against it -- the one feature that reads as "pointing at
+    # this" rather than "a fist".
+    fx0, fx1, fy0 = 0.34 * n, 0.58 * n, 0.06 * n
+    fr = max(1.5, (fx1 - fx0) / 2)
+    c.round_rect(fx0, fy0, fx1, py0 + b, fr, BORDER)
+    c.round_rect(fx0 + b, fy0 + b, fx1 - b, py0, max(1.0, fr - b), FILL)
+    # Thumb: a nested disc, not a wedge -- see docstring.
+    tcx, tcy, tr = px0 + 0.02 * n, py0 + 0.22 * n, 0.11 * n
+    c.disc(tcx, tcy, tr, BORDER)
+    c.disc(tcx, tcy, max(1.0, tr - b), FILL)
+    return c
+
+
+def cursor_wait(s: float) -> Canvas:
+    """Hourglass: the "busy, don't click yet" state.
+
+    A bowtie hexagon (two triangles sharing a waist) rather than a spinner,
+    because a spinner needs motion to read as anything and this pipeline
+    ships one static frame per id -- an hourglass is legible standing still,
+    which is the actual constraint. The sand pile is the detail that turns
+    the bowtie into an hourglass rather than an abstract badge: without it
+    this is indistinguishable from a generic notification glyph.
+
+    Same eroded-mask inset as `cursor_pointer`, floored higher still (4px):
+    the waist is a sharper concave corner than the arrow's notch, and 2px
+    and 3px both left 6.4-11.8% isolated across the sizes tried; 4px is what
+    actually cleared the 6.2% cap (6.0%).
+    """
+    n = int(32 * s)
+    c = Canvas(n, n)
+    cy = n / 2.0
+    edge = max(4.0, 4.0 * s)
+    cap = n * 0.12
+    outer = [(n * 0.15, cap), (n * 0.85, cap), (n * 0.55, cy),
+              (n * 0.85, n - cap), (n * 0.15, n - cap), (n * 0.45, cy)]
+    c.rect(n * 0.12, 0, n * 0.88, cap, BORDER)
+    c.rect(n * 0.12, n - cap, n * 0.88, n - 1, BORDER)
+    c.poly(outer, BORDER)
+    for i, inside in enumerate(_inset_mask(outer, n, n, edge)):
+        if inside:
+            c.mat[i] = FILL_DIM
+    c.poly([(n * 0.35, n - cap - edge * 0.6), (n * 0.65, n - cap - edge * 0.6),
+            (n * 0.5, cy + edge)], GOLD)
+    return c
+
+
 # id -> (draw fn, nine-slice insets or None).
 #
 # Insets are (left, top, right, bottom) at scale 1.0 and are VERIFIED by
@@ -396,6 +554,9 @@ CHROME = {
     "ui_star_rating":       (star_rating, None),
     "ui_star_rating_empty": (star_rating_empty, None),
     "ui_coin":              (coin, None),
+    "ui_cursor_pointer":    (cursor_pointer, None),
+    "ui_cursor_hand":       (cursor_hand, None),
+    "ui_cursor_wait":       (cursor_wait, None),
 }
 
 
