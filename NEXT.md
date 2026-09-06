@@ -1621,6 +1621,42 @@ restore the fix: the two JSON snapshots are byte-identical.
 
 ---
 
+**Landed (PR #54): `review_queue.py` gets `--style`, the audit-tool gap
+PR #31 didn't cover.** PR #31 audited `art_review.py` for the accepted-
+but-ignored `--style` bug and found it clean, but scoped itself to that
+one file. `review_queue.py` -- the batch contact-sheet tool that sits one
+layer above `art_review.py`, calling its `load_palette()`/`review()`
+directly -- had the actual bug: `build()` called `load_palette()` bare, no
+argument, always resolving `cozy_ghibli`'s palette regardless of what
+style the matched files were rendered under, and `main()`'s argparse had
+no `--style` at all.
+
+Fix mirrors `art_review.py`'s own convention: `build()` gained a
+`style: str = DEFAULT_STYLE` parameter resolved via
+`load_palette(load_style(style).palette_path)`, and `main()`'s `build`
+subcommand gained `--style NAME` (default `cozy_ghibli`). `build()` takes
+arbitrary glob patterns, which could in principle span more than one
+style's output in one invocation -- kept to one `--style` per invocation
+rather than per-file inference, matching how every producer this session
+added the flag, and documented inline as the caller's responsibility to
+avoid (one style-consistent glob per run). Checked `review()`'s other
+internal logic in full: nothing beyond `by_rgb`/`ramps`/`entries` as
+passed in, no separate hardcoded assumption to fix; `check_direction_set()`
+(the key-light-drift cross-sprite check) works on raw OKLab lightness from
+pixel RGB, not the palette, so it needed no change.
+
+Verified with real renders (`furnish.py --only plant_succulent`, both
+styles, GPU-free), not just that it runs: reviewing the `snes_rpg` render
+under the OLD bare-`load_palette()` behaviour produced 8/8 false
+off-palette blockers; under `--style snes_rpg` it's 6/8 auto-clean, 0
+blockers. The key-light-drift check also reads genuinely differently by
+style on the same geometry (cozy_ghibli "consistent" 3.4x5.5px vs.
+snes_rpg "drifts" 3.1x6.9px). Regression check: `verdicts.jsonl` and
+`sheet.png` for the same default-style input, no `--style` flag, are
+byte-identical before and after (stash-based before/after).
+
+---
+
 ## How this repo expects work to be done
 
 **Environment**
