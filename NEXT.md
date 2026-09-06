@@ -1723,6 +1723,61 @@ including the pre-existing `ui: 15 declared but not built` warning and
 `ui_font` warning, neither of which this PR touches the wording of for the
 default style.
 
+---
+
+**Landed (PR #56): `--style` for `tools/bitmap_font.py`, the same
+accepted-but-ignored / never-added bug fixed across `factory.py` (PR #52),
+`ingest.py` (PR #53) and `review_queue.py` (PR #54).** `bitmap_font.py` is
+the repo's actual in-game bitmap font renderer, not a dev preview tool
+(its own module docstring: "No font, no bitmap glyph set, nothing that
+renders a word in the palette... this is that") — and it had FOUR bare
+`load_palette()` calls (`render_line()`, `atlas()`, `load_ramps()`,
+`demo()`), every one always resolving `cozy_ghibli`, plus a `main()`
+argparse with no `--style` flag at all to begin with.
+
+All four now resolve `load_palette(load_style(style).palette_path)`, with
+`style` threaded as a parameter down from `main()`'s new `--style NAME`
+(default `cozy_ghibli`) through `render_line`, `atlas`, `load_ramps`,
+`check_render` (which calls `load_ramps` for its off-palette audit) and
+`demo`. Same idiom every other producer in this sweep uses; no new palette
+resolution path invented.
+
+**Output path, verified rather than guessed.** `--out` defaulted to a fixed
+`out/ui/font`; it now defaults to `out/ui/font` for `cozy_ghibli` or
+`out/ui/<style>/font` for anything else, still overridable explicitly. That
+nests the style directory the way `ui_forge.py` does for its own
+`out/ui/<style>/` — not `ui_chrome.py`'s sibling-suffix `out/ui_<style>`
+— because `bitmap_font.py`'s default already lives *under* `out/ui/`, same
+as `ui_forge.py`'s and unlike `ui_chrome.py`'s bare `out/ui`. Confirmed by
+actually running it: `--style snes_rpg --sample "Flat White  $4.50"` (no
+`--out`) wrote to `out/ui/snes_rpg/font/font_sample.png`, and
+`git check-ignore -v` confirms both that path and the default
+`out/ui/font/font_sample.png` are covered by the existing blanket `out/`
+`.gitignore` line — no new entry needed.
+
+**Real palette difference, not just "didn't crash."** Rendered the same
+sample string under both styles and diffed the actual ink RGB values
+written to the PNGs: `cozy_ghibli` writes `(35,35,44)`/`(63,63,75)`
+(neutral charcoal), `snes_rpg` writes `(9,18,31)`/`(43,54,71)` (navy) — a
+real, different palette resolved per style rather than the same bytes
+under a new flag. Side-by-side proof at
+`proof/bitmap_font_style_compare_sample.png`.
+
+**Regression check.** Same sample string, same `--cap`/`--weight`, no
+`--style` flag: sha256 of `font_sample.png` is byte-identical before and
+after this change
+(`fe89984c22d0bd6134eaa1eb0b3fd48ac8c8b35f60c5377cbf9478ff0fa67103`) —
+a pure threading change, zero behaviour change for the shipped style.
+
+`bitmap_font.py --check` was left untouched — it sweeps geometry (glyph
+collisions, counters, bounds, pairwise ink contact) and never touches a
+palette, so there is no bare `load_palette()` in that path to fix and no
+style-dependent behaviour to verify there.
+
+---
+
+## How this repo expects work to be done
+
 **Environment**
 
 - Python is `.venv/Scripts/python.exe`. The system `python` on PATH has no

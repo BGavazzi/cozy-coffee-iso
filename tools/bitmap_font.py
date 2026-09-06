@@ -55,6 +55,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).parent))
+from style import DEFAULT_STYLE, load_style  # noqa: E402
 
 # --- metrics -----------------------------------------------------------------
 #
@@ -600,7 +601,8 @@ def _canvas(w: int, h: int):
 
 
 def render_line(text: str, cap: int, *, weight: int = 1, tracking: int = 0,
-                ink: str = INK, shadow: str | None = None, pad: int = 1):
+                ink: str = INK, shadow: str | None = None, pad: int = 1,
+                style: str = DEFAULT_STYLE):
     """One line as a resolved RGB pixel list, via `ui_chrome`'s own Canvas.
 
     Deliberately the same Canvas and the same `resolve` the drawn chrome uses,
@@ -615,7 +617,7 @@ def render_line(text: str, cap: int, *, weight: int = 1, tracking: int = 0,
     c = _canvas(w + pad * 2 + extra, h + pad * 2 + extra)
     draw(c, text, pad, pad, cap, weight=weight, tracking=tracking, ink=ink,
          shadow=shadow)
-    return resolve(c, load_palette())
+    return resolve(c, load_palette(load_style(style).palette_path))
 
 
 def save_png(px, w: int, h: int, path: Path) -> None:
@@ -626,7 +628,7 @@ def save_png(px, w: int, h: int, path: Path) -> None:
     img.save(path)
 
 
-def atlas(cap: int, weight: int = 1, columns: int = 16):
+def atlas(cap: int, weight: int = 1, columns: int = 16, style: str = DEFAULT_STYLE):
     """The whole glyph set on one sheet, plus the metrics to cut it back up.
 
     A grid rather than a tight pack: every cell is the same size, so a consumer
@@ -650,7 +652,7 @@ def atlas(cap: int, weight: int = 1, columns: int = 16):
             c.put(gx + px, gy + py, INK)
         metrics[g] = {"index": i, "advance": adv}
     metrics[" "] = {"index": -1, "advance": glyph_box(" ", cap, weight)[0]}
-    px, w, h = resolve(c, load_palette())
+    px, w, h = resolve(c, load_palette(load_style(style).palette_path))
     return px, w, h, {
         "cap": cap, "weight": weight, "cell": [cw, ch_h], "columns": columns,
         "baseline": base, "ascent": base, "descent": ch_h - base - 1,
@@ -675,7 +677,7 @@ def fit_cap(text: str, width: int, sizes=SIZES, weight: int = 1,
     return None
 
 
-def check_render(px, w: int, h: int) -> list[str]:
+def check_render(px, w: int, h: int, style: str = DEFAULT_STYLE) -> list[str]:
     """Rendered text held to the UI gate, at the same threshold.
 
     `ui_chrome` imports `ui_forge`'s thresholds rather than restating them so
@@ -709,7 +711,7 @@ def check_render(px, w: int, h: int) -> list[str]:
     from pixelize import audit
     from ui_forge import MAX_ISOLATED
     out = []
-    rep = audit(px, load_ramps())
+    rep = audit(px, load_ramps(style))
     if rep["off_palette"]:
         out.append(f"{rep['off_palette_pct']}% off-palette, which drawing "
                    f"straight from a ramp index should make impossible")
@@ -729,12 +731,12 @@ def check_render(px, w: int, h: int) -> list[str]:
     return out
 
 
-def load_ramps():
+def load_ramps(style: str = DEFAULT_STYLE):
     from pixelize import load_palette
-    return load_palette()
+    return load_palette(load_style(style).palette_path)
 
 
-def demo(out: Path) -> str:
+def demo(out: Path, style: str = DEFAULT_STYLE) -> str:
     """Text inside the chrome that was drawn with ruled lines standing in for it.
 
     This is the pairing the two producers were always for: `ui_chrome` declares
@@ -746,7 +748,7 @@ def demo(out: Path) -> str:
     from pixelize import load_palette, material
     import ui_chrome as U
 
-    ramps = load_palette()
+    ramps = load_palette(load_style(style).palette_path)
 
     def rgb(tok):
         name, idx = material(tok)
@@ -818,13 +820,27 @@ def main() -> int:
                     help="text inside the nine-slice chrome, as a PNG")
     ap.add_argument("--cap", type=int, default=7)
     ap.add_argument("--weight", type=int, default=1)
+    ap.add_argument("--style", default=DEFAULT_STYLE,
+                    help="which style pack's palette to render/build against")
     # Its own directory under out/ui/, not loose beside the icons.
     # `package_godot.stage_ui` globs `out/ui/*.png` and treats every hit as an
     # icon; a font sheet is not an icon and a demo render is not an asset, and
     # relying on the `_` prefix convention to keep them apart is one careless
     # filename away from staging a preview into the game.
-    ap.add_argument("--out", default=str(ROOT / "out" / "ui" / "font"))
+    #
+    # default: out/ui/font, or out/ui/<style>/font for a non-default --style --
+    # the same nesting `ui_forge.py` uses for its own out/ui/<style>/, not the
+    # out/ui_<style> sibling-suffix convention `ui_chrome.py` picked. Either
+    # way `out/` is blanket-ignored, so this is purely which existing
+    # convention to match, not a new gitignore entry to add.
+    ap.add_argument("--out", default=None,
+                    help="default: out/ui/font, or out/ui/<style>/font for a "
+                         "non-default --style")
     args = ap.parse_args()
+
+    out = Path(args.out) if args.out else (
+        ROOT / "out" / "ui" / "font" if args.style == DEFAULT_STYLE
+        else ROOT / "out" / "ui" / args.style / "font")
 
     if args.check:
         results = survey(weight=args.weight)
@@ -842,16 +858,16 @@ def main() -> int:
             return 1
         return 0
 
-    out = Path(args.out)
     if args.demo:
-        print(demo(out))
+        print(demo(out, args.style))
         return 0
     if args.sample:
-        px, w, h = render_line(args.sample, args.cap, weight=args.weight)
+        px, w, h = render_line(args.sample, args.cap, weight=args.weight,
+                                style=args.style)
         save_png(px, w, h, out / "font_sample.png")
         print(f"{args.sample!r} at cap {args.cap}: {w}x{h} -> "
               f"{out / 'font_sample.png'}")
-        for p in check_render(px, w, h):
+        for p in check_render(px, w, h, args.style):
             print(f"  {p}")
         return 0
 
@@ -861,12 +877,12 @@ def main() -> int:
     for cap in SIZES:
         bad = check(cap, args.weight)
         problems += bad
-        px, w, h, meta = atlas(cap, args.weight)
+        px, w, h, meta = atlas(cap, args.weight, style=args.style)
         name = f"font_cap{cap}"
         save_png(px, w, h, out / f"{name}.png")
         meta["file"] = f"{name}.png"
         meta["sheet_size"] = [w, h]
-        bad += [f"cap {cap} sheet: {m}" for m in check_render(px, w, h)]
+        bad += [f"cap {cap} sheet: {m}" for m in check_render(px, w, h, args.style)]
         problems += [p for p in bad if p.startswith(f"cap {cap} sheet")]
         written.append((cap, w, h, meta))
         print(f"  cap {cap:>2}  {w:>3}x{h:<3} sheet  "
