@@ -1657,7 +1657,7 @@ byte-identical before and after (stash-based before/after).
 
 ---
 
-**Landed (PR #54, stacked on #50): `manifest.py`'s `check_ui` finally reads
+**Landed (PR #55, stacked on #50): `manifest.py`'s `check_ui` finally reads
 the active `--style`, closing the one gap PR #24 explicitly left alone.**
 PR #24 fixed every other bare `load_palette()` in this file but named
 `check_ui`'s hardcoded `ui_dir = ROOT / "out" / "ui"` and `load_palette()`
