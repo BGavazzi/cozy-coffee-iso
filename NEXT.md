@@ -1776,6 +1776,82 @@ style-dependent behaviour to verify there.
 
 ---
 
+**Landed (PR #57, stacked on #50): `package_godot.py` stages a non-default
+style's UI from BOTH real directories, PR #55's own flagged follow-up.**
+PR #55 (`manifest.py`'s `check_ui`, audit side) found and fixed the fact that
+`ui_forge.py` and `ui_chrome.py` picked two different per-style conventions
+for `out/ui/`, and explicitly named the staging side of the identical
+problem as "a real, separate gap... noted in `NEXT.md`" rather than fixing
+it there, since that meant touching a different, working file. This is that.
+
+**The split, unchanged from PR #55's finding, now also covers the font.**
+`style_paths()`'s single `ui_dir` field could only ever resolve to
+`ui_chrome.py`'s sibling-suffix convention (`out/ui_<style>/`), so
+`stage()` was staging chrome pieces for a non-default style and silently
+missing `ui_forge.py`'s icons entirely (`out/ui/<style>/`) — and, it turns
+out, `bitmap_font.py`'s font too, one level under that same nested
+directory (`out/ui/<style>/font`), which is the convention the open,
+unmerged `bitmap-font-style` branch (PR #56) lands (read directly from
+that branch, not guessed — `tools/bitmap_font.py` on this branch still has
+no `--style` flag at all, a separate, not-yet-started gap noted below).
+`style_paths()` now returns `ui_forge_dir`/`ui_chrome_dir` instead of one
+`ui_dir`; `stage_ui()` merges both (de-duplicated via `dict.fromkeys`, so
+the default style — where they're literally the same `Path` — collapses
+to the exact single-directory behaviour it always had); `stage_font()`
+takes `ui_forge_dir` specifically, matching the nested convention its
+source actually uses.
+
+**A real bug, measured before and after, not assumed fixed.** Real content
+already existed on disk in this environment from prior work: `ui_chrome.py
+--style snes_rpg` was re-run for real here too (GPU-free, 7/7 chrome pieces
+confirmed fresh to `out/ui_snes_rpg/`). `bitmap_font.py --style snes_rpg`
+cannot be run for real on this branch — confirmed by trying it: `error:
+unrecognized arguments: --style snes_rpg` — so `bitmap_font.py` (no
+`--style`) was run for real instead (`out/ui/font/`, 4 real sheets + real
+`font.json`) and that real output copied to `out/ui/snes_rpg/font/`, the
+exact path a `--style`-aware `bitmap_font.py` will write to, to exercise
+`stage_font()`'s nested-lookup against real bytes rather than a fabricated
+fixture. `ui_forge.py --style snes_rpg` was NOT run fresh — GPU check at
+the time (`torch.cuda.is_available()` → True, but `nvidia-smi` showing
+~46% of this 8 GB card's VRAM already held by other running applications)
+judged the GPU not clearly free for a new SDXL job; verified instead by
+code inspection of its `--style` path logic (`ui_dir = ROOT / "out" / "ui"
+/ args.style` for non-default, matching `style_paths()`'s `ui_forge_dir`
+exactly) plus the real `out/ui/snes_rpg/ui_icon_espresso.png` already
+sitting on disk from an earlier genuine run in this environment.
+
+Before the fix, `package_godot.stage("snes_rpg")` staged **7 UI pieces (7
+drawn, 0 generated)** and no `font` key at all — every chrome piece, zero
+icons, zero font, exactly PR #55's finding reproduced on the staging side.
+After the fix, the same call stages **8 UI pieces (7 drawn, 1 generated)**
+— `ui_icon_espresso` now present, `source: generated` — and a real `font`
+key with all 4 shipped cap heights. `godot_export/project_snes_rpg/assets/`
+gained `ui_icon_espresso.png` and a whole `font/` subtree that didn't exist
+in the pre-fix output at all.
+
+**Missing-directory degrade, checked directly, not inferred.** Called
+`stage_ui()`/`stage_font()` with paths that don't exist on disk (both
+missing, and one-of-two missing) — every case returns `{}` cleanly, no
+exception, matching the "stage nothing, don't fail" contract every other
+stager here already has for a style nobody's run a producer against yet.
+
+**Regression, the default style.** `package_godot.stage("cozy_ghibli")`
+before and after: identical `summarise()` output, identical file list under
+`assets/`, and sha256-identical on every file including
+`build_manifest.json` — zero behaviour change, because `ui_forge_dir` and
+`ui_chrome_dir` both resolve to the same `out/ui/` `Path` for the default
+style, `dict.fromkeys` collapses them to one entry, and `stage_ui()`/
+`stage_font()` run the exact single-directory path they always did.
+
+**Scope boundary, stated rather than assumed away.** `bitmap_font.py`
+itself still has no `--style` flag on this branch — that's PR #56, open
+and unmerged, not touched here. This PR only makes `package_godot.py`
+correctly consume whichever of the two real directories a style's UI
+output actually lands in; it does not change what any of the three
+producers write.
+
+---
+
 ## How this repo expects work to be done
 
 **Environment**

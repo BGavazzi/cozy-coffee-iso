@@ -88,21 +88,53 @@ def style_paths(style_name: str) -> dict:
     default style, unchanged, and `out/sprites_<style>/atlas.json` for a
     non-default one -- a third convention, distinct from both this file's
     `sprites_dir` (`furnish.py`'s nested `out/sprites/<style>/`) and
-    `tiles_dir`/`ui_dir` (the sibling-with-suffix `out/tiles_<style>/` /
-    `out/ui_<style>/`), because that is the path `animate.py`'s own `--out`
-    default resolves to, not a scheme invented here.
+    `tiles_dir` (the sibling-with-suffix `out/tiles_<style>/`), because that
+    is the path `animate.py`'s own `--out` default resolves to, not a scheme
+    invented here.
+
+    UI is the one category with no single `ui_dir` at all, because
+    `ui_forge.py` and `ui_chrome.py` picked two DIFFERENT conventions for the
+    same `out/ui/` root, and `bitmap_font.py` follows whichever of the two
+    `ui_forge.py` picked:
+
+    - `ui_forge.py` (icons) nests a non-default style UNDER the default's
+      own directory, matching `furnish.py`: `out/ui/<style>/`.
+    - `bitmap_font.py` (the font) nests under `ui_forge.py`'s own per-style
+      directory, one level deeper: `out/ui/<style>/font`. Not yet true of
+      the `bitmap_font.py` shipped on this branch -- it has no `--style` flag
+      at all yet, a separate not-yet-started gap -- but it is the convention
+      the open, unmerged `bitmap-font-style` branch lands (verified by
+      reading that branch's `tools/bitmap_font.py` directly, not guessed),
+      and `stage_font()` is written against the path a `--style`-aware
+      `bitmap_font.py` will actually use rather than against today's
+      style-blind one.
+    - `ui_chrome.py` (chrome) uses a sibling-with-suffix, matching
+      `tileset.py`: `out/ui_<style>/`.
+
+    `manifest.py`'s `check_ui` (PR #55, same finding, audit side) hit this
+    exact split first and made the same call this makes: match each real
+    producer convention rather than invent a third, and treat both
+    directories as live sources rather than picking one. This is that same
+    reasoning applied to staging -- `ui_forge_dir` for the nested icon+font
+    convention, `ui_chrome_dir` for the sibling-suffix chrome convention.
+    For the default style both collapse to the same `out/ui/`, which is why
+    `stage_ui()`/`stage_font()` can treat "one directory" as the special
+    case of "one or two directories with duplicates removed," not a
+    separate code path.
     """
     sys.path.insert(0, str(Path(__file__).parent))
     from style import DEFAULT_STYLE
     if style_name == DEFAULT_STYLE:
         return dict(manifest_path=SPRITES_MANIFEST, sprites_dir=SPRITES_DIR,
-                    project_dir=PROJECT_DIR, ui_dir=UI_DIR, tiles_dir=TILES_DIR,
+                    project_dir=PROJECT_DIR, ui_forge_dir=UI_DIR,
+                    ui_chrome_dir=UI_DIR, tiles_dir=TILES_DIR,
                     atlas_path=ATLAS)
     return dict(
         manifest_path=SPRITES_DIR / style_name / "manifest.json",
         sprites_dir=SPRITES_DIR / style_name,
         project_dir=PROJECT_DIR.parent / f"project_{style_name}",
-        ui_dir=UI_DIR.parent / f"ui_{style_name}",
+        ui_forge_dir=UI_DIR / style_name,
+        ui_chrome_dir=UI_DIR.parent / f"ui_{style_name}",
         tiles_dir=TILES_DIR.parent / f"tiles_{style_name}",
         atlas_path=ROOT / "out" / f"sprites_{style_name}" / "atlas.json",
     )
@@ -246,50 +278,87 @@ def check_anim_layout(anim: dict) -> list[str]:
     return out
 
 
-def stage_ui(ui_dir: Path, assets_dir: Path) -> dict:
+def stage_ui(ui_forge_dir: Path, ui_chrome_dir: Path, assets_dir: Path) -> dict:
     """Icons and chrome. Flat, single-frame, and two producers deep.
+
+    Two source directories, not one, because `ui_forge.py` and `ui_chrome.py`
+    picked two different per-style conventions for the same `out/ui/` root --
+    see `style_paths()`'s docstring for the full account and `manifest.py`'s
+    `check_ui` (PR #55) for the audit-side version of this exact problem.
+    For the default style `ui_forge_dir` and `ui_chrome_dir` are literally
+    the same `Path`, `dict.fromkeys` collapses them to one entry, and
+    everything below runs exactly as it did when this function took a single
+    `ui_dir` -- a non-default style is the only case that ever sees two.
 
     `_`-prefixed files are previews and `*_concept*` are the 1024px SDXL
     sources; neither is an asset. The producer is recorded per piece because
     it is the one fact about a UI asset that a later reader will want and
     cannot recover from the PNG -- which of these was drawn is the difference
     between "regenerate it with another seed" and "edit the function".
+
+    `nine_slice.json`/`chrome_report.json` are `ui_chrome.py`'s own
+    bookkeeping and only ever exist in whichever directory it wrote to, so
+    they are read from every directory that has them rather than assumed to
+    live in a particular one -- for the default style that is the same
+    directory `ui_forge_dir` already is; for a non-default style it is only
+    `ui_chrome_dir`, but nothing here needs to know that in advance.
     """
-    if not ui_dir.exists():
+    dirs = [d for d in dict.fromkeys([ui_forge_dir, ui_chrome_dir]) if d.exists()]
+    if not dirs:
         return {}
-    nine_path = ui_dir / "nine_slice.json"
-    nine = json.loads(nine_path.read_text()) if nine_path.exists() else {}
-    chrome_path = ui_dir / "chrome_report.json"
-    drawn = ({r["name"] for r in json.loads(chrome_path.read_text())}
-             if chrome_path.exists() else set())
+
+    nine = {}
+    drawn = set()
+    for d in dirs:
+        nine_path = d / "nine_slice.json"
+        if nine_path.exists():
+            nine.update(json.loads(nine_path.read_text()))
+        chrome_path = d / "chrome_report.json"
+        if chrome_path.exists():
+            drawn.update(r["name"] for r in json.loads(chrome_path.read_text()))
 
     from PIL import Image
     dest = assets_dir / "ui"
     dest.mkdir(parents=True, exist_ok=True)
 
     icons = {}
-    for p in sorted(ui_dir.glob("*.png")):
-        if p.name.startswith("_") or "_concept" in p.name:
-            continue
-        shutil.copyfile(p, dest / p.name)
-        with Image.open(p) as im:
-            size = list(im.size)
-        icons[p.stem] = {
-            "file": f"ui/{p.name}",
-            "size": size,
-            "source": "drawn" if p.stem in drawn else "generated",
-        }
-        if p.stem in nine:
-            icons[p.stem]["nine_slice"] = nine[p.stem]
+    for d in dirs:
+        for p in sorted(d.glob("*.png")):
+            if p.name.startswith("_") or "_concept" in p.name:
+                continue
+            if p.stem in icons:
+                # Already staged from the other directory. Only reachable
+                # for a non-default style, and only if the two producers
+                # ever emit the same id -- not expected, but the first
+                # directory's copy wins rather than silently overwriting it.
+                continue
+            shutil.copyfile(p, dest / p.name)
+            with Image.open(p) as im:
+                size = list(im.size)
+            icons[p.stem] = {
+                "file": f"ui/{p.name}",
+                "size": size,
+                "source": "drawn" if p.stem in drawn else "generated",
+            }
+            if p.stem in nine:
+                icons[p.stem]["nine_slice"] = nine[p.stem]
     return {"icons": icons}
 
 
-def stage_font(ui_dir: Path, assets_dir: Path) -> dict:
+def stage_font(ui_forge_dir: Path, assets_dir: Path) -> dict:
     """The bitmap font: one uniform-cell sheet per size, plus its metrics.
 
     A font is not an icon, which is why it lives in `out/ui/font/` rather than
     beside them -- `stage_ui` globs `out/ui/*.png` and would otherwise stage
     four glyph sheets and a demo render as game assets.
+
+    Takes `ui_forge_dir`, not `ui_chrome_dir`: `bitmap_font.py` nests a
+    non-default style's font one level under `ui_forge.py`'s own per-style
+    directory (`out/ui/<style>/font`), not under `ui_chrome.py`'s
+    sibling-suffix one -- see `style_paths()`'s docstring for where that
+    convention comes from. For the default style the two directories are the
+    same `Path` anyway, so this is only a real distinction for a non-default
+    style.
 
     Everything an engine needs to cut the sheet up is arithmetic on the cell
     size and the glyph's index, so only the per-glyph ADVANCE has to travel:
@@ -298,7 +367,7 @@ def stage_font(ui_dir: Path, assets_dir: Path) -> dict:
     `font.json` rather than recomputed here, for the reason `stage_tiles`
     records -- one authority for the metrics, on the Python side.
     """
-    src = ui_dir / "font"
+    src = ui_forge_dir / "font"
     index = src / "font.json"
     if not index.exists():
         return {}
@@ -435,7 +504,8 @@ def stage(style_name: str | None = None,
           sprites_dir: Path | None = None,
           project_dir: Path | None = None,
           atlas_path: Path | None = None,
-          ui_dir: Path | None = None,
+          ui_forge_dir: Path | None = None,
+          ui_chrome_dir: Path | None = None,
           tiles_dir: Path | None = None) -> dict:
     """Clear `assets/`, stage all three producers, write the build manifest.
 
@@ -451,15 +521,23 @@ def stage(style_name: str | None = None,
     of style data about -- resolving it inside the call, instead, costs one
     `or` and sidesteps the trap entirely.
 
-    Any of the six path arguments can still be passed explicitly, same as
+    Any of the seven path arguments can still be passed explicitly, same as
     before this gained style-awareness; an explicit value always wins over
     the style-derived default, so an unflagged call with no arguments at all
-    resolves to the exact six constants it always did (`atlas_path` included
-    -- it used to be a hardcoded default of `ATLAS`, now it is resolved
-    through `style_paths()` same as the rest, but for the default style that
-    resolves to the exact same `ATLAS` constant) and stages into the exact
+    resolves to the exact constants it always did (`atlas_path` included --
+    it used to be a hardcoded default of `ATLAS`, now it is resolved through
+    `style_paths()` same as the rest, but for the default style that resolves
+    to the exact same `ATLAS` constant) and stages into the exact
     `godot_export/project/` tree it always did -- the default style's export
     is unchanged, byte for byte, by any of this.
+
+    `ui_dir` (singular) became `ui_forge_dir`/`ui_chrome_dir` here: a
+    non-default style's UI output is genuinely split across two directories
+    (see `style_paths()`), so staging it needs both, not a single resolved
+    path that can only ever point at one of them. For the default style both
+    still resolve to the same `out/ui/`, which is the entire reason this is
+    a strict generalisation rather than a second, divergent code path -- see
+    `stage_ui()`/`stage_font()` for where the two are reconciled.
     """
     sys.path.insert(0, str(Path(__file__).parent))
     from style import DEFAULT_STYLE
@@ -468,7 +546,8 @@ def stage(style_name: str | None = None,
     manifest_path = manifest_path or defaults["manifest_path"]
     sprites_dir = sprites_dir or defaults["sprites_dir"]
     project_dir = project_dir or defaults["project_dir"]
-    ui_dir = ui_dir or defaults["ui_dir"]
+    ui_forge_dir = ui_forge_dir or defaults["ui_forge_dir"]
+    ui_chrome_dir = ui_chrome_dir or defaults["ui_chrome_dir"]
     tiles_dir = tiles_dir or defaults["tiles_dir"]
     atlas_path = atlas_path or defaults["atlas_path"]
 
@@ -480,11 +559,11 @@ def stage(style_name: str | None = None,
     build = {"assets": stage_sprites(manifest_path, sprites_dir, assets_dir)}
     if atlas_path.exists():
         build["anim"] = stage_anim(atlas_path, atlas_path.parent, assets_dir)
-    if ui_dir.exists():
-        ui = stage_ui(ui_dir, assets_dir)
+    if ui_forge_dir.exists() or ui_chrome_dir.exists():
+        ui = stage_ui(ui_forge_dir, ui_chrome_dir, assets_dir)
         if ui.get("icons"):
             build["ui"] = ui
-        font = stage_font(ui_dir, assets_dir)
+        font = stage_font(ui_forge_dir, assets_dir)
         if font.get("sizes"):
             build["font"] = font
     if tiles_dir.exists():
