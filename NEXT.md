@@ -359,9 +359,26 @@ not, not every asset any game has ever shipped.
 1. **Autotile / terrain rules, and openings.** Floors and walls both ship
    (`tileset.py`, below) and a corner assembles correctly, but there is no
    terrain metadata — nothing that says which tile to place where when a
-   designer paints a region, and no doorway or window opening in the wall
-   set. Both are rule-and-variant work on top of geometry that is now proved,
-   which is a much smaller job than the one this entry used to describe.
+   designer paints a region. ~~and no doorway or window opening in the wall
+   set~~ **Done** -- `wall_window`/`wall_door`, two more entries in
+   `make_wall_patterns`' returned dict, same `pattern(t, z, v) -> str`
+   convention `wall_plain`/`wall_panel` already used. `wall_window`'s sill/
+   head (0.58/1.82) are `assetlib.py`'s `wall_run()` numbers ported
+   unchanged, safely, because both files' `z` is the same world-space wall
+   height against the same `WALL_HEIGHT` -- no pixel grid to re-measure
+   against. `wall_door`'s head is taller (2.05), not the window's, because
+   this tile has to fit a person under it. Below and above the opening, both
+   delegate straight to `wall_plain` rather than re-deriving its skirting/
+   rail bands, so a window or door tile is guaranteed, not just observed, to
+   join a plain wall tile with no seam. The one piece of shared machinery
+   this needed: `wall_door`'s pattern returns `None` for the actual opening
+   -- a real hole, not a material -- so `render_wall_tile` now treats `None`
+   as "leave this pixel transparent" instead of resolving it through
+   `material()`, and `check_collapse` skips it instead of either crashing or
+   flagging a false collapse. Terrain metadata and the placement rules that
+   would consume these variants automatically are still not started -- that
+   half is the much bigger job this entry used to describe as one thing, and
+   remains one.
 2. ~~**A character portrait / dialogue bust.**~~ **Done** --
    `tools/portrait.py`. Reuses `character.head()`/`hair()` for shape and
    material identity (a portrait provably matches its sprite; a generated
