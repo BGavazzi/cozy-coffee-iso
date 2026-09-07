@@ -1919,6 +1919,69 @@ producers write.
 
 ---
 
+**Landed (PR #51, stacked on #50): `palette_swap.py`'s audit side gets the
+same `--style` treatment its own palette math already had.** Same bug class
+as PR #24/#25/#29/#36's "`--style` accepted but the actual scan stays
+hardcoded to the default" — this time in `SOURCES`, a flat module constant
+pointed at `cozy_ghibli`'s own four output directories and read, unchanged,
+by all four of `library_colours()`, `swap()` (both loops) and
+`sample_assets()`, even though `main()` already threaded `args.style` through
+`load_bible()`.
+
+**The conventions, verified by running each producer against this checkout,
+not assumed.** `out/` was empty here, so real content was generated for both
+styles (`furnish.py`, `tileset.py`, `ui_chrome.py`, `animate.py`, all
+CPU-only; `ui_forge.py` is GPU-bound and confirmed instead by reading its
+`ui_dir = (UI_DIR if args.style == DEFAULT_STYLE else ROOT / "out" / "ui" /
+args.style)` line directly). Four different conventions, from four
+independent producers: `furnish.py` props nest a non-default style
+UNDER the default's own directory (`out/sprites/<style>/`); `tileset.py`
+tiles and `ui_chrome.py` UI use a sibling-with-suffix
+(`out/tiles_<style>/`, `out/ui_<style>/`); `ui_forge.py` UI nests, the same
+shape as `furnish.py` but a THIRD, independent convention from
+`ui_chrome.py`'s own UI output; `animate.py` anim sheets use a fourth shape,
+`sprites/` (repo root) for the default and `out/sprites_<style>/` for
+anything else. New `sources_for(style)` resolves all of it, returning both
+UI roots for a non-default style since two producers write two different
+places for the same category.
+
+**A second, real bug the nested convention causes, caught by running it, not
+guessed at.** `out/sprites/<style>/` and `out/ui/<style>/` sit one level
+INSIDE the exact directories the *default* style's own scan walks, so the
+old flat `SOURCES` — and a naive per-style rewrite that just swapped in new
+paths without addressing this — would still have the default style's
+`rglob` walk straight into another style's nested output and report it as
+stray. Measured before the fix: a real `out/sprites/snes_rpg/` from
+`furnish.py --style snes_rpg` turned up as 10 "unmapped" colours under
+`palette_swap.py --check --style cozy_ghibli`. `sources_for()` now hands the
+default style's `props`/`ui` roots a `skip` set of every other style's
+nested subdirectory, and the new `_pngs()` helper (replacing every bare
+`root.rglob("*.png")`) respects it.
+
+**Check results, both directions, real content.** `--check --style
+cozy_ghibli`: 39 PNGs, 32 colours, all mapped, all 4 variant tables
+injective, all samples round-trip — zero cross-contamination from the
+`snes_rpg` content sitting in nested sibling directories. `sources_for()`
+and `library_colours()` confirmed directly for `snes_rpg`: resolves to its
+own nested props dir, suffix UI dir, (not-yet-existing, gracefully skipped)
+nested UI dir, suffix tiles dir, suffix anim dir — 31 PNGs, 21 colours, all
+of them within `snes_rpg`'s own forged base palette, zero leaked from
+`cozy_ghibli`. `palette_swap.py --check --style snes_rpg`'s full CLI path
+crashes on `variants[0]` — `styles/snes_rpg/bible.yaml` declares `variants:
+{}` — but this is the same pre-existing, unrelated gap the sibling
+`snes-palette-variants` branch already found and is fixing there; not this
+PR's scope, and not touched here.
+
+**Regression.** File count dropped from the old code's 55 (`cozy_ghibli`
+scan bug-inflated by the leaked `snes_rpg` nested props) to the new code's
+39 real `cozy_ghibli` files — a drop that looks alarming out of context but
+is the fix working, not an under-scan: both counts are small because this
+checkout's `out/` started empty and only a two-prop/one-character subset was
+generated for real per style, not because anything the default style
+actually owns stopped being scanned.
+
+---
+
 ## How this repo expects work to be done
 
 **Environment**
