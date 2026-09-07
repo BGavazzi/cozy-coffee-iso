@@ -359,9 +359,26 @@ not, not every asset any game has ever shipped.
 1. **Autotile / terrain rules, and openings.** Floors and walls both ship
    (`tileset.py`, below) and a corner assembles correctly, but there is no
    terrain metadata — nothing that says which tile to place where when a
-   designer paints a region, and no doorway or window opening in the wall
-   set. Both are rule-and-variant work on top of geometry that is now proved,
-   which is a much smaller job than the one this entry used to describe.
+   designer paints a region. ~~and no doorway or window opening in the wall
+   set~~ **Done** -- `wall_window`/`wall_door`, two more entries in
+   `make_wall_patterns`' returned dict, same `pattern(t, z, v) -> str`
+   convention `wall_plain`/`wall_panel` already used. `wall_window`'s sill/
+   head (0.58/1.82) are `assetlib.py`'s `wall_run()` numbers ported
+   unchanged, safely, because both files' `z` is the same world-space wall
+   height against the same `WALL_HEIGHT` -- no pixel grid to re-measure
+   against. `wall_door`'s head is taller (2.05), not the window's, because
+   this tile has to fit a person under it. Below and above the opening, both
+   delegate straight to `wall_plain` rather than re-deriving its skirting/
+   rail bands, so a window or door tile is guaranteed, not just observed, to
+   join a plain wall tile with no seam. The one piece of shared machinery
+   this needed: `wall_door`'s pattern returns `None` for the actual opening
+   -- a real hole, not a material -- so `render_wall_tile` now treats `None`
+   as "leave this pixel transparent" instead of resolving it through
+   `material()`, and `check_collapse` skips it instead of either crashing or
+   flagging a false collapse. Terrain metadata and the placement rules that
+   would consume these variants automatically are still not started -- that
+   half is the much bigger job this entry used to describe as one thing, and
+   remains one.
 2. ~~**A character portrait / dialogue bust.**~~ **Done** --
    `tools/portrait.py`. Reuses `character.head()`/`hair()` for shape and
    material identity (a portrait provably matches its sprite; a generated
@@ -392,10 +409,31 @@ not, not every asset any game has ever shipped.
    fact -- and the claim they stood on, that text "would be mush at this
    size", turned out half right: a 36px writing area takes "Latte" at cap 9
    and takes "Flat White" at no shipping size at all.
-4. **Item/inventory icons beyond drinks.** The generative icon path works
-   and is proven; what is missing is subjects, not machinery. This is a
-   `UI_PROMPTS` list to extend, and it is item 4 rather than item 1 for
-   exactly that reason.
+4. **Item/inventory icons beyond drinks.** Six subjects added to
+   `UI_PROMPTS` -- `ui_icon_muffin`, `ui_icon_cookie`, `ui_icon_bagel`,
+   `ui_icon_sandwich`, `ui_icon_milk`, `ui_icon_beans` -- and the honest
+   count is 2 of 6, not 6 of 6. `ui_icon_milk` and `ui_icon_beans` clear the
+   speckle gate cleanly in both styles. The other four do not, in either
+   style, after four rounds of wording aimed at the specific cause each
+   round's renders showed: a bagel that kept rendering as a glazed,
+   sprinkled donut regardless of "no glaze, no icing"; a chocolate chip
+   cookie whose chip count SDXL will not take a number for, so it never
+   quantizes flat; a muffin whose fluted wrapper and blueberry drip streaks
+   survive every "no paper liner" instruction; a sandwich that stacked
+   itself into a two-layer club sandwich until "single layer, not stacked"
+   fixed the shape but not the speckle. See `proof/ui_icons_subjects.png`,
+   built and read by eye, not by gate score alone -- one snes_rpg pass
+   (`ui_icon_milk` seed 1) was a shelf of a dozen bottles, not one, and
+   another (`ui_icon_cookie` seed 2) was two cookies on a plate; both
+   cleared `MAX_ISOLATED` on pixel count and were rejected anyway, then
+   re-seeded to genuine single-subject passes. Recorded rather than
+   loosened: same standard the `dialogue_frame`/`nameplate` wrong-shape
+   finding set above (see this file's UI-art log). The ceiling here is
+   texture density, not shape complexity --
+   embedded chips, berries, seeds and layered fillings exceed the
+   modal-downsample speckle budget in a way a single-region cup, bottle or
+   bag does not. `UI_PROMPTS` stays open; six more lines does not close
+   this entry.
 5. ~~**Cursors and pointer states.**~~ **Done** -- `ui_chrome.py` gains
    three: `ui_cursor_pointer` (a standard 7-point arrow, not an original
    design -- unlike `star_rating`/`coin`, a cursor is a shape every player
@@ -1233,11 +1271,27 @@ cross-contaminate). The palette LUT's pixel values were read back directly
 and compared against a fresh `palette_forge.forge()` call for `snes_rpg`'s
 own bible -- exact match -- independently of `verify_palette.gd`'s own
 in-engine check reporting the same thing ("Godot reads all 1 palettes x 32
-colours exactly, at nearest filtering"). That "1 palette" is a real fact
-about `snes_rpg`'s current `bible.yaml`, not a bug: it declares no
+colours exactly, at nearest filtering"). That "1 palette" was a real fact
+about `snes_rpg`'s `bible.yaml` at the time, not a bug: it declared no
 `golden_hour`/`evening`/`night`/`overcast` variants yet, unlike
-`cozy_ghibli`'s five rows -- day/night palette variants for this style are
+`cozy_ghibli`'s five rows -- day/night palette variants for this style were
 separate, not-yet-started work.
+
+~~That gap is closed.~~ **Done** (branch `snes-palette-variants`):
+`styles/snes_rpg/bible.yaml` now declares the same four variants, swept
+against `snes_rpg`'s own base palette rather than copied from
+`cozy_ghibli`'s numbers -- its higher base chroma (`chroma_falloff` 0.10 vs
+0.26) and tighter `min_lightness` (0.12 vs 0.15) mean the two packs'
+strengths genuinely differ. `golden_hour` is bounded by `max_lightness` via
+`cream`'s highlight end, same failure shape as `cozy_ghibli`'s own; `evening`
+and `night` are both bounded by `min_lightness` via `neutral`'s shadow end
+(unlike `cozy_ghibli`, where only `golden_hour`/`night` are bounded);
+`overcast` never hit a hard constraint even swept toward near-zero chroma,
+so it ships at a moderate, chroma-driven strength instead. `check_separation`
+passes clean on all five (base + four variants); closest pair is
+evening/overcast at 0.0471 against the 0.035 floor, and evening/night --
+the pair that collapsed to 0.0057 in `cozy_ghibli`'s own rejected first
+sweep -- sit 0.0569 apart here. Proof sheet: `proof/variants_snes.png`.
 
 Two honest gaps, not fixed here because fixing them is out of this PR's
 scope: `out/ui/` (and `out/ui_snes_rpg/`) don't exist in this environment
@@ -1862,6 +1916,69 @@ and unmerged, not touched here. This PR only makes `package_godot.py`
 correctly consume whichever of the two real directories a style's UI
 output actually lands in; it does not change what any of the three
 producers write.
+
+---
+
+**Landed (PR #51, stacked on #50): `palette_swap.py`'s audit side gets the
+same `--style` treatment its own palette math already had.** Same bug class
+as PR #24/#25/#29/#36's "`--style` accepted but the actual scan stays
+hardcoded to the default" — this time in `SOURCES`, a flat module constant
+pointed at `cozy_ghibli`'s own four output directories and read, unchanged,
+by all four of `library_colours()`, `swap()` (both loops) and
+`sample_assets()`, even though `main()` already threaded `args.style` through
+`load_bible()`.
+
+**The conventions, verified by running each producer against this checkout,
+not assumed.** `out/` was empty here, so real content was generated for both
+styles (`furnish.py`, `tileset.py`, `ui_chrome.py`, `animate.py`, all
+CPU-only; `ui_forge.py` is GPU-bound and confirmed instead by reading its
+`ui_dir = (UI_DIR if args.style == DEFAULT_STYLE else ROOT / "out" / "ui" /
+args.style)` line directly). Four different conventions, from four
+independent producers: `furnish.py` props nest a non-default style
+UNDER the default's own directory (`out/sprites/<style>/`); `tileset.py`
+tiles and `ui_chrome.py` UI use a sibling-with-suffix
+(`out/tiles_<style>/`, `out/ui_<style>/`); `ui_forge.py` UI nests, the same
+shape as `furnish.py` but a THIRD, independent convention from
+`ui_chrome.py`'s own UI output; `animate.py` anim sheets use a fourth shape,
+`sprites/` (repo root) for the default and `out/sprites_<style>/` for
+anything else. New `sources_for(style)` resolves all of it, returning both
+UI roots for a non-default style since two producers write two different
+places for the same category.
+
+**A second, real bug the nested convention causes, caught by running it, not
+guessed at.** `out/sprites/<style>/` and `out/ui/<style>/` sit one level
+INSIDE the exact directories the *default* style's own scan walks, so the
+old flat `SOURCES` — and a naive per-style rewrite that just swapped in new
+paths without addressing this — would still have the default style's
+`rglob` walk straight into another style's nested output and report it as
+stray. Measured before the fix: a real `out/sprites/snes_rpg/` from
+`furnish.py --style snes_rpg` turned up as 10 "unmapped" colours under
+`palette_swap.py --check --style cozy_ghibli`. `sources_for()` now hands the
+default style's `props`/`ui` roots a `skip` set of every other style's
+nested subdirectory, and the new `_pngs()` helper (replacing every bare
+`root.rglob("*.png")`) respects it.
+
+**Check results, both directions, real content.** `--check --style
+cozy_ghibli`: 39 PNGs, 32 colours, all mapped, all 4 variant tables
+injective, all samples round-trip — zero cross-contamination from the
+`snes_rpg` content sitting in nested sibling directories. `sources_for()`
+and `library_colours()` confirmed directly for `snes_rpg`: resolves to its
+own nested props dir, suffix UI dir, (not-yet-existing, gracefully skipped)
+nested UI dir, suffix tiles dir, suffix anim dir — 31 PNGs, 21 colours, all
+of them within `snes_rpg`'s own forged base palette, zero leaked from
+`cozy_ghibli`. `palette_swap.py --check --style snes_rpg`'s full CLI path
+crashes on `variants[0]` — `styles/snes_rpg/bible.yaml` declares `variants:
+{}` — but this is the same pre-existing, unrelated gap the sibling
+`snes-palette-variants` branch already found and is fixing there; not this
+PR's scope, and not touched here.
+
+**Regression.** File count dropped from the old code's 55 (`cozy_ghibli`
+scan bug-inflated by the leaked `snes_rpg` nested props) to the new code's
+39 real `cozy_ghibli` files — a drop that looks alarming out of context but
+is the fix working, not an under-scan: both counts are small because this
+checkout's `out/` started empty and only a two-prop/one-character subset was
+generated for real per style, not because anything the default style
+actually owns stopped being scanned.
 
 ---
 
