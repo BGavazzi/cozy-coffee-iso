@@ -4,10 +4,11 @@
 Settles empirically whether the 3D path can read as pixel art rather than as a
 shrunk render. Emits a comparison sheet and a numeric audit.
 
-    python tools/prove_shading.py
+    python tools/prove_shading.py [--style snes_rpg]
 """
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from pixelize import (  # noqa: E402
     apply_outline, audit, downsample_mean_then_snap, downsample_modal,
     load_palette, shade_smooth, shade_toon,
 )
+from style import DEFAULT_STYLE, load_style  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 TARGET = 64
@@ -33,10 +35,15 @@ def to_image(px, size, scale=1, bg=(38, 34, 44)):
 
 
 def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--style", default=DEFAULT_STYLE,
+                    help="which style pack's palette to render against")
+    args = ap.parse_args()
+
     ratio = verify_projection()
     print(f"projection check: {ratio:.12f} (exactly 2:1)\n")
 
-    ramps = load_palette()
+    ramps = load_palette(load_style(args.style).palette_path)
     scene, cam = coffee_scene(), DimetricCamera(45.0)
 
     print(f"rendering {SIZE}x{SIZE} -> {TARGET}x{TARGET} ...")
@@ -68,14 +75,15 @@ def main() -> int:
 
     out = ROOT / "proof"
     out.mkdir(exist_ok=True)
+    suffix = "" if args.style == DEFAULT_STYLE else f"_{args.style}"
     scale = 6
     sheet = Image.new("RGB", (TARGET * scale * 2 + 24, TARGET * scale + 8), (18, 16, 22))
     sheet.paste(to_image(naive, TARGET, scale), (8, 4))
     sheet.paste(to_image(toon, TARGET, scale), (TARGET * scale + 16, 4))
-    sheet.save(out / "comparison.png")
-    to_image(naive, TARGET, 6).save(out / "naive.png")
-    to_image(toon, TARGET, 6).save(out / "ramp_quantized.png")
-    print(f"\nwrote {out}/comparison.png  (left: naive, right: ramp-quantized)")
+    sheet.save(out / f"comparison{suffix}.png")
+    to_image(naive, TARGET, 6).save(out / f"naive{suffix}.png")
+    to_image(toon, TARGET, 6).save(out / f"ramp_quantized{suffix}.png")
+    print(f"\nwrote {out}/comparison{suffix}.png  (left: naive, right: ramp-quantized)")
     return 0
 
 

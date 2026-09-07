@@ -11,10 +11,11 @@ until they pass, which is the same move `Layout.scatter` made with the
 placement checks. Nine hand-written archetypes were the largest asset left in a
 repo that is supposed to be a factory.
 
-    python tools/preview_characters.py
+    python tools/preview_characters.py [--style snes_rpg]
 """
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from mesh import ShadowMap, rasterize  # noqa: E402
 from pixelize import (  # noqa: E402
     apply_outline, downsample_modal, load_palette, shade_toon,
 )
+from style import DEFAULT_STYLE, load_style  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 TARGET, FACTOR = 64, 4
@@ -67,7 +69,12 @@ def to_img(px, scale):
 
 
 def main() -> int:
-    ramps = load_palette()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--style", default=DEFAULT_STYLE,
+                    help="which style pack's palette to render against")
+    args = ap.parse_args()
+
+    ramps = load_palette(load_style(args.style).palette_path)
     roster = [("barista", C.BARISTA)] + [(s.name, s) for s in C.CUSTOMERS]
     scale, pad, label = 3, 8, 20
     cell = TARGET * scale
@@ -113,7 +120,9 @@ def main() -> int:
     bad = C.check_contrast(ramps, extras) + C.check_palette_spread(extras)
     print(f"  {len(bad)} check failures across {len(extras)} generated specs")
 
-    out = ROOT / "proof" / "characters.png"
+    out = ROOT / "proof" / (
+        "characters.png" if args.style == DEFAULT_STYLE
+        else f"characters_{args.style}.png")
     out.parent.mkdir(exist_ok=True)
     sheet.save(out)
     print(f"\nwrote {out}")
