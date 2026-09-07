@@ -31,6 +31,7 @@ from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).parent))
 from art_review import load_palette, review  # noqa: E402
+from style import DEFAULT_STYLE, load_style  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 REVIEW = ROOT / "review"
@@ -124,7 +125,8 @@ def check_direction_set(records) -> list[str]:
     return out
 
 
-def build(patterns: list[str], cols: int, scale: int) -> int:
+def build(patterns: list[str], cols: int, scale: int,
+         style: str = DEFAULT_STYLE) -> int:
     paths: list[Path] = []
     for pat in patterns:
         paths += sorted(Path().glob(pat)) or ([Path(pat)] if Path(pat).exists() else [])
@@ -132,7 +134,15 @@ def build(patterns: list[str], cols: int, scale: int) -> int:
         print("no images matched", file=sys.stderr)
         return 1
 
-    by_rgb, ramps, entries = load_palette()
+    # One style for the whole batch, matching every other producer's one
+    # `--style` per invocation rather than per-file style inference. `paths`
+    # can span multiple styles' output in principle (arbitrary glob patterns
+    # against arbitrary directories) -- reviewing a mixed-style batch against
+    # a single palette will misreport the files rendered under the other
+    # style, the same way art_review.py's own bare load_palette() did before
+    # PR #31. Keeping a style-consistent glob per invocation is the caller's
+    # responsibility, not something this tool can infer from a file path.
+    by_rgb, ramps, entries = load_palette(load_style(style).palette_path)
     records = []
     for p in paths:
         findings = review(p, by_rgb, ramps, entries)
@@ -229,9 +239,16 @@ def main() -> int:
     b.add_argument("patterns", nargs="+")
     b.add_argument("--cols", type=int, default=4)
     b.add_argument("--scale", type=int, default=3)
+    b.add_argument("--style", default=DEFAULT_STYLE,
+                   help=f"style pack whose palette the batch is reviewed "
+                        f"against (default: {DEFAULT_STYLE}); one style per "
+                        f"invocation -- pass a style-consistent glob if the "
+                        f"patterns could otherwise span more than one style's "
+                        f"output")
     sub.add_parser("stats")
     args = ap.parse_args()
-    return build(args.patterns, args.cols, args.scale) if args.cmd == "build" else stats()
+    return (build(args.patterns, args.cols, args.scale, args.style)
+           if args.cmd == "build" else stats())
 
 
 if __name__ == "__main__":
