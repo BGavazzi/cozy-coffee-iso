@@ -1,0 +1,17 @@
+{
+  "project": "tick_tack_toe",
+  "style": "snes_rpg",
+  "direction": "Small sculpted tabletop monster tokens, chunky readable shapes, saturated 16-bit palette. Armor and egg sacs must be visible geometry, not just recolors. No gore.",
+  "pieces": [
+    {"id":"tick","kind":"tick","traits":[],"name":"Tick","height":0.3,"seed":41,"prompt":"a squat green tick monster figurine, round abdomen, eight short thick legs, tiny face, matte painted clay"},
+    {"id":"tick-armored","kind":"tick","traits":["armored"],"name":"Iron Tick","height":0.3,"seed":41,"prompt":"a squat tick monster figurine in riveted steel armor, round armored abdomen, eight short thick legs, matte painted clay"},
+    {"id":"tick-fertile","kind":"tick","traits":["fertile"],"name":"Brood Tick","height":0.3,"seed":41,"prompt":"a squat green tick monster figurine carrying three cream egg sacs on its back, eight short thick legs, matte painted clay"},
+    {"id":"tick-armored-fertile","kind":"tick","traits":["armored","fertile"],"name":"Iron Brood Tick","height":0.3,"seed":41,"prompt":"a squat tick monster figurine, riveted steel shell carrying three cream egg sacs, eight short thick legs, matte painted clay"},
+    {"id":"tack","kind":"tack","traits":[],"name":"Tack","height":0.3,"seed":42,"prompt":"a single stout brass thumbtack game token, round emerald green head, short thick metal point"},
+    {"id":"toe","kind":"toe","traits":[],"name":"Toe","height":0.3,"seed":43,"prompt":"a single cartoon toe shaped ceramic game token, peach skin, cream toenail, rounded sealed base, no blood"},
+    {"id":"egg","kind":"egg","traits":[],"name":"Egg","height":0.3,"seed":44,"prompt":"a single speckled cream monster egg game token, squat rounded shape, small green spots, matte painted clay"},
+    {"id":"stone","kind":"stone","traits":[],"name":"Stone","height":0.3,"seed":45,"prompt":"a squat dark slate rock game token, large angular facets, moss green patch, matte painted clay"},
+    {"id":"lure","kind":"lure","traits":[],"name":"Lure","height":0.3,"seed":46,"prompt":"a squat amber bait bottle game token, round sealed glass flask, bright green bait inside, thick cork stopper"},
+    {"id":"wild","kind":"wild","traits":[],"name":"Wild Seed","height":0.3,"seed":47,"prompt":"a single round magical seed game token, green and purple split shell, small golden sprout, matte painted clay"}
+  ]
+}

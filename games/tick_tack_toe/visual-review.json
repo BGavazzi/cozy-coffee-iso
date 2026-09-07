@@ -1,0 +1,7 @@
+{
+  "reviewer": "Codex visual inspection, not human approval",
+  "scope": "Prototype board/card use, direction 0. All eight directions inspected in proof/tick_tack_toe/all-pieces.png.",
+  "reason": "Readable tick family with separate armor plate and egg sacs; distinct, palette-coherent board tokens. Stone intentionally faceted; tack shaft blunt at sprite scale. Not final character animation or competitive canon approval.",
+  "approved_keys": ["7e8a582828620003c417", "1ce3f803d144251113d6", "ec5ff0940a913b6fa208", "33f01d6e8ef8c413c9a9", "8302d9d8a0f2c92d1405", "44a341ff4e55279a13a8", "bb9531a4e624dcaf5115", "3ec94b0f1cc4247fe8ab", "3ae4a4d9f49325226841", "e64fe7432ab26bbcf01c"],
+  "rejected": {"75cf9396c98aa6a125f4": "SDXL pilot is a horned upright monster, not an eight-legged tick; TripoSR sprites also have a speckle blocker. Never export."}
+}
