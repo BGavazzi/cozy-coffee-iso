@@ -2244,7 +2244,7 @@ Verified both directions:
 
 ---
 
-**Landed (PR #65): `--style` for the five dev/preview scripts explicitly
+**Landed (PR #67): `--style` for the five dev/preview scripts explicitly
 deprioritized earlier in the session — `concept_ui.py`, `preview_characters.py`,
 `preview_clips.py`, `preview_generators.py`, `prove_shading.py` — closing out
 the same bare-`load_palette()` bug class fixed across every shipping producer
