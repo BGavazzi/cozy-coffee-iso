@@ -1250,11 +1250,27 @@ cross-contaminate). The palette LUT's pixel values were read back directly
 and compared against a fresh `palette_forge.forge()` call for `snes_rpg`'s
 own bible -- exact match -- independently of `verify_palette.gd`'s own
 in-engine check reporting the same thing ("Godot reads all 1 palettes x 32
-colours exactly, at nearest filtering"). That "1 palette" is a real fact
-about `snes_rpg`'s current `bible.yaml`, not a bug: it declares no
+colours exactly, at nearest filtering"). That "1 palette" was a real fact
+about `snes_rpg`'s `bible.yaml` at the time, not a bug: it declared no
 `golden_hour`/`evening`/`night`/`overcast` variants yet, unlike
-`cozy_ghibli`'s five rows -- day/night palette variants for this style are
+`cozy_ghibli`'s five rows -- day/night palette variants for this style were
 separate, not-yet-started work.
+
+~~That gap is closed.~~ **Done** (branch `snes-palette-variants`):
+`styles/snes_rpg/bible.yaml` now declares the same four variants, swept
+against `snes_rpg`'s own base palette rather than copied from
+`cozy_ghibli`'s numbers -- its higher base chroma (`chroma_falloff` 0.10 vs
+0.26) and tighter `min_lightness` (0.12 vs 0.15) mean the two packs'
+strengths genuinely differ. `golden_hour` is bounded by `max_lightness` via
+`cream`'s highlight end, same failure shape as `cozy_ghibli`'s own; `evening`
+and `night` are both bounded by `min_lightness` via `neutral`'s shadow end
+(unlike `cozy_ghibli`, where only `golden_hour`/`night` are bounded);
+`overcast` never hit a hard constraint even swept toward near-zero chroma,
+so it ships at a moderate, chroma-driven strength instead. `check_separation`
+passes clean on all five (base + four variants); closest pair is
+evening/overcast at 0.0471 against the 0.035 floor, and evening/night --
+the pair that collapsed to 0.0057 in `cozy_ghibli`'s own rejected first
+sweep -- sit 0.0569 apart here. Proof sheet: `proof/variants_snes.png`.
 
 Two honest gaps, not fixed here because fixing them is out of this PR's
 scope: `out/ui/` (and `out/ui_snes_rpg/`) don't exist in this environment

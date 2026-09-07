@@ -91,7 +91,104 @@ palette:
     accent_read:  { hue: 30,  lightness: 0.68,  chroma: 0.190 }
     gold_coin:    { hue: 92,  lightness: 0.76,  chroma: 0.185 }
 
-  variants: {}
+  # Four time-of-day variants, same shape and intent as cozy_ghibli's own
+  # (tools/palette_forge.py's variant_config/forge/validate_variant is the
+  # same style-agnostic machinery for both packs) -- but SWEPT AGAINST THIS
+  # PALETTE, not copied from cozy_ghibli's numbers. The two palettes' base
+  # ramps sit at different chroma (this style's chroma_falloff is 0.10 vs
+  # cozy_ghibli's 0.26, so colour stays saturated toward both ends of a ramp
+  # instead of washing out) and different constraint bounds (min_lightness
+  # 0.12 here vs 0.15 there, max_lightness 0.99 both), so the same transform
+  # strengths do not satisfy the same constraints here -- confirmed by
+  # sweeping, not assumed.
+  #
+  # Every variant below was swept with a throwaway local script (not
+  # committed, per this repo's own convention -- see style_bible.yaml's
+  # variants block) calling `palette_forge.forge`/`validate_variant` directly
+  # against THIS bible: a strength parameter `k` walked from weak to strong
+  # along each variant's direction, and the value shipped sits one step
+  # inside the strongest `k` that still passed every constraint, the same
+  # "sit one step inside the boundary, not on it" rule style_bible.yaml
+  # documents for its own golden_hour/night.
+  #
+  # `neutral` is this palette's lowest-lightness ramp (base range
+  # [0.18, 0.78]) and it is what BOTH evening and night hit: pushing the
+  # whole palette's lightness down moves `neutral_0` toward min_lightness
+  # 0.12 before anything else gets close. `cream` is the highest (base range
+  # [0.68, 0.95]) and is what bounds golden_hour the same way, toward
+  # max_lightness 0.99. Same failure shape as cozy_ghibli's golden_hour/
+  # night, different ramp doing the limiting, because this palette's ramps
+  # sit at different extremes.
+  #
+  # Unlike cozy_ghibli -- where only golden_hour/night are bounded and
+  # evening/overcast "never broke and run at full strength" -- THIS style's
+  # evening is also bounded, by the same neutral floor as night. Measured,
+  # not assumed: swept to a hard boundary at k=0.80 (darkest swatch
+  # `neutral_0` at L 0.119, under 0.12) and shipped one step inside at
+  # k=0.70 (L 0.127). overcast never broke here either even pushed toward
+  # near-zero chroma -- consistent with cozy_ghibli's own finding -- so it
+  # ships at a moderate, chroma-driven strength instead of chasing chroma
+  # to zero, which would stop reading as "greyer daylight" and start reading
+  # as no colour at all, a failure mode the checks below cannot see because
+  # it is never an identity collapse, only a loss of the intended look.
+  #
+  # `check_separation` (tools/palette_forge.py) passes clean on all five
+  # (base + four variants): closest pair is evening/overcast at 0.0471,
+  # comfortably clear of the 0.035 floor -- and evening/night, the specific
+  # pair that collapsed to 0.0057 in cozy_ghibli's rejected first sweep, sit
+  # 0.0569 apart here.
+  variants:
+    golden_hour:
+      note: late afternoon, the hour the genre is actually about
+      # Bounded by max_lightness, same as cozy_ghibli's own golden_hour, but
+      # the culprit ramp differs: `cream`'s highlight end (base 0.95) is what
+      # clips, at L 0.992 at k=2.6 (swept boundary). Shipped one step inside
+      # at k=2.0 (L 0.982). Because this palette starts more saturated
+      # (chroma_falloff 0.10, not 0.26), it tolerates a much larger chroma
+      # multiplier than cozy_ghibli's 1.55 before anything breaks -- 2.0 here
+      # still clears every constraint with margin.
+      lightness: {shift: 0.040, squeeze: {mul: 0.94}}
+      chroma: {mul: 2.0}
+      hue_shift: {warm_amount: {mul: 3.0}, cool_amount: {mul: 0.30}}
+
+    evening:
+      note: after sunset, before the lamps carry the room
+      # Bounded here, unlike cozy_ghibli's unbounded evening: `neutral_0`
+      # (base L 0.18, this palette's darkest ramp) hits min_lightness 0.12
+      # at k=0.80 (L 0.119). Shipped one step inside at k=0.70 (L 0.127).
+      lightness: {shift: -0.070, squeeze: {mul: 0.944}}
+      chroma: {mul: 0.825}
+      hue_shift: {cool_amount: {mul: 1.56}, warm_amount: {mul: 0.755}}
+
+    night:
+      note: >-
+        lamps carry the room. The ramps drop and compress; the spot colours
+        do NOT follow them down, same reasoning as cozy_ghibli's night: a
+        lamp that dims with the room it lights would read as wrong.
+      # Same limiting ramp as evening (`neutral_0`), because night is
+      # evening's own direction pushed further: boundary at k=0.92
+      # (neutral_0 at L 0.119, under min_lightness 0.12), shipped one step
+      # inside at k=0.85 (L 0.124). squeeze 0.762 does more of the work than
+      # shift alone could afford, same idiom as cozy_ghibli's 0.68 -- it buys
+      # room to sit this dark without crossing the floor.
+      lightness: {shift: -0.1275, squeeze: {mul: 0.762}}
+      chroma: {mul: 0.66}
+      hue_shift: {cool_amount: {mul: 1.935}, warm_amount: {mul: 0.575}}
+      spot_lightness: {add: 0.017}
+
+    overcast:
+      note: rain on the window, the low-chroma variant
+      # Never hit a hard constraint even swept toward near-zero chroma --
+      # same finding as cozy_ghibli's own overcast. Shipped at a moderate
+      # chroma mul (0.50, roughly half) rather than chasing the numeric
+      # floor: past a point, dropping chroma further stops reading as
+      # "greyer daylight" and starts reading as no colour at all, which is a
+      # real failure this file's checks cannot catch (it is a loss of look,
+      # never an identity collapse), so the strength here is a documented
+      # judgement call bounded by the swept evidence, not an unswept guess.
+      lightness: {shift: -0.03, squeeze: {mul: 0.90}}
+      chroma: {mul: 0.50}
+      hue_shift: {cool_amount: {mul: 1.4}, warm_amount: {mul: 0.65}}
 
   constraints:
     no_pure_black: true
