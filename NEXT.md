@@ -409,10 +409,31 @@ not, not every asset any game has ever shipped.
    fact -- and the claim they stood on, that text "would be mush at this
    size", turned out half right: a 36px writing area takes "Latte" at cap 9
    and takes "Flat White" at no shipping size at all.
-4. **Item/inventory icons beyond drinks.** The generative icon path works
-   and is proven; what is missing is subjects, not machinery. This is a
-   `UI_PROMPTS` list to extend, and it is item 4 rather than item 1 for
-   exactly that reason.
+4. **Item/inventory icons beyond drinks.** Six subjects added to
+   `UI_PROMPTS` -- `ui_icon_muffin`, `ui_icon_cookie`, `ui_icon_bagel`,
+   `ui_icon_sandwich`, `ui_icon_milk`, `ui_icon_beans` -- and the honest
+   count is 2 of 6, not 6 of 6. `ui_icon_milk` and `ui_icon_beans` clear the
+   speckle gate cleanly in both styles. The other four do not, in either
+   style, after four rounds of wording aimed at the specific cause each
+   round's renders showed: a bagel that kept rendering as a glazed,
+   sprinkled donut regardless of "no glaze, no icing"; a chocolate chip
+   cookie whose chip count SDXL will not take a number for, so it never
+   quantizes flat; a muffin whose fluted wrapper and blueberry drip streaks
+   survive every "no paper liner" instruction; a sandwich that stacked
+   itself into a two-layer club sandwich until "single layer, not stacked"
+   fixed the shape but not the speckle. See `proof/ui_icons_subjects.png`,
+   built and read by eye, not by gate score alone -- one snes_rpg pass
+   (`ui_icon_milk` seed 1) was a shelf of a dozen bottles, not one, and
+   another (`ui_icon_cookie` seed 2) was two cookies on a plate; both
+   cleared `MAX_ISOLATED` on pixel count and were rejected anyway, then
+   re-seeded to genuine single-subject passes. Recorded rather than
+   loosened: same standard the `dialogue_frame`/`nameplate` wrong-shape
+   finding set above (see this file's UI-art log). The ceiling here is
+   texture density, not shape complexity --
+   embedded chips, berries, seeds and layered fillings exceed the
+   modal-downsample speckle budget in a way a single-region cup, bottle or
+   bag does not. `UI_PROMPTS` stays open; six more lines does not close
+   this entry.
 5. ~~**Cursors and pointer states.**~~ **Done** -- `ui_chrome.py` gains
    three: `ui_cursor_pointer` (a standard 7-point arrow, not an original
    design -- unlike `star_rating`/`coin`, a cursor is a shape every player
