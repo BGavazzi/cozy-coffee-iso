@@ -49,6 +49,16 @@ SERVICE_DEPTH = 0.95        # counter carcass, wall to customer side
 BACKBAR_DEPTH = 0.80        # the strip behind it the staff stand in
 QUEUE_DEPTH = 1.45          # kept clear in front of the till
 
+# The floor left between a galley's two queues once both stacks -- back bar +
+# run + queue, BACKBAR_DEPTH + SERVICE_DEPTH + QUEUE_DEPTH = 3.20 deep each --
+# are subtracted from the room. Bracketed between 1.10 (2 x BODY_R, below
+# which the erosion grid in `_walkable` admits no cell at all: nothing narrower
+# than a body-radius disc survives it) and 1.45 (QUEUE_DEPTH itself, this
+# repo's own precedent for "enough clear floor to stand in"). Set above that
+# precedent rather than at it, because this aisle carries traffic bound for
+# BOTH counters at once, not one.
+GALLEY_AISLE = 1.6
+
 
 @dataclass
 class Zone:
@@ -211,6 +221,18 @@ MIN_DAYLIT_SHARE = 0.22     # of seating floor, by area, within reach of glass
 DAYLIGHT_REACH = 4.2        # how far into the room a window is worth having
 DAYLIGHT_SPILL = 1.1        # how far past its own tiles a window throws light
 
+# How many `service` zones each topology is, EXACTLY -- a table rather than a
+# floor, so the count stays an assertion about the generator and not a licence.
+# An L run is still one: its arm is a `service_return`, for the reason the L
+# branch records. A galley is two, and that is the whole topology.
+#
+# Read by topology rather than derived, the same argument `Plan.topology` itself
+# was written down for: three readers reconstructing one decision from its
+# consequences get three answers. A topology missing from this table defaults to
+# one, so a new branch that forgets to declare itself is held to the old rule
+# rather than to none.
+SERVICE_RUNS = {"galley": 2}
+
 
 def check_plan(plan: Plan) -> list[str]:
     """Everything a floor plan has to be true for. Errors, not warnings.
@@ -234,11 +256,19 @@ def check_plan(plan: Plan) -> list[str]:
         if z.x0 < -0.01 or z.y0 < -0.01 or z.x1 > plan.w + 0.01 or z.y1 > plan.d + 0.01:
             out.append(f"{z.kind} zone runs outside the room")
 
+    # How many service runs each topology is allowed. A CAP per topology, not a
+    # relaxation of the rule: the rule's whole value is that it fires loudly on
+    # a generator that appends its zone triple twice, which is exactly what the
+    # peninsula branch shipped doing (see its comment below) -- every proposal
+    # rejected, 0% acceptance, found only because this line said so. Deleting
+    # it to admit the galley would have thrown that away and let the next
+    # double-append pass silently, on the topology least able to survive it.
+    want = SERVICE_RUNS.get(plan.topology, 1)
     svc = plan.of("service")
-    if len(svc) != 1:
-        out.append(f"a cafe has one service run, this plan has {len(svc)}")
+    if len(svc) != want:
+        out.append(f"a {plan.topology} is {want} service run(s), "
+                   f"this plan has {len(svc)}")
         return out
-    run = svc[0]
 
     # The counter must not sit under a window. A back bar is a solid 2.4-tall
     # wall of shelving and a counter run is 1.1 of carcass; either across glass
@@ -275,8 +305,16 @@ def check_plan(plan: Plan) -> list[str]:
     if not cells:
         out.append("the door opens onto nothing walkable")
         return out
-    if not _touches(run, cells):
-        out.append("you cannot walk from the door to the counter")
+    # EVERY run, not the first one. A galley's far counter is reached the long
+    # way round the end of the near one, and a rule that only ever asked about
+    # `svc[0]` would have accepted a plan whose second counter no customer can
+    # get to -- the flood fill is already equipped to answer this, it was
+    # simply only being asked once.
+    for ri, r in enumerate(svc):
+        if not _touches(r, cells):
+            out.append("you cannot walk from the door to the counter"
+                       + (f" at ({r.x0:.1f}, {r.y0:.1f})" if len(svc) > 1
+                          else ""))
     seating = [z for z in zones if z.kind in ("cafe", "lounge", "window_bar")]
     for z in seating:
         if not _touches(z, cells):
@@ -369,6 +407,15 @@ def generate(seed: int = 1, tries: int = 120) -> Plan:
         # which is not a special case so much as the absence of the constraint
         # the other three impose. That is a real reason cafes build them.
         island = not peninsula and rnd() < 0.22
+        # Two service runs facing each other across the main aisle, reusing
+        # the run/back/queue triple a second time rather than a new kind of
+        # zone. Scoped and named but deliberately not built two passes ago
+        # (see ART_CRITIQUE.md, "A fifth topology") because the audit it
+        # needed -- eight `plan.of("service")`/`plan.of("backbar")` reads in
+        # `build_plan.py`, four hard-coded to `[0]` -- was a dedicated pass on
+        # its own. That pass is `build_plan.py`'s `run_idx` loop; this branch
+        # is what it unblocks.
+        galley = not peninsula and not island and rnd() < 0.22
         horizontal = rnd() < 0.62
         zones = []
 
@@ -459,6 +506,62 @@ def generate(seed: int = 1, tries: int = 120) -> Plan:
                 main = (0.5, queue.y1 + 0.5, w - 0.5, d - 0.5)
                 side = (0.5, 0.5, w - 0.5, back.y0 - 0.5)
                 door = (w - 0.4, d - 0.4)
+        elif galley:
+            # `run`/`back`/`queue` is the near run -- identical in shape to a
+            # plain wall run, backed against the real wall at y=0 (or x=0).
+            # `run2`/`back2`/`queue2` is its mirror image across the aisle,
+            # backed by nothing: `build_plan.py` only ever draws walls at
+            # x=0 and y=0 (its two `A.wall_run` calls), so the far run gets
+            # the free-standing back COUNTER an island uses instead of
+            # shelving, not a second stretch of wall that doesn't exist.
+            stack = BACKBAR_DEPTH + SERVICE_DEPTH + QUEUE_DEPTH
+            if horizontal:
+                run_len = min(run_len, w - 1.6)
+                if run_len < 3.0 or d < 2 * stack + GALLEY_AISLE:
+                    continue
+                rx = 0.8 + rnd() * max(0.1, w - run_len - 1.6)
+                run = Zone("service", rx, BACKBAR_DEPTH, rx + run_len,
+                           BACKBAR_DEPTH + SERVICE_DEPTH, 0.0)
+                back = Zone("backbar", rx - 0.3, 0.0, rx + run_len + 0.3,
+                            BACKBAR_DEPTH, 0.0)
+                queue = Zone("queue", rx - 0.4, run.y1, rx + run_len + 0.4,
+                             run.y1 + QUEUE_DEPTH, 0.0)
+                run2 = Zone("service", rx, d - BACKBAR_DEPTH - SERVICE_DEPTH,
+                            rx + run_len, d - BACKBAR_DEPTH, 180.0)
+                back2 = Zone("backbar", rx - 0.3, d - BACKBAR_DEPTH,
+                             rx + run_len + 0.3, d, 180.0)
+                queue2 = Zone("queue", rx - 0.4, run2.y0 - QUEUE_DEPTH,
+                              rx + run_len + 0.4, run2.y0, 180.0)
+                # Only the near wall (y=0) carries a window array in this
+                # `Plan` -- there is no far-wall counterpart to `win_x` -- so
+                # only the near back bar needs to steer `_windows`.
+                blocked_x = (back.x0, back.x1)
+                blocked_y = None
+                door = (w - 0.4, d / 2)
+                main = (rx + run_len + 0.5, 0.5, w - 0.5, d - 0.5)
+                side = (0.5, 0.5, rx - 0.5, d - 0.5)
+            else:
+                run_len = min(run_len, d - 1.6)
+                if run_len < 3.0 or w < 2 * stack + GALLEY_AISLE:
+                    continue
+                ry = 0.8 + rnd() * max(0.1, d - run_len - 1.6)
+                run = Zone("service", BACKBAR_DEPTH, ry,
+                           BACKBAR_DEPTH + SERVICE_DEPTH, ry + run_len, 90.0)
+                back = Zone("backbar", 0.0, ry - 0.3, BACKBAR_DEPTH,
+                            ry + run_len + 0.3, 90.0)
+                queue = Zone("queue", run.x1, ry - 0.4, run.x1 + QUEUE_DEPTH,
+                             ry + run_len + 0.4, 90.0)
+                run2 = Zone("service", w - BACKBAR_DEPTH - SERVICE_DEPTH, ry,
+                            w - BACKBAR_DEPTH, ry + run_len, 270.0)
+                back2 = Zone("backbar", w - BACKBAR_DEPTH, ry - 0.3, w,
+                             ry + run_len + 0.3, 270.0)
+                queue2 = Zone("queue", run2.x0 - QUEUE_DEPTH, ry - 0.4,
+                              run2.x0, ry + run_len + 0.4, 270.0)
+                blocked_x = None
+                blocked_y = (back.y0, back.y1)
+                door = (w / 2, d - 0.4)
+                main = (0.5, ry + run_len + 0.5, w - 0.5, d - 0.5)
+                side = (0.5, 0.5, w - 0.5, ry - 0.5)
         elif horizontal:
             x0 = 0.8 + rnd() * max(0.1, w - run_len - 1.6)
             run = Zone("service", x0, BACKBAR_DEPTH, x0 + run_len,
@@ -477,7 +580,14 @@ def generate(seed: int = 1, tries: int = 120) -> Plan:
             queue = Zone("queue", run.x1, y0 - 0.4, run.x1 + QUEUE_DEPTH,
                          y0 + run_len + 0.4, 90.0)
             blocked_x, blocked_y = None, (back.y0, back.y1)
-        zones += [run, back, queue]
+        # A galley appends BOTH triples here, not just its near one -- the
+        # far run has no separate append site of its own, so the shared line
+        # below has to know about it. This is exactly the site the peninsula
+        # branch's own comment (a few lines up) warns about getting wrong a
+        # second way: not a double append of the SAME triple, but a triple
+        # silently dropped for a topology that has two.
+        zones += [run, back, queue, run2, back2, queue2] if galley else \
+                 [run, back, queue]
 
         # An L: a short return at one end of the run, turning into the room.
         # It is modelled as its own kind rather than as a second `service`
@@ -495,7 +605,7 @@ def generate(seed: int = 1, tries: int = 120) -> Plan:
         # same terms as everything else. A generator that has to be taught each
         # new obstacle separately is a generator with a list; this one has a
         # rule.
-        if not peninsula and not island and rnd() < 0.30:
+        if not peninsula and not island and not galley and rnd() < 0.30:
             arm = 1.4 + rnd() * 1.1
             # The arm turns at the end of the run FURTHEST from the camera,
             # always. Which end used to be a coin flip, and the flip is a
@@ -560,7 +670,7 @@ def generate(seed: int = 1, tries: int = 120) -> Plan:
         # and the layout was wrong: a five-tile counter on a fourteen-tile wall
         # leaves nine tiles of window, and that is exactly where a cafe puts
         # its seats.
-        if peninsula or island:
+        if peninsula or island or galley:
             pass
         elif horizontal:
             # The seating floor starts past the deeper of the queue and the
@@ -606,6 +716,7 @@ def generate(seed: int = 1, tries: int = 120) -> Plan:
             zones += _seating_blocks(*side, rnd)
 
         plan = Plan(w, d, win_x, win_y, door, zones,
+                    "galley" if galley else
                     "island" if island else
                     "peninsula" if peninsula else
                     ("L run" if ret is not None else "wall run"))
