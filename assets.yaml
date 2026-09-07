@@ -161,6 +161,12 @@ ui:
   - {id: ui_icon_tea,        cat: ui, prio: 2}
   - {id: ui_icon_pastry,     cat: ui, prio: 2}
   - {id: ui_icon_cold_brew,  cat: ui, prio: 3}
+  - {id: ui_icon_muffin,     cat: ui, prio: 2}
+  - {id: ui_icon_cookie,     cat: ui, prio: 2}
+  - {id: ui_icon_bagel,      cat: ui, prio: 2}
+  - {id: ui_icon_sandwich,   cat: ui, prio: 2}
+  - {id: ui_icon_milk,       cat: ui, prio: 2}
+  - {id: ui_icon_beans,      cat: ui, prio: 2}
   - {id: ui_coin,            cat: ui, prio: 1}
   - {id: ui_clock_day,       cat: ui, prio: 1}
   - {id: ui_dialogue_frame,  cat: ui, prio: 1}
