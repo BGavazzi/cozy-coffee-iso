@@ -255,6 +255,7 @@ def make_wall_patterns(materials: dict):
     field = materials["wall_field"]
     trim = materials["wall_trim"]
     trim_shadow = materials["wall_trim_shadow"]
+    glass = materials["glass"]
 
     def wall_plain(t: float, z: float, v: int) -> str:
         """Flat field with a skirting board and a top rail.
@@ -312,7 +313,67 @@ def make_wall_patterns(materials: dict):
             return base
         return base
 
-    return {"wall_plain": (wall_plain, 1), "wall_panel": (wall_panel, 1)}
+    def wall_window(t: float, z: float, v: int) -> str:
+        """A glazed opening, sill to head, jambed at the tile's own edges.
+
+        Sill 0.58 and head 1.82 are `assetlib.py`'s `wall_run()` numbers,
+        copied unchanged rather than re-derived. That is safe here in a way
+        it would not be for a pixel measurement: both files' `z` is the same
+        world-space wall height in metres against the same `WALL_HEIGHT`,
+        so a sill that reads right on the 3D mesh reads right on the flat
+        tile too -- there is no pixel grid to round against until the
+        caller picks `--width`, which is exactly what `--proof` is for.
+        Below the sill and above the head this delegates straight to
+        `wall_plain`, not a copy of its skirting/field/rail bands, so a
+        window tile is *guaranteed* to join a plain tile with no seam --
+        two calls that return the same string for the same z can't drift
+        the way two independently-written bands could.
+        """
+        sill, head = 0.58, 1.82
+        if z < sill or z >= head:
+            return wall_plain(t, z, v)
+        # Jambs at the tile's own left/right edges, the same 0.055 threshold
+        # `wall_panel` uses for its batten -- a run of windows gets a full
+        # timber post at every join, not just at the two ends of the run.
+        if t < 0.055 or t > 0.945:
+            return trim
+        # Sill cap and head trim: a frame the pane sits inside, not a bare
+        # rectangle of glass floating in the field. 0.05 world units is
+        # about one skirting-shadow's worth of height, thick enough to read
+        # as a member at this file's tile widths without eating the pane.
+        if z - sill < 0.05 or head - z < 0.05:
+            return trim
+        return glass
+
+    def wall_door(t: float, z: float, v: int) -> str:
+        """An open doorway: jambs either side of a genuine hole, not a
+        material painted to look like one.
+
+        Head height 2.05 is taller than `wall_window`'s 1.82 on purpose --
+        a window head sized for daylight is not sized for a person to walk
+        under, and this is the tile a designer would place expecting to
+        route foot traffic through it. That still leaves 0.40 units of
+        `wall_plain` (field, then the picture rail) above the head before
+        `WALL_HEIGHT`, so the rail keeps running unbroken over a doorway
+        exactly as it does over a window.
+
+        The `None` return is the actual point of this whole change: every
+        other pattern in this file always names a material, because every
+        other wall tile is, in fact, entirely wall. A door tile is not --
+        the middle of it is a hole a game should be able to see and walk
+        through -- and `None` is the sentinel `render_wall_tile` (and
+        `check_collapse`) now treat as "no pixel here" rather than crashing
+        on `material(None)` or, worse, silently painting the doorway shut.
+        """
+        head = 2.05
+        if z >= head:
+            return wall_plain(t, z, v)
+        if t < 0.055 or t > 0.945:
+            return trim                          # door frame, floor to head
+        return None                              # the opening itself
+
+    return {"wall_plain": (wall_plain, 1), "wall_panel": (wall_panel, 1),
+            "wall_window": (wall_window, 1), "wall_door": (wall_door, 1)}
 
 
 def render_wall_tile(pattern, variant: int, width: int, axis: str, ramps: dict):
@@ -333,7 +394,15 @@ def render_wall_tile(pattern, variant: int, width: int, axis: str, ramps: dict):
             t, z = to_wall(pxi, py)
             if not (0.0 <= t < 1.0 and 0.0 <= z < WALL_HEIGHT):
                 continue
-            rname, tone = material(pattern(t, z, variant))
+            role = pattern(t, z, variant)
+            if role is None:
+                # `None` is a deliberate hole, not an out-of-bounds pixel --
+                # `wall_door` uses it for the open part of the doorway, where
+                # there is no material at all and the tile must show whatever
+                # sits behind it. `px` is already `None` here from the
+                # initialiser above, so leaving it alone is the whole fix.
+                continue
+            rname, tone = material(role)
             ramp = ramps[rname]
             n = len(ramp)
             idx = int(round(lam * (n - 1))) + tone
@@ -624,6 +693,15 @@ def check_collapse(pattern, variants: int, width: int, ramps: dict,
                 a = (i + 0.5) / n
                 b = (j + 0.5) / n * hi
                 m = pattern(a, b, v)
+                if m is None:
+                    # `wall_door`'s void: not a material at all, so it can
+                    # neither collapse with one nor be counted as a colour
+                    # this pattern failed to produce. Skipping it here is
+                    # what keeps this check meaningful for a pattern that is
+                    # a real hole on purpose, rather than either crashing on
+                    # `material(None)` or flagging every door tile as a
+                    # collapse because "no colour" looks like "one colour".
+                    continue
                 mats.add(m)
                 rname, tone = material(m)
                 ramp = ramps[rname]
