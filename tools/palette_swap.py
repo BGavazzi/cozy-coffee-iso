@@ -56,17 +56,90 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).parent))
 
 import palette_forge as PF  # noqa: E402
+from style import DEFAULT_STYLE, available_styles  # noqa: E402
 
-# The directories the factory writes art into. `sprites/` is `animate.py`'s
-# packed sheets and `out/sprites/` is the static prop factory -- two
-# similarly-named outputs, which has cost a wrong path before, so both are
-# named explicitly rather than globbed for.
-SOURCES = (
-    ("props", ROOT / "out" / "sprites"),
-    ("ui", ROOT / "out" / "ui"),
-    ("tiles", ROOT / "out" / "tiles"),
-    ("anim", ROOT / "sprites"),
-)
+# The directories the factory writes art into, resolved per style. `sprites/`
+# is `animate.py`'s packed sheets and `out/sprites/` is the static prop
+# factory -- two similarly-named outputs, which has cost a wrong path before,
+# so both are named explicitly rather than globbed for.
+#
+# This used to be a flat module constant pointed at the four directories
+# `cozy_ghibli` (the default style) writes into, and every one of this file's
+# four traversals (`library_colours`, `swap` x2, `sample_assets`) inherited
+# that default-only blindness even though `main()` already threaded `--style`
+# through the palette math. Measured, not assumed (each producer's own
+# `--style snes_rpg` run, checked against what it actually wrote to disk;
+# `ui_forge.py` confirmed by reading its `ui_dir =` line directly, since its
+# SDXL stage is GPU-bound and out of scope to run here):
+#
+#   furnish.py     props  default `out/sprites/`      non-default NESTED `out/sprites/<style>/`
+#   ui_chrome.py   ui     default `out/ui/`            non-default SUFFIX `out/ui_<style>/`
+#   ui_forge.py    ui     default `out/ui/`            non-default NESTED `out/ui/<style>/`
+#   tileset.py     tiles  default `out/tiles/`         non-default SUFFIX `out/tiles_<style>/`
+#   animate.py     anim   default `sprites/` (root)    non-default SUFFIX `out/sprites_<style>/`
+#
+# Two independent UI producers picked two different conventions for the same
+# category, so a non-default style needs BOTH `ui` roots scanned -- neither
+# writes the other's.
+#
+# The nested convention is also the reason a naive `rglob` from the DEFAULT
+# style is not safe on its own: `out/sprites/<style>/` and `out/ui/<style>/`
+# sit one level INSIDE the exact directories `cozy_ghibli`'s own scan walks,
+# so an unguarded default-style scan picks up every other style's nested
+# output as if it were its own. Measured, not hypothetical -- a real
+# `out/sprites/snes_rpg/` from `furnish.py --style snes_rpg` is exactly what
+# turned up as 10 "unmapped" colours under `--check --style cozy_ghibli`
+# before this fix. `_pngs` below is given the other styles' nested
+# subdirectories to skip for exactly this reason.
+def sources_for(style: str) -> tuple[tuple[str, Path, frozenset], ...]:
+    """(label, root, skip) for every real directory `style`'s content can be
+    in. `skip` is the set of other styles' nested subdirectories `root` must
+    not descend into (empty for roots where that cannot happen)."""
+    is_default = style == DEFAULT_STYLE
+    others = [s for s in available_styles() if s != style]
+    nested_skip = frozenset(
+        ROOT / "out" / base / other
+        for base in ("sprites", "ui") for other in others
+    )
+
+    if is_default:
+        sources = [
+            ("props", ROOT / "out" / "sprites", nested_skip),
+            ("ui", ROOT / "out" / "ui", nested_skip),
+        ]
+    else:
+        sources = [
+            ("props", ROOT / "out" / "sprites" / style, frozenset()),
+            ("ui", ROOT / "out" / f"ui_{style}", frozenset()),
+            ("ui", ROOT / "out" / "ui" / style, frozenset()),
+        ]
+    sources.append(("tiles",
+                    ROOT / "out" / "tiles" if is_default
+                    else ROOT / "out" / f"tiles_{style}", frozenset()))
+    sources.append(("anim",
+                    ROOT / "sprites" if is_default
+                    else ROOT / "out" / f"sprites_{style}", frozenset()))
+
+    # A set/dict.fromkeys pass so a coincidental duplicate never gets scanned
+    # twice -- harmless today (no two entries above resolve to the same path
+    # for any single style) but the cheap guarantee `package_godot.py`'s own
+    # UI-staging fix made explicit, kept here for the same reason.
+    return tuple(dict.fromkeys(sources))
+
+
+def _pngs(root: Path, skip: frozenset = frozenset()) -> list[Path]:
+    """Every `*.png` under `root`, sorted, except inside a `skip` directory.
+
+    Preserves the existing graceful-skip behaviour for a root that has not
+    been generated yet (returns empty rather than raising) -- the same thing
+    a bare `SOURCES` traversal always did by checking `root.exists()` first.
+    """
+    if not root.exists():
+        return []
+    if not skip:
+        return sorted(root.rglob("*.png"))
+    return [p for p in sorted(root.rglob("*.png"))
+            if not any(s == p or s in p.parents for s in skip)]
 
 
 def is_asset(p: Path) -> bool:
@@ -115,15 +188,13 @@ def swap_table(bible: dict, variant: str) -> dict[tuple, tuple]:
     return table
 
 
-def library_colours() -> tuple[set, int]:
-    """Every distinct RGB in the factory's output, and how many files it took."""
+def library_colours(style: str = DEFAULT_STYLE) -> tuple[set, int]:
+    """Every distinct RGB in `style`'s output, and how many files it took."""
     from PIL import Image
     seen: set = set()
     n = 0
-    for _, root in SOURCES:
-        if not root.exists():
-            continue
-        for p in sorted(root.rglob("*.png")):
+    for _, root, skip in sources_for(style):
+        for p in _pngs(root, skip):
             if not is_asset(p):
                 continue
             n += 1
@@ -221,16 +292,16 @@ def variant_ramps(bible: dict, variant: str) -> dict:
     return out
 
 
-def swap(variant: str, bible: dict, out_root: Path, verify: bool = True) -> dict:
+def swap(variant: str, bible: dict, out_root: Path,
+        style: str = DEFAULT_STYLE, verify: bool = True) -> dict:
     table = swap_table(bible, variant)
     allowed = {sw.rgb for sw in PF.forge(bible, variant)}
     problems = check_injective(table, variant)
+    sources = sources_for(style)
 
     written = hit = miss = audited = 0
-    for label, root in SOURCES:
-        if not root.exists():
-            continue
-        for p in sorted(root.rglob("*.png")):
+    for label, root, skip in sources:
+        for p in _pngs(root, skip):
             if not is_asset(p):
                 continue
             dst = out_root / variant / label / p.relative_to(root)
@@ -244,7 +315,7 @@ def swap(variant: str, bible: dict, out_root: Path, verify: bool = True) -> dict
 
     # Non-image metadata travels unchanged: a manifest describes geometry and
     # layout, neither of which a palette has any opinion about.
-    for label, root in SOURCES:
+    for label, root, _ in sources:
         for name in ("manifest.json", "atlas.json", "tileset.json",
                      "nine_slice.json"):
             src = root / name
@@ -294,7 +365,7 @@ def check_roundtrip(bible: dict, variant: str, samples: list[Path]) -> list[str]
     return out
 
 
-def sample_assets(limit: int = 24) -> list[Path]:
+def sample_assets(style: str = DEFAULT_STYLE, limit: int = 24) -> list[Path]:
     """A spread across producers, not the first N of one.
 
     A round trip that only ever sees prop sprites would miss a UI piece drawn
@@ -302,11 +373,10 @@ def sample_assets(limit: int = 24) -> list[Path]:
     treats differently (`night` lifts them while everything else falls).
     """
     out: list[Path] = []
-    per = max(1, limit // len(SOURCES))
-    for _, root in SOURCES:
-        if not root.exists():
-            continue
-        found = [p for p in sorted(root.rglob("*.png")) if is_asset(p)]
+    sources = sources_for(style)
+    per = max(1, limit // len(sources))
+    for _, root, skip in sources:
+        found = [p for p in _pngs(root, skip) if is_asset(p)]
         out += found[:per]
     return out
 
@@ -334,11 +404,11 @@ def main() -> int:
         return 0
 
     if args.check:
-        colours, files = library_colours()
+        colours, files = library_colours(args.style)
         print(f"{files} PNG(s) across the library, {len(colours)} distinct "
               f"colours")
         problems = check_total(swap_table(bible, variants[0]), colours)
-        samples = sample_assets()
+        samples = sample_assets(args.style)
         for v in variants:
             problems += check_injective(swap_table(bible, v), v)
             problems += check_roundtrip(bible, v, samples)
@@ -363,7 +433,7 @@ def main() -> int:
     out_root = Path(args.out)
     reports = []
     for v in todo:
-        rep = swap(v, bible, out_root, verify=True)
+        rep = swap(v, bible, out_root, style=args.style, verify=True)
         reports.append(rep)
         print(f"{v:<13} {rep['files']:>4} files  {rep['pixels']:>9} px  "
               f"all {rep['verified']} palette-exact"

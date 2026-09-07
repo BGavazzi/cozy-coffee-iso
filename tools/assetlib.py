@@ -1765,7 +1765,22 @@ def fridge_under(seed: int | None = None) -> Mesh:
     read as a fridge rather than as a cabinet is the full-height door reveal and
     the horizontal handle -- both drawn as value on the front face, which is the
     same technique `counter`'s front treatments use.
+
+    `seed` took a parameter and did nothing with it until this pass (found
+    alongside the identical `tip_jar` bug -- see `ART_CRITIQUE.md`). Handle
+    height and length vary, plus a barely-there plinth height -- the same
+    scale of change `counter`'s own front treatments get, because this is
+    still "a fitted module... the seed has to do something, not a lot".
     """
+    st = None if seed is None else _mix(seed)
+
+    def rnd():
+        nonlocal st
+        if st is None:
+            return 0.5
+        st = _mix(st)
+        return st / 0x7FFFFFFF
+
     m = Mesh()
     m.add_box((0.14, 0.14, 0.04), (0.86, 0.86, 0.92), METAL)
     # +y is the front. `counter` draws its front treatments at y=0.9412 and
@@ -1773,8 +1788,12 @@ def fridge_under(seed: int | None = None) -> Mesh:
     # the camera cannot see in the direction the prop is meant to face -- which
     # is how this first shipped, as a featureless grey box at dir0.
     m.add_box((0.16, 0.86, 0.06), (0.84, 0.88, 0.90), "neutral+1")     # door
-    m.add_box((0.20, 0.87, 0.70), (0.80, 0.90, 0.76), "neutral+2")     # handle
-    m.add_box((0.14, 0.14, 0.0), (0.86, 0.86, 0.04), "neutral-2")      # plinth
+    hz = 0.66 + rnd() * 0.10                                           # handle height
+    hlen = 0.09 + rnd() * 0.05
+    m.add_box((0.50 - hlen, 0.87, hz), (0.50 + hlen, 0.90, hz + 0.06),
+              "neutral+2")                                             # handle
+    plinth = 0.03 + rnd() * 0.02
+    m.add_box((0.14, 0.14, 0.0), (0.86, 0.86, plinth), "neutral-2")    # plinth
     return m
 
 
@@ -2002,12 +2021,32 @@ def napkin_holder() -> Mesh:
 
 def tip_jar(seed: int | None = None) -> Mesh:
     """A jar with coins in it and a label band. Glass reads as near-empty at
-    this size, so what makes it a tip jar is the coin mass at the bottom."""
+    this size, so what makes it a tip jar is the coin mass at the bottom.
+
+    `seed` took a parameter and did nothing with it until this pass (found
+    alongside the identical `fridge_under` bug -- see `ART_CRITIQUE.md`).
+    Coin-fill height varies most -- a jar an hour into a shift and one at
+    closing are the same object at different fill -- plus a small jar-radius
+    and label-height wobble, both bounded well inside the outer glass so the
+    label never pokes past the rim.
+    """
+    st = None if seed is None else _mix(seed)
+
+    def rnd():
+        nonlocal st
+        if st is None:
+            return 0.5
+        st = _mix(st)
+        return st / 0x7FFFFFFF
+
+    r = 0.185 + rnd() * 0.015
+    fill = 0.05 + rnd() * 0.14
+    label_z = 0.13 + rnd() * 0.05
     m = Mesh()
-    m.add_prism((0.5, 0.5, 0.0), 0.19, 0.19, 0.30, GLASS, 12)
-    m.add_prism((0.5, 0.5, 0.0), 0.165, 0.165, 0.09, "gold_coin", 12)  # coins
-    m.add_prism((0.5, 0.5, 0.15), 0.195, 0.195, 0.07, "cream+2", 12)   # label
-    m.add_prism((0.5, 0.5, 0.30), 0.20, 0.20, 0.035, "neutral+1", 12)  # ring
+    m.add_prism((0.5, 0.5, 0.0), r, r, 0.30, GLASS, 12)
+    m.add_prism((0.5, 0.5, 0.0), r * 0.87, r * 0.87, fill, "gold_coin", 12)  # coins
+    m.add_prism((0.5, 0.5, label_z), r * 1.03, r * 1.03, 0.07, "cream+2", 12)  # label
+    m.add_prism((0.5, 0.5, 0.30), r * 1.05, r * 1.05, 0.035, "neutral+1", 12)  # ring
     return m
 
 

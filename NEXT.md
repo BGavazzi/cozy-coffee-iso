@@ -317,6 +317,38 @@ done.** They landed as two separate PRs against roughly the same base, so:
   `MIN_FILL`'s error in a better disguise. Recorded as a warning-grade
   signal; any future attempt must clear the overlap table in
   `ART_CRITIQUE.md`, "Answering that question", not just a correlation.
+- **Landed (PR #43): `fridge_under` and `tip_jar` fixed;
+  `check_generator_range`'s `GENERATORS` widened from 15 to 24 seeded
+  builders, each decision measured rather than assumed.** Found in passing
+  while bracketing `DEFAULT_SPREAD_FLOOR` (PR #40, `spread-floor-audit`,
+  unmerged as of this branch): `assetlib.fridge_under`
+  and `assetlib.tip_jar` both took a `seed` parameter and never read it in the
+  body — every seed rendered the identical mesh (measured 0.0% mean, 0.0%
+  closest-pair spread). Both now vary geometry the same way their file's
+  other seeded generators do (`fridge_under`: handle position/length, plinth
+  height; `tip_jar`: coin-fill height, jar radius, label-band height).
+  `GENERATORS` covered 15 of the file's 24 seeded builders; the other 9 —
+  `leafy_plant`, `succulent`, `book_stack`, `pastry_plate`, `bean_sack`,
+  `wall_art_framed`, `plant_hanging`, plus the two fixed above — were each
+  rendered across six independent 8-seed windows and run through the check's
+  own spread math before deciding. Four (`leafy_plant`, `succulent`,
+  `book_stack`, `plant_hanging`) clear both default floors with wide margin,
+  added unconditionally. Five are real but small by design — `pastry_plate`
+  (pastry radius only, ±3%), `bean_sack` (base radius only, ±4%),
+  `fridge_under` and `tip_jar` (the fix above), `wall_art_framed` (a 4-way
+  categorical hue pick whose closest pair is 0.0% in every window by the
+  pigeonhole principle, not by defect) — each added with an `own` floor
+  bracketed against 0.0% (what the fixed bug actually measured) rather than
+  excluded outright, following `counter`'s existing exemption pattern.
+  Verified failable both ways: all five `own`-gated generators, simulated
+  with the exact pre-fix bug (seed pinned regardless of loop index), measured
+  0.0% and were caught; the shipped, fixed code passes clean,
+  `check_generator_range()` returns zero findings. `tools/manifest.py
+  --check` and `tools/build_plan.py --focal-scan 12` verified byte-identical
+  pass/fail against `origin/main` via `git stash`, both directions. Proof:
+  `proof/generators.png`, regenerated with all 24 rows. Write-up:
+  `ART_CRITIQUE.md`, "`fridge_under` and `tip_jar`: a seed parameter that did
+  nothing, and nine generators put through the same measurement".
 
 **Not yet started**: no subject in `subjects_c1.yaml` (or any shipped
 subject list) actually uses a reference image yet -- this built and
@@ -329,15 +361,30 @@ measured. Re-running `factory.py subjects_c1.yaml` is the way to settle it.
 **The calibration backlog is untouched across all four passes, not
 forgotten** — see `ART_CRITIQUE.md`'s most recent "Still open" list: counter
 orientation (0.04 focal-lead cost), the focal-reading-falls-with-resolution
-gap, furniture screen spread's possibly-redundant floor, and the detail
-floor's 0.010-wide bracket. None of the four passes touched a generator,
-check, or threshold in the sprite/room pipeline, so check these before
-assuming anything moved.
+gap, and the detail floor's 0.010-wide bracket. None of the four passes
+touched a generator, check, or threshold in the sprite/room pipeline, so
+check these before assuming anything moved.
+
+**Furniture screen spread's possibly-redundant floor is resolved** (branch
+`spread-floor-audit`): not redundant, floor stays at 0.15. Write-up:
+`ART_CRITIQUE.md`, "The screen-spread floor's redundancy question, closed
+with a real generator instead of synthetic noise". Found along the way and
+worth its own item: `assetlib.fridge_under` and `assetlib.tip_jar` both take
+a `seed` and never read it inside their body — every seed renders the
+identical mesh, measured 0.0% mean and 0.0% closest-pair spread. Neither is
+in `art_review.GENERATORS`, so nothing currently gates it; `check_generator_range`
+covers 15 of the 24 seeded builders in `assetlib.py`. Not fixed here — wiring
+two generators' randomness and deciding whether to widen `GENERATORS` to the
+other 9 seeded builders (`leafy_plant`, `succulent`, `book_stack`,
+`pastry_plate`, `bean_sack`, `wall_art_framed`, `plant_hanging`, plus the two
+above) is a separate task from the floor question this branch answered.
 
 ---
 
-**The list below (A1, B1, C1, C2, D1, B2) is done and written up in
-`ART_CRITIQUE.md`.** One-line status:
+**The list below (A1, B1, C1, C2, D1) is done and written up in
+`ART_CRITIQUE.md`; B2 is done too, written up in its own bullet below
+instead (the `galley-multicounter` PR, not yet folded into
+`ART_CRITIQUE.md`).** One-line status:
 
 - A1 key-light drift — diagnosed: `camera_light()` is correctly per-azimuth;
   the check's own fix message was wrong and is now corrected. Measurement
@@ -354,10 +401,70 @@ assuming anything moved.
   2.2x wall run's, weak -0.245 correlation with detail within L run) but a
   direct counter-example (plan 38: largest box, near-best detail) rules it
   out as a sufficient explanation. Left open, one layer deeper than before.
-- B2 double-run topology — scoped correctly this time and NOT built: 8
-  places in `build_plan.py` consume `plan.of("service")`/`plan.of("backbar")`,
-  4 hard-coded to `[0]`. A naive build renders one lit counter and one bare
-  one. Real cost is a `build_plan.py` audit, left for a dedicated pass.
+- B2 double-run (galley) topology — built. The audit found every `[0]` site
+  named plus one the earlier scoping pass missed (`main()`'s own inlined
+  copy of `focal_box`), and each needed a genuinely different fix rather
+  than one "loop it" patch: `light_rig` sums pools per run and ranks dark
+  corners by distance to the NEAREST run; `build()`'s whole counter-fill
+  section (kit, back counter, back bar shelving, menu boards, counter-top
+  clutter) moved inside a `for run_idx, run in enumerate(runs)` loop, paired
+  with its own back bar by list position; `_people()` places a barista and
+  a queue per run, splitting the roster instead of every queue drawing the
+  same two customers. N==1 verified byte-identical first: the 12-plan focal
+  scan's L/C/D readings matched the pre-refactor run to three decimals,
+  topology for topology, including both documented failures, BEFORE the
+  galley branch was added to `floorplan.generate()`.
+  Galley's own proposal-level acceptance rate is 76.5% (17 tried, 13 kept
+  over 400 seeds) — inside the other four's 56–77% range, so the branch
+  isn't fighting its own constraints. Its SHARE of `generate()`'s output is
+  lower (13/400, 3.2%) than the other four (14–35%), but that is its lower
+  draw probability (0.22, same as island) times "first proposal to pass
+  wins" starving a rarer branch of turns, not poor tuning — `check_plan_range`
+  and `check_generated_plans(40)` both still read clean.
+  Verification caught one real bug: kit items (espresso machine, grinder,
+  register) on the mirrored far run floated with nothing underneath them.
+  Every existing topology's kit placement anchors near the wall and trusts
+  the mesh to extend toward the customer from there; a mirrored run's wall
+  is on the opposite (high-coordinate) edge, so the same anchor pushed the
+  item's bulk past the counter into open floor. Fixed with the same
+  centre-and-rotate technique the counter modules already needed, anchored
+  to the run's own depth midpoint instead of a wall-relative offset.
+  One real, left-open finding: `focal_box` unions every service/backbar/
+  service_return zone, which for a galley spans the ENTIRE room depth (both
+  runs are on opposite walls) rather than a strip near one. Over the 12-plan
+  scan this reads as designed on contrast (all 3 galley plans clear +0.045,
+  floor +0.030) but weak on mean L (2 of 3 fail: -0.012, -0.019, sole pass
+  +0.031) and weaker still on detail (3 of 3 fail: -0.019, -0.042, -0.013)
+  — so all 3 galley plans miss at least one floor, a 100% fail rate over
+  the topology's only 3 occurrences in the sample. Widened to a 40-plan
+  scan to see if a bigger sample would soften this: it didn't — no new
+  galley seed appeared in plans 13-40 (13/400 ≈ 3.2% share means ~1-2
+  expected over 28 more plans, so 0 is unlucky but not alarming on its
+  own), and the 3 existing galley plans reproduced their 12-plan numbers
+  exactly, still 3/3 failing. The other four topologies' 40-plan fail rates
+  — wall run 1/12, peninsula 1/13, island 1/6, L run 2/6 — sit in the same
+  band as their known pre-existing baseline noise (e.g. plan 10's -0.011,
+  corrected in this pass from a stale -0.002); galley's 3/3 is categorically
+  different, a structural miss tied to focal_box's box size, not scan luck.
+  This is very likely D1's box-size-vs-detail relationship, now much more
+  pronounced because a galley's box is a genuine two-counter union rather
+  than one wide L run — not fixed here, because loosening `MIN_FOCAL_L`/
+  `MIN_FOCAL_DETAIL` to admit it would be tuning the instrument to the
+  answer. `check_focal_contrast`'s `n` moved 4→5 instead, so galley enters
+  the "one room per topology" suite check rather than being silently
+  skipped by scan order (at seed=1 it now sorts ahead of wall run in the
+  scan, which would otherwise have dropped wall run from the sample
+  instead) — `manifest.py --check` now reports galley's L/detail miss
+  alongside the two already-documented failures, honestly rather than
+  quietly.
+  Rendered and viewed both orientations: `proof/galley_room.png` (seed 8,
+  horizontal) and `proof/galley_room_vertical.png` (seed 12, vertical) —
+  the vertical one reads clean at a glance, both counters staffed and lit
+  with seating between them; the horizontal one's far counter visibly reads
+  flatter, consistent with the finding above. Neither is "one lit counter
+  and one bare one" — `check_built_rooms`-equivalent checks (collisions,
+  grounded, seating-faces-tables, screen occlusion) are clean across all 13
+  galley seeds found in the first 400.
 
 Kept below as a record, not an open queue. Read `ART_CRITIQUE.md`'s final
 "Still open" section before touching anything that produces art — it is a
@@ -389,9 +496,26 @@ not, not every asset any game has ever shipped.
 1. **Autotile / terrain rules, and openings.** Floors and walls both ship
    (`tileset.py`, below) and a corner assembles correctly, but there is no
    terrain metadata — nothing that says which tile to place where when a
-   designer paints a region, and no doorway or window opening in the wall
-   set. Both are rule-and-variant work on top of geometry that is now proved,
-   which is a much smaller job than the one this entry used to describe.
+   designer paints a region. ~~and no doorway or window opening in the wall
+   set~~ **Done** -- `wall_window`/`wall_door`, two more entries in
+   `make_wall_patterns`' returned dict, same `pattern(t, z, v) -> str`
+   convention `wall_plain`/`wall_panel` already used. `wall_window`'s sill/
+   head (0.58/1.82) are `assetlib.py`'s `wall_run()` numbers ported
+   unchanged, safely, because both files' `z` is the same world-space wall
+   height against the same `WALL_HEIGHT` -- no pixel grid to re-measure
+   against. `wall_door`'s head is taller (2.05), not the window's, because
+   this tile has to fit a person under it. Below and above the opening, both
+   delegate straight to `wall_plain` rather than re-deriving its skirting/
+   rail bands, so a window or door tile is guaranteed, not just observed, to
+   join a plain wall tile with no seam. The one piece of shared machinery
+   this needed: `wall_door`'s pattern returns `None` for the actual opening
+   -- a real hole, not a material -- so `render_wall_tile` now treats `None`
+   as "leave this pixel transparent" instead of resolving it through
+   `material()`, and `check_collapse` skips it instead of either crashing or
+   flagging a false collapse. Terrain metadata and the placement rules that
+   would consume these variants automatically are still not started -- that
+   half is the much bigger job this entry used to describe as one thing, and
+   remains one.
 2. ~~**A character portrait / dialogue bust.**~~ **Done** --
    `tools/portrait.py`. Reuses `character.head()`/`hair()` for shape and
    material identity (a portrait provably matches its sprite; a generated
@@ -422,12 +546,46 @@ not, not every asset any game has ever shipped.
    fact -- and the claim they stood on, that text "would be mush at this
    size", turned out half right: a 36px writing area takes "Latte" at cap 9
    and takes "Flat White" at no shipping size at all.
-4. **Item/inventory icons beyond drinks.** The generative icon path works
-   and is proven; what is missing is subjects, not machinery. This is a
-   `UI_PROMPTS` list to extend, and it is item 4 rather than item 1 for
-   exactly that reason.
-5. **Cursors and pointer states.** Trivially procedural, genuinely required,
-   and nobody has written the six lines.
+4. **Item/inventory icons beyond drinks.** Six subjects added to
+   `UI_PROMPTS` -- `ui_icon_muffin`, `ui_icon_cookie`, `ui_icon_bagel`,
+   `ui_icon_sandwich`, `ui_icon_milk`, `ui_icon_beans` -- and the honest
+   count is 2 of 6, not 6 of 6. `ui_icon_milk` and `ui_icon_beans` clear the
+   speckle gate cleanly in both styles. The other four do not, in either
+   style, after four rounds of wording aimed at the specific cause each
+   round's renders showed: a bagel that kept rendering as a glazed,
+   sprinkled donut regardless of "no glaze, no icing"; a chocolate chip
+   cookie whose chip count SDXL will not take a number for, so it never
+   quantizes flat; a muffin whose fluted wrapper and blueberry drip streaks
+   survive every "no paper liner" instruction; a sandwich that stacked
+   itself into a two-layer club sandwich until "single layer, not stacked"
+   fixed the shape but not the speckle. See `proof/ui_icons_subjects.png`,
+   built and read by eye, not by gate score alone -- one snes_rpg pass
+   (`ui_icon_milk` seed 1) was a shelf of a dozen bottles, not one, and
+   another (`ui_icon_cookie` seed 2) was two cookies on a plate; both
+   cleared `MAX_ISOLATED` on pixel count and were rejected anyway, then
+   re-seeded to genuine single-subject passes. Recorded rather than
+   loosened: same standard the `dialogue_frame`/`nameplate` wrong-shape
+   finding set above (see this file's UI-art log). The ceiling here is
+   texture density, not shape complexity --
+   embedded chips, berries, seeds and layered fillings exceed the
+   modal-downsample speckle budget in a way a single-region cup, bottle or
+   bag does not. `UI_PROMPTS` stays open; six more lines does not close
+   this entry.
+5. ~~**Cursors and pointer states.**~~ **Done** -- `ui_chrome.py` gains
+   three: `ui_cursor_pointer` (a standard 7-point arrow, not an original
+   design -- unlike `star_rating`/`coin`, a cursor is a shape every player
+   already knows, so inventing one would cost recognisability for nothing),
+   `ui_cursor_hand` (a fist with an extended index finger and a thumb, for
+   clickable targets), `ui_cursor_wait` (an hourglass, static rather than
+   animated, since one frame is what this pipeline ships). All three are
+   smaller than every other chrome piece (32px against 64) and two are
+   genuinely concave, which made `_star`'s own border-inset trick fail
+   worse than before it was fixed: shrinking a polygon's vertices toward a
+   shared point self-intersects at concave corners instead of insetting
+   uniformly, and measured 10-13% isolated pixels against the 6.2% cap.
+   `_inset_mask` replaces it with erosion on a rasterized mask, which
+   cannot self-intersect, and clears the cap on all three (5.4% / 1.5% /
+   6.0% worst-case). The six lines took longer than six lines.
 6. ~~**A palette-swap path.**~~ **Done.** `palette_swap.py`, four variants in
    `style_bible.yaml`, `proof/variants.png`. Two things worth carrying
    forward. First, the swap is a lookup and not a re-quantization, which is
@@ -1250,11 +1408,27 @@ cross-contaminate). The palette LUT's pixel values were read back directly
 and compared against a fresh `palette_forge.forge()` call for `snes_rpg`'s
 own bible -- exact match -- independently of `verify_palette.gd`'s own
 in-engine check reporting the same thing ("Godot reads all 1 palettes x 32
-colours exactly, at nearest filtering"). That "1 palette" is a real fact
-about `snes_rpg`'s current `bible.yaml`, not a bug: it declares no
+colours exactly, at nearest filtering"). That "1 palette" was a real fact
+about `snes_rpg`'s `bible.yaml` at the time, not a bug: it declared no
 `golden_hour`/`evening`/`night`/`overcast` variants yet, unlike
-`cozy_ghibli`'s five rows -- day/night palette variants for this style are
+`cozy_ghibli`'s five rows -- day/night palette variants for this style were
 separate, not-yet-started work.
+
+~~That gap is closed.~~ **Done** (branch `snes-palette-variants`):
+`styles/snes_rpg/bible.yaml` now declares the same four variants, swept
+against `snes_rpg`'s own base palette rather than copied from
+`cozy_ghibli`'s numbers -- its higher base chroma (`chroma_falloff` 0.10 vs
+0.26) and tighter `min_lightness` (0.12 vs 0.15) mean the two packs'
+strengths genuinely differ. `golden_hour` is bounded by `max_lightness` via
+`cream`'s highlight end, same failure shape as `cozy_ghibli`'s own; `evening`
+and `night` are both bounded by `min_lightness` via `neutral`'s shadow end
+(unlike `cozy_ghibli`, where only `golden_hour`/`night` are bounded);
+`overcast` never hit a hard constraint even swept toward near-zero chroma,
+so it ships at a moderate, chroma-driven strength instead. `check_separation`
+passes clean on all five (base + four variants); closest pair is
+evening/overcast at 0.0471 against the 0.035 floor, and evening/night --
+the pair that collapsed to 0.0057 in `cozy_ghibli`'s own rejected first
+sweep -- sit 0.0569 apart here. Proof sheet: `proof/variants_snes.png`.
 
 Two honest gaps, not fixed here because fixing them is out of this PR's
 scope: `out/ui/` (and `out/ui_snes_rpg/`) don't exist in this environment
@@ -1535,6 +1709,539 @@ sections of `build_manifest.json` stay empty and no-op cleanly for both
 styles, not exercised against real content here. This PR closes exactly
 the one gap it names (the atlas), nothing wider.
 
+**Landed (PR #52): `--style` for `factory.py` — found by an external
+review, not this session's own audit, and worth recording as two separate
+findings.** `factory.py` had zero `--style` support: no flag in `main()`'s
+argparse, and a bare `ramps = load_palette()` at line ~271 that always
+resolved `cozy_ghibli` regardless of caller intent. This wasn't caught by
+the systematic style-flag sweep earlier in this session because
+`factory.py` is a different pipeline category — SDXL concept -> TripoSR
+mesh -> sprite (`concept.py`/`lift.py`/`ingest.py`) — from the procedural
+`assetlib.py` builders that sweep covered. An external architecture review
+found it instead; independently confirmed by reading the code.
+
+**Fixing the bare `load_palette()` call alone would have been cosmetic.**
+`run_subject(spec, pipe, model, ramps, retries)`'s `ramps` parameter is
+never actually consumed for rendering — stages 1–3 (concept/lift/ingest)
+touch no palette at all, and stage 4–8, the only place a palette matters,
+happens in a `subprocess.run([..., "render_batch.py", ...])` call that
+wasn't being told which style to use, at all, before this PR. Threaded
+`style` and a resolved `sprite_dir` through `run_subject`'s signature so
+the subprocess actually receives `--style` — the real wire, not the
+decorative one.
+
+**Output convention: `furnish.py`'s, not `render_batch.py`'s own.** Sprites
+now land in `out/sprites/` for the default style, `out/sprites/<style>/`
+for anything else, matching `furnish.py`'s nested convention for the same
+"generated props" category — not `render_batch.py`'s own standalone
+`out/sprites_<style>/` (that convention exists because *its* default lives
+at a differently-gitignored top-level `sprites/`; `factory.py`'s sprite
+output was already entirely under `out/`, so no new `.gitignore` line was
+needed — confirmed with `git check-ignore -v` against a scratch file at the
+new path).
+
+**Concept/mesh caching stays shared across styles, correctly.**
+`concept.py`, `lift.py`, and `ingest.py` take no style parameter at all, so
+a `teapot.png`/`teapot.obj`/`teapot_bound.obj` from one `--style` run is
+byte-identical to another's — verified by reading all three signatures, not
+assumed. No per-style nesting needed there, and reusing the cache is
+correct, not a collision risk.
+
+**Noted, not fixed: the same bug class survives one level deeper.**
+`ingest.py`'s own `ingest()` (line ~620) has a bare `ramps = load_palette()`
+too, used to decide which material each vertex binds to — so the bind
+*label* is always chosen against `cozy_ghibli`'s palette even under a
+non-default `--style`; only the final render's colours vary. Left alone:
+fixing it means changing a shared library function with its own other
+callers, a separate piece of work, not a rider on this CLI-plumbing PR.
+
+**Verification is honest about its GPU limitation, not padded.** No SDXL/
+TripoSR pipeline run happened in this pass — the GPU was assumed busy
+elsewhere and the task explicitly ruled out loading either model. What was
+checked instead: `import factory` and `python -m py_compile` both succeed;
+`factory.py --help` builds the parser and shows the new flag without
+touching GPU code; `grep -n "load_palette(" tools/factory.py` shows exactly
+one call site, style-resolved, no bare calls left; the default-style path
+is provably byte-identical by inspection (`load_style("cozy_ghibli")
+.palette_path` resolves to the exact same `ROOT/"palette"/"palette.json"`
+bare `load_palette()` always used; `sprite_dir` for the default style is
+the same constant as before; the subprocess's added `--style cozy_ghibli`
+is a no-op, matching `render_batch.py`'s own default). What genuinely
+cannot be confirmed without a GPU, stated plainly: whether a real `--style
+snes_rpg` run actually produces sprites shaded in that palette end-to-end.
+That claim is not made here.
+
+---
+
+**Landed (PR #53): `ingest.py` closes the follow-up PR #52 explicitly
+noted and declined to fix inline.** PR #52 wired `--style` for
+`factory.py`'s CLI plumbing and, in its "Noted, not fixed" section, named
+a second instance of the exact same bug class one level deeper: `ingest()`
+had a bare `ramps = load_palette()`, always resolving `cozy_ghibli`
+regardless of caller intent — but `ingest()` is a shared library module
+with its own callers, not a CLI-plumbing rider, so PR #52 scoped it out
+on purpose rather than folding it in unreviewed.
+
+**Worse than the surface-level version of this bug, because `ingest()`
+doesn't just render the wrong colour — it can pick the wrong material
+entirely.** `bind_vertex_colours()` and `rebind()` use `ramps` to find the
+nearest-matching ramp for a raw RGB colour, and `cozy_ghibli` and
+`snes_rpg` have different actual RGB values per ramp name. A colour that
+lands on `neutral` under one palette can land on `sky` under the other —
+a material *label* assigned once, at ingest time, that nothing downstream
+re-derives even when the final render does pick up the right style's
+colours.
+
+**Fixed the one function in this file that didn't already follow its own
+idiom.** `check_roundtrip`, `check_transform`, and `check_albedo_regression`
+all already wrote `ramps = ramps or load_palette()`; `ingest()` was the
+holdout. Gave it `ramps: dict | None = None` with the same idiom, added
+`--style NAME` to `main()` (default `cozy_ghibli`, resolved the same way
+`render_batch.py`/`build_plan.py` already do), and threaded the fix
+through to `factory.py`: `run_subject()` already received a `ramps`
+parameter from `main()`'s own `load_palette()` call but dropped it before
+calling `I.ingest()` — same bug, one hop further down the call chain. Now
+passed through rather than re-derived.
+
+**Real, not hypothetical — measured through the actual `ingest()` call,
+not `bind_colour()` in isolation.** Bound `(0, 72, 96)` against both real
+palette JSONs: `ramps=None` and explicit `ramps=cozy_ghibli` both land it
+on `neutral-2` (dE 0.065, confirming the default is unchanged); explicit
+`ramps=snes_rpg` lands the identical colour on `sky-2` (dE 0.007) — a
+different ramp identity, and both bindings sit well inside the 0.16 bind
+tolerance, so neither is an edge-of-tolerance replacement being mistaken
+for a real divergence. A broader 24-step RGB grid scan found 266 colours
+where `cozy_ghibli` and `snes_rpg` disagree on the nearest ramp; the
+reported pair was chosen because both sides bind cleanly.
+
+**Regression, checked by stash, not by inspection.** Captured `ingest()`'s
+full output — geometry, verts, faces, vcolors, and report, across both the
+MTL/rebind path (the same adversarial Y-up/scaled/offset/renamed-material
+round trip `check_transform` uses) and the vertex-colour path, plus the
+three self-tests — with no `ramps` argument, the only calling convention
+that exists anywhere in the repo today. Ran it against the working tree,
+`git stash` to the pre-change code, ran it again, `git stash pop` to
+restore the fix: the two JSON snapshots are byte-identical.
+
+---
+
+**Landed (PR #54): `review_queue.py` gets `--style`, the audit-tool gap
+PR #31 didn't cover.** PR #31 audited `art_review.py` for the accepted-
+but-ignored `--style` bug and found it clean, but scoped itself to that
+one file. `review_queue.py` -- the batch contact-sheet tool that sits one
+layer above `art_review.py`, calling its `load_palette()`/`review()`
+directly -- had the actual bug: `build()` called `load_palette()` bare, no
+argument, always resolving `cozy_ghibli`'s palette regardless of what
+style the matched files were rendered under, and `main()`'s argparse had
+no `--style` at all.
+
+Fix mirrors `art_review.py`'s own convention: `build()` gained a
+`style: str = DEFAULT_STYLE` parameter resolved via
+`load_palette(load_style(style).palette_path)`, and `main()`'s `build`
+subcommand gained `--style NAME` (default `cozy_ghibli`). `build()` takes
+arbitrary glob patterns, which could in principle span more than one
+style's output in one invocation -- kept to one `--style` per invocation
+rather than per-file inference, matching how every producer this session
+added the flag, and documented inline as the caller's responsibility to
+avoid (one style-consistent glob per run). Checked `review()`'s other
+internal logic in full: nothing beyond `by_rgb`/`ramps`/`entries` as
+passed in, no separate hardcoded assumption to fix; `check_direction_set()`
+(the key-light-drift cross-sprite check) works on raw OKLab lightness from
+pixel RGB, not the palette, so it needed no change.
+
+Verified with real renders (`furnish.py --only plant_succulent`, both
+styles, GPU-free), not just that it runs: reviewing the `snes_rpg` render
+under the OLD bare-`load_palette()` behaviour produced 8/8 false
+off-palette blockers; under `--style snes_rpg` it's 6/8 auto-clean, 0
+blockers. The key-light-drift check also reads genuinely differently by
+style on the same geometry (cozy_ghibli "consistent" 3.4x5.5px vs.
+snes_rpg "drifts" 3.1x6.9px). Regression check: `verdicts.jsonl` and
+`sheet.png` for the same default-style input, no `--style` flag, are
+byte-identical before and after (stash-based before/after).
+
+---
+
+**Landed (PR #55, stacked on #50): `manifest.py`'s `check_ui` finally reads
+the active `--style`, closing the one gap PR #24 explicitly left alone.**
+PR #24 fixed every other bare `load_palette()` in this file but named
+`check_ui`'s hardcoded `ui_dir = ROOT / "out" / "ui"` and `load_palette()`
+as "a different, larger, genuinely not-yet-started gap, not a bug in this
+one" — its stated reason being that `ui_forge.py`/`ui_chrome.py` "never
+claimed to build per-style in the first place." That prerequisite is gone:
+PR #25 gave `ui_chrome.py` `--style`, PR #36 gave `ui_forge.py` the same.
+This is that deferred follow-up, now that there is real per-style content
+for `check_ui` to find.
+
+**Two directories, not one, because the two producers never agreed on a
+convention.** `ui_forge.py` nests a non-default style under the default's
+own directory, matching `furnish.py` — `out/ui/<style>/`. `ui_chrome.py`
+uses a sibling-with-suffix, matching `tileset.py` — `out/ui_<style>/`.
+`package_godot.py`'s `style_paths()` (PR #47/#48) already documented this
+exact split for its own purposes and made the same call this PR makes —
+match each producer's own real convention rather than invent a third — but
+it only threads the suffix half through its single `ui_dir` field, so it
+silently stages nothing from `ui_forge.py`'s nested directory for a
+non-default style. That's a real, separate gap in `package_godot.py`, not
+introduced or fixed here — noted below, not chased, because fixing it means
+touching a different, working, shipped file for a problem this PR's scope
+is auditing, not staging.
+
+`check_ui` now resolves both directories from the active `style.Style` (the
+same object `check()` already loads, threaded through rather than
+re-resolved) and checks a declared id against both — a CHROME id
+(`ui_dialogue_frame`, `ui_nameplate`, `ui_upgrade_frame`, `ui_ticket`,
+`ui_star_rating`, `ui_star_rating_empty`, `ui_coin`) is found in the suffix
+directory, a forge-only id (the drink icons, the clock, the heart) in the
+nested one — rather than checking one and silently missing the other's
+output. For the default style both conventions collapse to the same
+`out/ui/`, unchanged from before. `ui_font` stays pointed at
+`out/ui/font/font.json` regardless of style: `bitmap_font.py` has no
+`--style` flag at all yet, a separate not-yet-started gap of its own, the
+same category `check_ui` itself was in before this PR.
+
+**Verified against real on-disk assets, not just by code reading.** Ran
+`tools/ui_chrome.py --style snes_rpg` for real (purely procedural, no GPU) —
+7/7 chrome pieces built to `out/ui_snes_rpg/`. GPU turned out to be
+available in this environment, so `tools/ui_forge.py --only
+ui_coin,ui_icon_espresso --retry-seeds 0 --style snes_rpg` was also run for
+real, not skipped: `ui_icon_espresso` built to `out/ui/snes_rpg/`,
+`ui_coin` gated on the same documented speckle ceiling PR #36 already
+recorded for it. `manifest.py --check --style snes_rpg` against that real
+on-disk state, before this fix, reported the exact same wrong thing as
+`--check` with no `--style` at all — "15 declared but not built," including
+`ui_icon_espresso` even though it was sitting on disk, because the old code
+never looked anywhere but the hardcoded default `out/ui/`. After the fix,
+the same command correctly reports "7 declared but not built" (exactly the
+seven ids genuinely not yet built for `snes_rpg`: the five remaining
+drinks, the clock, the heart) and zero off-palette or isolated-pixel
+warnings for the eight it found — confirming both that it now locates
+files in either real directory and that it audits them against
+`snes_rpg`'s actual palette rather than `cozy_ghibli`'s.
+
+**Regression, checked the way PR #36/#52 did it: real output, not
+assumption.** `manifest.py --check` (no `--style`) captured in full before
+and after this change, same on-disk state both times (git-stash-based
+before/after, not a fresh clone, since `out/ui/` already existed from the
+`snes_rpg` run above by the time of capture) — **byte-identical**,
+including the pre-existing `ui: 15 declared but not built` warning and
+`ui_font` warning, neither of which this PR touches the wording of for the
+default style.
+
+---
+
+**Landed (PR #56): `--style` for `tools/bitmap_font.py`, the same
+accepted-but-ignored / never-added bug fixed across `factory.py` (PR #52),
+`ingest.py` (PR #53) and `review_queue.py` (PR #54).** `bitmap_font.py` is
+the repo's actual in-game bitmap font renderer, not a dev preview tool
+(its own module docstring: "No font, no bitmap glyph set, nothing that
+renders a word in the palette... this is that") — and it had FOUR bare
+`load_palette()` calls (`render_line()`, `atlas()`, `load_ramps()`,
+`demo()`), every one always resolving `cozy_ghibli`, plus a `main()`
+argparse with no `--style` flag at all to begin with.
+
+All four now resolve `load_palette(load_style(style).palette_path)`, with
+`style` threaded as a parameter down from `main()`'s new `--style NAME`
+(default `cozy_ghibli`) through `render_line`, `atlas`, `load_ramps`,
+`check_render` (which calls `load_ramps` for its off-palette audit) and
+`demo`. Same idiom every other producer in this sweep uses; no new palette
+resolution path invented.
+
+**Output path, verified rather than guessed.** `--out` defaulted to a fixed
+`out/ui/font`; it now defaults to `out/ui/font` for `cozy_ghibli` or
+`out/ui/<style>/font` for anything else, still overridable explicitly. That
+nests the style directory the way `ui_forge.py` does for its own
+`out/ui/<style>/` — not `ui_chrome.py`'s sibling-suffix `out/ui_<style>`
+— because `bitmap_font.py`'s default already lives *under* `out/ui/`, same
+as `ui_forge.py`'s and unlike `ui_chrome.py`'s bare `out/ui`. Confirmed by
+actually running it: `--style snes_rpg --sample "Flat White  $4.50"` (no
+`--out`) wrote to `out/ui/snes_rpg/font/font_sample.png`, and
+`git check-ignore -v` confirms both that path and the default
+`out/ui/font/font_sample.png` are covered by the existing blanket `out/`
+`.gitignore` line — no new entry needed.
+
+**Real palette difference, not just "didn't crash."** Rendered the same
+sample string under both styles and diffed the actual ink RGB values
+written to the PNGs: `cozy_ghibli` writes `(35,35,44)`/`(63,63,75)`
+(neutral charcoal), `snes_rpg` writes `(9,18,31)`/`(43,54,71)` (navy) — a
+real, different palette resolved per style rather than the same bytes
+under a new flag. Side-by-side proof at
+`proof/bitmap_font_style_compare_sample.png`.
+
+**Regression check.** Same sample string, same `--cap`/`--weight`, no
+`--style` flag: sha256 of `font_sample.png` is byte-identical before and
+after this change
+(`fe89984c22d0bd6134eaa1eb0b3fd48ac8c8b35f60c5377cbf9478ff0fa67103`) —
+a pure threading change, zero behaviour change for the shipped style.
+
+`bitmap_font.py --check` was left untouched — it sweeps geometry (glyph
+collisions, counters, bounds, pairwise ink contact) and never touches a
+palette, so there is no bare `load_palette()` in that path to fix and no
+style-dependent behaviour to verify there.
+
+---
+
+**Landed (PR #57, stacked on #50): `package_godot.py` stages a non-default
+style's UI from BOTH real directories, PR #55's own flagged follow-up.**
+PR #55 (`manifest.py`'s `check_ui`, audit side) found and fixed the fact that
+`ui_forge.py` and `ui_chrome.py` picked two different per-style conventions
+for `out/ui/`, and explicitly named the staging side of the identical
+problem as "a real, separate gap... noted in `NEXT.md`" rather than fixing
+it there, since that meant touching a different, working file. This is that.
+
+**The split, unchanged from PR #55's finding, now also covers the font.**
+`style_paths()`'s single `ui_dir` field could only ever resolve to
+`ui_chrome.py`'s sibling-suffix convention (`out/ui_<style>/`), so
+`stage()` was staging chrome pieces for a non-default style and silently
+missing `ui_forge.py`'s icons entirely (`out/ui/<style>/`) — and, it turns
+out, `bitmap_font.py`'s font too, one level under that same nested
+directory (`out/ui/<style>/font`), which is the convention the open,
+unmerged `bitmap-font-style` branch (PR #56) lands (read directly from
+that branch, not guessed — `tools/bitmap_font.py` on this branch still has
+no `--style` flag at all, a separate, not-yet-started gap noted below).
+`style_paths()` now returns `ui_forge_dir`/`ui_chrome_dir` instead of one
+`ui_dir`; `stage_ui()` merges both (de-duplicated via `dict.fromkeys`, so
+the default style — where they're literally the same `Path` — collapses
+to the exact single-directory behaviour it always had); `stage_font()`
+takes `ui_forge_dir` specifically, matching the nested convention its
+source actually uses.
+
+**A real bug, measured before and after, not assumed fixed.** Real content
+already existed on disk in this environment from prior work: `ui_chrome.py
+--style snes_rpg` was re-run for real here too (GPU-free, 7/7 chrome pieces
+confirmed fresh to `out/ui_snes_rpg/`). `bitmap_font.py --style snes_rpg`
+cannot be run for real on this branch — confirmed by trying it: `error:
+unrecognized arguments: --style snes_rpg` — so `bitmap_font.py` (no
+`--style`) was run for real instead (`out/ui/font/`, 4 real sheets + real
+`font.json`) and that real output copied to `out/ui/snes_rpg/font/`, the
+exact path a `--style`-aware `bitmap_font.py` will write to, to exercise
+`stage_font()`'s nested-lookup against real bytes rather than a fabricated
+fixture. `ui_forge.py --style snes_rpg` was NOT run fresh — GPU check at
+the time (`torch.cuda.is_available()` → True, but `nvidia-smi` showing
+~46% of this 8 GB card's VRAM already held by other running applications)
+judged the GPU not clearly free for a new SDXL job; verified instead by
+code inspection of its `--style` path logic (`ui_dir = ROOT / "out" / "ui"
+/ args.style` for non-default, matching `style_paths()`'s `ui_forge_dir`
+exactly) plus the real `out/ui/snes_rpg/ui_icon_espresso.png` already
+sitting on disk from an earlier genuine run in this environment.
+
+Before the fix, `package_godot.stage("snes_rpg")` staged **7 UI pieces (7
+drawn, 0 generated)** and no `font` key at all — every chrome piece, zero
+icons, zero font, exactly PR #55's finding reproduced on the staging side.
+After the fix, the same call stages **8 UI pieces (7 drawn, 1 generated)**
+— `ui_icon_espresso` now present, `source: generated` — and a real `font`
+key with all 4 shipped cap heights. `godot_export/project_snes_rpg/assets/`
+gained `ui_icon_espresso.png` and a whole `font/` subtree that didn't exist
+in the pre-fix output at all.
+
+**Missing-directory degrade, checked directly, not inferred.** Called
+`stage_ui()`/`stage_font()` with paths that don't exist on disk (both
+missing, and one-of-two missing) — every case returns `{}` cleanly, no
+exception, matching the "stage nothing, don't fail" contract every other
+stager here already has for a style nobody's run a producer against yet.
+
+**Regression, the default style.** `package_godot.stage("cozy_ghibli")`
+before and after: identical `summarise()` output, identical file list under
+`assets/`, and sha256-identical on every file including
+`build_manifest.json` — zero behaviour change, because `ui_forge_dir` and
+`ui_chrome_dir` both resolve to the same `out/ui/` `Path` for the default
+style, `dict.fromkeys` collapses them to one entry, and `stage_ui()`/
+`stage_font()` run the exact single-directory path they always did.
+
+**Scope boundary, stated rather than assumed away.** `bitmap_font.py`
+itself still has no `--style` flag on this branch — that's PR #56, open
+and unmerged, not touched here. This PR only makes `package_godot.py`
+correctly consume whichever of the two real directories a style's UI
+output actually lands in; it does not change what any of the three
+producers write.
+
+---
+
+**Landed (PR #51, stacked on #50): `palette_swap.py`'s audit side gets the
+same `--style` treatment its own palette math already had.** Same bug class
+as PR #24/#25/#29/#36's "`--style` accepted but the actual scan stays
+hardcoded to the default" — this time in `SOURCES`, a flat module constant
+pointed at `cozy_ghibli`'s own four output directories and read, unchanged,
+by all four of `library_colours()`, `swap()` (both loops) and
+`sample_assets()`, even though `main()` already threaded `args.style` through
+`load_bible()`.
+
+**The conventions, verified by running each producer against this checkout,
+not assumed.** `out/` was empty here, so real content was generated for both
+styles (`furnish.py`, `tileset.py`, `ui_chrome.py`, `animate.py`, all
+CPU-only; `ui_forge.py` is GPU-bound and confirmed instead by reading its
+`ui_dir = (UI_DIR if args.style == DEFAULT_STYLE else ROOT / "out" / "ui" /
+args.style)` line directly). Four different conventions, from four
+independent producers: `furnish.py` props nest a non-default style
+UNDER the default's own directory (`out/sprites/<style>/`); `tileset.py`
+tiles and `ui_chrome.py` UI use a sibling-with-suffix
+(`out/tiles_<style>/`, `out/ui_<style>/`); `ui_forge.py` UI nests, the same
+shape as `furnish.py` but a THIRD, independent convention from
+`ui_chrome.py`'s own UI output; `animate.py` anim sheets use a fourth shape,
+`sprites/` (repo root) for the default and `out/sprites_<style>/` for
+anything else. New `sources_for(style)` resolves all of it, returning both
+UI roots for a non-default style since two producers write two different
+places for the same category.
+
+**A second, real bug the nested convention causes, caught by running it, not
+guessed at.** `out/sprites/<style>/` and `out/ui/<style>/` sit one level
+INSIDE the exact directories the *default* style's own scan walks, so the
+old flat `SOURCES` — and a naive per-style rewrite that just swapped in new
+paths without addressing this — would still have the default style's
+`rglob` walk straight into another style's nested output and report it as
+stray. Measured before the fix: a real `out/sprites/snes_rpg/` from
+`furnish.py --style snes_rpg` turned up as 10 "unmapped" colours under
+`palette_swap.py --check --style cozy_ghibli`. `sources_for()` now hands the
+default style's `props`/`ui` roots a `skip` set of every other style's
+nested subdirectory, and the new `_pngs()` helper (replacing every bare
+`root.rglob("*.png")`) respects it.
+
+**Check results, both directions, real content.** `--check --style
+cozy_ghibli`: 39 PNGs, 32 colours, all mapped, all 4 variant tables
+injective, all samples round-trip — zero cross-contamination from the
+`snes_rpg` content sitting in nested sibling directories. `sources_for()`
+and `library_colours()` confirmed directly for `snes_rpg`: resolves to its
+own nested props dir, suffix UI dir, (not-yet-existing, gracefully skipped)
+nested UI dir, suffix tiles dir, suffix anim dir — 31 PNGs, 21 colours, all
+of them within `snes_rpg`'s own forged base palette, zero leaked from
+`cozy_ghibli`. `palette_swap.py --check --style snes_rpg`'s full CLI path
+crashes on `variants[0]` — `styles/snes_rpg/bible.yaml` declares `variants:
+{}` — but this is the same pre-existing, unrelated gap the sibling
+`snes-palette-variants` branch already found and is fixing there; not this
+PR's scope, and not touched here.
+
+**Regression.** File count dropped from the old code's 55 (`cozy_ghibli`
+scan bug-inflated by the leaked `snes_rpg` nested props) to the new code's
+39 real `cozy_ghibli` files — a drop that looks alarming out of context but
+is the fix working, not an under-scan: both counts are small because this
+checkout's `out/` started empty and only a two-prop/one-character subset was
+generated for real per style, not because anything the default style
+actually owns stopped being scanned.
+**Landed (PR #41, stacked on #39 and #40): the focal-detail check is now
+resolution-confirmed, not resolution-invariant.** Closes `ART_CRITIQUE.md`'s
+longest-open "Still open" item -- the focal reading falling with render
+resolution -- by re-measuring it end to end instead of trusting the note.
+Write-up: `ART_CRITIQUE.md`, "Focal detail: resolution-confirmed, not
+resolution-invariant".
+
+Two findings, then a fix:
+
+- **Contrast healed on its own.** Swept 160-480 across the suite check's own
+  four-room sample plus the reference room: every reading now clears the
+  0.030 floor by at least 0.047, most by 3-6x. The steep collapse the
+  original bullet measured (down to +0.014, nearly crossing) is gone -- an
+  unrelated string of composition fixes (hull-clipped focal region, wall
+  shelf/sign, back-counter height) closed it as a side effect, never
+  re-verified until now.
+- **The same problem re-appeared on detail** (edge density, added after that
+  bullet was written). Every room's detail lead shrinks with resolution,
+  the reference room included. Live and current: `build_plan.py
+  --focal-scan 12` read 2 of 12 fail at 320, 1 of 12 at 480 -- plan 1
+  flipped from FAIL to pass with zero content change. `manifest.py
+  --check`'s own `check_focal_contrast()` (the fast gate, not just the deep
+  scan) was already carrying this exact case as an accepted failure, named
+  directly in this file's own Gates section.
+
+A ratio reformulation of the detail lead -- `(di-do)/(di+do)` instead of the
+raw difference -- was measured and rejected: it shrinks the drift for
+healthy rooms but is proven, algebraically and numerically, unable to change
+a single verdict at a floor fixed at exactly 0 (a sign-preserving
+transform). Root cause is the renderer, not the statistic -- `shade_toon`'s
+dither and `mesh.py`'s surface grain are fixed-real-world-size
+perturbations that `downsample_modal` only resolves once a render target's
+per-pixel world footprint shrinks below their width, which happens at a
+different target for the counter than for the busy periphery. A truly
+resolution-invariant version would grade off world-space material samples
+instead of raster pixels -- scoped and left, the same way the fifth
+topology and the style LoRA were.
+
+**The fix:** `FOCAL_CONFIRM_TARGET = 480` in `tools/build_plan.py`. A room
+that fails at the check's own 320 gets one confirming render at the
+delivery resolution and is only reported if it fails both. Passing rooms
+(10 of 12) never pay for the second render.
+
+Verified both gates, live:
+
+    .venv/Scripts/python.exe tools/build_plan.py --focal-scan 12
+    -> 1 of 12 fail (8%), 1 rescued by the 480 confirmation (plan 1)
+
+Direct call, before and after: `check_focal_contrast()` (the function
+`manifest.py --check` actually runs) reported plan 1's -0.002 detail as a
+failure before this change and reports zero messages after. The full
+`manifest.py --check` run confirms it end to end: **0 errors, 8 warnings**
+(the same 8 pre-existing, unrelated occlusion/declared-but-unbuilt-UI
+warnings), where it used to be 1 error on this exact case. Plan 10 -- the
+one real defect in the sample, negative at every resolution from 240
+through 480 -- still fires in both the scan and a direct
+`check_focal_contrast(seed=10, n=1)` call. Proof: `proof/focal_plan1_320.png`
+vs `proof/focal_plan1_480.png` (the flip, same room, same seed); `proof/
+focal_plan10_320.png` vs `proof/focal_plan10_480.png` (still failing, both
+resolutions).
+
+**Left honestly incomplete:** this is confirmation at two specific
+resolutions, not invariance at any resolution -- a defect visible only at
+some third target would still slip through. That is the practical claim the
+shipped game needs (the checked and the delivered resolution now agree), not
+the abstract one the original bullet asked for.
+
+---
+
+**Landed (PR #44, stacked on #39-#43): `build_plan.py`'s roster generation
+was still hardcoded to `cozy_ghibli`, the same `--style`-ignored-by-a-check
+bug found in `character.py` (PR #23), `manifest.py`/`portrait.py` (PR #24)
+and `art_review.py` (PR #31) -- one more call site the sweep had not
+reached.** `main()` correctly built `ramps` from `--style` and threaded it
+into the final `render()` call, but `build(plan)` runs BEFORE that render
+call and is what actually creates the people: `build()` -> `_people()` ->
+`C.generate_roster(n, seed)`, called with no third argument, so it fell
+through to `generate_roster`'s own default, `ramps or _palette()`, which
+hardcodes `load_palette()` -- `cozy_ghibli`, unconditionally. Every barista,
+queue customer and seated customer in a `--style snes_rpg` room was
+generated against `cozy_ghibli`'s colours: `check_contrast`,
+`check_palette_spread` and `check_waistline` all ran on the wrong palette,
+same as PR #23 found for `character.py`'s own `--check` path, just reached
+through a different producer.
+
+Fixed by threading `ramps` one hop further than PR #21's own `--style`
+wiring did: `build(plan, ramps=None)` -> `_people(..., ramps=None)` ->
+`C.generate_roster(n, seed, ramps)`, and `main()`'s `ramps = load_palette(...)`
+block moved earlier, above the `build()` call it now feeds, rather than
+staying where it only fed `render()`. Default `ramps=None` preserved at
+every hop, so nothing about `cozy_ghibli` (or any caller that omits
+`--style`) changes -- `check_built_rooms`, `check_focal_contrast` and
+`_focal_scan` all call `build(plan)` with no ramps and are untouched by
+construction, not by re-verification alone.
+
+Audited every other `C.generate_roster(`/`C.generate_spec(` call site in the
+repo for the same gap: `animate.py`, `manifest.py` and
+`preview_characters.py` already pass `ramps` explicitly. `build_plan.py`'s
+`_people()` was the only silent fallback left.
+
+Verified both directions:
+
+- **The bug is real and the fix changes real output.** `build_plan.py
+  --style snes_rpg` rendered before and after the fix from the identical
+  plan seed: mesh vertex/triangle counts differ (47214/19994 before,
+  46974/19898 after) and multiple characters' garment/hair materials
+  visibly change colour -- a queue customer's shirt goes from cream to
+  magenta, a counter-side figure's trousers from grey to cream-and-green.
+  Proof: `proof/people_style_fix_before_after_snes_rpg.png` (full room) and
+  `proof/people_style_fix_before_after_snes_rpg_zoom.png` (3x crop on the
+  diff region). One honest side effect, disclosed rather than hidden: the
+  regenerated room's focal contrast reads `+0.000` ("DOES NOT lead the eye")
+  against the `+0.078` recorded in `styles/snes_rpg/lock.json`'s existing
+  `build_plan.py:proof/plan_room_snes_rpg.png` verdict -- a different,
+  correctly-styled roster standing at the counter reads differently under
+  `snes_rpg`'s harder value steps. The tracked proof PNG and its lock entry
+  were deliberately left untouched here (re-judging a room is
+  `style_approve.py`'s job, not a threading fix's), so that comparison is
+  reported, not silently shipped as a changed tracked asset.
+- **`cozy_ghibli` (the default) is byte-identical.** `build_plan.py --seed 3`
+  (no `--style`) rendered before and after: identical MD5. `manifest.py
+  --check` (1 error, 8 warnings, the known plan-1 wall-run case) and
+  `build_plan.py --focal-scan 12` (2 of 12 fail, plans 1 and 10) both
+  produced byte-identical stdout before and after, confirming this is a
+  pure threading fix with zero behaviour change for the shipped style.
+
 ---
 
 ## How this repo expects work to be done
@@ -1584,26 +2291,45 @@ the one gap it names (the atlas), nothing wider.
 **Gates — both must be clean before any commit**
 
 ```
-.venv/Scripts/python.exe tools/manifest.py --check            # 26 checks, takes ~4 min, 1 currently fails
+.venv/Scripts/python.exe tools/manifest.py --check            # 26 checks, takes ~4 min, clean
 .venv/Scripts/python.exe tools/build_plan.py --focal-scan 12  # slower, 1 of 12 currently fails
 ```
 
-Neither is clean right now, and both are the same underlying story: the
-detail floor sits at exactly 0.0 with a measured 0.002-0.006 margin
-(`ART_CRITIQUE.md`, "The detail floor at 40 plans"), thin enough that small,
-unrelated changes flip a borderline room across it.
+Both used to fail on the same underlying story: the detail floor sits at
+exactly 0.0, and its per-dressing-state noise (0.075-0.145 at n=50) runs
+3-6x a shelf's own mean effect (~0.02-0.03) -- closed out at scale as a
+population-rate check rather than tracked as an open margin
+(`ART_CRITIQUE.md`, "The detail floor's bracket, closed: the noise is bigger
+than the signal", PR #42). As of the focal-resolution-confirmation pass
+(`ART_CRITIQUE.md`, "Focal detail: resolution-confirmed, not
+resolution-invariant", PR #41):
 
-- `build_plan.py --focal-scan 12` fails plan 10 by -0.002 — a real,
-  documented, accepted case.
-- `manifest.py --check`'s `check_focal_contrast` fails plan 1 (wall run) by
-  -0.002 — this one is new as of the RNG-unification pass (`ART_CRITIQUE.md`,
-  "`leafy_plant` unified onto `_mix`"): a different draw from `leafy_plant`'s
-  now-shared RNG stream shifted plan 1's detail reading across the same
-  floor. Verified by isolating the change with `git stash`; not a bug in the
-  RNG swap, a demonstration of how thin the floor's margin really is.
+- `manifest.py --check`'s `check_focal_contrast` no longer fails on plan 1.
+  It used to (-0.002, from the RNG-unification pass) -- that failure turned
+  out to be resolution-dependent (it passes at 480, the delivery
+  resolution), and the check now confirms a 320 failure against a 480
+  render before reporting it, so the resolution-only flip no longer counts.
+- `build_plan.py --focal-scan 12` still fails plan 10, correctly -- a real,
+  accepted defect, negative at every resolution from 240 through 480 (not
+  -0.002 as this file previously recorded; that number was a stale
+  transcription -- the measured margin is -0.011 at 320, -0.013 at 480).
+
+**Correction, found while sorting merge conflicts across the open PR stack
+(not yet root-caused, flagging rather than guessing):** the "clean" claim
+above holds for PR #41 checked against its own narrower base, but running
+`manifest.py --check` at the tip of the fully-combined stack through PR #43
+(which also includes PR #39's galley/multi-counter topology) is **not**
+clean -- it currently reports 3 errors: plan 1 (L run) fails
+`check_focal_contrast`'s detail floor by -0.001, and plan 8 (galley) fails
+it twice, -0.012 against the centre floor and -0.019 against the detail
+floor. This looks like a real interaction between the galley topology's
+known focal-contrast weakness (see `NEXT.md`'s galley entry above) and the
+now-razor-thin detail floor (PR #42, left at exactly 0.0) rather than a bug
+in either PR alone, but that is a hypothesis, not a measurement -- needs its
+own follow-up pass once this stack is merged, not fixed blind here.
 
 Don't treat a *new* failure in either run as equally acceptable without
-checking whether it's one of these two known cases or something else.
+checking whether it's plan 10 or something else.
 
 Stage-8 review on generated sprites:
 
@@ -1613,19 +2339,43 @@ Stage-8 review on generated sprites:
 
 ---
 
+**Landed (PR #42, stacked on #39, #40, #41): the detail floor's "Still open"
+bracket, closed.** `ART_CRITIQUE.md` had carried `MIN_FOCAL_DETAIL`'s bracket
+as "0.010 wide" since the wall-shelf/sign fix, never revisited even after two
+later, unrelated passes (`leafy_plant` unified onto `_mix`; the L-run-corner
+dilution check) each independently brushed against the same margin without
+closing the bullet out. Re-measured at n=50 (`proof/detail_floor_scan50.txt`)
+instead of the original 12: the rate holds (14% vs B4's 12.5% on 40 plans)
+but the bracket does not — weakest fail/pass gap is 0.002-0.004, not 0.010,
+and two rooms sharing the *identical* back-wall dressing state (sign, two
+menus, zero shelves) land 0.072 apart (plan 10 at -0.011, plan 22 at +0.061;
+proof: `proof/detail_floor_plan10_fail.png`, `proof/
+detail_floor_plan22_pass.png`, both confirmed at the shipped 480px target
+too). Grouped by dressing state, the per-state spread (0.075-0.145) runs
+3-6x the shelf's own mean effect (~0.02-0.03) — a signal-to-noise ratio no
+single threshold between -0.017 and +0.061 can resolve without either
+punishing peninsulas/islands for a defect they're structurally incapable of
+(no wall to dress) or losing rooms with the actual defect.
+
+**Verdict: left at 0.0**, same constant, correction is to the claim rather
+than the number — recorded as a population-rate check (~1 in 8-9 wall/L
+runs), not a per-room verdict; a lone borderline failure is not proof that
+specific room is under-dressed. `tools/build_plan.py`'s `MIN_FOCAL_DETAIL`
+comment and `ART_CRITIQUE.md`'s "Still open" list are both updated in place
+rather than left to drift further. No logic changed —
+`manifest.py --check` (1 error, 8 warnings) and `build_plan.py --focal-scan
+12` (2 of 12 fail: plan 1 -0.002, plan 10 -0.011) are byte-for-byte the same
+before and after this branch's diff.
+
+---
+
 ## Tier A — CLOSED (historical record, not open work)
 
 > **These four Tier sections are CLOSED.** Every item below (A1, B1, C1, C2,
 > D1, B2) was completed or deliberately resolved, and each one's outcome is
 > in the status list further up this file and written up in full in
-> `ART_CRITIQUE.md`. The task text is preserved verbatim as a record of what
-> was asked, which is why it still reads in the imperative and still says
-> things like "nobody has looked at it since" — that was true when written
-> and is not true now.
->
-> **Do not pick work from here.** The live queue is `ART_CRITIQUE.md`'s final
-> "Still open" section. Reading these headings as a backlog has already cost
-> one pass real effort on work that was finished months earlier.
+> `ART_CRITIQUE.md`. The task text is preserved verbatim as a historical
+> record, not an active backlog. Do not reopen these items from their wording.
 
 ### A1. Key light drifts across the direction set, and it's never been triaged
 

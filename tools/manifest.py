@@ -119,7 +119,7 @@ def summarise(man: dict) -> None:
     print("  Cutting a customer archetype saves more than every prop optimisation combined.")
 
 
-def check_ui(man: dict) -> list[str]:
+def check_ui(man: dict, active) -> list[str]:
     """Does every declared `cat: ui` entry exist, and does it still hold up?
 
     The UI category was declared in `assets.yaml` for a long time with
@@ -135,14 +135,75 @@ def check_ui(man: dict) -> list[str]:
     statements that something built is *wrong*. The two deserve different
     weights, and inflating one into the other is how a check suite becomes
     something people stop reading.
+
+    `active` (a `style.Style`, the same object `check()` already resolved)
+    replaces what used to be a bare `ui_dir = ROOT / "out" / "ui"` and
+    `ramps = load_palette()` -- both hardcoded to `cozy_ghibli` regardless of
+    `--style`. PR #24 found this exact bug in every other call site in this
+    file and left this one alone on the stated grounds that `ui_forge.py`/
+    `ui_chrome.py` "never claimed to build per-style in the first place." PR
+    #36 and PR #25 closed that gap for the two tools respectively, which is
+    what makes fixing it here correct now rather than premature.
+
+    They did it via two DIFFERENT conventions, though, so there isn't one
+    `ui_dir` to resolve for a non-default style -- there are two, and a
+    style's declared ids are genuinely split across them:
+
+    - `ui_forge.py` nests a non-default style under the default's own
+      directory, matching `furnish.py`: `out/ui/<style>/`.
+    - `ui_chrome.py` uses a sibling-with-suffix, matching `tileset.py`:
+      `out/ui_<style>/`.
+
+    (`package_godot.py`'s `style_paths()` has the fullest account of this
+    split across producers -- it independently arrived at "match each
+    producer's own convention exactly rather than invent a third," which is
+    the same call made here, though it only threads through the suffix
+    convention for its own single `ui_dir` field and so silently stages
+    nothing from `ui_forge.py`'s nested directory for a non-default style.
+    That's a real gap in `package_godot.py`, not addressed here -- it wasn't
+    introduced by this change and fixing it means touching a different,
+    working, shipped file. Noted in `NEXT.md`.)
+
+    Unifying the two conventions would mean changing what `ui_forge.py`/
+    `ui_chrome.py` actually write to disk, which is a bigger, separate
+    change to two working producers -- out of scope for a check. Both
+    directories are audited instead: an id built by `ui_chrome` (a CHROME
+    key -- dialogue frames, nameplates, the coin, the star ratings) is looked
+    for in the suffix directory, an id only `ui_forge` generates (the drink
+    icons, the clock, the heart) is looked for in the nested one, and any id
+    could in principle live in either, so both are actually checked rather
+    than one being assumed. For the default style the two conventions
+    collapse to the same single `out/ui/`, which is why this is a strict
+    generalisation of the old behaviour and not a change to it.
+
+    `ui_font` is left pointed at the one location `bitmap_font.py` can ever
+    write to (`out/ui/font/font.json`) regardless of `active`, because
+    `bitmap_font.py` has no `--style` flag at all yet -- a separate,
+    not-yet-started gap, the same category PR #24 left `check_ui` itself in
+    before #25/#36 closed it for the other two producers.
     """
-    ui_dir = ROOT / "out" / "ui"
+    from style import DEFAULT_STYLE
+    base_ui_dir = ROOT / "out" / "ui"
+    if active.name == DEFAULT_STYLE:
+        forge_dir = chrome_dir = base_ui_dir
+        ui_dirs = [base_ui_dir]
+    else:
+        forge_dir = base_ui_dir / active.name
+        chrome_dir = base_ui_dir.parent / f"ui_{active.name}"
+        ui_dirs = [forge_dir, chrome_dir]
+
     declared = [a["id"] for s, a in entries(man) if s == "ui" and a.get("id")]
     if not declared:
         return []
-    if not ui_dir.exists():
-        return [f"{len(declared)} ui entries declared and out/ui/ does not "
-                f"exist -- run tools/ui_forge.py and tools/ui_chrome.py"]
+    if not any(d.exists() for d in ui_dirs):
+        if active.name == DEFAULT_STYLE:
+            return [f"{len(declared)} ui entries declared and out/ui/ does not "
+                    f"exist -- run tools/ui_forge.py and tools/ui_chrome.py"]
+        return [f"{len(declared)} ui entries declared and neither "
+                f"{forge_dir.relative_to(ROOT).as_posix()} nor "
+                f"{chrome_dir.relative_to(ROOT).as_posix()} exists -- run "
+                f"tools/ui_forge.py --style {active.name} and "
+                f"tools/ui_chrome.py --style {active.name}"]
 
     out = []
     # `ui_font` is one declared id over several files, because the four cap
@@ -150,7 +211,7 @@ def check_ui(man: dict) -> list[str]:
     # against its own index rather than against `out/ui/ui_font.png`, which
     # will never exist -- a glyph sheet is not an icon and does not live beside
     # them.
-    font_index = ui_dir / "font" / "font.json"
+    font_index = base_ui_dir / "font" / "font.json"
     if "ui_font" in declared:
         declared = [d for d in declared if d != "ui_font"]
         if not font_index.exists():
@@ -159,12 +220,19 @@ def check_ui(man: dict) -> list[str]:
         else:
             meta = json.loads(font_index.read_text(encoding="utf-8"))
             gone = [e["file"] for e in meta.get("sizes", {}).values()
-                    if not (ui_dir / "font" / e["file"]).exists()]
+                    if not (base_ui_dir / "font" / e["file"]).exists()]
             if gone:
                 out.append(f"ui_font: font.json lists {len(gone)} sheet(s) "
                            f"with no PNG on disk: {', '.join(sorted(gone))}")
 
-    missing = [i for i in declared if not (ui_dir / f"{i}.png").exists()]
+    def find(aid: str) -> Path | None:
+        for d in ui_dirs:
+            if (d / f"{aid}.png").exists():
+                return d
+        return None
+
+    located = {i: find(i) for i in declared}
+    missing = [i for i, d in located.items() if d is None]
     if missing:
         out.append(f"{len(missing)} declared but not built: "
                    + ", ".join(sorted(missing)))
@@ -177,12 +245,12 @@ def check_ui(man: dict) -> list[str]:
         from PIL import Image
         from pixelize import audit, load_palette
         from ui_forge import MAX_ISOLATED
-        ramps = load_palette()
+        ramps = load_palette(active.palette_path)
     except Exception as exc:                       # pragma: no cover
         return out + [f"pixel audit skipped: {exc}"]
 
     for aid in sorted(set(declared) - set(missing)):
-        with Image.open(ui_dir / f"{aid}.png") as im:
+        with Image.open(located[aid] / f"{aid}.png") as im:
             im = im.convert("RGBA")
             w, h = im.size
             data = list(im.getdata())
@@ -417,7 +485,7 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
     except Exception as exc:                       # pragma: no cover
         warns.append(f"clip cross-check skipped: {exc}")
 
-    for msg in check_ui(man):
+    for msg in check_ui(man, active):
         warns.append(f"ui: {msg}")
 
     for e in errs:

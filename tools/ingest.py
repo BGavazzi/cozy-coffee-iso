@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from mesh import Mesh, load_obj, save_obj  # noqa: E402
 from oklab import oklab_to_srgb255, srgb_to_oklab  # noqa: E402
 from pixelize import load_palette, material as split_material  # noqa: E402
+from style import DEFAULT_STYLE, load_style  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -616,8 +617,9 @@ def mesh_geometry(mesh: Mesh) -> dict:
 
 
 def ingest(obj: Path | str, mtl: Path | str | None = None, up: str = "z",
-           height: float | None = None, footprint: float | None = None):
-    ramps = load_palette()
+           height: float | None = None, footprint: float | None = None,
+           ramps: dict | None = None):
+    ramps = ramps or load_palette()
     mesh = load_obj(obj, default_material="__unbound__")
     colours = read_mtl(mtl) if mtl else {}
     if not colours:
@@ -659,11 +661,14 @@ def main() -> int:
     ap.add_argument("--up", default="z", choices=("y", "z"))
     ap.add_argument("--height", type=float)
     ap.add_argument("--footprint", type=float)
+    ap.add_argument("--style", default=DEFAULT_STYLE,
+                    help="which style pack's palette to bind against")
     ap.add_argument("-o", "--out")
     args = ap.parse_args()
 
+    ramps = load_palette(load_style(args.style).palette_path)
     mesh, report = ingest(args.obj, args.mtl, args.up, args.height,
-                          args.footprint)
+                          args.footprint, ramps=ramps)
     g = report["geometry"]
     print(f"{len(mesh.verts)} verts, {len(mesh.faces)} tris")
     print(f"  scaled x{g['scale']:.4f} -> height {g['height']:.3f}, "

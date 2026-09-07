@@ -536,6 +536,18 @@ def check_member_thickness(mesh, name="asset", ppu=ROOM_PX_PER_UNIT,
 # separate them, which a redundant floor cannot do by definition. The current
 # library has never tripped it because nothing in it is that regression, which
 # is the outcome a working floor is supposed to produce, not a case against it.
+#
+# Re-asked with a real generator instead of 2000 random pixels, and widened
+# past the 15 GENERATORS entries to all 24 seeded builders in assetlib.py
+# (ART_CRITIQUE.md, "The screen-spread floor's redundancy question, closed
+# with a real generator instead of synthetic noise"): still never fires alone
+# on anything shipped, but degrading the real `bookshelf` two independent
+# ways -- rnd() amplitude shrunk toward its midpoint, spine palette
+# truncated -- brackets this floor for real. Silent at 15.4% (amplitude
+# k=0.35), fires at 14.8% (k=0.30): a measured 0.6-point gap either side of
+# 0.15, agreeing with a second, independent bracket on the spine axis (silent
+# 15.2% at 3 colours, fires 12.8% at 2). Four constructed cases fire the mean
+# floor while the closest-pair floor stays over 8.5%.
 DEFAULT_SPREAD_FLOOR = 0.15
 
 # How different the two most similar instances of one generator must be.
@@ -579,6 +591,60 @@ GENERATORS = (
      "do something, not a lot. Calibrated under a measured 7%, the same way "
      "the occlusion thresholds were -- a floor set looser than the scan that "
      "found the defect is a floor that is blind"),
+    # The nine widened onto this list in the same pass that fixed fridge_under
+    # and tip_jar (both had a `seed` parameter their body never touched --
+    # ART_CRITIQUE.md, "fridge_under and tip_jar: a seed parameter that did
+    # nothing"). Four measure comfortably clear of both default floors across
+    # six independent 8-seed windows (1-8, 9-16, 17-24, 51-58, 101-108,
+    # 201-208) and need no `own` override:
+    ("leafy_plant", lambda A, s: A.leafy_plant(seed=s), 1.25, None, ""),
+    ("succulent", lambda A, s: A.succulent(seed=s), 0.55, None, ""),
+    ("book_stack", lambda A, s: A.book_stack(seed=s), 0.85, None, ""),
+    ("plant_hanging", lambda A, s: A.plant_hanging(seed=s), 1.0, None, ""),
+    # The other five are seed-driven but genuinely subtle by design -- exactly
+    # the shape that made fridge_under/tip_jar's total-silence bug hard to
+    # notice by eye. Each gets an `own` floor bracketed between 0% (the
+    # measured value of the pre-fix bug, i.e. what a regression to "seed
+    # ignored" looks like) and its own weakest mean across the same six
+    # 8-seed windows -- loose enough not to fire on healthy variance, tight
+    # enough that the exact defect this pass fixed cannot pass silently again.
+    ("pastry_plate", lambda A, s: A.pastry_plate(seed=s), 0.65, 0.03,
+     "pastry radius alone varies, +/-3% of a 0.10-0.13 range by design (the "
+     "module's own docstring: laminated detail quantizes to speckle, so value "
+     "steps carry the object, not shape change) -- weakest measured mean 5.7%"
+     " across six 8-seed windows, floor set just over half that"),
+    ("bean_sack", lambda A, s: A.bean_sack(seed=s), 0.95, 0.02,
+     "base radius alone varies, +/-4% of a 0.30-0.34 range -- a sack's slump "
+     "is meant to look like the same sack every time; weakest measured mean "
+     "4.4% across six 8-seed windows, floor set just under half that"),
+    ("fridge_under", lambda A, s: A.fridge_under(seed=s), 1.5, 0.005,
+     "the fix for this pass's own bug: a closed appliance's silhouette is "
+     "fixed by design, so only the handle (position + length) and plinth "
+     "height move, a few pixels on a large box; weakest measured mean 1.0% "
+     "across six 8-seed windows, floor set at half that -- comfortably above "
+     "the 0.0% the unfixed bug measured, comfortably below every healthy draw"),
+    ("tip_jar", lambda A, s: A.tip_jar(seed=s), 0.55, 0.05,
+     "coin-fill height (dominant), jar radius and label height all vary but "
+     "stay bounded so the label never clears the rim; weakest measured mean "
+     "8.7% across six 8-seed windows, floor set just over half that -- own is "
+     "also needed to skip the pair floor, since two of six windows drew a "
+     "closest pair under 1%, well below CLOSEST_PAIR_FLOOR by chance alone"),
+    # wall_art_framed's mean clears the default floor with room to spare
+    # (26.8-37.9% across the same six windows) but its closest pair is 0.0% in
+    # EVERY window, structurally rather than by chance: the picture's hue is
+    # one of 4 categorical choices (`sky-1`/`foliage-1`/`rose-1`/`wood+1`), so
+    # 8 draws from 4 buckets collide by the pigeonhole principle almost every
+    # time -- the same shape of exemption `counter`'s own modules get ("two
+    # identical ones are the point"), here because two identical HUES are the
+    # expected outcome of a small enum, not a defect. `own` is set to the
+    # unchanged default mean floor purely to invoke the pair-floor skip; it is
+    # not a loosened mean bar.
+    ("wall_art_framed", lambda A, s: A.wall_art_framed(seed=s),
+     1.25, DEFAULT_SPREAD_FLOOR,
+     "hue is one of 4 categorical picks; 8 draws from 4 buckets collide on "
+     "the closest pair by the pigeonhole principle almost every time, which "
+     "is expected of the design, not a defect -- own floor left at the "
+     "unchanged default mean bar solely to exempt the pair check"),
 )
 
 
