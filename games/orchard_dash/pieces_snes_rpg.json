@@ -1,7 +1,7 @@
 {
   "project": "orchard_dash",
   "style": "snes_rpg",
-  "direction": "A sunlit orchard rendered in the same warm, pixel-constrained Ghibli-through-16-bit sensibility this repo already established for the cafe, applied outdoors: dappled leaf-shadow, warm cream light, verdant canopy greens, without inventing a new palette philosophy. Tone: cozy, energetic, warm-afternoon.",
+  "direction": "A sunlit orchard rendered in the same warm, pixel-constrained Ghibli-through-16-bit sensibility this repo already established for the cafe, applied outdoors: dappled leaf-shadow, warm cream light, verdant canopy greens, without inventing a new palette philosophy. Adopt: warm light / cool shadow hue shifting, same rule as this repo's own art_direction; high-key value distribution, most of the frame in the upper mids; rounded, chunky low-poly silhouettes over hard geometric ones. Avoid: photoreal foliage texture; screen-shake heavy arcade juice that would fight the cozy tone. Tone: cozy, energetic, warm-afternoon.",
   "pieces": [
     {
       "id": "fox_runner",

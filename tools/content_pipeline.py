@@ -113,11 +113,26 @@ def seed_for(project: str, subject_id: str) -> int:
 def _direction(doc: dict) -> str:
     """One short paragraph, matching `pieces.json`'s own top-level
     `direction` field convention (a project-level brief `game_factory.py`
-    hashes into build identity but never injects into per-piece prompts).
+    hashes into build identity but never injects into per-piece prompts) --
+    including that field's real precedent for mixing positive and negative
+    constraints in one statement (its own tick_tack_toe example: "Armor and
+    egg sacs must be visible geometry, not just recolors. No gore.").
+
+    An earlier version of this function only used `target` + `tone`,
+    silently dropping `adopt`/`reject` even though a design doc author
+    explicitly wrote them as real constraints -- the same class of bug as
+    the flat per-category height this pipeline already fixed once (see
+    `subject.scale`): real, authored design-doc data reaching the manifest
+    and then getting thrown away instead of used.
     """
     influences = doc["art_influences"]
-    tone = ", ".join(doc["tone"])
-    return f"{influences['target']} Tone: {tone}."
+    parts = [influences["target"]]
+    if influences["adopt"]:
+        parts.append("Adopt: " + "; ".join(influences["adopt"]) + ".")
+    if influences["reject"]:
+        parts.append("Avoid: " + "; ".join(influences["reject"]) + ".")
+    parts.append("Tone: " + ", ".join(doc["tone"]) + ".")
+    return " ".join(parts)
 
 
 def build_manifest(doc: dict, style_name: str = DEFAULT_STYLE) -> tuple[dict, list[dict]]:

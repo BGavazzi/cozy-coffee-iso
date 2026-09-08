@@ -62,6 +62,25 @@ class ContentPipelineTests(unittest.TestCase):
         self.assertAlmostEqual(pieces["wasp"]["height"], pieces["fox_runner"]["height"] * 0.1)
         self.assertLess(pieces["wasp"]["height"], pieces["fox_runner"]["height"])
 
+    def test_direction_includes_adopt_and_reject_not_just_target_and_tone(self):
+        # Real regression: an earlier version of _direction() silently
+        # dropped art_influences.adopt/reject, even though a design doc
+        # author explicitly wrote them as constraints -- the same class of
+        # data-loss bug as the flat per-category height (see
+        # test_subject_scale_multiplies_the_category_height_baseline).
+        doc = _doc()
+        doc["art_influences"]["reject"] = ["photoreal foliage texture"]
+        manifest, _ = build_manifest(doc, "cozy_ghibli")
+        self.assertIn("warm light / cool shadow hue shifting", manifest["direction"])
+        self.assertIn("photoreal foliage texture", manifest["direction"])
+        self.assertIn("cozy", manifest["direction"])
+
+    def test_direction_omits_empty_reject_cleanly(self):
+        doc = _doc()
+        doc["art_influences"]["reject"] = []
+        manifest, _ = build_manifest(doc, "cozy_ghibli")
+        self.assertNotIn("Avoid:", manifest["direction"])
+
     def test_manifest_matches_game_factorys_pieces_json_shape(self):
         manifest, _ = build_manifest(_doc(), "cozy_ghibli")
         self.assertEqual(set(manifest) - {"project", "style", "direction", "pieces"}, set())
