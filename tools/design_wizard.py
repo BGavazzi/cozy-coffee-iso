@@ -108,6 +108,7 @@ def elicit(answers: dict | None = None, prompt_fn: PromptFn = input) -> dict:
                 "name": prompt_fn("    name: ").strip(),
                 "role": prompt_fn("    role: ").strip(),
                 "short_desc": prompt_fn("    short_desc: ").strip(),
+                "category": prompt_fn(f"    category {ASSET_CATEGORIES}: ").strip(),
             })
         doc["subjects"] = subjects
 

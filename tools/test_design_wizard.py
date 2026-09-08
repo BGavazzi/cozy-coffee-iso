@@ -26,7 +26,8 @@ def _valid_doc(project="demo_game"):
         },
         "asset_categories": ["pieces", "ui"],
         "subjects": [
-            {"id": "tick", "name": "Tick", "role": "piece", "short_desc": "small round bug"},
+            {"id": "tick", "name": "Tick", "role": "piece", "short_desc": "small round bug",
+             "category": "pieces"},
         ],
     }
 
@@ -78,6 +79,18 @@ class DesignDocSchemaTests(unittest.TestCase):
     def test_rejects_missing_subjects(self):
         doc = _valid_doc()
         doc["subjects"] = []
+        with self.assertRaises(DesignDocError):
+            validate(doc)
+
+    def test_rejects_unknown_subject_category(self):
+        doc = _valid_doc()
+        doc["subjects"][0]["category"] = "weather"
+        with self.assertRaises(DesignDocError):
+            validate(doc)
+
+    def test_rejects_subject_category_not_declared_at_doc_level(self):
+        doc = _valid_doc()
+        doc["subjects"][0]["category"] = "characters"  # valid enum, but not in asset_categories
         with self.assertRaises(DesignDocError):
             validate(doc)
 
@@ -136,7 +149,7 @@ class DesignWizardElicitTests(unittest.TestCase):
     def test_interactive_subject_collection_stops_on_blank_id(self):
         answers = _valid_doc()
         del answers["subjects"]
-        scripted = iter(["tock", "Tock", "piece", "the other one", ""])
+        scripted = iter(["tock", "Tock", "piece", "the other one", "pieces", ""])
 
         def scripted_prompt(question):
             return next(scripted)
@@ -145,7 +158,7 @@ class DesignWizardElicitTests(unittest.TestCase):
         self.assertEqual(len(result["subjects"]), 1)
         self.assertEqual(result["subjects"][0],
                          {"id": "tock", "name": "Tock", "role": "piece",
-                          "short_desc": "the other one"})
+                          "short_desc": "the other one", "category": "pieces"})
 
     def test_list_fields_split_on_comma_and_strip_whitespace(self):
         answers = _valid_doc()

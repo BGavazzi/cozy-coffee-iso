@@ -120,6 +120,18 @@ def validate(doc: dict) -> None:
         if subject["id"] in seen_ids:
             raise DesignDocError(f"subjects: duplicate id {subject['id']!r}")
         seen_ids.add(subject["id"])
+        # A closed enum, not free text like `role` -- a content pipeline
+        # needs to know which default height/geometry bucket a subject
+        # belongs to without guessing from prose. Must also be one of the
+        # doc's own declared `asset_categories`, so a design doc can never
+        # name a subject in a category it didn't say the game would need.
+        category = subject.get("category")
+        if category not in ASSET_CATEGORIES:
+            raise DesignDocError(f"subjects[{i}].category: {category!r} "
+                                 f"not in {ASSET_CATEGORIES}")
+        if category not in categories:
+            raise DesignDocError(f"subjects[{i}].category: {category!r} not "
+                                 f"in this doc's own asset_categories {categories}")
 
 
 def load(path: Path) -> dict:
