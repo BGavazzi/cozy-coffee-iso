@@ -94,6 +94,28 @@ class DesignDocSchemaTests(unittest.TestCase):
         with self.assertRaises(DesignDocError):
             validate(doc)
 
+    def test_accepts_valid_scale_and_defaults_when_absent(self):
+        doc = _valid_doc()
+        self.assertNotIn("scale", doc["subjects"][0])
+        validate(doc)  # no scale key at all -- must not raise
+        doc["subjects"][0]["scale"] = 0.25
+        validate(doc)  # explicit valid scale -- must not raise
+
+    def test_rejects_non_positive_scale(self):
+        doc = _valid_doc()
+        doc["subjects"][0]["scale"] = 0
+        with self.assertRaises(DesignDocError):
+            validate(doc)
+        doc["subjects"][0]["scale"] = -1.0
+        with self.assertRaises(DesignDocError):
+            validate(doc)
+
+    def test_rejects_non_numeric_scale(self):
+        doc = _valid_doc()
+        doc["subjects"][0]["scale"] = "big"
+        with self.assertRaises(DesignDocError):
+            validate(doc)
+
     def test_save_refuses_to_write_invalid_doc(self):
         doc = _valid_doc(project="bad name")
         folder = tempfile.TemporaryDirectory()
@@ -149,7 +171,7 @@ class DesignWizardElicitTests(unittest.TestCase):
     def test_interactive_subject_collection_stops_on_blank_id(self):
         answers = _valid_doc()
         del answers["subjects"]
-        scripted = iter(["tock", "Tock", "piece", "the other one", "pieces", ""])
+        scripted = iter(["tock", "Tock", "piece", "the other one", "pieces", "", ""])
 
         def scripted_prompt(question):
             return next(scripted)
@@ -159,6 +181,18 @@ class DesignWizardElicitTests(unittest.TestCase):
         self.assertEqual(result["subjects"][0],
                          {"id": "tock", "name": "Tock", "role": "piece",
                           "short_desc": "the other one", "category": "pieces"})
+
+    def test_interactive_subject_collection_records_explicit_scale(self):
+        answers = _valid_doc()
+        del answers["subjects"]
+        scripted = iter(["gnat", "Gnat", "hazard", "tiny darting bug",
+                         "pieces", "0.1", ""])
+
+        def scripted_prompt(question):
+            return next(scripted)
+
+        result = elicit(answers, prompt_fn=scripted_prompt)
+        self.assertEqual(result["subjects"][0]["scale"], 0.1)
 
     def test_list_fields_split_on_comma_and_strip_whitespace(self):
         answers = _valid_doc()

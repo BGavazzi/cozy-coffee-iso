@@ -132,6 +132,19 @@ def validate(doc: dict) -> None:
         if category not in categories:
             raise DesignDocError(f"subjects[{i}].category: {category!r} not "
                                  f"in this doc's own asset_categories {categories}")
+        # Optional relative size multiplier against whatever baseline height
+        # a downstream pipeline assigns `category` -- NOT an absolute height,
+        # because `category` is the semantic bucket (a subject is "a
+        # character") and a design doc has no business declaring pipeline-
+        # specific absolute measurements. Added after a real, measured gap:
+        # a wasp and the player fox both landing in `characters` gave them
+        # the same generic upright-figure height with no way to say "this
+        # one instance is small." Defaults to 1.0 (trust the category
+        # baseline) so every subject that doesn't need this stays terse.
+        if "scale" in subject:
+            scale = subject["scale"]
+            if not isinstance(scale, (int, float)) or isinstance(scale, bool) or scale <= 0:
+                raise DesignDocError(f"subjects[{i}].scale: must be a positive number")
 
 
 def load(path: Path) -> dict:

@@ -54,14 +54,16 @@
       "name": "Wasp",
       "role": "hazard",
       "short_desc": "small darting insect that patrols a short lane",
-      "category": "characters"
+      "category": "characters",
+      "scale": 0.1
     },
     {
       "id": "apple",
       "name": "Apple",
       "role": "collectible",
       "short_desc": "falling fruit, the core scoring unit",
-      "category": "props"
+      "category": "props",
+      "scale": 0.15
     },
     {
       "id": "basket_meter",
