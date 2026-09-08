@@ -140,7 +140,7 @@ def build_manifest(doc: dict, style_name: str = DEFAULT_STYLE) -> tuple[dict, li
             "id": subject["id"],
             "name": subject["name"],
             "prompt": synthesize_prompt(subject),
-            "height": CATEGORY_HEIGHT[subject["category"]],
+            "height": CATEGORY_HEIGHT[subject["category"]] * subject.get("scale", 1.0),
             "seed": seed_for(doc["project"], subject["id"]),
         })
     manifest = {"project": doc["project"], "style": style.name,

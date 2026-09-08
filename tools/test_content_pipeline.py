@@ -31,6 +31,9 @@ def _doc():
             {"id": "fox_runner", "name": "Fox Runner", "role": "player character",
              "short_desc": "small quick fox with a wicker basket on its back",
              "category": "characters"},
+            {"id": "wasp", "name": "Wasp", "role": "hazard",
+             "short_desc": "small darting insect", "category": "characters",
+             "scale": 0.1},
             {"id": "apple_tree", "name": "Apple Tree", "role": "prop",
              "short_desc": "shakeable tree that drops apples", "category": "props"},
             {"id": "basket_meter", "name": "Basket Meter", "role": "ui",
@@ -46,9 +49,18 @@ class ContentPipelineTests(unittest.TestCase):
     def test_builds_one_piece_per_prompt_driven_subject_and_skips_procedural(self):
         manifest, skipped = build_manifest(_doc(), "cozy_ghibli")
         self.assertEqual({p["id"] for p in manifest["pieces"]},
-                         {"fox_runner", "apple_tree", "basket_meter"})
+                         {"fox_runner", "wasp", "apple_tree", "basket_meter"})
         self.assertEqual([s["id"] for s in skipped], ["orchard_ground"])
         self.assertEqual(skipped[0]["category"], "tiles")
+
+    def test_subject_scale_multiplies_the_category_height_baseline(self):
+        manifest, _ = build_manifest(_doc(), "cozy_ghibli")
+        pieces = {p["id"]: p for p in manifest["pieces"]}
+        # wasp (scale 0.1) shares `characters` with fox_runner (no scale,
+        # implicit 1.0) -- without scale both would get the same baseline
+        # height, which is exactly the gap this field closes.
+        self.assertAlmostEqual(pieces["wasp"]["height"], pieces["fox_runner"]["height"] * 0.1)
+        self.assertLess(pieces["wasp"]["height"], pieces["fox_runner"]["height"])
 
     def test_manifest_matches_game_factorys_pieces_json_shape(self):
         manifest, _ = build_manifest(_doc(), "cozy_ghibli")
@@ -108,7 +120,8 @@ class ContentPipelineTests(unittest.TestCase):
 
     def test_no_prompt_driven_subjects_is_an_error_not_an_empty_manifest(self):
         doc = _doc()
-        doc["subjects"] = [doc["subjects"][3]]  # the tile, procedural only
+        tile = next(s for s in doc["subjects"] if s["category"] == "tiles")
+        doc["subjects"] = [tile]
         doc["asset_categories"] = ["tiles"]
         with self.assertRaises(ValueError):
             build_manifest(doc, "cozy_ghibli")
@@ -120,7 +133,7 @@ class ContentPipelineTests(unittest.TestCase):
         save(_doc(), path)
         from content_pipeline import load_design_doc
         manifest, skipped = build_manifest(load_design_doc(path), "cozy_ghibli")
-        self.assertEqual(len(manifest["pieces"]), 3)
+        self.assertEqual(len(manifest["pieces"]), 4)
         self.assertEqual(len(skipped), 1)
 
 
