@@ -23,3 +23,17 @@ The intended batch workflow is:
 
 The model is a creative search aid, not a rules engine. Keep Ollama bound to
 localhost; do not expose it from the hosted game.
+
+## First local benchmark
+
+On September 8, 2026, the installed `qwen2.5:7b` produced 20/20 schema-valid
+proposals across the bounded pair list. Mean latency was 6.07 seconds (range
+3.14–12.77 seconds). A five-pair smoke test with `qwen2.5-coder:1.5b-base`
+also produced 5/5 valid JSON responses, but its names and concepts were much
+less coherent (`X`, `TICK`, and generic `Egg` outputs). Treat the 1.5B model as
+a parser/format experiment, not the creative baseline.
+
+Raw local-only results are kept at:
+
+- `games/tick_tack_toe/local-designer-benchmark.json`
+- `games/tick_tack_toe/local-designer-benchmark-1.5b.json`
