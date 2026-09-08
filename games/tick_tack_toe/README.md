@@ -39,6 +39,42 @@ hashes before copying. Changing generation inputs creates a new identity that
 requires a new review; do not blindly update approval keys to make export pass.
 `latest-build.json` refers only to the latest selected batch, not all history.
 
+## Building the same recipe under a second style pack
+
+`pieces.json` declares one `"style"` (`snes_rpg`) because a recipe has to say
+what its prompts and traits were written against. That is not the same claim
+as "this recipe can only render in that style" -- `--style` on `game_factory.py`
+overrides the manifest's own field for one run, without editing the file:
+
+```text
+python tools/game_factory.py games/tick_tack_toe/pieces.json --producer procedural --style cozy_ghibli
+python tools/preview_game.py out/games/tick_tack_toe/latest-build_cozy_ghibli.json --out proof/tick_tack_toe/all-pieces_cozy_ghibli.png
+```
+
+All 13 pieces (procedural producer, both parent traits, both variants) built
+clean under `cozy_ghibli` with zero technical blockers, same as the existing
+`snes_rpg` set -- verified by rendering both and looking at them side by side
+(`proof/tick_tack_toe/all-pieces_snes_rpg.png` /
+`proof/tick_tack_toe/all-pieces_cozy_ghibli.png`), not assumed from the checks
+passing. This works with no change to `game_pieces.py`'s geometry because both
+style packs declare the same six ramp names (`wood`, `cream`, `foliage`, `sky`,
+`rose`, `neutral`) plus the same three spot colours (`lamp_glow`, `accent_read`,
+`gold_coin`) -- `game_pieces.py` references those names directly rather than
+through a `style.materials` role indirection the way `assetlib.py`'s cafe props
+do. That is a real, load-bearing assumption, not a coincidence to leave
+undocumented: a THIRD style pack that renamed or dropped any of those six ramps
+or three spot colours would break every procedural piece in this file with a
+`KeyError`, not a wrong colour. Migrating to role indirection is a reasonable
+follow-up if or when a third style is ever on the table -- not done here, since
+it is real work with no payoff against the two styles that currently exist,
+and this repo's own convention is to build the thing being asked for, not the
+generalization a hypothetical third case might someday want.
+
+`latest-build.json` (no `--style` flag) always means "whatever this manifest's
+own `style` field says" -- every existing command above keeps working
+unchanged. Passing `--style` writes to `latest-build_<style>.json` instead, so
+a style experiment never clobbers the manifest's own default build.
+
 ## Current boundary
 
 The procedural vocabulary is seven explicit body families plus four visible

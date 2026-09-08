@@ -13,7 +13,7 @@ import json
 import re
 from pathlib import Path
 
-from style import load_style
+from style import DEFAULT_STYLE, load_style
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -22,10 +22,32 @@ def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def prepare(path: Path, only: str | None = None, producer: str = 'sdxl'):
+def prepare(path: Path, only: str | None = None, producer: str = 'sdxl',
+           style: str | None = None):
+    """`style`, when given, overrides the manifest's own `"style"` field.
+
+    A game's `pieces.json` names ONE style because a recipe -- prompts,
+    traits, seeds -- has to declare what it was written against. That is
+    not the same claim as "this recipe can only ever render in that style":
+    every prompt in this file already reads as generic sculpted-figurine
+    description, not style-specific vocabulary (see `concept.py`'s own
+    precedent -- prop prompts are style-agnostic by construction, style is
+    applied downstream in shading), and the procedural producer's body
+    geometry (`game_pieces.py`) draws on the same six ramp names + three
+    spot colours every style pack in this repo declares, so it renders
+    under any of them without touching a single coordinate.
+
+    Overriding here, before the config is hashed, is what makes the swap
+    show up as a genuinely different build identity rather than a reskin
+    nobody can tell apart from the original -- `style` is part of
+    `provenance` below, which is part of every row's content-addressed
+    `key`, so two styles of the same piece never collide in `out/`.
+    """
     config = json.loads(path.read_text(encoding="utf-8"))
     if not re.fullmatch(r"[a-z0-9_]+", config["project"]):
         raise ValueError("Invalid project name")
+    if style:
+        config["style"] = style
     style = load_style(config["style"])
     # Includes transitive local producer/check dependencies, not only the bible.
     code = {p.name: digest(p.read_bytes()) for p in sorted((ROOT / "tools").glob("*.py"))}
@@ -75,8 +97,12 @@ def main():
     ap.add_argument("--only")
     ap.add_argument('--producer', choices=('sdxl', 'procedural'), default='sdxl')
     ap.add_argument("--plan", action="store_true", help="validate and print identities; no GPU work")
+    ap.add_argument("--style", help="override the manifest's own style field, "
+                                    "e.g. to build the same recipe under a "
+                                    "second style pack without editing the "
+                                    "JSON (see style.load_style)")
     args = ap.parse_args()
-    config, rows = prepare(args.manifest, args.only, args.producer)
+    config, rows = prepare(args.manifest, args.only, args.producer, args.style)
     if args.plan:
         print(json.dumps({"project": config["project"], "style": config["style"],
                           "pieces": [{"id": r["recipe"]["piece"]["id"], "key": r["key"]} for r in rows]}, indent=2))
@@ -142,7 +168,19 @@ def main():
         results.append({"id": item["id"], "key": row["key"], "status": result["status"],
                         "build": str(out / "build.json")})
         print(json.dumps(results[-1]), flush=True)
-    (destination / "latest-build.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
+    # Suffixed by explicit OVERRIDE, not by comparison to the global
+    # DEFAULT_STYLE -- a game's manifest already names its own natural style
+    # (this one is snes_rpg, not cozy_ghibli), and every existing command in
+    # this game's own README points at the plain `latest-build.json` path.
+    # Comparing against the global default would silently move that well-
+    # known path out from under anyone who has never touched --style, the
+    # first time someone else's build happens to be cozy_ghibli. Suffixing
+    # only when `--style` was actually passed keeps every pre-existing
+    # command working unchanged and marks an explicit style experiment as
+    # exactly that -- a second, clearly-named file, not a replacement.
+    latest_name = ("latest-build.json" if not args.style
+                   else f"latest-build_{style.name}.json")
+    (destination / latest_name).write_text(json.dumps(results, indent=2), encoding="utf-8")
     return int(any(r["status"] != "awaiting_visual_review" for r in results))
 
 

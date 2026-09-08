@@ -37,6 +37,26 @@ class RecipeBuildTests(unittest.TestCase):
         self.config['style'] = 'cozy_ghibli'
         self.assertNotEqual(original, self.rows()[0]['key'])
 
+    def test_style_flag_overrides_manifest_without_editing_it(self):
+        """The CLI --style override, not the JSON edit above.
+
+        Same identity change as `test_style_is_part_of_cache_identity`, but
+        via the `style` param on `prepare()` -- the manifest's own field is
+        left untouched on disk, which is the whole point: building a second
+        style should not require a second copy of the recipe file.
+        """
+        self.path.write_text(json.dumps(self.config))
+        on_disk = json.loads(self.path.read_text())
+        self.assertEqual(on_disk['style'], 'snes_rpg')
+        default_key = prepare(self.path, 'tick')[1][0]['key']
+        config, rows = prepare(self.path, 'tick', style='cozy_ghibli')
+        self.assertEqual(config['style'], 'cozy_ghibli')
+        self.assertNotEqual(default_key, rows[0]['key'])
+        # The file on disk never changed -- the override is call-scoped.
+        self.assertEqual(json.loads(self.path.read_text())['style'], 'snes_rpg')
+        # No override at all still resolves the manifest's own declared style.
+        self.assertEqual(prepare(self.path, 'tick')[0]['style'], 'snes_rpg')
+
     def test_reject_unknown_duplicate_and_unsafe_identity(self):
         with self.assertRaises(ValueError):
             self.rows('not-a-piece')
