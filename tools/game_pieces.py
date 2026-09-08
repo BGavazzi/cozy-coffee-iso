@@ -14,7 +14,7 @@ def oval(at, radii, material):
     return m
 
 
-def build(kind: str, traits=()):
+def build(kind: str, traits=(), variant=None):
     if kind not in {'tick', 'tack', 'toe', 'egg', 'stone', 'lure', 'wild'}:
         raise ValueError(f'Unsupported procedural body family: {kind}')
     if set(traits) - {'armored', 'fertile', 'charged', 'rooted'}:
@@ -45,11 +45,23 @@ def build(kind: str, traits=()):
         m.add_prism((0, 0, 0), 0.025, 0.025, 0.31, 'neutral+1', segments=8)
         m.add_prism((0, 0, 0.28), 0.23, 0.23, 0.09, 'rose', segments=16)
         m = merge(m, oval((0, 0, 0.37), (0.22, 0.22, 0.065), 'rose+1'))
+        if variant == 'hatchery-trap-v1':
+            for x in (-0.12, 0.12):
+                m = merge(m, oval((x, 0, 0.48), (0.075, 0.09, 0.10), 'cream'))
+            strut(m, (-0.12, 0, 0.42), (0.12, 0, 0.42), 0.022, 'wood')
     elif kind == 'toe':
         m = merge(oval((0, 0, 0.15), (0.19, 0.3, 0.15), 'skin+1'),
                   oval((0, 0.17, 0.267), (0.13, 0.105, 0.036), 'cream'))
+        if variant == 'mimic-toe-v1':
+            for side in (-1, 1):
+                for y in (-0.10, 0.04):
+                    strut(m, (side * 0.11, y, 0.10), (side * 0.28, y, 0.04), 0.022, 'foliage-1')
+            m = merge(m, oval((0, -0.19, 0.17), (0.09, 0.055, 0.05), 'foliage'))
     elif kind == 'egg':
         m = oval((0, 0, 0.22), (0.17, 0.17, 0.22), 'cream')
+        if variant == 'decoy-egg-v1':
+            m.add_prism((0, 0, 0.48), 0.055, 0.055, 0.16, 'neutral+1', segments=8)
+            m = merge(m, oval((0, 0, 0.44), (0.12, 0.12, 0.035), 'rose'))
     elif kind == 'stone':
         m.add_prism((0, 0, 0), 0.28, 0.25, 0.24, 'neutral', segments=5)
         m = merge(m, oval((0.1, 0, 0.25), (0.14, 0.13, 0.025), 'foliage-1'))

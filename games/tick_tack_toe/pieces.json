@@ -12,6 +12,9 @@
     {"id":"egg","kind":"egg","traits":[],"name":"Egg","height":0.3,"seed":44,"prompt":"a single speckled cream monster egg game token, squat rounded shape, small green spots, matte painted clay"},
     {"id":"stone","kind":"stone","traits":[],"name":"Stone","height":0.3,"seed":45,"prompt":"a squat dark slate rock game token, large angular facets, moss green patch, matte painted clay"},
     {"id":"lure","kind":"lure","traits":[],"name":"Lure","height":0.3,"seed":46,"prompt":"a squat amber bait bottle game token, round sealed glass flask, bright green bait inside, thick cork stopper"},
-    {"id":"wild","kind":"wild","traits":[],"name":"Wild Seed","height":0.3,"seed":47,"prompt":"a single round magical seed game token, green and purple split shell, small golden sprout, matte painted clay"}
+    {"id":"wild","kind":"wild","traits":[],"name":"Wild Seed","height":0.3,"seed":47,"prompt":"a single round magical seed game token, green and purple split shell, small golden sprout, matte painted clay"},
+    {"id":"decoy-egg-v1","kind":"egg","variant":"decoy-egg-v1","traits":[],"name":"Decoy Egg","height":0.3,"seed":48,"prompt":"a cream monster egg token with a brass tack tip and rose collar emerging from its shell, matte painted clay"},
+    {"id":"mimic-toe-v1","kind":"toe","variant":"mimic-toe-v1","traits":[],"name":"Mimic Toe","height":0.3,"seed":49,"prompt":"a cartoon ceramic toe token disguising tiny green tick legs underneath, peach skin, cream toenail, matte painted clay"},
+    {"id":"hatchery-trap-v1","kind":"tack","variant":"hatchery-trap-v1","traits":[],"name":"Hatchery Trap","height":0.3,"seed":50,"prompt":"a stout rose thumbtack token carrying two cream egg sacs beneath a wooden brace, matte painted clay"}
   ]
 }

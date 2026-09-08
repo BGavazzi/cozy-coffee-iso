@@ -10,7 +10,11 @@ def export(batch: Path, review: Path, destination: Path):
     rows = json.loads(batch.read_text())
     verdict = json.loads(review.read_text())
     staged = []
-    manifest = {}
+    existing_manifest = {}
+    existing_path = destination / 'manifest.json'
+    if existing_path.exists():
+        existing_manifest = json.loads(existing_path.read_text())
+    manifest = dict(existing_manifest)
     # Validate the entire batch before copying any file.
     for row in rows:
         data = json.loads(Path(row['build']).read_text())

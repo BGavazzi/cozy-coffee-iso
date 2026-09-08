@@ -113,7 +113,7 @@ def main():
             from render_batch import frame_all, render_sprite, footprint
             from mesh import save_obj
             from ingest import fit
-            mesh = build(item['kind'], item['traits'])
+            mesh = build(item['kind'], item['traits'], item.get('variant'))
             fit(mesh, height=item['height'])
             save_obj(mesh, out / 'source.obj')
             span, centre = frame_all(mesh)
