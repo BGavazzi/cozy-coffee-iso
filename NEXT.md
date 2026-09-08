@@ -2244,6 +2244,40 @@ Verified both directions:
 
 ---
 
+**Landed (PR #68): `--style` for `preview_ui.py`, the one file PR #67
+deliberately left out of its "last five dev/preview scripts" sweep as
+out-of-scope for that specific task.** `main()` took no `--style` flag at
+all and unconditionally read the hardcoded `out/ui/` -- for a non-default
+style that either showed nothing or silently showed whatever style's content
+last landed there.
+
+The fix needed the same dual-directory awareness `manifest.py`'s `check_ui`
+(PR #55) and `package_godot.py`'s `style_paths` (PR #57) already carry,
+adapted to this file's own job of building one contact sheet rather than
+auditing or staging: `ui_forge.py` (icons) nests a non-default style under
+`out/ui/<style>/`, `ui_chrome.py` (chrome, plus `nine_slice.json`/
+`chrome_report.json`) uses the sibling-suffix `out/ui_<style>/`. Both are now
+read and composited into one sheet, correctly labelled `gen`/`drawn`; for the
+default style they collapse to the same `out/ui/`, so nothing is scanned or
+composited twice. Output path style-suffixed the way `preview_characters.py`/
+`preview_clips.py` (PR #67) already do it: `out/ui/_preview.png` stays
+unchanged for the default style, `out/ui/_preview_<style>.png` for a
+non-default one.
+
+**Regression check.** Ran once under the unmodified code and once under this
+change, no `--style` flag either time: byte-identical `out/ui/_preview.png`
+(md5). **Real dual-directory content, not just "didn't crash."** `--style
+snes_rpg` against this checkout's real `out/ui/snes_rpg/` (icons) and
+`out/ui_snes_rpg/` (chrome, already generated from earlier session work)
+produced `out/ui/_preview_snes_rpg.png` showing three generated icons
+(`icon_beans`, `icon_espresso`, `icon_milk`) and seven drawn chrome pieces
+(`coin`, `dialogue_frame`, `nameplate`, `star_rating`, `star_rating_empty`,
+`ticket`, `upgrade_frame`) in `snes_rpg`'s own mustard/cream palette, plus a
+nine-slice expansion row for `dialogue_frame`/`nameplate`/`upgrade_frame`
+with no smearing -- both directories' content, correctly labelled.
+
+---
+
 ## How this repo expects work to be done
 
 **Environment**
