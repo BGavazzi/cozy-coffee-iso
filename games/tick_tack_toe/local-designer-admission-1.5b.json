@@ -1,0 +1,147 @@
+{
+  "model": "qwen2.5-coder:1.5b-base",
+  "endpoint": "http://127.0.0.1:11434",
+  "created": "2026-09-08T22:10:59.281986+00:00",
+  "count": 5,
+  "valid": 5,
+  "rows": [
+    {
+      "parents": [
+        "Tick",
+        "Tack"
+      ],
+      "ok": true,
+      "proposal": {
+        "name": "TICK",
+        "concept": "a piece that is ticked.",
+        "trigger": "on_feed",
+        "target": "board",
+        "effect": "move_self",
+        "cost": 1,
+        "art": {
+          "base_kind": "tick",
+          "attachments": []
+        }
+      },
+      "seconds": 6.73,
+      "admission": {
+        "status": "needs_authoring",
+        "reasons": [
+          "no implemented runtime rule template for this trigger/effect pair"
+        ]
+      }
+    },
+    {
+      "parents": [
+        "Tick",
+        "Toe"
+      ],
+      "ok": true,
+      "proposal": {
+        "name": "X",
+        "concept": "Tick",
+        "trigger": "after_steps",
+        "target": "self",
+        "effect": "move_self",
+        "cost": 1,
+        "art": {
+          "base_kind": "tick",
+          "attachments": [
+            "shell"
+          ]
+        }
+      },
+      "seconds": 2.18,
+      "admission": {
+        "status": "rejected",
+        "reasons": [
+          "name is not meaningful enough for a discovery"
+        ]
+      }
+    },
+    {
+      "parents": [
+        "Tack",
+        "Toe"
+      ],
+      "ok": true,
+      "proposal": {
+        "name": "TACK",
+        "concept": "the first player to move will be X and the second one O",
+        "trigger": "after_steps",
+        "target": "board",
+        "effect": "move_self",
+        "cost": 1,
+        "art": {
+          "base_kind": "tick",
+          "attachments": []
+        }
+      },
+      "seconds": 2.13,
+      "admission": {
+        "status": "needs_authoring",
+        "reasons": [
+          "no implemented runtime rule template for this trigger/effect pair"
+        ]
+      }
+    },
+    {
+      "parents": [
+        "Egg",
+        "Tack"
+      ],
+      "ok": true,
+      "proposal": {
+        "name": "Egg",
+        "concept": "The player can place this on any square of the board.",
+        "trigger": "on_play",
+        "target": "board",
+        "effect": "remove_enemy",
+        "cost": 1,
+        "art": {
+          "base_kind": "egg",
+          "attachments": [
+            "egg_sac"
+          ]
+        }
+      },
+      "seconds": 2.12,
+      "admission": {
+        "status": "needs_authoring",
+        "reasons": [
+          "no implemented runtime rule template for this trigger/effect pair"
+        ]
+      }
+    },
+    {
+      "parents": [
+        "Egg",
+        "Toe"
+      ],
+      "ok": true,
+      "proposal": {
+        "name": "Egg",
+        "concept": "",
+        "trigger": "after_steps",
+        "target": "adjacent_empty",
+        "effect": "spawn_egg",
+        "cost": 1,
+        "art": {
+          "base_kind": "egg",
+          "attachments": []
+        }
+      },
+      "seconds": 2.66,
+      "admission": {
+        "status": "rejected",
+        "reasons": [
+          "concept is empty"
+        ]
+      }
+    }
+  ],
+  "admission_counts": {
+    "needs_authoring": 3,
+    "rejected": 2
+  }
+}

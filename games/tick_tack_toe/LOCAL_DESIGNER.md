@@ -21,6 +21,18 @@ The intended batch workflow is:
 4. Add an explicit recipe entry and visual review record.
 5. Render through `game_factory.py`; never render arbitrary model text directly.
 
+Run the deterministic admission audit before simulation:
+
+```text
+python tools/audit_benchmark.py games/tick_tack_toe/local-designer-benchmark.json \
+  --out games/tick_tack_toe/local-designer-admission.json
+```
+
+The audit currently classifies proposals as `rejected`, `needs_authoring`, or
+`eligible_for_simulation`. The 7B benchmark produced 4 rejected and 16
+needs-authoring proposals; none was allowed directly into simulation. That is
+the intended result while runtime templates are still authored by hand.
+
 The model is a creative search aid, not a rules engine. Keep Ollama bound to
 localhost; do not expose it from the hosted game.
 
@@ -37,3 +49,5 @@ Raw local-only results are kept at:
 
 - `games/tick_tack_toe/local-designer-benchmark.json`
 - `games/tick_tack_toe/local-designer-benchmark-1.5b.json`
+- `games/tick_tack_toe/local-designer-admission.json`
+- `games/tick_tack_toe/local-designer-admission-1.5b.json`
