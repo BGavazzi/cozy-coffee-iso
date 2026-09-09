@@ -61,7 +61,7 @@
       "id": "apple",
       "name": "Apple",
       "role": "collectible",
-      "short_desc": "falling fruit, the core scoring unit",
+      "short_desc": "a single round red apple with a short brown stem",
       "category": "props",
       "scale": 0.15
     },

@@ -112,6 +112,14 @@ def validate(doc: dict) -> None:
     for i, subject in enumerate(subjects):
         if not isinstance(subject, dict):
             raise DesignDocError(f"subjects[{i}]: must be an object")
+        # short_desc's contract: `content_pipeline.py`'s synthesize_prompt()
+        # passes it straight through as the SDXL prompt for one isolated,
+        # static object -- describe physical appearance only. Measured, not
+        # theoretical: "a falling fruit, the core scoring unit" (motion +
+        # game-design meta-language) rendered as a scattered multi-object
+        # collage instead of one apple, and blocked review on 3 of 8 frames.
+        # `role` is the field for game-design language ("hazard",
+        # "collectible") -- it is descriptive only, never a prompt.
         for field in ("id", "name", "role", "short_desc"):
             _require_str(subject, field)
         if not SUBJECT_ID_RE.fullmatch(subject["id"]):
