@@ -15,6 +15,7 @@
     {"id":"wild","kind":"wild","traits":[],"name":"Wild Seed","height":0.3,"seed":47,"prompt":"a single round magical seed game token, green and purple split shell, small golden sprout, matte painted clay"},
     {"id":"decoy-egg-v1","kind":"egg","variant":"decoy-egg-v1","traits":[],"name":"Decoy Egg","height":0.3,"seed":48,"prompt":"a cream monster egg token with a brass tack tip and rose collar emerging from its shell, matte painted clay"},
     {"id":"mimic-toe-v1","kind":"toe","variant":"mimic-toe-v1","traits":[],"name":"Mimic Toe","height":0.3,"seed":49,"prompt":"a cartoon ceramic toe token disguising tiny green tick legs underneath, peach skin, cream toenail, matte painted clay"},
-    {"id":"hatchery-trap-v1","kind":"tack","variant":"hatchery-trap-v1","traits":[],"name":"Hatchery Trap","height":0.3,"seed":50,"prompt":"a stout rose thumbtack token carrying two cream egg sacs beneath a wooden brace, matte painted clay"}
+    {"id":"hatchery-trap-v1","kind":"tack","variant":"hatchery-trap-v1","traits":[],"name":"Hatchery Trap","height":0.3,"seed":50,"prompt":"a stout rose thumbtack token carrying two cream egg sacs beneath a wooden brace, matte painted clay"},
+    {"id":"snare-tack-v1","kind":"tack","variant":"snare-tack-v1","traits":[],"name":"Snare Tack","height":0.3,"seed":51,"prompt":"a rose thumbtack token with wooden snare arms and a bright blue loop at its base, matte painted clay"}
   ]
 }
