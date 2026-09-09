@@ -95,6 +95,16 @@ def synthesize_prompt(subject: dict) -> str:
     desc = subject["short_desc"].strip().rstrip(".")
     if not desc:
         raise ValueError(f"subject {subject['id']!r}: empty short_desc")
+    # Strip any article the author already wrote, so exactly one is ever
+    # added. Found by an actual generation, not review: "a single round red
+    # apple..." (already article-led) came out "an a single round red
+    # apple...", a doubled article, because this used to prepend based on
+    # desc[0] alone without checking for one already there.
+    lowered = desc.lower()
+    for existing in ("an ", "a ", "the "):
+        if lowered.startswith(existing):
+            desc = desc[len(existing):]
+            break
     article = "an" if desc[0].lower() in "aeiou" else "a"
     return f"{article} {desc}"
 

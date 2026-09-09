@@ -125,6 +125,21 @@ class ContentPipelineTests(unittest.TestCase):
             synthesize_prompt({"id": "y", "short_desc": "old brass key"}),
             "an old brass key")
 
+    def test_synthesize_prompt_does_not_double_an_existing_article(self):
+        # Real regression: "a single round red apple..." (a design doc
+        # author already wrote its own article) produced "an a single
+        # round red apple...", a doubled article -- caught by an actual
+        # SDXL run, not by inspection.
+        self.assertEqual(
+            synthesize_prompt({"id": "z", "short_desc": "a single round red apple"}),
+            "a single round red apple")
+        self.assertEqual(
+            synthesize_prompt({"id": "w", "short_desc": "An old brass key"}),
+            "an old brass key")
+        self.assertEqual(
+            synthesize_prompt({"id": "v", "short_desc": "the last apple on the tree"}),
+            "a last apple on the tree")
+
     def test_validate_manifest_rejects_duplicate_ids(self):
         manifest, _ = build_manifest(_doc(), "cozy_ghibli")
         manifest["pieces"].append(dict(manifest["pieces"][0]))

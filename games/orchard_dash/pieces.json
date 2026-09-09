@@ -27,7 +27,7 @@
     {
       "id": "apple",
       "name": "Apple",
-      "prompt": "a falling fruit, the core scoring unit",
+      "prompt": "a single round red apple with a short brown stem",
       "height": 0.09,
       "seed": 72345
     },
