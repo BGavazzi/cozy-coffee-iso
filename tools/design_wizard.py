@@ -107,7 +107,11 @@ def elicit(answers: dict | None = None, prompt_fn: PromptFn = input) -> dict:
                 "id": subject_id,
                 "name": prompt_fn("    name: ").strip(),
                 "role": prompt_fn("    role: ").strip(),
-                "short_desc": prompt_fn("    short_desc: ").strip(),
+                "short_desc": prompt_fn(
+                    "    short_desc (this becomes an SDXL prompt for a single "
+                    "static object -- describe physical appearance only, no "
+                    "game-design language like \"scoring unit\" or motion "
+                    "like \"falling\"): ").strip(),
                 "category": prompt_fn(f"    category {ASSET_CATEGORIES}: ").strip(),
             }
             scale = prompt_fn("    scale relative to category default "
