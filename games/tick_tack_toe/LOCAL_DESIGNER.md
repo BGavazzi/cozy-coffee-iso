@@ -17,9 +17,11 @@ The intended batch workflow is:
 
 1. Generate proposals offline and cache the prompt, model tag, and output.
 2. Reject malformed, duplicate, recursive, or unimplemented effects.
-3. Simulate the surviving mechanic against seeded runs.
-4. Add an explicit recipe entry and visual review record.
-5. Render through `game_factory.py`; never render arbitrary model text directly.
+3. Reject a proposal that merely restates a documented parent interaction;
+   the admission gate currently knows the Tick + Toe feeding/reproduction pair.
+4. Simulate the surviving mechanic against seeded runs.
+5. Add an explicit recipe entry and visual review record.
+6. Render through `game_factory.py`; never render arbitrary model text directly.
 
 Run the deterministic admission audit before simulation:
 

@@ -18,7 +18,8 @@ if __name__ == '__main__':
     source = json.loads(args.benchmark.read_text(encoding='utf-8'))
     rows = []
     for row in source['rows']:
-        decision = admit(row['proposal']) if row['ok'] else {'status': 'rejected', 'reasons': ['model output was invalid']}
+        decision = (admit(row['proposal'], row.get('parents')) if row['ok'] else
+                    {'status': 'rejected', 'reasons': ['model output was invalid']})
         rows.append({**row, 'admission': decision})
     result = {**source, 'admission_counts': dict(Counter(r['admission']['status'] for r in rows)), 'rows': rows}
     if args.out:

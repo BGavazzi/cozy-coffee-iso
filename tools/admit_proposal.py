@@ -19,8 +19,33 @@ SIMULATABLE = {
     ('on_feed', 'spawn_egg'),
 }
 
+# A proposal can be structurally valid and still fail the game's meaningful
+# novelty gate. Keep this small and explicit: it is a record of mechanics the
+# authored runtime already gives to a parent pair, not an LLM semantic guess.
+# More entries belong here only after the corresponding base interaction is
+# documented and covered by a game test.
+REDUNDANT_PARENT_MECHANICS = {
+    (frozenset({'tick', 'toe'}), ('on_feed', 'spawn_egg')):
+        'Tick + Toe already reproduces after feeding; this proposal adds no new decision',
+}
 
-def admit(proposal: dict) -> dict:
+
+def _normalise_parent(parent: str) -> str:
+    return parent.strip().lower().replace(' ', '_').replace('-', '_')
+
+
+def novelty_reasons(proposal: dict, parents: list[str] | None = None) -> list[str]:
+    """Return deterministic redundancy findings for an optional parent pair."""
+    if not parents:
+        return []
+    parent_ids = frozenset(_normalise_parent(p) for p in parents)
+    reason = REDUNDANT_PARENT_MECHANICS.get(
+        (parent_ids, (proposal['trigger'], proposal['effect']))
+    )
+    return [reason] if reason else []
+
+
+def admit(proposal: dict, parents: list[str] | None = None) -> dict:
     try:
         validate(proposal)
     except Exception as exc:
@@ -35,6 +60,7 @@ def admit(proposal: dict) -> dict:
         reasons.append('duplicate art attachment')
     if proposal['effect'].startswith('spawn_') and proposal['target'] == 'board':
         reasons.append('board-wide spawning is unbounded')
+    reasons.extend(novelty_reasons(proposal, parents))
     pair = (proposal['trigger'], proposal['effect'])
     if reasons:
         return {'status': 'rejected', 'reasons': reasons}
