@@ -23,6 +23,11 @@ The intended batch workflow is:
 5. Add an explicit recipe entry and visual review record.
 6. Render through `game_factory.py`; never render arbitrary model text directly.
 
+For a proposal that survives those steps, `tools/promote_game_content.py`
+records the final decision only when admission, 100+ bounded simulation runs,
+technical art checks, and visual approval all agree. It writes a ledger entry;
+it does not edit the game's catalog.
+
 Run the deterministic admission audit before simulation:
 
 ```text
