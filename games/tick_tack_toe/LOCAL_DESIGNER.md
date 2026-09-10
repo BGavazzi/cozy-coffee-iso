@@ -28,6 +28,8 @@ Run the deterministic admission audit before simulation:
 ```text
 python tools/audit_benchmark.py games/tick_tack_toe/local-designer-benchmark.json \
   --out games/tick_tack_toe/local-designer-admission.json
+# A single proposal can carry its parent pair explicitly:
+python tools/admit_proposal.py proposal.json --parents "Tick" "Toe"
 ```
 
 The audit currently classifies proposals as `rejected`, `needs_authoring`, or

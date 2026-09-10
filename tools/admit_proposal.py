@@ -72,6 +72,9 @@ def admit(proposal: dict, parents: list[str] | None = None) -> dict:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('proposal', type=Path)
+    parser.add_argument('--parents', nargs=2, metavar=('A', 'B'),
+                        help='optional parent names used by the novelty gate')
     args = parser.parse_args()
-    result = admit(json.loads(args.proposal.read_text(encoding='utf-8')))
+    result = admit(json.loads(args.proposal.read_text(encoding='utf-8')),
+                   args.parents)
     print(json.dumps(result, indent=2))
