@@ -51,3 +51,11 @@ Raw local-only results are kept at:
 - `games/tick_tack_toe/local-designer-benchmark-1.5b.json`
 - `games/tick_tack_toe/local-designer-admission.json`
 - `games/tick_tack_toe/local-designer-admission-1.5b.json`
+
+A live localhost run on September 10, 2026, asked the 1.5B model for Tick +
+Toe. It returned a schema-valid but redundant `after_steps: move_self` Tick;
+the admission gate classified it as `needs_authoring` rather than letting it
+become canon. This is the desired failure mode: format validity is not novelty,
+and a familiar mechanic is not silently promoted just because the model emitted
+valid JSON. The scratch output is under `out/games/tick_tack_toe/` and is
+intentionally not a catalog entry.
