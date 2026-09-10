@@ -12,7 +12,7 @@ Where a row comes out as the same shape eight times, that generator is a
 fixed mesh wearing a seed argument, and the sheet says so directly rather
 than leaving it to be noticed in a room render three passes later.
 
-    python tools/preview_generators.py [--seeds 8] [--target 64]
+    python tools/preview_generators.py [--seeds 8] [--target 64] [--style snes_rpg]
 """
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ from art_review import (  # noqa: E402
     DEFAULT_SPREAD_FLOOR, GENERATORS, _screen_spread, screen_materials,
 )
 from pixelize import load_palette  # noqa: E402
+from style import DEFAULT_STYLE, load_style  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 BG = (30, 27, 36)
@@ -62,10 +63,18 @@ def main() -> int:
     ap.add_argument("--factor", type=int, default=3)
     ap.add_argument("--scale", type=int, default=2)
     ap.add_argument("--azimuth", type=float, default=45.0)
-    ap.add_argument("--out", default=str(ROOT / "proof" / "generators.png"))
+    ap.add_argument("--out", default=None,
+                    help="default: proof/generators.png, or "
+                         "proof/generators_<style>.png for a non-default "
+                         "--style")
+    ap.add_argument("--style", default=DEFAULT_STYLE,
+                    help="which style pack's palette to render against")
     args = ap.parse_args()
 
-    ramps = load_palette()
+    ramps = load_palette(load_style(args.style).palette_path)
+    out_path = Path(args.out) if args.out else ROOT / "proof" / (
+        "generators.png" if args.style == DEFAULT_STYLE
+        else f"generators_{args.style}.png")
     t, sc, pad, gutter = args.target, args.scale, 6, 128
     cell = t * sc
     sheet = Image.new("RGB", (gutter + args.seeds * (cell + pad) + pad,
@@ -105,9 +114,9 @@ def main() -> int:
         print(f"  {name:18s} screen spread {spread:5.1%}  (floor {bar:.0%})"
               f"{'   <-- barely varies' if under else ''}")
 
-    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-    sheet.save(args.out)
-    print(f"\nwrote {args.out}")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    sheet.save(out_path)
+    print(f"\nwrote {out_path}")
     return 0
 
 

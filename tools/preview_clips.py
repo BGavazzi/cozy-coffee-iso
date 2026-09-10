@@ -6,7 +6,7 @@ useless for judging animation: timing, weight and foot-slide are invisible in a
 grid of stills. So this emits both -- a strip per clip for reading poses side by
 side, and a looping GIF per clip for reading motion.
 
-    python tools/preview_clips.py [--who barista] [--dir 0]
+    python tools/preview_clips.py [--who barista] [--dir 0] [--style snes_rpg]
 """
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ import character as C  # noqa: E402
 import fx as FXM  # noqa: E402
 from animate import fit, render_frame  # noqa: E402
 from pixelize import load_palette  # noqa: E402
+from style import DEFAULT_STYLE, load_style  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 BG = (30, 27, 36)
@@ -64,9 +65,11 @@ def main() -> int:
     ap.add_argument("--target", type=int, default=48)
     ap.add_argument("--factor", type=int, default=3)
     ap.add_argument("--scale", type=int, default=2)
+    ap.add_argument("--style", default=DEFAULT_STYLE,
+                    help="which style pack's palette to render against")
     args = ap.parse_args()
 
-    ramps = load_palette()
+    ramps = load_palette(load_style(args.style).palette_path)
     roster = {s.name: s for s in C.ROSTER}
     if args.who not in roster:
         print(f"unknown character {args.who!r}; have {', '.join(roster)}")
@@ -88,7 +91,8 @@ def main() -> int:
                               len(clip_specs) * (cell + pad) + pad), (18, 16, 22))
     d = ImageDraw.Draw(sheet)
 
-    gifdir = ROOT / "proof" / "clips"
+    gifdir = ROOT / "proof" / (
+        "clips" if args.style == DEFAULT_STYLE else f"clips_{args.style}")
     gifdir.mkdir(parents=True, exist_ok=True)
 
     print(f"{args.who}, direction {args.dir} (azimuth {az:.0f})")
@@ -112,7 +116,9 @@ def main() -> int:
         flag = "  <-- asymmetric gait" if name in ("walk", "leave") and slide > 1e-6 else ""
         print(f"  {name:15s} {frames}f  gait asymmetry {slide:6.2f} deg{flag}")
 
-    out = ROOT / "proof" / f"clips_{args.who}.png"
+    out = ROOT / "proof" / (
+        f"clips_{args.who}.png" if args.style == DEFAULT_STYLE
+        else f"clips_{args.who}_{args.style}.png")
     sheet.save(out)
     print(f"\nwrote {out}")
     print(f"wrote {len(clip_specs)} GIFs to {gifdir}")

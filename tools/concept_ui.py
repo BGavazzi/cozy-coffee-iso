@@ -32,6 +32,11 @@ re-invoke blind.
                                                 # on the same network (phone,
                                                 # tablet) -- binds 0.0.0.0
                                                 # instead of 127.0.0.1
+    python tools/concept_ui.py --style snes_rpg  # Drawn tab's chrome/tiles
+                                                  # render against this style;
+                                                  # Concept generation is
+                                                  # unaffected (no style
+                                                  # concept there)
 
 Opens http://127.0.0.1:7860 (or the machine's LAN IP with --lan). SDXL loads
 on the first Generate click (10-20s) and stays resident for the rest of the
@@ -60,6 +65,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+from style import DEFAULT_STYLE, load_style  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "out" / "concept_ui"
@@ -245,7 +251,7 @@ prop default:
 """
 
 
-def run_procedural(target: int, tile_width: int):
+def run_procedural(target: int, tile_width: int, style: str = DEFAULT_STYLE):
     """The two producers that need no GPU, no seed and no prompt.
 
     They live behind a button here for a plain reason: everything else in
@@ -256,13 +262,18 @@ def run_procedural(target: int, tile_width: int):
     nobody could see. `ART_CRITIQUE.md` records the same asymmetry in the art
     itself: the pipeline makes things, and the abstractions are drawn.
 
+    `style` is the CLI's own `--style` (see `main()`), threaded through here
+    rather than exposed as its own widget -- this tab has no per-style
+    concept to eyeball, just the ramps `ui_chrome`/`tileset` render against.
+
     Returns (chrome preview, room corner, log).
     """
     import ui_chrome
     import tileset as T
     from pixelize import load_palette
 
-    lines, ramps = [], load_palette()
+    lines = []
+    ramps = load_palette(load_style(style).palette_path)
     try:
         results = [ui_chrome.build(name, target / 64.0, ramps)
                    for name in ui_chrome.CHROME]
@@ -275,7 +286,7 @@ def run_procedural(target: int, tile_width: int):
         lines.append(f"chrome failed: {type(e).__name__}: {e}")
 
     try:
-        rc = T.build(tile_width, proof=True)
+        rc = T.build(tile_width, proof=True, style_name=style)
         lines.append(f"tiles: {'ok' if rc == 0 else 'PROBLEMS -- see console'}"
                      f" at {tile_width}px")
     except Exception as e:
@@ -283,12 +294,17 @@ def run_procedural(target: int, tile_width: int):
 
     chrome_png = ROOT / "out" / "ui" / "_preview.png"
     try:
+        # preview_ui.py is not one of the producers this pass gave a --style
+        # flag -- it still renders through its own default-style ramps
+        # regardless of `style` here. Known gap, not fixed by this change.
         import preview_ui
         chrome_png = preview_ui.build(3)
     except Exception as e:
         lines.append(f"chrome preview failed: {type(e).__name__}: {e}")
 
-    corner = ROOT / "out" / "tiles" / "_room_corner.png"
+    tiles_dir = (ROOT / "out" / "tiles" if style == DEFAULT_STYLE
+                 else ROOT / "out" / f"tiles_{style}")
+    corner = tiles_dir / "_room_corner.png"
     return (str(chrome_png) if chrome_png.exists() else None,
             str(corner) if corner.exists() else None,
             "\n".join(lines))
@@ -322,7 +338,7 @@ def run_export():
     return "\n".join(lines)
 
 
-def build_app():
+def build_app(style: str = DEFAULT_STYLE):
     import gradio as gr
     import concept as C
 
@@ -427,7 +443,8 @@ def build_app():
             chrome_out = gr.Image(label="UI: generated icons and drawn chrome")
             corner_out = gr.Image(label="Tiles: room corner")
         draw_status = gr.Textbox(label="Result", lines=8)
-        draw_go.click(run_procedural, inputs=[chrome_target, tile_w],
+        draw_go.click(lambda t, w: run_procedural(t, w, style=style),
+                      inputs=[chrome_target, tile_w],
                       outputs=[chrome_out, corner_out, draw_status])
 
       with gr.Tab("Export to Godot"):
@@ -453,9 +470,14 @@ def main() -> int:
                      help="bind 0.0.0.0 instead of 127.0.0.1, reachable from "
                           "other devices on the same network")
     ap.add_argument("--port", type=int, default=7860)
+    ap.add_argument("--style", default=DEFAULT_STYLE,
+                     help="style pack for the Drawn tab's chrome/tiles "
+                          "preview (default: cozy_ghibli); Concept "
+                          "generation itself has no style concept and is "
+                          "unaffected")
     args = ap.parse_args()
 
-    app = build_app()
+    app = build_app(args.style)
     host = "0.0.0.0" if args.lan else "127.0.0.1"
     app.launch(inbrowser=not args.lan, server_name=host, server_port=args.port)
     return 0

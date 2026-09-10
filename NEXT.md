@@ -2284,6 +2284,80 @@ freshly-rendered proof PNGs changed; no `bible.yaml` content touched.
 
 ---
 
+**Landed (PR #67): `--style` for the five dev/preview scripts explicitly
+deprioritized earlier in the session — `concept_ui.py`, `preview_characters.py`,
+`preview_clips.py`, `preview_generators.py`, `prove_shading.py` — closing out
+the same bare-`load_palette()` bug class fixed across every shipping producer
+(`character.py` PR #23, `manifest.py`/`portrait.py` PR #24, `art_review.py`
+PR #31, `tileset.py` PR #29, `render_batch.py` PR #30, `ui_forge.py` PR #36,
+`export_godot.py` PR #37, `build_plan.py` PR #44, `animate.py` PR #27,
+`factory.py` PR #52, `ingest.py` PR #53, `review_queue.py` PR #54,
+`bitmap_font.py` PR #56, `package_godot.py` PR #57, `palette_swap.py`
+PR #51).**
+
+None of these five are on the shipped asset path or run by any CI/manifest
+check — that's why they were deprioritized rather than skipped — but each
+still hardcoded `ramps = load_palette()` (no args, always `cozy_ghibli`), so
+a review session run through any of them under `--style snes_rpg` would have
+silently shown the wrong palette.
+
+All five now take `--style NAME` (default `cozy_ghibli`) and resolve
+`load_palette(load_style(args.style).palette_path)`, same idiom as every
+producer above. `preview_characters.py` and `prove_shading.py` had no
+argparse at all before this and gained one from scratch; the other three
+already had one and just gained the flag.
+
+**Output paths, style-suffixed the way `proof/` already does it elsewhere**
+(`proof/shop_snes_rpg.png`, `proof/plan_room_snes_rpg.png`,
+`proof/ui_forge_snes_rpg.png`): `characters.png` → `characters_<style>.png`,
+`generators.png` → `generators_<style>.png` (its existing `--out` flag still
+overrides), `comparison.png`/`naive.png`/`ramp_quantized.png` →
+`*_<style>.png`, `clips_<who>.png` → `clips_<who>_<style>.png` with its GIF
+directory `proof/clips/` becoming `proof/clips_<style>/` for a non-default
+style — the sibling-suffix convention `render_batch.py`/`tileset.py` use for
+their own `out/`-rooted trees, applied to `proof/`'s tracked ones instead.
+
+`concept_ui.py` is the odd one out: its bare `load_palette()` lived inside
+`run_procedural()`, the Gradio "Drawn: chrome + tiles" tab's button callback,
+not a CLI `main()` path at all. Gave `main()` its own `--style` flag,
+threaded through `build_app(style)` into a closure around `run_procedural`'s
+new `style` parameter — that tab has no per-run style widget of its own, so
+the whole app's `--style` sets it once at launch. Also threaded `style` into
+`run_procedural`'s `T.build(...)` call as `style_name=style`, and fixed the
+`_room_corner.png` path it reads back afterward to match `tileset.build`'s
+own `out/tiles` vs `out/tiles_<style>` convention — both were silently
+ignoring the flag before. Left `preview_ui.py`'s call inside the same
+function untouched, with a code comment saying so: it isn't one of the five
+files scoped here and still renders the chrome preview through its own
+default-style ramps regardless of this flag.
+
+**Regression check.** `preview_characters.py`, `preview_generators.py`,
+`prove_shading.py`, and `preview_clips.py --who barista`: each ran once
+under the unmodified code and once under this change, no `--style` flag
+either time — every output PNG/GIF byte-identical (md5). `concept_ui.py`'s
+`run_procedural(64, 64)` (default style, called directly, no Gradio server
+launched) likewise produced a byte-identical `out/tiles/_room_corner.png`
+before and after.
+
+**Real palette, not just "didn't crash."**
+`load_palette(load_style("snes_rpg").palette_path)["wood"][0]` is
+`(74, 1, 5)` against `cozy_ghibli`'s `(72, 31, 34)` — spot-checked directly.
+Every script also ran once with `--style snes_rpg` end to end: no crash,
+output written to the style-suffixed path in every case, and
+`prove_shading.py --style snes_rpg`'s ramps-touched audit picked up two
+materials (`lamp_glow`, `accent_read`) that don't exist in the `cozy_ghibli`
+scene at all, confirming the palette swap is real rather than a flag that
+resolves to the same bytes. `concept_ui.py`'s
+`run_procedural(64, 64, style="snes_rpg")` wrote to
+`out/tiles_snes_rpg/_room_corner.png` rather than `out/tiles/`, confirming
+the same threading there.
+
+This closes the `--style` sweep the session opened: every shipping producer
+plus every dev/preview script that reads a palette now resolves it from
+`--style` rather than a hardcoded default.
+
+---
+
 ## How this repo expects work to be done
 
 **Environment**
