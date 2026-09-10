@@ -34,6 +34,11 @@ class AdmissionTests(unittest.TestCase):
         self.assertEqual(result['status'], 'rejected')
         self.assertIn('adds no new decision', result['reasons'][0])
 
+    def test_parent_name_collision_is_rejected(self):
+        result = admit(proposal(name='TICK'), parents=['Tick', 'Toe'])
+        self.assertEqual(result['status'], 'rejected')
+        self.assertIn('duplicates a parent', result['reasons'][0])
+
     def test_same_template_without_known_parent_pair_remains_eligible(self):
         self.assertEqual(
             admit(proposal(trigger='on_feed'), parents=['Egg', 'Tack'])['status'],

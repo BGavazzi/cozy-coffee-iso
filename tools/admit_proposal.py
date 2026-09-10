@@ -53,6 +53,11 @@ def admit(proposal: dict, parents: list[str] | None = None) -> dict:
     reasons = []
     if not proposal['name'].strip() or proposal['name'].strip().lower() in {'x', 'tbd', 'new piece'}:
         reasons.append('name is not meaningful enough for a discovery')
+    if parents:
+        name_id = _normalise_parent(proposal['name'])
+        parent_ids = {_normalise_parent(parent) for parent in parents}
+        if name_id in parent_ids:
+            reasons.append('name duplicates a parent piece; discovery names must be novel')
     if not proposal['concept'].strip():
         reasons.append('concept is empty')
     attachments = proposal['art']['attachments']

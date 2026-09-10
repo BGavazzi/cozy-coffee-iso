@@ -20,7 +20,7 @@ The intended batch workflow is:
 
 1. Generate proposals offline and cache the prompt, model tag, parent pair, and output.
 2. Reject malformed, duplicate, recursive, or unimplemented effects.
-3. Reject a proposal that merely restates a documented parent interaction;
+3. Reject a proposal that reuses a parent name or merely restates a documented parent interaction;
    the admission gate currently knows the Tick + Toe feeding/reproduction pair.
 4. Simulate the surviving mechanic against seeded runs.
 5. Add an explicit recipe entry and visual review record.
