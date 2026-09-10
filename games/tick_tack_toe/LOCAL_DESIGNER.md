@@ -56,6 +56,15 @@ the intended result while runtime templates are still authored by hand.
 The model is a creative search aid, not a rules engine. Keep Ollama bound to
 localhost; do not expose it from the hosted game.
 
+To inspect a directory of records during a bounded generation cycle, use the
+read-only queue audit. It counts proposal-only records, admission outcomes, and
+promotion gate failures without changing the catalog:
+
+```text
+python tools/audit_promotion_queue.py out/games/tick_tack_toe \
+  --out out/games/tick_tack_toe/promotion-queue-audit.json
+```
+
 ## First local benchmark
 
 On September 8, 2026, the installed `qwen2.5:7b` produced 20/20 schema-valid
