@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 SCHEMA = {
@@ -26,13 +27,17 @@ SCHEMA = {
 }
 
 
-def ask(model: str, parents: list[str], endpoint: str) -> dict:
-    prompt = (
+def build_prompt(parents: list[str]) -> str:
+    return (
         "You are a game-piece concept designer. Propose exactly one novel but bounded "
         "discovery for Tick Tack Toe. Parents: " + ", ".join(parents) + ". "
         "Choose only enum values in the supplied schema. No arbitrary code, money, "
         "network actions, recursive rules, or balance claims."
     )
+
+
+def ask(model: str, parents: list[str], endpoint: str) -> dict:
+    prompt = build_prompt(parents)
     body = json.dumps({"model": model, "stream": False, "format": SCHEMA,
                        "prompt": prompt, "options": {"temperature": 0.7, "num_predict": 220}}).encode()
     request = urllib.request.Request(endpoint.rstrip("/") + "/api/generate", data=body,
@@ -42,6 +47,22 @@ def ask(model: str, parents: list[str], endpoint: str) -> dict:
     proposal = json.loads(outer["response"])
     validate(proposal)
     return proposal
+
+
+def record(model: str, parents: list[str], endpoint: str, proposal: dict,
+           created: str | None = None) -> dict:
+    """Wrap a validated proposal with replay/audit provenance."""
+    return {
+        "schema": "tick-tack-toe.discovery-proposal.v1",
+        "created": created or datetime.now(timezone.utc).isoformat(),
+        "model": model,
+        "endpoint": endpoint,
+        "parents": parents,
+        "prompt": build_prompt(parents),
+        "proposal": proposal,
+        "safety": {"local_only": endpoint.startswith("http://127.0.0.1") or
+                    endpoint.startswith("http://localhost")},
+    }
 
 
 def validate(p: dict) -> None:
@@ -60,7 +81,13 @@ if __name__ == "__main__":
     parser.add_argument("--model", default="qwen3:4b")
     parser.add_argument("--endpoint", default="http://127.0.0.1:11434")
     parser.add_argument("--out", type=Path, default=Path("proposal.json"))
+    parser.add_argument("--record", type=Path,
+                        help="also write model/prompt/parent provenance")
     args = parser.parse_args()
     result = ask(args.model, args.parents, args.endpoint)
     args.out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    if args.record:
+        args.record.write_text(json.dumps(record(args.model, args.parents,
+                                                 args.endpoint, result), indent=2) +
+                               "\n", encoding="utf-8")
     print(f"Wrote bounded proposal to {args.out}")

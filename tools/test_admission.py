@@ -40,6 +40,15 @@ class AdmissionTests(unittest.TestCase):
             'eligible_for_simulation',
         )
 
+    def test_admission_envelope_is_promotion_ready(self):
+        payload = proposal(name='Brood Warden')
+        decision = admit(payload, parents=['Egg', 'Tack'])
+        envelope = {'parents': ['Egg', 'Tack'], 'proposal': payload,
+                    'admission': decision}
+        self.assertEqual(envelope['admission']['status'],
+                         'eligible_for_simulation')
+        self.assertEqual(envelope['proposal']['name'], 'Brood Warden')
+
 
 if __name__ == '__main__':
     unittest.main()

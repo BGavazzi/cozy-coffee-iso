@@ -6,6 +6,9 @@ It does not modify the game, execute model output, admit canon, or render art.
 ```text
 ollama pull qwen3:4b
 python tools/local_designer.py "Mimic Toe" "Brood Tick" --out proposal.json
+# Keep a replayable provenance record beside the raw proposal:
+python tools/local_designer.py "Mimic Toe" "Brood Tick" --out proposal.json \
+  --record out/games/tick_tack_toe/proposal-record.json
 ```
 
 The output is constrained to a small JSON schema: one trigger, one target, one
@@ -15,7 +18,7 @@ template before the café factory is invoked. Unknown effects are rejected.
 
 The intended batch workflow is:
 
-1. Generate proposals offline and cache the prompt, model tag, and output.
+1. Generate proposals offline and cache the prompt, model tag, parent pair, and output.
 2. Reject malformed, duplicate, recursive, or unimplemented effects.
 3. Reject a proposal that merely restates a documented parent interaction;
    the admission gate currently knows the Tick + Toe feeding/reproduction pair.
@@ -40,6 +43,9 @@ python tools/audit_benchmark.py games/tick_tack_toe/local-designer-benchmark.jso
   --out games/tick_tack_toe/local-designer-admission.json
 # A single proposal can carry its parent pair explicitly:
 python tools/admit_proposal.py proposal.json --parents "Tick" "Toe"
+# Or save the same decision in the envelope consumed by promotion tooling:
+python tools/admit_proposal.py proposal.json --parents "Tick" "Toe" \
+  --out admission.json
 ```
 
 The audit currently classifies proposals as `rejected`, `needs_authoring`, or

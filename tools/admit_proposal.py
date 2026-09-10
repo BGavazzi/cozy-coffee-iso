@@ -74,7 +74,16 @@ if __name__ == '__main__':
     parser.add_argument('proposal', type=Path)
     parser.add_argument('--parents', nargs=2, metavar=('A', 'B'),
                         help='optional parent names used by the novelty gate')
+    parser.add_argument('--out', type=Path,
+                        help='also write a promotion-ready admission record')
     args = parser.parse_args()
-    result = admit(json.loads(args.proposal.read_text(encoding='utf-8')),
-                   args.parents)
+    payload = json.loads(args.proposal.read_text(encoding='utf-8'))
+    result = admit(payload, args.parents)
+    if args.out:
+        args.out.write_text(json.dumps({
+            'schema': 'tick-tack-toe.discovery-admission.v1',
+            'parents': args.parents or [],
+            'proposal': payload,
+            'admission': result,
+        }, indent=2) + '\n', encoding='utf-8')
     print(json.dumps(result, indent=2))
