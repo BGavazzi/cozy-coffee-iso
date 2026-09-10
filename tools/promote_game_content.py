@@ -24,14 +24,21 @@ def _visual_approval(build: dict, review: dict) -> str | None:
     return None
 
 
+def _integer(value) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return -1
+
+
 def promote(proposal: dict, simulation: dict, build: dict, review: dict) -> dict:
     """Return an auditable promotion decision without mutating a catalog."""
     checks = {}
     admission = proposal.get("admission", {})
     checks["admission"] = admission.get("status") == "eligible_for_simulation"
     checks["simulation_status"] = simulation.get("status") == "passed"
-    checks["simulation_runs"] = int(simulation.get("runs", 0)) >= 100
-    checks["simulation_failures"] = int(simulation.get("failures", 0)) == 0
+    checks["simulation_runs"] = _integer(simulation.get("runs", 0)) >= 100
+    checks["simulation_failures"] = _integer(simulation.get("failures", 0)) == 0
     checks["simulation_bounded"] = simulation.get("bounded") is True
     checks["art_rendered"] = build.get("rendered") is True
     checks["art_status"] = build.get("status") == "awaiting_visual_review"

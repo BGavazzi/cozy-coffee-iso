@@ -52,6 +52,15 @@ class PromotionTests(unittest.TestCase):
         self.assertFalse(result["checks"]["visual_approval"])
         self.assertFalse(result["checks"]["art_no_blockers"])
 
+    def test_malformed_simulation_evidence_is_blocked_not_executed(self):
+        proposal, simulation, build, review = fixtures()
+        simulation["runs"] = "not-a-number"
+        simulation["failures"] = None
+        result = promote(proposal, simulation, build, review)
+        self.assertEqual(result["status"], "blocked")
+        self.assertFalse(result["checks"]["simulation_runs"])
+        self.assertFalse(result["checks"]["simulation_failures"])
+
 
 if __name__ == "__main__":
     unittest.main()
