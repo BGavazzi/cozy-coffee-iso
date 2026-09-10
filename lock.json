@@ -8,10 +8,10 @@
       "check_direction_stability"
     ],
     "producer": "character.py",
-    "recorded_at": "2026-09-02T08:15:45+00:00",
+    "recorded_at": "2026-09-07T16:06:34+00:00",
     "scope": "roster",
     "style": "cozy_ghibli",
-    "style_hash": "db3d2007125e8d1d"
+    "style_hash": "ea19e769adb6ae38"
   },
   "palette_forge.py:palette+variants": {
     "approved": true,
@@ -20,10 +20,10 @@
       "check_separation"
     ],
     "producer": "palette_forge.py",
-    "recorded_at": "2026-09-02T07:22:38+00:00",
+    "recorded_at": "2026-09-07T16:08:44+00:00",
     "scope": "palette+variants",
     "style": "cozy_ghibli",
-    "style_hash": "db3d2007125e8d1d"
+    "style_hash": "ea19e769adb6ae38"
   },
   "portrait.py:roster": {
     "approved": true,
@@ -34,10 +34,10 @@
       "check_palette_exact"
     ],
     "producer": "portrait.py",
-    "recorded_at": "2026-09-02T08:24:02+00:00",
+    "recorded_at": "2026-09-07T16:18:14+00:00",
     "scope": "roster",
     "style": "cozy_ghibli",
-    "style_hash": "db3d2007125e8d1d"
+    "style_hash": "ea19e769adb6ae38"
   },
   "render_room.py:proof/shop_big.png": {
     "approved": true,
@@ -46,13 +46,13 @@
     ],
     "llm_verdict": {
       "judge": "claude-sonnet-5",
-      "reasoning": "Espresso machine + counter sit centred-upper and are the one cool-grey break against an otherwise warm-wood palette; chalkboard signage above reinforces it. Eye lands there before the floor, plants, or seated figures, though the room is busy enough that it is not an instant read.",
+      "reasoning": "Espresso machine's cool-grey mass breaks cleanly against the warm wood/cream palette, elevated on the back counter with chalkboard signage directly above it, so the eye lands there first at a glance despite the colourful seating clusters (teal chair, pink rug) competing in the mid-ground. Wall trim (279d1a8) reads as a thin horizontal band along the walls, not a new competing focal element. Same known counter-orientation softness recorded before (0.04 focal-lead cost, +0.119 measured contrast this run) -- weak-but-not-broken, still reads as the centre.",
       "rubric": "focal_hierarchy"
     },
     "producer": "render_room.py",
-    "recorded_at": "2026-09-02T07:15:45+00:00",
+    "recorded_at": "2026-09-07T16:16:42+00:00",
     "scope": "proof/shop_big.png",
     "style": "cozy_ghibli",
-    "style_hash": "db3d2007125e8d1d"
+    "style_hash": "ea19e769adb6ae38"
   }
 }

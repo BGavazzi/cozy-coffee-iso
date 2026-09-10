@@ -2242,6 +2242,46 @@ Verified both directions:
   produced byte-identical stdout before and after, confirming this is a
   pure threading fix with zero behaviour change for the shipped style.
 
+**Landed (`style-relock`, stacked on the #52-#62 chain): both style packs
+re-locked for real after `279d1a8` (`wall_trim`/`wall_trim_shadow` added to
+`style_bible.yaml`) changed `cozy_ghibli`'s bible hash out from under every
+existing approval without anyone re-running the gates that produced them.
+`style_approve.py --style cozy_ghibli` and `--style snes_rpg` both reported
+NOT approved going in; `lockfile.py --status` showed every `cozy_ghibli`
+entry STALE. Every one of the three requirements was genuinely re-run
+against the CURRENT bible, not rubber-stamped:
+
+- `character.py --style cozy_ghibli --lock`: 0 blockers, approved for real.
+- `organic_rig.py --style snes_rpg --lock`: snes_rpg's `rig.primitive` is
+  still `cylinder_sphere`, so `character.py` (box/prism only) is not this
+  style's real evidence — `organic_rig.py` is, per `style_approve.py`'s own
+  `REQUIRED_PRODUCERS_ANY_OF` reasoning. Passed for real, silhouette
+  stability holds.
+- `palette_forge.py --style cozy_ghibli --lock`: all constraints pass,
+  output byte-identical to before (`wall_trim` didn't touch the `palette:`
+  block). `snes_rpg`'s own `palette_forge.py` entry was already approved at
+  the current hash — untouched, nothing to re-run.
+- `llm:focal_hierarchy`, judged for real against freshly re-rendered scenes
+  (not the stale pre-`279d1a8` PNGs sitting in `proof/`, regenerated first):
+  `render_room.py --style cozy_ghibli --target 900 --out proof/shop_big.png`
+  (PASS, same known counter-orientation softness as before, 0.04 cost,
+  +0.119 measured this run), `render_room.py --style snes_rpg` (PASS,
+  +0.166, the strongest focal contrast recorded for any scene in this repo),
+  `build_plan.py --style snes_rpg` (PASS, weaker at +0.078 — the long-run
+  counter layout, recorded honestly as secondary evidence rather than
+  dropped). `snes_rpg`'s two proof PNGs came back byte-identical to their
+  pre-relock versions — its bible didn't pick up `wall_trim` from `279d1a8`
+  (already had its own), so nothing visually changed there; only
+  `shop_big.png` differs (thin trim band now visible on the walls).
+  `portrait.py --check --lock --style cozy_ghibli` also re-verified clean
+  while at it, closing the one stale entry `character.py` alone didn't need
+  but left lying around.
+
+`style_approve.py` now reports **APPROVED** for both styles. Everything CPU
+procedural work as expected — no GPU contention, confirmed rather than
+assumed. Only `lock.json`/`styles/snes_rpg/lock.json` and the two
+freshly-rendered proof PNGs changed; no `bible.yaml` content touched.
+
 ---
 
 ## How this repo expects work to be done

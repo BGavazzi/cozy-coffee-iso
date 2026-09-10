@@ -6,14 +6,14 @@
     ],
     "llm_verdict": {
       "judge": "claude-sonnet-5",
-      "reasoning": "The service counter -- a long pale cream run along the back-right wall, broken by the grey-steel espresso machine -- is the highest-value shape in the frame against the darker saturated wood floor and walls, and it draws the eye first on a glance. Weaker than the other snes_rpg scene's verdict (contrast +0.078 vs +0.166 there): this curated layout's counter run is longer and thinner rather than a compact cluster, and the magenta cushioned chairs scattered through the seating area are close in saturation. Still passes -- the counter's value lead over the floor/walls is real and it's the only large pale shape in the room -- but it is the weaker of the two snes_rpg scenes judged so far, worth knowing if this specific curated plan is reused for anything comparative.",
+      "reasoning": "Weaker than the other snes_rpg scene: this layout's counter is a long thin run rather than a compact cluster, and the magenta cushioned chairs scattered through the seating area compete with it more than plants do in the other scene. The grey espresso machine at the counter's far end still reads as the first thing noticed on a glance, just by a smaller margin (+0.078 measured focal contrast vs +0.166). Recorded as honest secondary evidence, not cherry-picked.",
       "rubric": "focal_hierarchy"
     },
     "producer": "build_plan.py",
-    "recorded_at": "2026-09-02T08:05:51+00:00",
+    "recorded_at": "2026-09-07T16:17:07+00:00",
     "scope": "proof/plan_room_snes_rpg.png",
     "style": "snes_rpg",
-    "style_hash": "b35b39e59b56f2cd"
+    "style_hash": "412f3d9424a679b6"
   },
   "character.py:roster": {
     "approved": false,
@@ -37,10 +37,10 @@
       "check_eyes_visible (organic_rig.py)"
     ],
     "producer": "organic_rig.py",
-    "recorded_at": "2026-09-02T22:56:08+00:00",
+    "recorded_at": "2026-09-07T16:07:46+00:00",
     "scope": "silhouette",
     "style": "snes_rpg",
-    "style_hash": "b35b39e59b56f2cd"
+    "style_hash": "412f3d9424a679b6"
   },
   "palette_forge.py:palette+variants": {
     "approved": true,
@@ -75,13 +75,13 @@
     ],
     "llm_verdict": {
       "judge": "claude-sonnet-5",
-      "reasoning": "The espresso machine + counter cluster (upper-middle, dark steel silhouette against the warm wood/counter field, elevated above the floor plane) is the first thing the eye lands on within a glance, reinforced by the chalkboard signage directly above it -- same read as cozy_ghibli's own shop_big.png verdict, same layout. The measured focal contrast is actually higher under this palette (+0.166 vs cozy_ghibli's +0.133) because snes_rpg's higher chroma and harder value steps sharpen the counter-vs-field separation rather than softening it. The saturated green rug and plant cluster are the strongest competing draws but read as secondary: they're at floor level, smaller, and less central than the counter.",
+      "reasoning": "Dark-grey espresso machine reads unmistakably against snes_rpg's high-chroma rose/terracotta room -- harder value steps and lower chroma falloff than cozy_ghibli sharpen the counter-vs-field separation rather than softening it. Measured focal contrast +0.166, the highest recorded of any composed scene in this repo including the original reference room. Wall trim addition (279d1a8) shows as the same thin band, does not compete.",
       "rubric": "focal_hierarchy"
     },
     "producer": "render_room.py",
-    "recorded_at": "2026-09-02T07:59:12+00:00",
+    "recorded_at": "2026-09-07T16:16:55+00:00",
     "scope": "proof/shop_snes_rpg.png",
     "style": "snes_rpg",
-    "style_hash": "b35b39e59b56f2cd"
+    "style_hash": "412f3d9424a679b6"
   }
 }
