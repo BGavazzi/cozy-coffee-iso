@@ -34,10 +34,13 @@ python tools/test_game_factory.py
 python tools/export_game.py out/games/tick_tack_toe/latest-build.json --review games/tick_tack_toe/visual-review.json --out D:/vibes/tick-tack-toe/public/pieces
 ```
 
-Export checks explicit reviewed build keys, the absence of blockers, and pixel
-hashes before copying. Changing generation inputs creates a new identity that
-requires a new review; do not blindly update approval keys to make export pass.
-`latest-build.json` refers only to the latest selected batch, not all history.
+Export checks explicit reviewed build keys or an explicitly approved sprite
+hash, the absence of blockers, and pixel hashes before copying. Changing
+pixels requires a new review; a code-only build-key change can reuse approval
+when the exact reviewed bytes are unchanged, and the exporter preserves the
+existing canonical filename. Do not blindly update approval keys to make
+export pass. `latest-build.json` refers only to the latest selected batch, not
+all history.
 
 ## Current boundary
 
