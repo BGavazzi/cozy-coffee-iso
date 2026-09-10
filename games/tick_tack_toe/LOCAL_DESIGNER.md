@@ -26,7 +26,12 @@ The intended batch workflow is:
 For a proposal that survives those steps, `tools/promote_game_content.py`
 records the final decision only when admission, 100+ bounded simulation runs,
 technical art checks, and visual approval all agree. It writes a ledger entry;
-it does not edit the game's catalog.
+it does not edit the game's catalog. The simulation evidence is deliberately
+small and machine-readable, for example:
+
+```json
+{"status":"passed","runs":100,"failures":0,"bounded":true}
+```
 
 Run the deterministic admission audit before simulation:
 
