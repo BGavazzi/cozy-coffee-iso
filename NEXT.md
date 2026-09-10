@@ -2331,8 +2331,8 @@ freshly-rendered proof PNGs changed; no `bible.yaml` content touched.
 **Gates — both must be clean before any commit**
 
 ```
-.venv/Scripts/python.exe tools/manifest.py --check            # 26 checks, takes ~4 min, clean
-.venv/Scripts/python.exe tools/build_plan.py --focal-scan 12  # slower, 1 of 12 currently fails
+.venv/Scripts/python.exe tools/manifest.py --check            # 26 checks, takes ~4 min, 3 errors currently (2 accepted causes, see below)
+.venv/Scripts/python.exe tools/build_plan.py --focal-scan 12  # slower, 4 of 12 currently fail (same 2 accepted causes, see below)
 ```
 
 Both used to fail on the same underlying story: the detail floor sits at
@@ -2344,32 +2344,81 @@ than the signal", PR #42). As of the focal-resolution-confirmation pass
 (`ART_CRITIQUE.md`, "Focal detail: resolution-confirmed, not
 resolution-invariant", PR #41):
 
-- `manifest.py --check`'s `check_focal_contrast` no longer fails on plan 1.
-  It used to (-0.002, from the RNG-unification pass) -- that failure turned
-  out to be resolution-dependent (it passes at 480, the delivery
-  resolution), and the check now confirms a 320 failure against a 480
-  render before reporting it, so the resolution-only flip no longer counts.
-- `build_plan.py --focal-scan 12` still fails plan 10, correctly -- a real,
-  accepted defect, negative at every resolution from 240 through 480 (not
-  -0.002 as this file previously recorded; that number was a stale
-  transcription -- the measured margin is -0.011 at 320, -0.013 at 480).
+- `manifest.py --check`'s `check_focal_contrast` failed on plan 1 at the
+  narrower PR #41 base (-0.002) and was believed closed there -- the
+  failure looked resolution-dependent (passed at 480, the delivery
+  resolution) and the check confirms a 320 failure against 480 before
+  reporting it. **That is no longer the state at the fully-merged tip --
+  see the follow-up below; re-verify before trusting "resolution-dependent"
+  for whichever room `plan 1` currently is.**
+- `build_plan.py --focal-scan 12` still fails plan 10 in the pre-galley
+  numbering, correctly -- a real, accepted defect, negative at every
+  resolution from 240 through 480 (not -0.002 as this file previously
+  recorded; that number was a stale transcription -- the measured margin is
+  -0.011 at 320, -0.013 at 480).
 
 **Correction, found while sorting merge conflicts across the open PR stack
-(not yet root-caused, flagging rather than guessing):** the "clean" claim
-above holds for PR #41 checked against its own narrower base, but running
-`manifest.py --check` at the tip of the fully-combined stack through PR #43
-(which also includes PR #39's galley/multi-counter topology) is **not**
-clean -- it currently reports 3 errors: plan 1 (L run) fails
-`check_focal_contrast`'s detail floor by -0.001, and plan 8 (galley) fails
-it twice, -0.012 against the centre floor and -0.019 against the detail
-floor. This looks like a real interaction between the galley topology's
-known focal-contrast weakness (see `NEXT.md`'s galley entry above) and the
-now-razor-thin detail floor (PR #42, left at exactly 0.0) rather than a bug
-in either PR alone, but that is a hypothesis, not a measurement -- needs its
-own follow-up pass once this stack is merged, not fixed blind here.
+-- CONFIRMED as of a 2026-09-07 follow-up pass on the fully-merged tip, not
+a new/separate regression:** the "clean" claim above holds for PR #41
+checked against its own narrower base, but running `manifest.py --check` at
+the tip of the fully-combined stack through PR #43 (which also includes
+PR #39's galley/multi-counter topology) is **not** clean -- it reports 3
+errors: plan 1 (L run) fails `check_focal_contrast`'s detail floor by
+-0.001, and plan 8 (galley) fails it twice, -0.012 against the centre floor
+and -0.019 against the detail floor. This was flagged as "a real
+interaction between the galley topology's known focal-contrast weakness
+... and the now-razor-thin detail floor... a hypothesis, not a
+measurement" -- the follow-up pass measured it and the hypothesis holds,
+bisected two ways:
+
+- **`build_plan.py --focal-scan 12` on the current origin/main tip
+  (`4b30bbd`) reads 4 of 12 fail (33%), not the 1 (or, at the PR #41 base,
+  2) this section previously recorded:** plan 1 (`L run`, `D -0.001`,
+  FAILS at both 320 and 480 -- see the flag above, this one is *not*
+  rescued the way the old `plan 1` was), plan 8 (`galley`, `L -0.012`
+  `D -0.019`), plan 10 (`galley`, `L -0.019` `D -0.042`), plan 12 (`galley`,
+  `D -0.013`). Confirmed deterministic: two consecutive runs on the same
+  tip produced byte-identical output.
+- **Isolated with `git checkout` to `35f832e^1` (`b45f07f`, the tip of
+  `spread-floor-audit` immediately before `71451c3`'s galley topology was
+  merged in via `35f832e`):** the same 12-plan scan there reads 2 of 12
+  fail -- plan 1 (`wall run`, `D -0.002`) and plan 10 (`wall run`,
+  `D -0.011`), zero galley failures, matching this section's own
+  already-recorded pre-galley numbers exactly. The fully-merged tip adds
+  *exactly* the 3 galley failures the B2 entry above already measured and
+  attributed to `focal_box` unioning a galley's full room depth (plan 8
+  `L -0.012 D -0.019`, plan 10-post-galley `L -0.019 D -0.042`, plan 12
+  `L +0.031 D -0.013` -- identical to the B2 entry's numbers to three
+  decimals) and nothing else. Galley's insertion into
+  `floorplan.generate()`'s branch order also reshuffled which topology some
+  *other* seeds draw -- seed 1 draws `wall run` pre-galley and `L run`
+  post-galley -- which is why "plan 1" now names a different physical room
+  than the one PR #41 originally verified, still at the same razor-thin
+  detail floor.
+- One loose end, honestly left open rather than hand-waved: the `plan 1`
+  case no longer gets rescued by the 480 confirm render (fails at 320
+  `D -0.001` **and** 480 `D -0.005`, checked directly), unlike the room
+  PR #41 verified. This predates galley -- the pre-galley baseline above
+  also shows plan 1 failing with no rescue -- so it isn't the galley
+  topology's doing, but which of the intervening PRs (PR #42's detail-floor
+  bracket close, most likely, since it's the other constant that moved)
+  changed the rescue outcome hasn't been individually bisected here. Still
+  treated as the same accepted population-rate phenomenon (PR #42,
+  `ART_CRITIQUE.md`'s "The detail floor's bracket, closed: the noise is
+  bigger than the signal") rather than a new defect, because the floor and
+  its noise band are unchanged and a lone room's flip is exactly what that
+  section already expects -- flagged for whoever next touches
+  `FOCAL_CONFIRM_TARGET` rather than fixed blind here.
+
+`manifest.py --check`'s one-room-per-topology sample only reaches one of
+the three galley failures (plan 8); `build_plan.py --focal-scan 12` is what
+catches plans 10 and 12 too, which is exactly why this file keeps it as a
+second, slower gate rather than folding it into `manifest.py --check`.
 
 Don't treat a *new* failure in either run as equally acceptable without
-checking whether it's plan 10 or something else.
+checking whether it's one of these two documented causes (plan 1's
+razor-thin detail floor, or the galley topology's `focal_box`-size
+weakness) or something else.
 
 Stage-8 review on generated sprites:
 
