@@ -1,0 +1,83 @@
+{
+  "project": "orchard_dash",
+  "title": "Orchard Dash",
+  "genre": "arcade",
+  "core_loop": "The player runs a fox through a small isometric orchard, catching apples as they fall from shaken trees before they hit the ground, while dodging wasps that knock the fox's basket over on contact.",
+  "win_condition": "Fill the basket to its target count before the orchard's day-timer runs out.",
+  "lose_condition": "The basket is knocked over by a wasp three times in one run.",
+  "camera": "isometric",
+  "tone": [
+    "cozy",
+    "energetic",
+    "warm-afternoon"
+  ],
+  "art_influences": {
+    "precedent_games": [
+      "Stardew Valley",
+      "Animal Crossing: New Horizons",
+      "cozy-coffee-iso (this repo's own cafe style)"
+    ],
+    "adopt": [
+      "warm light / cool shadow hue shifting, same rule as this repo's own art_direction",
+      "high-key value distribution, most of the frame in the upper mids",
+      "rounded, chunky low-poly silhouettes over hard geometric ones"
+    ],
+    "reject": [
+      "photoreal foliage texture",
+      "screen-shake heavy arcade juice that would fight the cozy tone"
+    ],
+    "target": "A sunlit orchard rendered in the same warm, pixel-constrained Ghibli-through-16-bit sensibility this repo already established for the cafe, applied outdoors: dappled leaf-shadow, warm cream light, verdant canopy greens, without inventing a new palette philosophy."
+  },
+  "asset_categories": [
+    "characters",
+    "props",
+    "ui",
+    "tiles"
+  ],
+  "subjects": [
+    {
+      "id": "fox_runner",
+      "name": "Fox Runner",
+      "role": "player character",
+      "short_desc": "small quick fox with a wicker basket on its back",
+      "category": "characters"
+    },
+    {
+      "id": "apple_tree",
+      "name": "Apple Tree",
+      "role": "prop",
+      "short_desc": "shakeable tree that drops apples in a short burst",
+      "category": "props"
+    },
+    {
+      "id": "wasp",
+      "name": "Wasp",
+      "role": "hazard",
+      "short_desc": "small darting insect that patrols a short lane",
+      "category": "characters",
+      "scale": 0.1
+    },
+    {
+      "id": "apple",
+      "name": "Apple",
+      "role": "collectible",
+      "short_desc": "a single round red apple with a short brown stem",
+      "category": "props",
+      "scale": 0.15
+    },
+    {
+      "id": "basket_meter",
+      "name": "Basket Meter",
+      "role": "ui",
+      "short_desc": "fill-level readout for the current run's catch count",
+      "category": "ui"
+    },
+    {
+      "id": "orchard_ground",
+      "name": "Orchard Ground",
+      "role": "tile",
+      "short_desc": "grass tile with dappled leaf-shadow dithering",
+      "category": "tiles"
+    }
+  ]
+}
