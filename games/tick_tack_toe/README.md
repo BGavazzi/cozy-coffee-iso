@@ -40,7 +40,9 @@ pixels requires a new review; a code-only build-key change can reuse approval
 when the exact reviewed bytes are unchanged, and the exporter preserves the
 existing canonical filename. Do not blindly update approval keys to make
 export pass. `latest-build.json` refers only to the latest selected batch, not
-all history.
+all history. A successful export also writes `export-audit.json` beside the
+batch, recording the build key, canonical key, pixel hash, approval basis, and
+final filename for every copied asset.
 
 ## Current boundary
 

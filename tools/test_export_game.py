@@ -36,6 +36,9 @@ class ExportApprovalTests(unittest.TestCase):
                     b'stable-pixels').hexdigest()]})
             manifest = export(batch, review, Path(tmp) / 'public')
             self.assertEqual(manifest['tick']['sha256'], digest)
+            audit = json.loads((Path(tmp) / 'export-audit.json').read_text())
+            self.assertEqual(audit['assets'][0]['approval_basis'], 'pixel_hash')
+            self.assertEqual(audit['assets'][0]['canonical_key'], 'new-code-key')
 
     def test_changed_pixels_still_fail_without_matching_approval(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -60,6 +63,8 @@ class ExportApprovalTests(unittest.TestCase):
             manifest = export(batch, review, public)
             self.assertEqual(manifest['tick']['file'], 'tick-old-key.png')
             self.assertEqual(manifest['tick']['key'], 'old-key')
+            audit = json.loads((folder / 'export-audit.json').read_text())
+            self.assertEqual(audit['assets'][0]['canonical_key'], 'old-key')
 
 
 if __name__ == '__main__':

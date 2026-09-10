@@ -16,6 +16,7 @@ def export(batch: Path, review: Path, destination: Path):
         existing_manifest = json.loads(existing_path.read_text())
     manifest = dict(existing_manifest)
     approved_hashes = set(verdict.get('approved_sha256', []))
+    audit_rows = []
     # Validate the entire batch before copying any file.
     for row in rows:
         data = json.loads(Path(row['build']).read_text())
@@ -45,10 +46,28 @@ def export(batch: Path, review: Path, destination: Path):
                                 'style': data['recipe']['producer']['style'],
                                 'producer': data['recipe']['producer']['backend'],
                                 'review': 'agent-reviewed prototype', 'sha256': frame['sha256']}
+        audit_rows.append({
+            'id': data['id'],
+            'build_key': data['key'],
+            'canonical_key': manifest_key,
+            'file': filename,
+            'sha256': frame['sha256'],
+            'style': data['recipe']['producer']['style'],
+            'producer': data['recipe']['producer']['backend'],
+            'approval_basis': 'build_key' if key_approved else 'pixel_hash',
+        })
     destination.mkdir(parents=True, exist_ok=True)
     for source, target in staged:
         shutil.copy2(source, target)
     (destination / 'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
+    audit_path = batch.parent / 'export-audit.json'
+    audit_path.write_text(json.dumps({
+        'status': 'exported',
+        'batch': str(batch),
+        'review': str(review),
+        'destination': str(destination),
+        'assets': audit_rows,
+    }, indent=2), encoding='utf-8')
     return manifest
 
 
