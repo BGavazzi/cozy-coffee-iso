@@ -35,6 +35,7 @@ class PromotionTests(unittest.TestCase):
         result = promote(proposal, simulation, build, review)
         self.assertEqual(result["status"], "blocked")
         self.assertFalse(result["checks"]["admission"])
+        self.assertIn("admission", result["blocked_reasons"])
 
     def test_insufficient_simulation_is_blocked(self):
         proposal, simulation, build, review = fixtures()
@@ -42,6 +43,7 @@ class PromotionTests(unittest.TestCase):
         result = promote(proposal, simulation, build, review)
         self.assertEqual(result["status"], "blocked")
         self.assertFalse(result["checks"]["simulation_runs"])
+        self.assertIn("simulation_runs", result["blocked_reasons"])
 
     def test_unreviewed_or_blocked_art_is_blocked(self):
         proposal, simulation, build, review = fixtures()
@@ -51,6 +53,7 @@ class PromotionTests(unittest.TestCase):
         self.assertEqual(result["status"], "blocked")
         self.assertFalse(result["checks"]["visual_approval"])
         self.assertFalse(result["checks"]["art_no_blockers"])
+        self.assertEqual(set(result["blocked_reasons"]), {"art_no_blockers", "visual_approval"})
 
     def test_malformed_simulation_evidence_is_blocked_not_executed(self):
         proposal, simulation, build, review = fixtures()
@@ -60,6 +63,7 @@ class PromotionTests(unittest.TestCase):
         self.assertEqual(result["status"], "blocked")
         self.assertFalse(result["checks"]["simulation_runs"])
         self.assertFalse(result["checks"]["simulation_failures"])
+        self.assertEqual(set(result["blocked_reasons"]), {"simulation_runs", "simulation_failures"})
 
 
 if __name__ == "__main__":

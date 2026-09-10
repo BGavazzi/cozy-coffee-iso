@@ -50,9 +50,15 @@ def promote(proposal: dict, simulation: dict, build: dict, review: dict) -> dict
     approval = _visual_approval(build, review)
     checks["visual_approval"] = approval is not None
     status = "promoted" if all(checks.values()) else "blocked"
+    # Keep the decision useful to a queue or dashboard without making callers
+    # reverse-engineer booleans.  Stable check names are intentionally used as
+    # machine-readable reason codes; the human-readable explanation belongs in
+    # the surrounding UI/docs.
+    blocked_reasons = [name for name, passed in checks.items() if not passed]
     return {
         "status": status,
         "checks": checks,
+        "blocked_reasons": blocked_reasons,
         "approval_basis": approval,
         "proposal": proposal.get("proposal", proposal),
         "parents": proposal.get("parents", []),

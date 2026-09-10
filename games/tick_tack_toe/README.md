@@ -44,6 +44,12 @@ all history. A successful export also writes `export-audit.json` beside the
 batch, recording the build key, canonical key, pixel hash, approval basis, and
 final filename for every copied asset.
 
+`tools/promote_game_content.py` is the separate content-promotion ledger. It
+does not mutate the catalog: a proposal is `promoted` only when admission,
+simulation, render, blocker, and visual-review gates all pass. Blocked output
+includes a stable `blocked_reasons` list containing the failed check names, so
+an authoring queue can explain the next action instead of silently stalling.
+
 ## Current boundary
 
 The procedural vocabulary is seven explicit body families plus four visible
