@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from game_factory import ROOT, prepare
+from game_pieces import build
 
 
 class RecipeBuildTests(unittest.TestCase):
@@ -47,6 +48,17 @@ class RecipeBuildTests(unittest.TestCase):
         self.config['project'] = '../cafe'
         with self.assertRaises(ValueError):
             self.rows()
+
+    def test_composed_brood_snare_keeps_both_parent_visual_signatures(self):
+        """A composed recipe must not silently collapse to either parent art."""
+        plain = build('tack')
+        snare = build('tack', variant='snare-tack-v1')
+        brood = build('tack', variant='brood-snare-v1')
+        materials = {face[2] for face in brood.faces}
+        self.assertIn('cream', materials)  # hatchery/brood parent
+        self.assertIn('sky', materials)    # snare parent
+        self.assertGreater(len(brood.faces), len(snare.faces))
+        self.assertGreater(len(snare.faces), len(plain.faces))
 
 
 if __name__ == '__main__':

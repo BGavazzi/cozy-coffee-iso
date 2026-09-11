@@ -53,6 +53,17 @@ def build(kind: str, traits=(), variant=None):
             for side in (-1, 1):
                 strut(m, (side * 0.12, 0, 0.39), (side * 0.27, 0, 0.12), 0.026, 'wood')
             m = merge(m, oval((0, 0.02, 0.16), (0.18, 0.035, 0.04), 'sky'))
+        if variant == 'brood-snare-v1':
+            # The composed discovery must read as both parents at sprite scale:
+            # two cream brood sacs above the cap plus the snare arms and blue
+            # loop. Keep the geometry deterministic and within the tack family
+            # envelope so validation can reason about it like every other prop.
+            for x in (-0.12, 0.12):
+                m = merge(m, oval((x, 0, 0.48), (0.075, 0.09, 0.10), 'cream'))
+            strut(m, (-0.12, 0, 0.42), (0.12, 0, 0.42), 0.022, 'wood')
+            for side in (-1, 1):
+                strut(m, (side * 0.12, 0, 0.39), (side * 0.27, 0, 0.12), 0.026, 'wood')
+            m = merge(m, oval((0, 0.02, 0.16), (0.18, 0.035, 0.04), 'sky'))
     elif kind == 'toe':
         m = merge(oval((0, 0, 0.15), (0.19, 0.3, 0.15), 'skin+1'),
                   oval((0, 0.17, 0.267), (0.13, 0.105, 0.036), 'cream'))
