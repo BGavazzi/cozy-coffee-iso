@@ -16,9 +16,9 @@ created separately to preserve the original dirty worktree and NEXT.md changes.
 - Real SDXL + TripoSR Tick pilot completed all render stages, but was rejected:
   upright horned monster concept instead of a tick, and a speckle blocker in
   direction 7 (10.7% isolated pixels vs the existing 6.2% threshold).
-- Procedural fallback produced ten assets, eight directions each, using the
+- Procedural fallback produced fifteen assets, eight directions each, using the
   same Mesh/strut primitives, fit, render_sprite, frame_all, palette and review.
-  All 80 frames had zero technical blockers; contact sheet inspected. This is
+  All 120 frames had zero technical blockers; contact sheet inspected. This is
   agent-reviewed prototype art, **not human approval or final canonical art**.
 
 ## Commands (from this checkout)
