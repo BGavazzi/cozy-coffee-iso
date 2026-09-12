@@ -24,6 +24,14 @@ rejected with an auditable reason.
   pixelization, and technical review gates.
 - **Promotion:** proposal, simulation, render, technical review, visual review,
   and explicit canon approval remain separate lifecycle states.
+- **Factory record join:** each proposal can be joined to its admission, build,
+  export, and asset hashes without promoting across a failed gate. A rejected
+  proposal therefore records `not_attempted` downstream stages even when an
+  unrelated asset with the same base kind already exists.
+- **Joined record command:** `tools/join_factory_record.py` produces one
+  auditable row from proposal, admission, build, and export JSON. It reports a
+  matching asset only as a candidate for an eligible proposal; rejected or
+  authoring-needed proposals cannot inherit a same-named reviewed sprite.
 
 ## Variables and measures
 
@@ -78,6 +86,12 @@ The immediate next study is a controlled difficulty/pacing comparison between
 Classic 4×4, Tactical 4×4, and Duel 3×3, followed by a blinded player test of
 base pieces versus the five-step discovery branch. The result should report
 where novelty, clarity, challenge, queue time, and cost stop improving together.
+
+The latest local-model record reinforces the lifecycle requirement: a
+`qwen2.5-coder:1.5b-base` proposal named `Tick` was rejected for duplicating a
+parent, so its simulation, render, visual-review, and export stages remain
+explicitly `not_attempted` in the joined factory record. The existing reviewed
+Tick sprite is not silently reused as evidence for that proposal.
 
 ## Manual smoke evidence (2026-09-12)
 
