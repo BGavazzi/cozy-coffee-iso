@@ -28,6 +28,11 @@ REDUNDANT_PARENT_MECHANICS = {
     (frozenset({'tick', 'toe'}), ('on_feed', 'spawn_egg')):
         'Tick + Toe already reproduces after feeding; this proposal adds no new decision',
 }
+GENERIC_NAMES = {
+    'x', 'tbd', 'new piece', 'spawn egg', 'spawn tick', 'spawn tack',
+    'after steps', 'on play', 'on feed', 'on eaten', 'on line', 'tick tack toe',
+}
+GENERIC_CONCEPTS = {'a game piece', 'after_steps', 'new piece'}
 
 
 def _normalise_parent(parent: str) -> str:
@@ -51,15 +56,16 @@ def admit(proposal: dict, parents: list[str] | None = None) -> dict:
     except Exception as exc:
         return {'status': 'rejected', 'reasons': [str(exc)]}
     reasons = []
-    if not proposal['name'].strip() or proposal['name'].strip().lower() in {'x', 'tbd', 'new piece'}:
+    name_key = proposal['name'].strip().lower().replace('_', ' ')
+    if not name_key or name_key in GENERIC_NAMES:
         reasons.append('name is not meaningful enough for a discovery')
     if parents:
         name_id = _normalise_parent(proposal['name'])
         parent_ids = {_normalise_parent(parent) for parent in parents}
         if name_id in parent_ids:
             reasons.append('name duplicates a parent piece; discovery names must be novel')
-    if not proposal['concept'].strip():
-        reasons.append('concept is empty')
+    if not proposal['concept'].strip() or proposal['concept'].strip().lower() in GENERIC_CONCEPTS:
+        reasons.append('concept is empty or too generic to describe a player-facing decision')
     attachments = proposal['art']['attachments']
     if len(set(attachments)) != len(attachments):
         reasons.append('duplicate art attachment')

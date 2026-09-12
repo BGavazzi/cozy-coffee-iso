@@ -27,6 +27,9 @@ class AdmissionTests(unittest.TestCase):
     def test_unbounded_and_low_quality_proposals_are_rejected(self):
         self.assertEqual(admit(proposal(target='board'))['status'], 'rejected')
         self.assertEqual(admit(proposal(name='X'))['status'], 'rejected')
+        self.assertEqual(admit(proposal(name='spawn_tick'))['status'], 'rejected')
+        self.assertEqual(admit(proposal(name='Tick Tack Toe'))['status'], 'rejected')
+        self.assertEqual(admit(proposal(concept='a game piece'))['status'], 'rejected')
         self.assertEqual(admit(proposal(art={'base_kind': 'egg', 'attachments': ['shell', 'shell']}))['status'], 'rejected')
 
     def test_redundant_parent_mechanic_is_not_meaningful_novelty(self):

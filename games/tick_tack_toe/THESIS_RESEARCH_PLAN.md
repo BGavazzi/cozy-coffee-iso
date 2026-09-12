@@ -69,6 +69,22 @@ boundary, not a reason to loosen the gate: either the proposal prompt needs to
 target the implemented templates, or the next runtime template must earn its
 way in through an authored rule and bounded simulation.
 
+## Targeted-prompt admission experiment (2026-09-12)
+
+To separate prompt discoverability from gate quality, an 8-pair batch asked the
+same local model to choose only one of the five currently simulatable
+trigger/effect templates. Before semantic checks, 3/8 rows were structurally
+eligible. The strengthened deterministic gate then rejected all 8: model names
+such as `spawn_tick` and `after_steps`, generic concepts such as `a game piece`,
+and duplicate art attachments are not useful discoveries even when their
+runtime opcode is executable.
+
+This is the desired factory behavior. A targeted prompt can raise the apparent
+admission rate without producing player-facing novelty; semantic naming and
+concept checks prevent that false positive from consuming simulation, render,
+or human-review budget. The experiment therefore leaves the eligible-sample
+queue open rather than manufacturing a candidate.
+
 ## Constraints learned from playtests
 
 - A larger board is more forgiving when rival pressure does not scale with it;

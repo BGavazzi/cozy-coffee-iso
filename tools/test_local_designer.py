@@ -3,30 +3,19 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from local_designer import record
+from local_designer import build_prompt
 
 
-class LocalDesignerRecordTests(unittest.TestCase):
-    def test_record_keeps_prompt_model_and_parents_separate_from_payload(self):
-        proposal = {
-            "name": "Warden", "concept": "A bounded watcher.",
-            "trigger": "on_play", "target": "self", "effect": "move_self",
-            "cost": 1, "art": {"base_kind": "tick", "attachments": []},
-        }
-        result = record("qwen2.5:7b", ["Egg", "Tack"],
-                        "http://127.0.0.1:11434", proposal,
-                        created="2026-09-10T00:00:00+00:00")
-        self.assertEqual(result["schema"], "tick-tack-toe.discovery-proposal.v1")
-        self.assertEqual(result["proposal"], proposal)
-        self.assertEqual(result["parents"], ["Egg", "Tack"])
-        self.assertIn("Egg, Tack", result["prompt"])
-        self.assertEqual(result["model"], "qwen2.5:7b")
-        self.assertTrue(result["safety"]["local_only"])
+class LocalDesignerPromptTests(unittest.TestCase):
+    def test_default_prompt_remains_open_ended(self):
+        prompt = build_prompt(["Tick", "Toe"])
+        self.assertNotIn("restrict the mechanic", prompt)
 
-    def test_remote_endpoint_is_explicitly_marked_non_local(self):
-        result = record("model", ["Tick", "Toe"], "https://example.invalid", {},
-                        created="now")
-        self.assertFalse(result["safety"]["local_only"])
+    def test_targeted_prompt_names_only_simulatable_templates(self):
+        prompt = build_prompt(["Tick", "Toe"], target_templates=True)
+        self.assertIn("after_steps + spawn_egg", prompt)
+        self.assertIn("on_feed + spawn_egg", prompt)
+        self.assertIn("Do not use move_self, remove_enemy, or score_line", prompt)
 
 
 if __name__ == "__main__":

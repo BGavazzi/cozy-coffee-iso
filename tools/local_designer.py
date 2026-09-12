@@ -27,17 +27,27 @@ SCHEMA = {
 }
 
 
-def build_prompt(parents: list[str]) -> str:
-    return (
+SIMULATABLE_HINT = (
+    " For this batch, restrict the mechanic to exactly one implemented runtime "
+    "template: after_steps + spawn_egg, after_steps + spawn_tick, after_steps + "
+    "spawn_tack, on_eaten + spawn_tick, or on_feed + spawn_egg. Do not use "
+    "move_self, remove_enemy, or score_line."
+)
+
+
+def build_prompt(parents: list[str], target_templates: bool = False) -> str:
+    prompt = (
         "You are a game-piece concept designer. Propose exactly one novel but bounded "
         "discovery for Tick Tack Toe. Parents: " + ", ".join(parents) + ". "
         "Choose only enum values in the supplied schema. No arbitrary code, money, "
         "network actions, recursive rules, or balance claims."
     )
+    return prompt + (SIMULATABLE_HINT if target_templates else "")
 
 
-def ask(model: str, parents: list[str], endpoint: str) -> dict:
-    prompt = build_prompt(parents)
+def ask(model: str, parents: list[str], endpoint: str,
+        target_templates: bool = False) -> dict:
+    prompt = build_prompt(parents, target_templates)
     body = json.dumps({"model": model, "stream": False, "format": SCHEMA,
                        "prompt": prompt, "options": {"temperature": 0.7, "num_predict": 220}}).encode()
     request = urllib.request.Request(endpoint.rstrip("/") + "/api/generate", data=body,
@@ -50,7 +60,7 @@ def ask(model: str, parents: list[str], endpoint: str) -> dict:
 
 
 def record(model: str, parents: list[str], endpoint: str, proposal: dict,
-           created: str | None = None) -> dict:
+           created: str | None = None, target_templates: bool = False) -> dict:
     """Wrap a validated proposal with replay/audit provenance."""
     return {
         "schema": "tick-tack-toe.discovery-proposal.v1",
@@ -58,7 +68,7 @@ def record(model: str, parents: list[str], endpoint: str, proposal: dict,
         "model": model,
         "endpoint": endpoint,
         "parents": parents,
-        "prompt": build_prompt(parents),
+        "prompt": build_prompt(parents, target_templates),
         "proposal": proposal,
         "safety": {"local_only": endpoint.startswith("http://127.0.0.1") or
                     endpoint.startswith("http://localhost")},
@@ -83,11 +93,14 @@ if __name__ == "__main__":
     parser.add_argument("--out", type=Path, default=Path("proposal.json"))
     parser.add_argument("--record", type=Path,
                         help="also write model/prompt/parent provenance")
+    parser.add_argument("--target-templates", action="store_true",
+                        help="ask only for currently simulatable trigger/effect pairs")
     args = parser.parse_args()
-    result = ask(args.model, args.parents, args.endpoint)
+    result = ask(args.model, args.parents, args.endpoint, args.target_templates)
     args.out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     if args.record:
         args.record.write_text(json.dumps(record(args.model, args.parents,
-                                                 args.endpoint, result), indent=2) +
+                                                 args.endpoint, result,
+                                                 target_templates=args.target_templates), indent=2) +
                                "\n", encoding="utf-8")
     print(f"Wrote bounded proposal to {args.out}")

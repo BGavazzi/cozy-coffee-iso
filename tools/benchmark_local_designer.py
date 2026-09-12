@@ -26,17 +26,22 @@ def main() -> int:
     parser.add_argument('--endpoint', default='http://127.0.0.1:11434')
     parser.add_argument('--limit', type=int, default=len(PAIRS))
     parser.add_argument('--out', type=Path, default=Path('local-designer-benchmark.json'))
+    parser.add_argument('--target-templates', action='store_true',
+                        help='ask only for currently simulatable trigger/effect pairs')
     args = parser.parse_args()
     rows = []
     for parents in PAIRS[:max(0, min(args.limit, len(PAIRS)))]:
         started = time.perf_counter()
         try:
-            proposal = ask(args.model, list(parents), args.endpoint)
+            proposal = ask(args.model, list(parents), args.endpoint,
+                           args.target_templates)
             rows.append({'parents': parents, 'ok': True, 'proposal': proposal,
-                         'seconds': round(time.perf_counter() - started, 2)})
+                         'seconds': round(time.perf_counter() - started, 2),
+                         'prompt_mode': 'targeted' if args.target_templates else 'open'})
         except Exception as exc:  # Keep one bad proposal from hiding the batch rate.
             rows.append({'parents': parents, 'ok': False, 'error': str(exc),
-                         'seconds': round(time.perf_counter() - started, 2)})
+                         'seconds': round(time.perf_counter() - started, 2),
+                         'prompt_mode': 'targeted' if args.target_templates else 'open'})
     result = {'model': args.model, 'endpoint': args.endpoint,
               'created': datetime.now(timezone.utc).isoformat(), 'count': len(rows),
               'valid': sum(row['ok'] for row in rows), 'rows': rows}
