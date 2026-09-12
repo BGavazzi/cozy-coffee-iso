@@ -123,9 +123,11 @@ exercise, rather than treating an opcode string as executable authority.
 A human-authored `Hatchery Trap` control row was then joined against the real
 factory batch. Its `after_steps:spawn_egg` template is eligible, its reviewed
 sprite is linked by build key `016fa9c87986c0812a23` and canonical pixel hash,
-and simulation remains explicitly `awaiting`. This exercises the complete
-evidence join without pretending that visual approval substitutes for a
-mechanic simulation or that the control row came from the local model.
+and the real runtime now supplies 100/100 bounded seeded simulation runs. The
+joined lifecycle is therefore `passed` / `present` / `approved` / `exported`.
+This exercises the complete evidence join without pretending that visual
+approval substitutes for a mechanic simulation or that the control row came
+from the local model.
 
 As a bounded follow-up, `qwen2.5:7b` generated a standalone `Family Tick`
 proposal from the Tick + Brood Tick pair. An initial opcode-only gate called it

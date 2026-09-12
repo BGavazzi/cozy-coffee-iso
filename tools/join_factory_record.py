@@ -39,6 +39,7 @@ def join(
     admission_path: Path,
     build_path: Path | None = None,
     export_path: Path | None = None,
+    simulation_path: Path | None = None,
 ) -> dict:
     proposal_record = _read(proposal_path)
     admission_record = _read(admission_path)
@@ -78,9 +79,26 @@ def join(
             None,
         )
 
+    simulation = None
+    if simulation_path and simulation_path.exists():
+        candidate = _read(simulation_path)
+        if isinstance(candidate, dict):
+            simulation = candidate
+
     eligible = status == "eligible_for_simulation"
+    try:
+        simulation_passed = (
+            eligible and simulation is not None and
+            simulation.get("status") == "passed" and
+            int(simulation.get("runs", 0)) >= 100 and
+            int(simulation.get("failures", 1)) == 0 and
+            simulation.get("bounded") is True
+        )
+    except (TypeError, ValueError):
+        simulation_passed = False
     lifecycle = {
-        "simulation": "awaiting" if eligible else "not_attempted",
+        "simulation": "passed" if simulation_passed else
+                      "awaiting" if eligible else "not_attempted",
         "render": "present" if eligible and build_match else
                   "awaiting" if eligible else "not_attempted",
         "visual_review": "approved" if eligible and exported_asset else
@@ -96,6 +114,7 @@ def join(
             "admission": str(admission_path),
             "build": str(build_path) if build_path else None,
             "export": str(export_path) if export_path else None,
+            "simulation": str(simulation_path) if simulation_path else None,
         },
         "parents": admission_record.get("parents", []) if isinstance(admission_record, dict) else [],
         "model": proposal_record.get("model") if isinstance(proposal_record, dict) else None,
@@ -106,6 +125,7 @@ def join(
             "template": admission.get("template"),
             "runtime_rule": admission.get("runtime_rule"),
         },
+        "simulation": simulation,
         "lifecycle": lifecycle,
         "asset_link": {
             "status": "candidate" if build_match and eligible else "not_attempted",
@@ -122,9 +142,10 @@ def main() -> int:
     parser.add_argument("admission", type=Path)
     parser.add_argument("--build", type=Path)
     parser.add_argument("--export", type=Path)
+    parser.add_argument("--simulation", type=Path)
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
-    result = join(args.proposal, args.admission, args.build, args.export)
+    result = join(args.proposal, args.admission, args.build, args.export, args.simulation)
     rendered = json.dumps(result, indent=2) + "\n"
     if args.out:
         args.out.write_text(rendered, encoding="utf-8")

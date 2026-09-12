@@ -78,6 +78,23 @@ class FactoryRecordTests(unittest.TestCase):
         self.assertEqual(result["asset_link"]["build"]["key"], "build-key")
         self.assertEqual(result["asset_link"]["build"]["frames"][0]["sha256"], "frame-hash")
 
+    def test_passed_simulation_advances_lifecycle(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            proposal = root / "proposal.json"
+            admission = root / "admission.json"
+            simulation = root / "simulation.json"
+            proposal.write_text(json.dumps({"proposal": {"name": "Hatchery Trap"}}), encoding="utf-8")
+            admission.write_text(json.dumps({
+                "admission": {"status": "eligible_for_simulation"},
+            }), encoding="utf-8")
+            simulation.write_text(json.dumps({
+                "status": "passed", "runs": 100, "failures": 0, "bounded": True,
+            }), encoding="utf-8")
+            result = join(proposal, admission, simulation_path=simulation)
+        self.assertEqual(result["lifecycle"]["simulation"], "passed")
+        self.assertEqual(result["simulation"]["runs"], 100)
+
 
 if __name__ == "__main__":
     unittest.main()
