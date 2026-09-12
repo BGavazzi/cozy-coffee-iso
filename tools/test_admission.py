@@ -38,6 +38,16 @@ class AdmissionTests(unittest.TestCase):
         self.assertTrue(any('declared effect spawn_egg' in reason
                             for reason in result['reasons']))
 
+    def test_runtime_duplicate_is_not_a_discovery(self):
+        result = admit(proposal(
+            name='Nest Guardian',
+            concept='When this Tick feeds an adjacent Toe, it lays one Egg in an adjacent empty cell.',
+            trigger='on_feed',
+            art={'base_kind': 'tick', 'attachments': ['egg_sac']},
+        ))
+        self.assertEqual(result['status'], 'rejected')
+        self.assertIn('duplicates existing fertile Tick behavior', result['reasons'][0])
+
     def test_unknown_effect_pair_needs_authored_runtime_template(self):
         result = admit(proposal(trigger='on_play', effect='remove_enemy'))
         self.assertEqual(result['status'], 'needs_authoring')
@@ -63,13 +73,11 @@ class AdmissionTests(unittest.TestCase):
         self.assertEqual(result['status'], 'rejected')
         self.assertTrue(any('duplicates a parent' in reason for reason in result['reasons']))
 
-    def test_same_template_without_known_parent_pair_remains_eligible(self):
-        self.assertEqual(
-            admit(proposal(trigger='on_feed',
-                           art={'base_kind': 'tick', 'attachments': []}),
-                  parents=['Egg', 'Tack'])['status'],
-            'eligible_for_simulation',
-        )
+    def test_runtime_duplicate_is_rejected_without_known_parent_pair(self):
+        result = admit(proposal(trigger='on_feed',
+                                art={'base_kind': 'tick', 'attachments': []}),
+                       parents=['Egg', 'Tack'])
+        self.assertEqual(result['status'], 'rejected')
 
     def test_admission_envelope_is_promotion_ready(self):
         payload = proposal(name='Brood Warden')

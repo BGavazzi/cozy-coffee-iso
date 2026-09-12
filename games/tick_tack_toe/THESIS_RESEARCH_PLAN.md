@@ -139,17 +139,18 @@ Egg body, not a Tick body. The strengthened gate now classifies the proposal as
 positive boundary: opcode allowlists must include body-family compatibility or
 the factory can spend art budget on mechanics the runtime cannot execute.
 
-With the strengthened prompt, `qwen2.5:7b` produced a coherent `Nest Guardian`
-proposal (`on_feed:spawn_egg`, Tick + egg-sac art). It maps to
-`fertile-feed-v1`, passes 100/100 real-runtime seeded probes, and has a
-technical-clean eight-direction render (build key `b311ec6e25cd5ef84e18`). The
-joined record is `simulation=passed`, `render=present`,
-`visual_review=awaiting`, `export=awaiting`: the first local-model candidate
-that reaches simulation without being rejected, while still stopping before
-human visual approval.
-The join also reports `semantic_art=matched`: its declared egg-sac attachment
-maps to the procedural `fertile` trait, making the remaining approval question
-visual quality rather than an untracked recipe mismatch.
+With the strengthened prompt, `qwen2.5:7b` produced a coherent-looking
+`Nest Guardian` proposal (`on_feed:spawn_egg`, Tick + egg-sac art). It mapped to
+`fertile-feed-v1`, passed 100/100 real-runtime seeded probes, and had a
+technical-clean eight-direction render (build key `b311ec6e25cd5ef84e18`). A
+second runtime-novelty gate then rejected it because `on_feed:spawn_egg` on a
+Tick is already the base fertile-Tick behavior. The joined record resets every
+downstream stage to `not_attempted` despite the valid render and simulation.
+This is a stronger boundary than syntax or body compatibility: a factory must
+compare the proposed runtime signature to existing card behavior before it
+spends review or promotion budget. Its egg-sac attachment still maps cleanly to
+the procedural `fertile` trait, so the rejection is specifically about
+mechanic novelty.
 
 The follow-up prompt was strengthened to state the body mapping and require the
 concept to name the declared outcome. Three local checks still exposed model

@@ -103,6 +103,14 @@ def concept_effect_reasons(proposal: dict) -> list[str]:
     return []
 
 
+def runtime_novelty_reasons(proposal: dict) -> list[str]:
+    """Reject an opcode/body pair that is already a base-card behavior."""
+    if (proposal['trigger'], proposal['effect'], proposal['art']['base_kind']) == \
+            ('on_feed', 'spawn_egg', 'tick'):
+        return ['runtime rule duplicates existing fertile Tick behavior']
+    return []
+
+
 def admit(proposal: dict, parents: list[str] | None = None) -> dict:
     try:
         validate(proposal)
@@ -130,6 +138,7 @@ def admit(proposal: dict, parents: list[str] | None = None) -> dict:
     pair = (proposal['trigger'], proposal['effect'])
     if pair in SIMULATABLE:
         reasons.extend(concept_effect_reasons(proposal))
+        reasons.extend(runtime_novelty_reasons(proposal))
     if reasons:
         return {'status': 'rejected', 'reasons': reasons}
     if pair not in SIMULATABLE:

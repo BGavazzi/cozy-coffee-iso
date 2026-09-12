@@ -69,7 +69,9 @@ as model-quality evidence rather than weakening the novelty or semantic checks.
 A subsequent strengthened-prompt run produced `Nest Guardian`, a
 body-compatible `on_feed:spawn_egg` proposal. Its `fertile-feed-v1` runtime
 probe passed 100/100 seeded runs and its procedural render had no technical
-blockers; the joined record still leaves visual review and export awaiting.
+blockers, but a runtime-novelty check rejected it as a duplicate of the base
+fertile Tick behavior. The render and simulation remain retained evidence, not
+promotion input.
 
 The model is a creative search aid, not a rules engine. Keep Ollama bound to
 localhost; do not expose it from the hosted game.
