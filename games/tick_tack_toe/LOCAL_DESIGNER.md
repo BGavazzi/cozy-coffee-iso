@@ -65,6 +65,10 @@ python tools/audit_promotion_queue.py out/games/tick_tack_toe \
   --out out/games/tick_tack_toe/promotion-queue-audit.json
 ```
 
+Benchmark/admission files with a `rows` array are expanded into individual
+queue entries, so a batch cannot hide rejected or needs-authoring proposals
+behind an otherwise ignored filename. The raw batch file remains unchanged.
+
 ## First local benchmark
 
 On September 8, 2026, the installed `qwen2.5:7b` produced 20/20 schema-valid
