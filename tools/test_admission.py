@@ -18,7 +18,9 @@ def proposal(**changes):
 
 class AdmissionTests(unittest.TestCase):
     def test_known_bounded_pair_is_simulatable(self):
-        self.assertEqual(admit(proposal())['status'], 'eligible_for_simulation')
+        result = admit(proposal())
+        self.assertEqual(result['status'], 'eligible_for_simulation')
+        self.assertEqual(result['runtime_rule'], 'lay-once-v1')
 
     def test_allowlisted_template_requires_compatible_body_family(self):
         result = admit(proposal(art={'base_kind': 'tick', 'attachments': []}))

@@ -114,6 +114,12 @@ procedural vocabulary. This separates technical render success from semantic
 mechanic and asset fidelity, and shows why both checks belong before expensive
 generation in an endless factory.
 
+The admission envelope now records a versioned `runtime_rule` alongside the
+opcode (for example, `after_steps:spawn_egg` on a Tack maps to
+`lay-once-v1`). This makes the mechanic compiler explicit in the evidence join:
+an eligible row names the exact authored runtime behavior that simulation must
+exercise, rather than treating an opcode string as executable authority.
+
 A human-authored `Hatchery Trap` control row was then joined against the real
 factory batch. Its `after_steps:spawn_egg` template is eligible, its reviewed
 sprite is linked by build key `016fa9c87986c0812a23` and canonical pixel hash,

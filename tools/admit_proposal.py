@@ -30,6 +30,13 @@ TEMPLATE_BASE_KINDS = {
     ('on_eaten', 'spawn_tick'): {'toe'},
     ('on_feed', 'spawn_egg'): {'tick'},
 }
+RUNTIME_TEMPLATE_V1 = {
+    ('after_steps', 'spawn_egg', 'tack'): 'lay-once-v1',
+    ('after_steps', 'spawn_tick', 'egg'): 'hatch-tick-v1',
+    ('after_steps', 'spawn_tack', 'egg'): 'hatch-tack-v1',
+    ('on_eaten', 'spawn_tick', 'toe'): 'consumed-tick-v1',
+    ('on_feed', 'spawn_egg', 'tick'): 'fertile-feed-v1',
+}
 
 # A proposal can be structurally valid and still fail the game's meaningful
 # novelty gate. Keep this small and explicit: it is a record of mechanics the
@@ -130,7 +137,9 @@ def admit(proposal: dict, parents: list[str] | None = None) -> dict:
     compatibility = compatibility_reasons(proposal)
     if compatibility:
         return {'status': 'needs_authoring', 'reasons': compatibility}
-    return {'status': 'eligible_for_simulation', 'reasons': [], 'template': f'{pair[0]}:{pair[1]}'}
+    runtime_rule = RUNTIME_TEMPLATE_V1[(pair[0], pair[1], proposal['art']['base_kind'])]
+    return {'status': 'eligible_for_simulation', 'reasons': [],
+            'template': f'{pair[0]}:{pair[1]}', 'runtime_rule': runtime_rule}
 
 
 if __name__ == '__main__':

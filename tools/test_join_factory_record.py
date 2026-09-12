@@ -41,7 +41,8 @@ class FactoryRecordTests(unittest.TestCase):
             proposal.write_text(json.dumps({"proposal": {"name": "Hatchery Trap"}}),
                                 encoding="utf-8")
             admission.write_text(json.dumps({
-                "admission": {"status": "eligible_for_simulation", "template": "after_steps:spawn_egg"},
+                "admission": {"status": "eligible_for_simulation", "template": "after_steps:spawn_egg",
+                               "runtime_rule": "lay-once-v1"},
             }), encoding="utf-8")
             build.write_text(json.dumps([{"id": "hatchery-trap-v1", "key": "build-key"}]),
                              encoding="utf-8")
@@ -54,6 +55,7 @@ class FactoryRecordTests(unittest.TestCase):
         self.assertEqual(result["asset_link"]["status"], "candidate")
         self.assertEqual(result["asset_link"]["export"]["sha256"], "abc")
         self.assertEqual(result["lifecycle"]["export"], "exported")
+        self.assertEqual(result["admission"]["runtime_rule"], "lay-once-v1")
 
     def test_single_piece_build_record_keeps_frame_hashes(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -104,6 +104,7 @@ def join(
             "status": status,
             "reasons": admission.get("reasons", []),
             "template": admission.get("template"),
+            "runtime_rule": admission.get("runtime_rule"),
         },
         "lifecycle": lifecycle,
         "asset_link": {
