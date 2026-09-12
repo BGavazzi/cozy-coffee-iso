@@ -152,6 +152,11 @@ spends review or promotion budget. Its egg-sac attachment still maps cleanly to
 the procedural `fertile` trait, so the rejection is specifically about
 mechanic novelty.
 
+The novelty ledger now also protects the known Egg + Tack and Decoy Egg + Toe
+signatures from being renamed by a model. Parent-pair checks are deliberately
+small and versioned: they document concrete prior discoveries rather than
+attempting an open-ended semantic similarity judgment.
+
 The follow-up prompt was strengthened to state the body mapping and require the
 concept to name the declared outcome. Three local checks still exposed model
 failure modes: `qwen2.5:7b` returned the literal schema token as its concept,

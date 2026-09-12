@@ -68,6 +68,20 @@ class AdmissionTests(unittest.TestCase):
         self.assertEqual(result['status'], 'rejected')
         self.assertIn('adds no new decision', result['reasons'][0])
 
+    def test_known_discovery_pairs_cannot_be_renamed_by_a_model(self):
+        result = admit(proposal(name='Sharp Egg', trigger='after_steps',
+                                effect='spawn_tack',
+                                art={'base_kind': 'egg', 'attachments': []}),
+                       parents=['Egg', 'Tack'])
+        self.assertEqual(result['status'], 'rejected')
+        self.assertIn('Decoy Egg hatch', result['reasons'][0])
+        result = admit(proposal(name='Mimic Shell', trigger='on_eaten',
+                                effect='spawn_tick', concept='When eaten, becomes a Tick.',
+                                art={'base_kind': 'toe', 'attachments': []}),
+                       parents=['Decoy Egg', 'Toe'])
+        self.assertEqual(result['status'], 'rejected')
+        self.assertIn('Mimic Toe transformation', result['reasons'][0])
+
     def test_parent_name_collision_is_rejected(self):
         result = admit(proposal(name='TICK'), parents=['Tick', 'Toe'])
         self.assertEqual(result['status'], 'rejected')

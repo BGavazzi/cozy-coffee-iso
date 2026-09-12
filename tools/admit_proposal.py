@@ -46,6 +46,10 @@ RUNTIME_TEMPLATE_V1 = {
 REDUNDANT_PARENT_MECHANICS = {
     (frozenset({'tick', 'toe'}), ('on_feed', 'spawn_egg')):
         'Tick + Toe already reproduces after feeding; this proposal adds no new decision',
+    (frozenset({'egg', 'tack'}), ('after_steps', 'spawn_tack')):
+        'Egg + Tack already produces the Decoy Egg hatch; this proposal adds no new decision',
+    (frozenset({'decoy_egg', 'toe'}), ('on_eaten', 'spawn_tick')):
+        'Decoy Egg + Toe already produces the Mimic Toe transformation; this proposal adds no new decision',
 }
 GENERIC_NAMES = {
     'x', 'tbd', 'new piece', 'tick', 'tack', 'toe', 'egg', 'sap', 'tweezers',
