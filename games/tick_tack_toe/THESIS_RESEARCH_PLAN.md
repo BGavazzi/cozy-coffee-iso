@@ -61,6 +61,14 @@ batch was 10/10 schema-valid, but the deterministic admission audit classified
 compliance therefore cannot stand in for novelty or fun: in these two samples,
 zero proposals were directly eligible for simulation.
 
+A third local-only rerun with `qwen2.5-coder:1.5b-base` was 8/8 schema-valid,
+with 3 `needs_authoring` and 5 `rejected`; it also produced zero directly
+simulatable proposals. Across the three batches (38 total proposals), the
+current allowlisted runtime vocabulary has admitted none. This is a measured
+boundary, not a reason to loosen the gate: either the proposal prompt needs to
+target the implemented templates, or the next runtime template must earn its
+way in through an authored rule and bounded simulation.
+
 ## Constraints learned from playtests
 
 - A larger board is more forgiving when rival pressure does not scale with it;
