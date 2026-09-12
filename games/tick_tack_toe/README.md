@@ -63,6 +63,10 @@ and observed model-cache references. They do not pin remote model revisions or
 hash every installed weight/vendor dependency. Strict archival replay remains
 future work. Do not call this a complete dependency lock or an infinite factory.
 
-Next: a bounded rule grammar and semantic recipe proposals; additional shape
-families; animation; reference-conditioned generative assets that meet silhouette
-requirements; selective stage-level caching instead of whole-build invalidation.
+The bounded proposal schema, deterministic admission audit, promotion ledger,
+and five-step authored discovery branch are now implemented. Runtime templates
+remain human-authored: a model may propose a concept, but it cannot execute or
+publish a new rule. Next: additional shape families; animation;
+reference-conditioned generative assets that meet silhouette requirements;
+selective stage-level caching instead of whole-build invalidation; and human
+playtesting of novelty, challenge, and pacing.
