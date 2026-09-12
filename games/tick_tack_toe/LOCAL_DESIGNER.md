@@ -66,6 +66,11 @@ parent-name duplication, and duplicate art attachments across three models;
 the deterministic gate rejected all of them. Keep these failures in the ledger
 as model-quality evidence rather than weakening the novelty or semantic checks.
 
+A subsequent strengthened-prompt run produced `Nest Guardian`, a
+body-compatible `on_feed:spawn_egg` proposal. Its `fertile-feed-v1` runtime
+probe passed 100/100 seeded runs and its procedural render had no technical
+blockers; the joined record still leaves visual review and export awaiting.
+
 The model is a creative search aid, not a rules engine. Keep Ollama bound to
 localhost; do not expose it from the hosted game.
 

@@ -139,6 +139,15 @@ Egg body, not a Tick body. The strengthened gate now classifies the proposal as
 positive boundary: opcode allowlists must include body-family compatibility or
 the factory can spend art budget on mechanics the runtime cannot execute.
 
+With the strengthened prompt, `qwen2.5:7b` produced a coherent `Nest Guardian`
+proposal (`on_feed:spawn_egg`, Tick + egg-sac art). It maps to
+`fertile-feed-v1`, passes 100/100 real-runtime seeded probes, and has a
+technical-clean eight-direction render (build key `b311ec6e25cd5ef84e18`). The
+joined record is `simulation=passed`, `render=present`,
+`visual_review=awaiting`, `export=awaiting`: the first local-model candidate
+that reaches simulation without being rejected, while still stopping before
+human visual approval.
+
 The follow-up prompt was strengthened to state the body mapping and require the
 concept to name the declared outcome. Three local checks still exposed model
 failure modes: `qwen2.5:7b` returned the literal schema token as its concept,
