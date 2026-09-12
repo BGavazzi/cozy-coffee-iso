@@ -93,6 +93,15 @@ apparent eligibles (`TickTackToe`/`Tick`) for generic names or concepts, leaving
 instructions reduced, but did not eliminate, the need for deterministic
 semantic review.
 
+The read-only promotion-queue audit currently sees 26 JSON artifacts and
+aggregates historical batches as well as the active rerun. Its aggregate count
+therefore includes five stale `eligible_for_simulation` rows from earlier
+targeted files. The canonical strengthened admission file
+`local-designer-admission-2026-09-12-coder-targeted-v3-final.json` is the active
+decision for that experiment and contains 8/8 rejected rows. Queue dashboards
+must preserve this distinction: historical eligibility is evidence of an
+earlier gate version, not a candidate waiting for simulation or promotion.
+
 A human-authored `Hatchery Trap` control row was then joined against the real
  factory batch. Its `after_steps:spawn_egg` template is eligible, its reviewed
  sprite is linked by build key `016fa9c87986c0812a23` and canonical pixel hash,
