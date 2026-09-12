@@ -48,8 +48,10 @@ For each generated candidate record:
 
 The first live signal is already informative: a fresh ten-pair `qwen2.5:7b`
 batch was 10/10 schema-valid, but the deterministic admission audit classified
-6 as `needs_authoring` and 4 as `rejected`. Format compliance therefore cannot
-stand in for novelty or fun.
+6 as `needs_authoring` and 4 as `rejected`. A second twenty-pair batch was also
+20/20 schema-valid, with 11 `needs_authoring` and 9 `rejected`. Format
+compliance therefore cannot stand in for novelty or fun: in these two samples,
+zero proposals were directly eligible for simulation.
 
 ## Constraints learned from playtests
 
