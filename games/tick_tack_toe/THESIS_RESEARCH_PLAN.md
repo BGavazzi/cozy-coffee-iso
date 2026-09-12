@@ -102,6 +102,16 @@ decision for that experiment and contains 8/8 rejected rows. Queue dashboards
 must preserve this distinction: historical eligibility is evidence of an
 earlier gate version, not a candidate waiting for simulation or promotion.
 
+A later targeted `qwen2.5:7b` batch finally produced a body-compatible
+`Tickling Tack` proposal (`on_feed:spawn_egg`, Tick body). Its joined record
+links an eight-direction procedural render (build key
+`29934dbeed1cab240e11`) while simulation and visual review remain `awaiting`.
+The sprite is a valid Tick silhouette, but the model's proposed brass-charm
+attachment is not represented by the current procedural vocabulary. This
+separates technical render success from semantic asset fidelity: an endless
+factory needs an attachment compiler or an explicit rejection before players
+see a misleadingly plain sprite.
+
 A human-authored `Hatchery Trap` control row was then joined against the real
 factory batch. Its `after_steps:spawn_egg` template is eligible, its reviewed
 sprite is linked by build key `016fa9c87986c0812a23` and canonical pixel hash,
