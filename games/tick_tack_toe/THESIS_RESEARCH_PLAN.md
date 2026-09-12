@@ -79,6 +79,32 @@ Classic 4×4, Tactical 4×4, and Duel 3×3, followed by a blinded player test of
 base pieces versus the five-step discovery branch. The result should report
 where novelty, clarity, challenge, queue time, and cost stop improving together.
 
+## Manual smoke evidence (2026-09-12)
+
+An agent-controlled browser run resumed a saved Classic 4×4 expedition and
+completed part of encounters 3–4 without code or state resets. The sequence
+provided a useful interaction trace for the study:
+
+- Placing a Tick on the announced rival target completed a friendly line,
+  reduced rival resolve from 2 to 1, and cleared the player's line. The causal
+  feedback was visible in both the board and the field notes.
+- Placing a Tack on the announced target did not visibly retarget the rival
+  until **End turn**; the next intent then changed and the rival placed at a
+  different cell. This is internally coherent, but the “occupy it to force a
+  new target” copy should be evaluated for timing clarity.
+- Tweezers (2 energy) removed a rival Tack and left one energy, making the
+  opportunity cost legible. At zero energy, the end-turn preview warned that a
+  heart would be lost.
+- A Toe placed on the announced target caused the subsequent rival Tick to
+  choose another cell, demonstrating bait as a real board intervention rather
+  than a cosmetic tag.
+
+The run reached encounter 4/5 with all three hearts intact. This is not a
+balance result, but it confirms that the testbed can capture action → response →
+resource/board-state evidence in a reproducible smoke pass. The next manual
+round should measure whether that clarity survives a tighter board and whether
+the target-retarget timing is understood without reading the field notes.
+
 ## Academic positioning
 
 This is best presented as AI/computer-science research in constrained generative
