@@ -55,7 +55,17 @@ def join(
     build_candidates: list[dict] = []
     if build_path and build_path.exists():
         payload = _read(build_path)
-        rows = payload if isinstance(payload, list) else payload.get("rows", [])
+        if isinstance(payload, list):
+            rows = payload
+        elif isinstance(payload, dict) and isinstance(payload.get("rows"), list):
+            rows = payload["rows"]
+        elif isinstance(payload, dict) and payload.get("id") and payload.get("key"):
+            # Accept the canonical per-piece build.json as well as the
+            # latest-build summary list.  The single-record form carries the
+            # frame hashes needed for an auditable sprite link.
+            rows = [payload]
+        else:
+            rows = []
         build_candidates = [row for row in rows if isinstance(row, dict)]
     build_match = next(
         (row for row in build_candidates if row.get("id") in candidate_ids), None

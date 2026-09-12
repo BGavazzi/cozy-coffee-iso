@@ -55,6 +55,27 @@ class FactoryRecordTests(unittest.TestCase):
         self.assertEqual(result["asset_link"]["export"]["sha256"], "abc")
         self.assertEqual(result["lifecycle"]["export"], "exported")
 
+    def test_single_piece_build_record_keeps_frame_hashes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            proposal = root / "proposal.json"
+            admission = root / "admission.json"
+            build = root / "build.json"
+            proposal.write_text(json.dumps({"proposal": {"name": "Family Tick"}}),
+                                encoding="utf-8")
+            admission.write_text(json.dumps({
+                "admission": {"status": "eligible_for_simulation",
+                               "template": "after_steps:spawn_tick"},
+            }), encoding="utf-8")
+            build.write_text(json.dumps({
+                "id": "family-tick", "key": "build-key", "status": "awaiting_visual_review",
+                "frames": [{"direction": 0, "sha256": "frame-hash", "findings": []}],
+            }), encoding="utf-8")
+            result = join(proposal, admission, build)
+        self.assertEqual(result["lifecycle"]["render"], "present")
+        self.assertEqual(result["asset_link"]["build"]["key"], "build-key")
+        self.assertEqual(result["asset_link"]["build"]["frames"][0]["sha256"], "frame-hash")
+
 
 if __name__ == "__main__":
     unittest.main()
