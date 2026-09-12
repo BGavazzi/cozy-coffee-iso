@@ -47,6 +47,14 @@ GENERIC_NAMES = {
     'tick tack toe',
 }
 GENERIC_CONCEPTS = {'a game piece', 'after_steps', 'new piece'}
+EFFECT_CONCEPT_TERMS = {
+    'spawn_egg': {'egg', 'lay', 'spawn', 'hatch', 'reproduc'},
+    'spawn_tick': {'tick', 'spawn', 'hatch', 'become'},
+    'spawn_tack': {'tack', 'spawn', 'hatch', 'become'},
+    'move_self': {'move', 'chase', 'step', 'wander'},
+    'remove_enemy': {'remove', 'catch', 'capture', 'kill', 'destroy'},
+    'score_line': {'line', 'score', 'complete', 'win'},
+}
 
 
 def _name_key(value: str) -> str:
@@ -79,6 +87,15 @@ def compatibility_reasons(proposal: dict) -> list[str]:
     return [f"{pair[0]}:{pair[1]} requires base_kind {choices}"]
 
 
+def concept_effect_reasons(proposal: dict) -> list[str]:
+    """Reject prose that contradicts the declared bounded effect."""
+    terms = EFFECT_CONCEPT_TERMS.get(proposal['effect'], set())
+    words = re.findall(r'[a-z]+', proposal['concept'].lower())
+    if terms and not any(any(word.startswith(term) for term in terms) for word in words):
+        return [f"concept does not describe declared effect {proposal['effect']}"]
+    return []
+
+
 def admit(proposal: dict, parents: list[str] | None = None) -> dict:
     try:
         validate(proposal)
@@ -104,6 +121,8 @@ def admit(proposal: dict, parents: list[str] | None = None) -> dict:
         reasons.append('board-wide spawning is unbounded')
     reasons.extend(novelty_reasons(proposal, parents))
     pair = (proposal['trigger'], proposal['effect'])
+    if pair in SIMULATABLE:
+        reasons.extend(concept_effect_reasons(proposal))
     if reasons:
         return {'status': 'rejected', 'reasons': reasons}
     if pair not in SIMULATABLE:

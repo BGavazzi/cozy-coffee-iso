@@ -25,9 +25,16 @@ class AdmissionTests(unittest.TestCase):
         self.assertEqual(result['status'], 'needs_authoring')
         self.assertIn('requires base_kind tack', result['reasons'][0])
         result = admit(proposal(trigger='after_steps', effect='spawn_tick',
+                                concept='A delayed tick that hatches from an egg.',
                                 art={'base_kind': 'tick', 'attachments': []}))
         self.assertEqual(result['status'], 'needs_authoring')
         self.assertIn('requires base_kind egg', result['reasons'][0])
+
+    def test_concept_must_describe_declared_effect(self):
+        result = admit(proposal(concept='A playful shield for the board.'))
+        self.assertEqual(result['status'], 'rejected')
+        self.assertTrue(any('declared effect spawn_egg' in reason
+                            for reason in result['reasons']))
 
     def test_unknown_effect_pair_needs_authored_runtime_template(self):
         result = admit(proposal(trigger='on_play', effect='remove_enemy'))
