@@ -1,0 +1,42 @@
+{
+  "project": "lantern_path",
+  "style": "cozy_ghibli",
+  "direction": "A warm, lantern-lit night garden rendered as smooth matte painted-clay tabletop tokens under cozy_ghibli's established palette rules. No glossy or woven surfaces -- both are measured, already-documented reconstruction failure modes in this pipeline. Adopt: warm light / cool shadow hue shifting, same rule as this repo's own art_direction; smooth matte painted-clay finish, same finish that already works cleanly for this repo's tabletop game pieces; rounded, chunky low-poly silhouettes. Avoid: glossy specular highlights; woven or grained surface texture. Tone: cozy, gentle, nocturnal.",
+  "pieces": [
+    {
+      "id": "lantern_piece",
+      "name": "Lantern Piece",
+      "prompt": "a single squat paper lantern game token, warm glowing panel, smooth matte painted clay finish, no glare, no handle, solid rounded closed top with no thin or wiry protruding parts",
+      "height": 0.3,
+      "seed": 40127
+    },
+    {
+      "id": "firefly_token",
+      "name": "Firefly Token",
+      "prompt": "a single small round glass bead game token, smooth matte painted clay finish, soft warm yellow glow spot on top",
+      "height": 0.3,
+      "seed": 56246
+    },
+    {
+      "id": "moss_stone",
+      "name": "Moss Stone",
+      "prompt": "a single smooth round stone game token, matte painted clay finish, patch of green moss on top",
+      "height": 0.3,
+      "seed": 913
+    },
+    {
+      "id": "altar_piece",
+      "name": "Moss Altar",
+      "prompt": "a single small rectangular stone block game token, matte painted clay finish, flat top with a carved diamond mark, one solid mass, no separate base or legs, no glare",
+      "height": 0.3,
+      "seed": 80546
+    },
+    {
+      "id": "score_lantern_icon",
+      "name": "Score Lantern Icon",
+      "prompt": "a small paper lantern icon, flat matte shading, no glare, no handle, solid rounded closed top with no thin or wiry protruding parts",
+      "height": 0.15,
+      "seed": 57280
+    }
+  ]
+}
