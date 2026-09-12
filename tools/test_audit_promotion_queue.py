@@ -42,6 +42,29 @@ class PromotionQueueAuditTests(unittest.TestCase):
         self.assertEqual(result["statuses"], {"malformed": 1})
         self.assertEqual(result["blockers"], {"malformed": 1})
 
+    def test_benchmark_batches_expand_admission_rows(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "batch.json").write_text(json.dumps({
+                "model": "local-test",
+                "rows": [
+                    {"ok": True, "proposal": {"name": "A"},
+                     "admission": {"status": "needs_authoring",
+                                    "reasons": ["missing rule template"]}},
+                    {"ok": False, "error": "bad json"},
+                    {"ok": True, "proposal": {"name": "B"}},
+                ],
+            }), encoding="utf-8")
+            result = audit(root)
+        self.assertEqual(result["files"], 1)
+        self.assertEqual(result["statuses"], {
+            "needs_authoring": 1, "proposal_only": 1, "rejected": 1,
+        })
+        self.assertEqual(result["blockers"], {
+            "missing rule template": 1, "model output was invalid": 1,
+        })
+        self.assertEqual(len(result["records"][0]["entries"]), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

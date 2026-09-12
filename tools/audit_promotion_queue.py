@@ -22,6 +22,30 @@ def audit(directory: Path) -> dict:
             continue
         if not isinstance(payload, dict):
             status, reasons = "ignored", []
+        elif isinstance(payload.get("rows"), list) and payload.get("model"):
+            # Benchmark/admission batches are queue records too. Expand their
+            # rows so a dashboard cannot report "ignored" while malformed,
+            # rejected, or needs-authoring proposals are sitting inside the
+            # file. Keep the source file visible as a batch record and count
+            # each row in the aggregate status/blocker totals.
+            entries = []
+            for index, row in enumerate(payload["rows"]):
+                admission = row.get("admission") if isinstance(row, dict) else None
+                if isinstance(admission, dict):
+                    entry_status = admission.get("status", "malformed")
+                    entry_reasons = admission.get("reasons", [])
+                elif isinstance(row, dict) and row.get("ok"):
+                    entry_status, entry_reasons = "proposal_only", []
+                else:
+                    entry_status, entry_reasons = "rejected", ["model output was invalid"]
+                statuses[str(entry_status)] += 1
+                for reason in entry_reasons:
+                    blockers[str(reason)] += 1
+                entries.append({"row": index, "status": entry_status,
+                                "blocked_reasons": entry_reasons})
+            records.append({"file": path.name, "status": "batch",
+                            "blocked_reasons": [], "entries": entries})
+            continue
         elif ("checks" in payload or "blocked_reasons" in payload) and "status" in payload:
             status = payload["status"]
             reasons = payload.get("blocked_reasons", []) if status == "blocked" else []
