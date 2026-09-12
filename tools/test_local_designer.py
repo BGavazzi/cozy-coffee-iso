@@ -17,6 +17,8 @@ class LocalDesignerPromptTests(unittest.TestCase):
         self.assertIn("on_feed + spawn_egg", prompt)
         self.assertIn("Do not use move_self, remove_enemy, or score_line", prompt)
         self.assertIn("new player-facing noun phrase", prompt)
+        self.assertIn("Match the body to the runtime template", prompt)
+        self.assertIn("explicitly describe the declared effect outcome", prompt)
 
 
 if __name__ == "__main__":

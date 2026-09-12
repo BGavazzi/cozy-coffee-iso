@@ -30,10 +30,13 @@ SCHEMA = {
 SIMULATABLE_HINT = (
     " For this batch, restrict the mechanic to exactly one implemented runtime "
     "template: after_steps + spawn_egg, after_steps + spawn_tick, after_steps + "
-    "spawn_tack, on_eaten + spawn_tick, or on_feed + spawn_egg. Do not use "
+    "spawn_tack, on_eaten + spawn_tick, or on_feed + spawn_egg. Match the body "
+    "to the runtime template: Egg for after_steps spawning, Toe for on_eaten "
+    "spawning a Tick, and Tick for on_feed spawning an Egg. Do not use "
     "move_self, remove_enemy, or score_line. Give it a new player-facing noun "
-    "phrase (never a schema token or the game title), and explain the player "
-    "decision in a concrete sentence rather than saying only 'a game piece'."
+    "phrase (never a schema token or the game title), explain the player "
+    "decision in a concrete sentence, and explicitly describe the declared "
+    "effect outcome (egg, tick, or tack) instead of an unrelated transformation."
 )
 
 

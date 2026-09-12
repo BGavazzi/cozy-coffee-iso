@@ -60,6 +60,12 @@ Egg-hatch behaviors, `on_eaten:spawn_tick` belongs to a Toe, and
 body is returned to `needs_authoring`. This prevents the factory from rendering
 an attractive asset for a mechanic the game cannot execute.
 
+The targeted prompt now states that mapping and asks the concept to name its
+effect. Recent local probes nevertheless returned a schema-token concept,
+parent-name duplication, and duplicate art attachments across three models;
+the deterministic gate rejected all of them. Keep these failures in the ledger
+as model-quality evidence rather than weakening the novelty or semantic checks.
+
 The model is a creative search aid, not a rules engine. Keep Ollama bound to
 localhost; do not expose it from the hosted game.
 

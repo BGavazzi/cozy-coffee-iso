@@ -131,6 +131,14 @@ Egg body, not a Tick body. The strengthened gate now classifies the proposal as
 positive boundary: opcode allowlists must include body-family compatibility or
 the factory can spend art budget on mechanics the runtime cannot execute.
 
+The follow-up prompt was strengthened to state the body mapping and require the
+concept to name the declared outcome. Three local checks still exposed model
+failure modes: `qwen2.5:7b` returned the literal schema token as its concept,
+`qwen2.5-coder:7b` returned a parent name and one-line parent concept, and
+`hermes3:8b` repeated an art attachment and parent name. These are cheap to
+reject deterministically, but they show that prompt compliance is not a proxy
+for useful discovery even when the model is larger or more instruction-tuned.
+
 ## Constraints learned from playtests
 
 - A larger board is more forgiving when rival pressure does not scale with it;
