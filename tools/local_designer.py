@@ -36,7 +36,10 @@ SIMULATABLE_HINT = (
     "move_self, remove_enemy, or score_line. Give it a new player-facing noun "
     "phrase (never a schema token or the game title), explain the player "
     "decision in a concrete sentence, and explicitly describe the declared "
-    "effect outcome (egg, tick, or tack) instead of an unrelated transformation."
+    "effect outcome (egg, tick, or tack) instead of an unrelated transformation. "
+    "Example structure (do not copy the names): 'When this Tick feeds an "
+    "adjacent Toe, it lays one Egg in an adjacent empty cell; the player must "
+    "choose whether to feed now or preserve space.'"
 )
 
 

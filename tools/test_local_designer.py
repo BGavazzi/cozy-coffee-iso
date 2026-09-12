@@ -19,6 +19,7 @@ class LocalDesignerPromptTests(unittest.TestCase):
         self.assertIn("new player-facing noun phrase", prompt)
         self.assertIn("Match the body to the runtime template", prompt)
         self.assertIn("explicitly describe the declared effect outcome", prompt)
+        self.assertIn("Example structure", prompt)
 
 
 if __name__ == "__main__":
