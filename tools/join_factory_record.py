@@ -34,6 +34,23 @@ def _asset_index(payload: Any) -> dict[str, dict]:
             if isinstance(asset, dict) and asset.get("id")}
 
 
+def _semantic_art_check(proposal: dict, build: dict | None) -> dict:
+    """Compare declared attachments with deterministic recipe traits."""
+    if not build:
+        return {"status": "not_attempted", "reasons": []}
+    piece = build.get("recipe", {}).get("piece", {})
+    traits = set(piece.get("traits", [])) if isinstance(piece, dict) else set()
+    attachments = proposal.get("art", {}).get("attachments", [])
+    required = {"egg_sac": "fertile", "shell": "armored"}
+    unmapped = sorted(a for a in attachments if a not in required and a != "legs")
+    missing = sorted(a for a, trait in required.items()
+                     if a in attachments and trait not in traits)
+    reasons = ([f"attachment {a} has no procedural trait mapping" for a in unmapped] +
+               [f"attachment {a} requires build trait {required[a]}" for a in missing])
+    return {"status": "mismatch" if missing else "unverified" if unmapped else "matched",
+            "reasons": reasons}
+
+
 def join(
     proposal_path: Path,
     admission_path: Path,
@@ -132,6 +149,7 @@ def join(
             "candidate_ids": candidate_ids,
             "build": build_match,
             "export": exported_asset,
+            "semantic_art": _semantic_art_check(proposal, build_match),
         },
     }
 

@@ -147,6 +147,9 @@ joined record is `simulation=passed`, `render=present`,
 `visual_review=awaiting`, `export=awaiting`: the first local-model candidate
 that reaches simulation without being rejected, while still stopping before
 human visual approval.
+The join also reports `semantic_art=matched`: its declared egg-sac attachment
+maps to the procedural `fertile` trait, making the remaining approval question
+visual quality rather than an untracked recipe mismatch.
 
 The follow-up prompt was strengthened to state the body mapping and require the
 concept to name the declared outcome. Three local checks still exposed model

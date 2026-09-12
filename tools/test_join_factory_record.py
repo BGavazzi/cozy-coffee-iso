@@ -78,6 +78,26 @@ class FactoryRecordTests(unittest.TestCase):
         self.assertEqual(result["asset_link"]["build"]["key"], "build-key")
         self.assertEqual(result["asset_link"]["build"]["frames"][0]["sha256"], "frame-hash")
 
+    def test_semantic_art_check_reports_trait_mapping(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            proposal = root / "proposal.json"
+            admission = root / "admission.json"
+            build = root / "build.json"
+            proposal.write_text(json.dumps({"proposal": {
+                "name": "Nest Guardian",
+                "art": {"attachments": ["egg_sac"]},
+            }}), encoding="utf-8")
+            admission.write_text(json.dumps({
+                "admission": {"status": "eligible_for_simulation"},
+            }), encoding="utf-8")
+            build.write_text(json.dumps({
+                "id": "nest-guardian", "key": "build-key",
+                "recipe": {"piece": {"traits": ["fertile"]}},
+            }), encoding="utf-8")
+            result = join(proposal, admission, build)
+        self.assertEqual(result["asset_link"]["semantic_art"]["status"], "matched")
+
     def test_passed_simulation_advances_lifecycle(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
