@@ -1,0 +1,80 @@
+{
+  "project": "lantern_path",
+  "title": "Lantern Path",
+  "genre": "tabletop",
+  "core_loop": "Two players take turns placing lantern tiles to build a lit path from a firefly's starting spot to a moss altar, connecting their own path while blocking their rival's.",
+  "win_condition": "Complete a connected lit path from your firefly's start to the moss altar before your opponent does.",
+  "lose_condition": "Your opponent completes their path first, or you run out of tiles to legally place.",
+  "camera": "isometric",
+  "tone": [
+    "cozy",
+    "gentle",
+    "nocturnal"
+  ],
+  "art_influences": {
+    "precedent_games": [
+      "Tsuro",
+      "this repo's own cozy_ghibli cafe style",
+      "Studio Ghibli's warm lantern-lit night scenes"
+    ],
+    "adopt": [
+      "warm light / cool shadow hue shifting, same rule as this repo's own art_direction",
+      "smooth matte painted-clay finish, same finish that already works cleanly for this repo's tabletop game pieces",
+      "rounded, chunky low-poly silhouettes"
+    ],
+    "reject": [
+      "glossy specular highlights",
+      "woven or grained surface texture"
+    ],
+    "target": "A warm, lantern-lit night garden rendered as smooth matte painted-clay tabletop tokens under cozy_ghibli's established palette rules. No glossy or woven surfaces -- both are measured, already-documented reconstruction failure modes in this pipeline."
+  },
+  "asset_categories": [
+    "pieces",
+    "ui",
+    "tiles"
+  ],
+  "subjects": [
+    {
+      "id": "lantern_piece",
+      "name": "Lantern Piece",
+      "role": "path tile token",
+      "short_desc": "a single squat paper lantern game token, warm glowing panel, smooth matte painted clay finish, no glare, no handle, solid rounded closed top with no thin or wiry protruding parts",
+      "category": "pieces"
+    },
+    {
+      "id": "firefly_token",
+      "name": "Firefly Token",
+      "role": "player marker",
+      "short_desc": "a single small round glass bead game token, smooth matte painted clay finish, soft warm yellow glow spot on top",
+      "category": "pieces"
+    },
+    {
+      "id": "moss_stone",
+      "name": "Moss Stone",
+      "role": "board obstacle token",
+      "short_desc": "a single smooth round stone game token, matte painted clay finish, patch of green moss on top",
+      "category": "pieces"
+    },
+    {
+      "id": "altar_piece",
+      "name": "Moss Altar",
+      "role": "goal token",
+      "short_desc": "a single small rectangular stone block game token, matte painted clay finish, flat top with a carved diamond mark, one solid mass, no separate base or legs, no glare",
+      "category": "pieces"
+    },
+    {
+      "id": "score_lantern_icon",
+      "name": "Score Lantern Icon",
+      "role": "ui",
+      "short_desc": "a small paper lantern icon, flat matte shading, no glare, no handle, solid rounded closed top with no thin or wiry protruding parts",
+      "category": "ui"
+    },
+    {
+      "id": "garden_path_tile",
+      "name": "Garden Path Tile",
+      "role": "tile",
+      "short_desc": "a mossy garden ground tile with a soft lantern-glow edge highlight",
+      "category": "tiles"
+    }
+  ]
+}
