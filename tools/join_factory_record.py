@@ -69,6 +69,15 @@ def join(
         )
 
     eligible = status == "eligible_for_simulation"
+    lifecycle = {
+        "simulation": "awaiting" if eligible else "not_attempted",
+        "render": "present" if eligible and build_match else
+                  "awaiting" if eligible else "not_attempted",
+        "visual_review": "approved" if eligible and exported_asset else
+                         "awaiting" if eligible else "not_attempted",
+        "export": "exported" if eligible and exported_asset else
+                  "awaiting" if eligible else "not_attempted",
+    }
     return {
         "schema": "tick-tack-toe.factory-record.v1",
         "proposal_hash": proposal_hash,
@@ -86,12 +95,7 @@ def join(
             "reasons": admission.get("reasons", []),
             "template": admission.get("template"),
         },
-        "lifecycle": {
-            "simulation": "awaiting" if eligible else "not_attempted",
-            "render": "awaiting" if eligible else "not_attempted",
-            "visual_review": "awaiting" if eligible else "not_attempted",
-            "export": "awaiting" if eligible else "not_attempted",
-        },
+        "lifecycle": lifecycle,
         "asset_link": {
             "status": "candidate" if build_match and eligible else "not_attempted",
             "candidate_ids": candidate_ids,

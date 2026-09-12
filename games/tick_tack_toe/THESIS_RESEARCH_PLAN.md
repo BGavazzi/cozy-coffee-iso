@@ -93,6 +93,13 @@ apparent eligibles (`TickTackToe`/`Tick`) for generic names or concepts, leaving
 instructions reduced, but did not eliminate, the need for deterministic
 semantic review.
 
+A human-authored `Hatchery Trap` control row was then joined against the real
+ factory batch. Its `after_steps:spawn_egg` template is eligible, its reviewed
+ sprite is linked by build key `016fa9c87986c0812a23` and canonical pixel hash,
+ and simulation remains explicitly `awaiting`. This exercises the complete
+ evidence join without pretending that visual approval substitutes for a
+ mechanic simulation or that the control row came from the local model.
+
 ## Constraints learned from playtests
 
 - A larger board is more forgiving when rival pressure does not scale with it;

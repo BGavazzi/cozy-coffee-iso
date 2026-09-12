@@ -49,9 +49,11 @@ class FactoryRecordTests(unittest.TestCase):
                               encoding="utf-8")
             result = join(proposal, admission, build, export)
         self.assertEqual(result["lifecycle"]["simulation"], "awaiting")
+        self.assertEqual(result["lifecycle"]["render"], "present")
+        self.assertEqual(result["lifecycle"]["visual_review"], "approved")
         self.assertEqual(result["asset_link"]["status"], "candidate")
         self.assertEqual(result["asset_link"]["export"]["sha256"], "abc")
-        self.assertEqual(result["lifecycle"]["export"], "awaiting")
+        self.assertEqual(result["lifecycle"]["export"], "exported")
 
 
 if __name__ == "__main__":
