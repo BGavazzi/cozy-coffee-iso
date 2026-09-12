@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 from local_designer import SCHEMA, validate
@@ -29,10 +30,17 @@ REDUNDANT_PARENT_MECHANICS = {
         'Tick + Toe already reproduces after feeding; this proposal adds no new decision',
 }
 GENERIC_NAMES = {
-    'x', 'tbd', 'new piece', 'spawn egg', 'spawn tick', 'spawn tack',
-    'after steps', 'on play', 'on feed', 'on eaten', 'on line', 'tick tack toe',
+    'x', 'tbd', 'new piece', 'tick', 'tack', 'toe', 'egg', 'sap', 'tweezers',
+    'stone', 'lure', 'wild seed', 'shake the jar', 'spawn egg', 'spawn tick',
+    'spawn tack', 'after steps', 'on play', 'on feed', 'on eaten', 'on line',
+    'tick tack toe',
 }
 GENERIC_CONCEPTS = {'a game piece', 'after_steps', 'new piece'}
+
+
+def _name_key(value: str) -> str:
+    spaced = re.sub(r'(?<=[a-z0-9])(?=[A-Z])', ' ', value.strip())
+    return re.sub(r'[_-]+', ' ', spaced).lower()
 
 
 def _normalise_parent(parent: str) -> str:
@@ -56,7 +64,7 @@ def admit(proposal: dict, parents: list[str] | None = None) -> dict:
     except Exception as exc:
         return {'status': 'rejected', 'reasons': [str(exc)]}
     reasons = []
-    name_key = proposal['name'].strip().lower().replace('_', ' ')
+    name_key = _name_key(proposal['name'])
     if not name_key or name_key in GENERIC_NAMES:
         reasons.append('name is not meaningful enough for a discovery')
     if parents:
@@ -64,7 +72,9 @@ def admit(proposal: dict, parents: list[str] | None = None) -> dict:
         parent_ids = {_normalise_parent(parent) for parent in parents}
         if name_id in parent_ids:
             reasons.append('name duplicates a parent piece; discovery names must be novel')
-    if not proposal['concept'].strip() or proposal['concept'].strip().lower() in GENERIC_CONCEPTS:
+    concept = proposal['concept'].strip()
+    if (not concept or concept.lower() in GENERIC_CONCEPTS or
+            len(concept.split()) < 4):
         reasons.append('concept is empty or too generic to describe a player-facing decision')
     attachments = proposal['art']['attachments']
     if len(set(attachments)) != len(attachments):

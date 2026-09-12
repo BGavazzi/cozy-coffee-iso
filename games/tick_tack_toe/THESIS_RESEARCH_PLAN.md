@@ -85,6 +85,14 @@ concept checks prevent that false positive from consuming simulation, render,
 or human-review budget. The experiment therefore leaves the eligible-sample
 queue open rather than manufacturing a candidate.
 
+After the prompt was strengthened to request a noun phrase and a concrete
+decision sentence, a second 8-pair targeted batch produced 2 structurally
+eligible rows and 1 authoring-needed row. The semantic gate rejected the two
+apparent eligibles (`TickTackToe`/`Tick`) for generic names or concepts, leaving
+0/8 promotable. This is a useful prompt–gate interaction result: better prompt
+instructions reduced, but did not eliminate, the need for deterministic
+semantic review.
+
 ## Constraints learned from playtests
 
 - A larger board is more forgiving when rival pressure does not scale with it;

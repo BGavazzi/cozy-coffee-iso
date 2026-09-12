@@ -31,7 +31,9 @@ SIMULATABLE_HINT = (
     " For this batch, restrict the mechanic to exactly one implemented runtime "
     "template: after_steps + spawn_egg, after_steps + spawn_tick, after_steps + "
     "spawn_tack, on_eaten + spawn_tick, or on_feed + spawn_egg. Do not use "
-    "move_self, remove_enemy, or score_line."
+    "move_self, remove_enemy, or score_line. Give it a new player-facing noun "
+    "phrase (never a schema token or the game title), and explain the player "
+    "decision in a concrete sentence rather than saying only 'a game piece'."
 )
 
 
