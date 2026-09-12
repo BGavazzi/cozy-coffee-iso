@@ -19,6 +19,17 @@ SIMULATABLE = {
     ('on_eaten', 'spawn_tick'),
     ('on_feed', 'spawn_egg'),
 }
+# A trigger/effect opcode is only executable for the body that the authored
+# runtime actually handles.  Keeping this compatibility table explicit avoids
+# treating a syntactically valid opcode on an unrelated body (for example,
+# ``after_steps + spawn_tick`` on a Tick) as simulation-ready.
+TEMPLATE_BASE_KINDS = {
+    ('after_steps', 'spawn_egg'): {'tack'},
+    ('after_steps', 'spawn_tick'): {'egg'},
+    ('after_steps', 'spawn_tack'): {'egg'},
+    ('on_eaten', 'spawn_tick'): {'toe'},
+    ('on_feed', 'spawn_egg'): {'tick'},
+}
 
 # A proposal can be structurally valid and still fail the game's meaningful
 # novelty gate. Keep this small and explicit: it is a record of mechanics the
@@ -58,6 +69,16 @@ def novelty_reasons(proposal: dict, parents: list[str] | None = None) -> list[st
     return [reason] if reason else []
 
 
+def compatibility_reasons(proposal: dict) -> list[str]:
+    """Explain why an allowlisted opcode cannot run on this body family."""
+    pair = (proposal['trigger'], proposal['effect'])
+    allowed = TEMPLATE_BASE_KINDS.get(pair)
+    if not allowed or proposal['art']['base_kind'] in allowed:
+        return []
+    choices = ', '.join(sorted(allowed))
+    return [f"{pair[0]}:{pair[1]} requires base_kind {choices}"]
+
+
 def admit(proposal: dict, parents: list[str] | None = None) -> dict:
     try:
         validate(proposal)
@@ -87,6 +108,9 @@ def admit(proposal: dict, parents: list[str] | None = None) -> dict:
         return {'status': 'rejected', 'reasons': reasons}
     if pair not in SIMULATABLE:
         return {'status': 'needs_authoring', 'reasons': ['no implemented runtime rule template for this trigger/effect pair']}
+    compatibility = compatibility_reasons(proposal)
+    if compatibility:
+        return {'status': 'needs_authoring', 'reasons': compatibility}
     return {'status': 'eligible_for_simulation', 'reasons': [], 'template': f'{pair[0]}:{pair[1]}'}
 
 

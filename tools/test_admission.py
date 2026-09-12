@@ -10,7 +10,7 @@ def proposal(**changes):
     value = {
         'name': 'Egg Warden', 'concept': 'A delayed egg that creates one ally.',
         'trigger': 'after_steps', 'target': 'adjacent_empty', 'effect': 'spawn_egg',
-        'cost': 2, 'art': {'base_kind': 'egg', 'attachments': ['shell']},
+        'cost': 2, 'art': {'base_kind': 'tack', 'attachments': ['shell']},
     }
     value.update(changes)
     return value
@@ -19,6 +19,15 @@ def proposal(**changes):
 class AdmissionTests(unittest.TestCase):
     def test_known_bounded_pair_is_simulatable(self):
         self.assertEqual(admit(proposal())['status'], 'eligible_for_simulation')
+
+    def test_allowlisted_template_requires_compatible_body_family(self):
+        result = admit(proposal(art={'base_kind': 'tick', 'attachments': []}))
+        self.assertEqual(result['status'], 'needs_authoring')
+        self.assertIn('requires base_kind tack', result['reasons'][0])
+        result = admit(proposal(trigger='after_steps', effect='spawn_tick',
+                                art={'base_kind': 'tick', 'attachments': []}))
+        self.assertEqual(result['status'], 'needs_authoring')
+        self.assertIn('requires base_kind egg', result['reasons'][0])
 
     def test_unknown_effect_pair_needs_authored_runtime_template(self):
         result = admit(proposal(trigger='on_play', effect='remove_enemy'))
@@ -47,7 +56,9 @@ class AdmissionTests(unittest.TestCase):
 
     def test_same_template_without_known_parent_pair_remains_eligible(self):
         self.assertEqual(
-            admit(proposal(trigger='on_feed'), parents=['Egg', 'Tack'])['status'],
+            admit(proposal(trigger='on_feed',
+                           art={'base_kind': 'tick', 'attachments': []}),
+                  parents=['Egg', 'Tack'])['status'],
             'eligible_for_simulation',
         )
 

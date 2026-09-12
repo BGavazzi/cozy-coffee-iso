@@ -110,12 +110,14 @@ evidence join without pretending that visual approval substitutes for a
 mechanic simulation or that the control row came from the local model.
 
 As a bounded follow-up, `qwen2.5:7b` generated a standalone `Family Tick`
-proposal from the Tick + Brood Tick pair. The proposal passed the semantic
-admission gate as `after_steps:spawn_tick` and was rendered procedurally through
-the same palette/camera pipeline (build key `e29fd83f6d9394ce096d`). The joined
-record links all eight frame hashes and keeps simulation and visual review at
-`awaiting`; this is the first local-model candidate with a real downstream
-render, but it is not yet a reviewed or canonical asset.
+proposal from the Tick + Brood Tick pair. An initial opcode-only gate called it
+eligible and the factory rendered it (build key `e29fd83f6d9394ce096d`), but a
+compatibility audit caught that `after_steps:spawn_tick` is implemented for an
+Egg body, not a Tick body. The strengthened gate now classifies the proposal as
+`needs_authoring` and the joined record resets every downstream stage to
+`not_attempted`, despite the existing render bytes. This is a concrete false
+positive boundary: opcode allowlists must include body-family compatibility or
+the factory can spend art budget on mechanics the runtime cannot execute.
 
 ## Constraints learned from playtests
 

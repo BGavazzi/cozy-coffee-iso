@@ -53,6 +53,13 @@ The audit currently classifies proposals as `rejected`, `needs_authoring`, or
 needs-authoring proposals; none was allowed directly into simulation. That is
 the intended result while runtime templates are still authored by hand.
 
+Eligibility also checks body-family compatibility, not only the trigger/effect
+opcode. For example, `after_steps:spawn_tick` and `after_steps:spawn_tack` are
+Egg-hatch behaviors, `on_eaten:spawn_tick` belongs to a Toe, and
+`on_feed:spawn_egg` belongs to a Tick; an otherwise valid proposal on the wrong
+body is returned to `needs_authoring`. This prevents the factory from rendering
+an attractive asset for a mechanic the game cannot execute.
+
 The model is a creative search aid, not a rules engine. Keep Ollama bound to
 localhost; do not expose it from the hosted game.
 
