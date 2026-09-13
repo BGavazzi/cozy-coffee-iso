@@ -1,0 +1,42 @@
+{
+  "project": "orchard_dash",
+  "style": "snes_rpg",
+  "direction": "A sunlit orchard rendered in the same warm, pixel-constrained Ghibli-through-16-bit sensibility this repo already established for the cafe, applied outdoors: dappled leaf-shadow, warm cream light, verdant canopy greens, without inventing a new palette philosophy. Adopt: warm light / cool shadow hue shifting, same rule as this repo's own art_direction; high-key value distribution, most of the frame in the upper mids; rounded, chunky low-poly silhouettes over hard geometric ones. Avoid: photoreal foliage texture; screen-shake heavy arcade juice that would fight the cozy tone. Tone: cozy, energetic, warm-afternoon.",
+  "pieces": [
+    {
+      "id": "fox_runner",
+      "name": "Fox Runner",
+      "prompt": "a small quick fox with a wicker basket on its back",
+      "height": 1.6,
+      "seed": 51185
+    },
+    {
+      "id": "apple_tree",
+      "name": "Apple Tree",
+      "prompt": "a shakeable tree that drops apples in a short burst",
+      "height": 0.6,
+      "seed": 49073
+    },
+    {
+      "id": "wasp",
+      "name": "Wasp",
+      "prompt": "a small darting insect that patrols a short lane",
+      "height": 0.16000000000000003,
+      "seed": 40969
+    },
+    {
+      "id": "apple",
+      "name": "Apple",
+      "prompt": "a single round red apple with a short brown stem",
+      "height": 0.09,
+      "seed": 72345
+    },
+    {
+      "id": "basket_meter",
+      "name": "Basket Meter",
+      "prompt": "a fill-level readout for the current run's catch count",
+      "height": 0.15,
+      "seed": 10100
+    }
+  ]
+}
