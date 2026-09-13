@@ -2,26 +2,37 @@
 
 ## Where the open work actually is — read this first
 
-`ART_CRITIQUE.md`'s **final "Still open" section** is the live queue. Nothing
-else in this file is. At the time of writing it holds:
+`ART_CRITIQUE.md`'s **final "Still open" section** (currently at its bottom,
+titled "Still open") is the live queue. Nothing else in this file is, and
+**this list itself is not that section** -- it is a snapshot that was already
+stale as of 2026-09-13: re-checking it against `ART_CRITIQUE.md`'s own later
+passes found 3 of these 5 lines closed (with a fourth, the double-run
+topology, already shipped and merged, commit `71451c3`, despite this file's
+own Tier B2 wording still calling it unbuilt further down). **Read
+`ART_CRITIQUE.md`'s "Still open" section directly rather than trusting this
+paragraph** -- it will drift again. As of that same 2026-09-13 check, it holds
+only two items, both real:
 
 - **Stages 1-3** (SDXL concept -> TRELLIS 2 mesh -> UniRig rig) need a GPU and
-  model weights. The seam (`ingest.py`) is built and checked; nothing feeds it.
+  model weights. The seam (`ingest.py`) is built and checked; nothing feeds
+  it. Blocked on a missing `nvcc`/MSVC toolchain on this machine (~10GB of
+  admin-level installs), not on code -- revisit only if the workstation
+  changes, not by trying to route around the toolchain gap.
 - **Counter orientation costs the focal lead 0.04** and nothing compensates.
   Deliberately not "fixed" -- a rig boosted until the metric agreed would be a
-  knob rather than a cause.
-- **The focal reading falls with render resolution** in generated rooms and
-  holds in the reference one. The gap is stated rather than tuned away.
-- **Furniture screen spread's mean floor (0.15)** has never rejected anything
-  its closest-pair floor (0.045) did not also reject -- redundancy, or a floor
-  set too low to fire.
-- **The detail floor's bracket is 0.010 wide** -- the tightest in the suite,
-  and the first whose margin is smaller than the gap between two adjacent
-  rooms.
+  knob rather than a cause. Do not attempt to close this one; it is recorded
+  as an accepted, understood gap, not a bug.
 
-Plus one prerequisite recorded in the status list below: the **`build_plan.py`
-multi-counter audit** (5 sites hard-code `plan.of("service")[0]`), which is
-what actually blocks the double-run topology.
+The other three original lines are closed, each with its own write-up further
+down `ART_CRITIQUE.md` (search for "Focal detail: resolution-confirmed",
+"The screen-spread floor's redundancy question", and "The detail floor's
+bracket, closed"). The double-run/galley topology (`build_plan.py`'s
+multi-counter audit + `floorplan.py`'s `galley` branch) is also done --
+`git log --oneline -- tools/floorplan.py` shows it landed 2026-09-04, already
+on `main`; `ART_CRITIQUE.md`'s "The double-run topology: scoped wrong the
+first time" section and this file's own Tier B2 entry below both still say
+"Not built this pass" / describe it as open, which is the same
+already-shipped-but-not-written-up drift this note exists to warn about.
 
 **The Tier A/B/C/D sections far below are CLOSED and preserved only as a
 record of what was once asked.** Their headings still advertise open work
@@ -2631,6 +2642,10 @@ first class back in.
   the existing 31-subject set.
 
 ### B2. Build the double-run (galley) topology
+
+**Done, 2026-09-04, commit `71451c3`, on `main`.** Text below is the original
+ask, kept verbatim per this tier's own rule; see `ART_CRITIQUE.md`'s "The
+double-run topology: scoped wrong the first time" for the resolution.
 
 D4 scoped this and deliberately didn't build it: two parallel service runs
 facing each other across the main aisle, reusing the existing run/back/queue
