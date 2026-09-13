@@ -3820,12 +3820,23 @@ under-dressed" entry earlier in this file). A topology whose entire promised
 value is stress-testing which way a counter faces is not worth shipping in
 the one shape that silently produces an under-lit counter.
 
-**Not built this pass.** The real cost is a `build_plan.py` audit across all
-eight touch points -- deciding per site whether the second run should be
-treated identically to the first (lit, dressed, walkable) or is a
-lower-fidelity display counter that only needs blocking/collision -- not the
-`floorplan.py` branch alone. Left for a pass that can give `build_plan.py`
-the same attention `floorplan.py` got.
+~~**Not built this pass.**~~ **Built two passes later, and this section was
+never updated to say so.** Commit `71451c3` ("Build the galley (double-run)
+topology, auditing every plan.of("service")[0] site", 2026-09-04, already on
+`main`) did exactly the audit this section called for: `light_rig()` now sums
+lit pools per run and ranks dark corners by distance to the nearest one;
+`build()`'s whole counter-fill section moved inside a `for run_idx, run in
+enumerate(runs)` loop paired with its own back bar by list position; `_people()`
+splits the customer/barista roster per run instead of duplicating it; the
+hand-inlined duplicate of `focal_box()` (hard-coded to `service[0]`/
+`backbar[0]`) was deleted in favour of calling the already multi-run-safe
+`focal_box()` itself. Verified N==1 byte-identical against the pre-refactor
+four-topology output before the new `galley` branch was ever added to
+`floorplan.generate()`'s shared `rnd()` stream, so the audit itself changed
+nothing observable until the fifth topology actually used it. If this section
+is being read as a todo, it is not one -- check `git log -- tools/floorplan.py`
+before trusting any "not built" claim in this file, this one was 12 days
+stale even before this correction.
 
 ---
 
