@@ -167,6 +167,15 @@ attachment. Its joined record is `passed` / `present` / `awaiting` /
 human visual approval. This separates a novel executable mechanic from a
 release decision and gives the study a measurable “new rule” control row.
 
+The next `qwen2.5:7b` targeted run (Snare Tack + Lure, with the relocation
+template named in the prompt) returned `Whispering Snares`: a schema-valid
+`after_steps:spawn_tack` proposal whose prose described a moving Lure and a
+Tick body. The admission gate rejected it before rendering because the prose
+did not describe the declared effect. This is a useful model-boundary result:
+even after adding a real executable template to the prompt, local generation
+still needs deterministic body/effect checks and can fail without consuming
+asset-review budget.
+
 The novelty ledger now also protects the known Egg + Tack and Decoy Egg + Toe
 signatures from being renamed by a model. Parent-pair checks are deliberately
 small and versioned: they document concrete prior discoveries rather than

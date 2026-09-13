@@ -81,6 +81,15 @@ joined record are retained under `out/games/tick_tack_toe/` (the exact paths
 are listed in `NEXT_TASKS.md`). Its sprite is awaiting a human visual decision;
 no catalog mutation or export occurs before that gate.
 
+The expanded targeted prompt was re-run with `qwen2.5:7b` on Snare Tack +
+Lure after the relocation template was authored. The model returned
+`Whispering Snares`, a schema-valid `after_steps:spawn_tack` proposal whose
+concept described a Lure moving and spawning a snare, while its body was a
+Tick. Admission rejected it for effect/prose mismatch before any render. This
+is retained as `out/games/tick_tack_toe/blink-local-proposal.json` and shows
+that adding an executable template to the prompt does not guarantee that a
+small local model selects it or keeps body/effect semantics aligned.
+
 The model is a creative search aid, not a rules engine. Keep Ollama bound to
 localhost; do not expose it from the hosted game.
 
