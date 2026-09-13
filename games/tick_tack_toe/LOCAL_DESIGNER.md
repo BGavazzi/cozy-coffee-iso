@@ -141,6 +141,12 @@ Raw local-only results are kept at:
 - `games/tick_tack_toe/local-designer-admission.json`
 - `games/tick_tack_toe/local-designer-admission-1.5b.json`
 
+Benchmark batches now also retain total, mean, median, p95, and maximum local
+inference latency. A one-row `qwen2.5-coder:7b` smoke measurement took 2.85 s;
+the field is intentionally a production-cost proxy, not a claim about hosted
+GPU pricing. Compare it with render time, queue delay, and reviewer minutes
+when calculating accepted discoveries per unit cost.
+
 A live localhost run on September 10, 2026, asked the 1.5B model for Tick +
 Toe. It returned a schema-valid but redundant `after_steps: move_self` Tick;
 the admission gate classified it as `needs_authoring` rather than letting it

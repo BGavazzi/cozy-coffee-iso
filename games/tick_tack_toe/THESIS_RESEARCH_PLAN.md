@@ -233,6 +233,12 @@ parent, so its simulation, render, visual-review, and export stages remain
 explicitly `not_attempted` in the joined factory record. The existing reviewed
 Tick sprite is not silently reused as evidence for that proposal.
 
+The benchmark runner now records local inference latency (total/mean/median/p95)
+with each batch. This makes the economic variable observable even for a local
+model: a “free” proposal still consumes queue time, power, and operator
+attention. The study can therefore report accepted meaningful discoveries per
+second, per reviewer-minute, and—when a deployment price is known—per dollar.
+
 ## Manual smoke evidence (2026-09-12)
 
 An agent-controlled browser run resumed a saved Classic 4×4 expedition and

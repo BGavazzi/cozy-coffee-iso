@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import statistics
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -45,9 +46,23 @@ def main() -> int:
     result = {'model': args.model, 'endpoint': args.endpoint,
               'created': datetime.now(timezone.utc).isoformat(), 'count': len(rows),
               'valid': sum(row['ok'] for row in rows), 'rows': rows}
+    latencies = sorted(row['seconds'] for row in rows if row.get('ok'))
+    if latencies:
+        # Local latency is an observable production cost even when inference
+        # is free. Preserve it in the raw batch so queue and reviewer budgets
+        # can be compared across models and prompt conditions.
+        result['latency_seconds'] = {
+            'total': round(sum(latencies), 2),
+            'mean': round(statistics.mean(latencies), 2),
+            'median': round(statistics.median(latencies), 2),
+            'p95': round(latencies[max(0, int(len(latencies) * 0.95) - 1)], 2),
+            'max': round(max(latencies), 2),
+        }
     args.out.write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
     print(json.dumps({'model': args.model, 'count': len(rows), 'valid': result['valid'],
-                      'invalid': len(rows) - result['valid'], 'out': str(args.out)}))
+                      'invalid': len(rows) - result['valid'],
+                      'latency_seconds': result.get('latency_seconds', {}),
+                      'out': str(args.out)}))
     return 0 if result['valid'] else 1
 
 
