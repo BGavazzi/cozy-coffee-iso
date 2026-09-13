@@ -56,9 +56,11 @@ the intended result while runtime templates are still authored by hand.
 Eligibility also checks body-family compatibility, not only the trigger/effect
 opcode. For example, `after_steps:spawn_tick` and `after_steps:spawn_tack` are
 Egg-hatch behaviors, `on_eaten:spawn_tick` belongs to a Toe, and
-`on_feed:spawn_egg` belongs to a Tick; an otherwise valid proposal on the wrong
-body is returned to `needs_authoring`. This prevents the factory from rendering
-an attractive asset for a mechanic the game cannot execute.
+`on_feed:spawn_egg` belongs to a Tick. The first newly authored template,
+`after_steps:move_self`, belongs to a Tack and is implemented as a single
+bounded adjacent shift. An otherwise valid proposal on the wrong body is
+returned to `needs_authoring`. This prevents the factory from rendering an
+attractive asset for a mechanic the game cannot execute.
 
 The targeted prompt now states that mapping and asks the concept to name its
 effect. Recent local probes nevertheless returned a schema-token concept,
@@ -72,6 +74,12 @@ probe passed 100/100 seeded runs and its procedural render had no technical
 blockers, but a runtime-novelty check rejected it as a duplicate of the base
 fertile Tick behavior. The render and simulation remain retained evidence, not
 promotion input.
+
+The first novel executable control row is `Blink Tack`: its proposal envelope,
+`blink-once-v1` admission, 100-run runtime evidence, procedural build and
+joined record are retained under `out/games/tick_tack_toe/` (the exact paths
+are listed in `NEXT_TASKS.md`). Its sprite is awaiting a human visual decision;
+no catalog mutation or export occurs before that gate.
 
 The model is a creative search aid, not a rules engine. Keep Ollama bound to
 localhost; do not expose it from the hosted game.

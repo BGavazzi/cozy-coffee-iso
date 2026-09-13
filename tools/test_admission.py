@@ -22,6 +22,17 @@ class AdmissionTests(unittest.TestCase):
         self.assertEqual(result['status'], 'eligible_for_simulation')
         self.assertEqual(result['runtime_rule'], 'lay-once-v1')
 
+    def test_blink_template_is_body_compatible_and_versioned(self):
+        result = admit({
+            'name': 'Blink Tack',
+            'concept': 'After two steps this Tack shifts once to an adjacent empty cell.',
+            'trigger': 'after_steps', 'target': 'adjacent_empty', 'effect': 'move_self',
+            'cost': 3, 'art': {'base_kind': 'tack', 'attachments': []},
+        }, parents=['Snare Tack', 'Lure'])
+        self.assertEqual(result['status'], 'eligible_for_simulation')
+        self.assertEqual(result['template'], 'after_steps:move_self')
+        self.assertEqual(result['runtime_rule'], 'blink-once-v1')
+
     def test_allowlisted_template_requires_compatible_body_family(self):
         result = admit(proposal(art={'base_kind': 'tick', 'attachments': []}))
         self.assertEqual(result['status'], 'needs_authoring')

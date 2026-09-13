@@ -1,0 +1,12 @@
+{
+  "name": "Blink Tack",
+  "concept": "After two ecosystem steps, this Tack blinks to one adjacent empty cell, changing which lane it threatens; the player may leave space to bait the jump.",
+  "trigger": "after_steps",
+  "target": "adjacent_empty",
+  "effect": "move_self",
+  "cost": 3,
+  "art": {
+    "base_kind": "tack",
+    "attachments": []
+  }
+}

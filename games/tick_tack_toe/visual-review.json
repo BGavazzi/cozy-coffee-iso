@@ -19,6 +19,23 @@
     "b1f12d289b8c75584dd6a4a74aeb06b59056ceaabb95da42e539b40dae301fe0",
     "9b7ab8aad70f732982bf5048e8c9466fe7c630f22e0274e188653f762a02cbc7",
     "528a16f4ae648807babd1d91e7af24403a34624dee0114f95429bc5fa72a9ffb",
-    "085c038d4d2ee1304d7bee8801024986ce1b22bdae06b15b20437f51c327e6b1"
+    "085c038d4d2ee1304d7bee8801024986ce1b22bdae06b15b20437f51c327e6b1",
+    "98c6cfcf9332e5e0f890126651f92e775df9db7c2339a53bb8cced744223bbbe",
+    "649ca0acb082880b34523e3a57c59dd1a2de22142c8ec8798edc3148762b191f",
+    "d7ab309e716177a30a63e9de7a43c75f20a0442c5d5b028505c563bbd511218e",
+    "32edf694922fc024670e2b597028bf63fb85d4059c9c40514f79f44083dc2057",
+    "8fbd36a3ec19987b79a0ad9d3ef997751ee972aaa618ffb1b6af62ee28882179",
+    "382efc1211c708cf46ddb5ed33417ef36cb3157c54416ee91f44359d794f48e0",
+    "032580871d756ddf3158f9298103ab4eb5b4b4c05f54faecc465d1570ba1b3fe"
+  ],
+  "human_reviews": [
+    {
+      "candidate_key": "b311ec6e25cd5ef84e18",
+      "label": "Brood Tick",
+      "reviewer": "user",
+      "decision": "approved",
+      "date": "2026-09-13",
+      "scope": "All eight Nest Guardian directions; user identifies the silhouette as a Brood Tick."
+    }
   ]
 }

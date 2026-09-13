@@ -152,6 +152,21 @@ spends review or promotion budget. Its egg-sac attachment still maps cleanly to
 the procedural `fertile` trait, so the rejection is specifically about
 mechanic novelty.
 
+The first genuinely novel body-compatible template is now represented by
+`Blink Tack`. Unlike the fertile-Tick duplicate, it uses a new bounded runtime
+signature: `after_steps:move_self` on a Tack. After two ecosystem steps it moves
+once to the first adjacent empty cell, waits without consuming its shot when
+blocked, and then holds its new position. The implementation is exercised by a
+dedicated game test and 100 seeded probes against the real `ecosystem` runtime
+(`simulation-blink-tack-2026-09-13.json`): 100/100 passed, zero failures, and
+the board/UID bounds remained intact. The procedural factory render (build key
+`ade48894c67478b53a58`) is technically clean and semantically matched, with
+the blue motion glint treated as variant geometry rather than an untracked
+attachment. Its joined record is `passed` / `present` / `awaiting` /
+`awaiting`; the candidate is intentionally held out of the player catalog until
+human visual approval. This separates a novel executable mechanic from a
+release decision and gives the study a measurable “new rule” control row.
+
 The novelty ledger now also protects the known Egg + Tack and Decoy Egg + Toe
 signatures from being renamed by a model. Parent-pair checks are deliberately
 small and versioned: they document concrete prior discoveries rather than

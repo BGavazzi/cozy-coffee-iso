@@ -18,6 +18,7 @@ SIMULATABLE = {
     ('after_steps', 'spawn_tack'),
     ('on_eaten', 'spawn_tick'),
     ('on_feed', 'spawn_egg'),
+    ('after_steps', 'move_self'),
 }
 # A trigger/effect opcode is only executable for the body that the authored
 # runtime actually handles.  Keeping this compatibility table explicit avoids
@@ -29,6 +30,7 @@ TEMPLATE_BASE_KINDS = {
     ('after_steps', 'spawn_tack'): {'egg'},
     ('on_eaten', 'spawn_tick'): {'toe'},
     ('on_feed', 'spawn_egg'): {'tick'},
+    ('after_steps', 'move_self'): {'tack'},
 }
 RUNTIME_TEMPLATE_V1 = {
     ('after_steps', 'spawn_egg', 'tack'): 'lay-once-v1',
@@ -36,6 +38,7 @@ RUNTIME_TEMPLATE_V1 = {
     ('after_steps', 'spawn_tack', 'egg'): 'hatch-tack-v1',
     ('on_eaten', 'spawn_tick', 'toe'): 'consumed-tick-v1',
     ('on_feed', 'spawn_egg', 'tick'): 'fertile-feed-v1',
+    ('after_steps', 'move_self', 'tack'): 'blink-once-v1',
 }
 
 # A proposal can be structurally valid and still fail the game's meaningful
