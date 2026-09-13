@@ -193,6 +193,23 @@ novelty checks. It also suggests that model comparisons should report
 eligible-after-quality-gates per dollar and per reviewer minute, not raw valid
 JSON rate.
 
+## First run/combo metrics (2026-09-13)
+
+The offline `combo_metrics.mjs` instrument ran 100 seeds for the base deck,
+three discoveries, and the Hatchery Trap + Snare Tack pair in Classic and
+Tactical modes. It records win/timeout rate, encounters, hearts, lines,
+player-versus-rival deployments, choice turns, discovery activation, event
+counts, occupancy, and stalemates.
+
+The result quantifies the playtest feedback: the Classic base control had a
+100% scripted win rate and a 4.61:1 player/rival deployment ratio (27.35 versus
+5.93). Tactical reduced the ratio to 2.59:1, but the base control still had a
+100% scripted win rate. The composed Hatchery Trap + Snare Tack pair reached a
+49% Tactical win rate, 2.02:1 action ratio, and 100% activation across these
+seeds—an initial candidate for a more contestable, content-rich condition.
+These are policy diagnostics, not claims of human fun; they identify which
+conditions deserve blinded player testing and which are visibly too forgiving.
+
 The follow-up prompt was strengthened to state the body mapping and require the
 concept to name the declared outcome. Three local checks still exposed model
 failure modes: `qwen2.5:7b` returned the literal schema token as its concept,

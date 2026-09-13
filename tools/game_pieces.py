@@ -71,11 +71,11 @@ def build(kind: str, traits=(), variant=None):
                 strut(m, (side * 0.12, 0, 0.39), (side * 0.27, 0, 0.12), 0.026, 'wood')
             m = merge(m, oval((0, 0.02, 0.16), (0.18, 0.035, 0.04), 'sky'))
         if variant == 'blink-tack-v1':
-            # A compact blue motion glint plus the phase-ring makes the delayed
-            # relocation legible without adding an attachment the semantic-art
-            # checker cannot verify.
-            strut(m, (-0.16, 0.02, 0.48), (0.16, 0.02, 0.48), 0.018, 'sky')
-            m = merge(m, oval((0.18, 0.02, 0.48), (0.035, 0.035, 0.035), 'sky+1'))
+            # Keep the motion cue anchored to the Tack rather than to a world
+            # axis: a directional streak would change angle across the eight
+            # isometric views. A centered pulse plus the symmetric phase-ring
+            # remains stable relative to the cap from every direction.
+            m = merge(m, oval((0, 0, 0.48), (0.052, 0.052, 0.026), 'sky+1'))
     elif kind == 'toe':
         m = merge(oval((0, 0, 0.15), (0.19, 0.3, 0.15), 'skin+1'),
                   oval((0, 0.17, 0.267), (0.13, 0.105, 0.036), 'cream'))
