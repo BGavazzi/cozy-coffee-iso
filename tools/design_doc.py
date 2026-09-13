@@ -120,6 +120,19 @@ def validate(doc: dict) -> None:
         # collage instead of one apple, and blocked review on 3 of 8 frames.
         # `role` is the field for game-design language ("hazard",
         # "collectible") -- it is descriptive only, never a prompt.
+        #
+        # Two more measured failure modes (games/lantern_path): (1) any
+        # thin/wiry protruding part -- a wire handle, an insect leg, an
+        # antenna -- reconstructs as noisy dark clutter at 64px regardless of
+        # shading; describe subjects as one solid rounded/blocky mass instead.
+        # (2) a literal creature/animal noun (e.g. "firefly") pulls in fine
+        # anatomy (legs, antennae, wing venation) strongly enough that adding
+        # "no legs, no wings, no antennae" to the SAME prompt did not stop it
+        # and re-triggered the same speckle blocker -- diffusion models don't
+        # reliably obey negation. The fix that worked was dropping the
+        # creature noun entirely and describing an abstract shape (e.g. "a
+        # small glowing bead") instead; keep the creature's identity in
+        # `name`/`role`, never in `short_desc`.
         for field in ("id", "name", "role", "short_desc"):
             _require_str(subject, field)
         if not SUBJECT_ID_RE.fullmatch(subject["id"]):

@@ -111,7 +111,12 @@ def elicit(answers: dict | None = None, prompt_fn: PromptFn = input) -> dict:
                     "    short_desc (this becomes an SDXL prompt for a single "
                     "static object -- describe physical appearance only, no "
                     "game-design language like \"scoring unit\" or motion "
-                    "like \"falling\"): ").strip(),
+                    "like \"falling\"; avoid thin/wiry parts like a handle, "
+                    "leg, or antenna -- they reconstruct as noisy clutter; "
+                    "if the subject is a creature, describe an abstract "
+                    "shape instead of its literal anatomy, e.g. \"a small "
+                    "glowing bead\" not \"a firefly\" -- the creature's "
+                    "identity belongs in name/role, not here): ").strip(),
                 "category": prompt_fn(f"    category {ASSET_CATEGORIES}: ").strip(),
             }
             scale = prompt_fn("    scale relative to category default "
