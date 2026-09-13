@@ -1,7 +1,7 @@
 {
   "project": "tick_tack_toe",
   "style": "snes_rpg",
-  "direction": "A stout brass thumbtack token with a small blue motion glint; readable as a tack at 64px, no text or gore.",
+  "direction": "A stout brass thumbtack token with a cyan phase ring and blue motion glint; readable as a distinct blinking tack at 64px, no text or gore.",
   "pieces": [
     {
       "id": "blink-tack-v1",
@@ -11,7 +11,7 @@
       "name": "Blink Tack",
       "height": 0.3,
       "seed": 53,
-      "prompt": "a stout brass thumbtack game token with a tiny blue motion glint, round rose cap, short thick metal point, matte painted clay"
+      "prompt": "a stout brass thumbtack game token with a cyan phase ring and blue motion glint, round rose cap, short thick metal point, matte painted clay"
     }
   ]
 }

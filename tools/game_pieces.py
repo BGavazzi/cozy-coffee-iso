@@ -43,6 +43,12 @@ def build(kind: str, traits=(), variant=None):
                 m = merge(m, oval((x, y, 0.47), (0.085, 0.095, 0.115), 'cream'))
     elif kind == 'tack':
         m.add_prism((0, 0, 0), 0.025, 0.025, 0.31, 'neutral+1', segments=8)
+        if variant == 'blink-tack-v1':
+            # Give Blink Tack a silhouette cue, not just a highlight: a thin
+            # cyan phase-ring remains visible around the rose cap from every
+            # camera direction. The ring is deliberately part of the variant
+            # body (not an attachment) so semantic-art checks can track it.
+            m = merge(m, oval((0, 0, 0.33), (0.265, 0.265, 0.022), 'sky'))
         m.add_prism((0, 0, 0.28), 0.23, 0.23, 0.09, 'rose', segments=16)
         m = merge(m, oval((0, 0, 0.37), (0.22, 0.22, 0.065), 'rose+1'))
         if variant == 'hatchery-trap-v1':
@@ -65,9 +71,9 @@ def build(kind: str, traits=(), variant=None):
                 strut(m, (side * 0.12, 0, 0.39), (side * 0.27, 0, 0.12), 0.026, 'wood')
             m = merge(m, oval((0, 0.02, 0.16), (0.18, 0.035, 0.04), 'sky'))
         if variant == 'blink-tack-v1':
-            # A compact blue motion glint makes the delayed relocation legible
-            # without changing the tack body envelope or adding an attachment
-            # the semantic-art checker cannot verify.
+            # A compact blue motion glint plus the phase-ring makes the delayed
+            # relocation legible without adding an attachment the semantic-art
+            # checker cannot verify.
             strut(m, (-0.16, 0.02, 0.48), (0.16, 0.02, 0.48), 0.018, 'sky')
             m = merge(m, oval((0.18, 0.02, 0.48), (0.035, 0.035, 0.035), 'sky+1'))
     elif kind == 'toe':
