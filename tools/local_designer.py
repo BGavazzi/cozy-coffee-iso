@@ -38,6 +38,8 @@ SIMULATABLE_HINT = (
     "phrase (never a schema token or the game title), explain the player "
     "decision in a concrete sentence, and explicitly describe the declared "
     "effect outcome (egg, tick, tack, or one relocation) instead of an unrelated transformation. "
+    "For the relocation template specifically, use base_kind 'tack', target "
+    "'adjacent_empty', and describe the Tack shifting once after two steps. "
     "Example structure (do not copy the names): 'When this Tick feeds an "
     "adjacent Toe, it lays one Egg in an adjacent empty cell; the player must "
     "choose whether to feed now or preserve space.'"

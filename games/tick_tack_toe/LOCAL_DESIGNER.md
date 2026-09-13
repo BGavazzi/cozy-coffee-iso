@@ -90,6 +90,12 @@ is retained as `out/games/tick_tack_toe/blink-local-proposal.json` and shows
 that adding an executable template to the prompt does not guarantee that a
 small local model selects it or keeps body/effect semantics aligned.
 
+An additional prompt sentence naming the exact `Tack`/`adjacent_empty` mapping
+improved the body choice but not the opcode: the next sample (`Tick Tack Sway`)
+used a Tack while selecting `after_steps:remove_enemy`. It is therefore
+`needs_authoring`, another clean example that schema validity and partial
+semantic alignment are not enough for factory admission.
+
 The model is a creative search aid, not a rules engine. Keep Ollama bound to
 localhost; do not expose it from the hosted game.
 
