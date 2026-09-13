@@ -239,6 +239,14 @@ model: a “free” proposal still consumes queue time, power, and operator
 attention. The study can therefore report accepted meaningful discoveries per
 second, per reviewer-minute, and—when a deployment price is known—per dollar.
 
+A six-pair `llama3.1:8b` comparison (mean 3.64 s/row) initially looked stronger
+than the coder model because two rows passed the first admission cut. After
+adding base-behavior and title/body quality checks, those apparent gains mostly
+collapsed into duplicate or semantically misleading proposals. This is a
+useful warning against ranking models by raw eligible rate: the measured target
+should be **eligible-after-all-quality-gates**, with rejected candidates and
+their avoided render/review cost retained in the denominator.
+
 ## Manual smoke evidence (2026-09-12)
 
 An agent-controlled browser run resumed a saved Classic 4×4 expedition and

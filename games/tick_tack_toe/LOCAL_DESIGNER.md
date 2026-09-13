@@ -109,6 +109,15 @@ more reliably than it can produce novel, body-compatible, player-legible
 mechanics. Raw rerun evidence is kept at
 `out/games/tick_tack_toe/local-targeted-coder-2026-09-13-rerun.json`.
 
+For a second model family, `llama3.1:8b` produced 6/6 valid rows in a targeted
+batch (mean local latency 3.64 s, total 21.83 s). The first pass appeared to
+contain two eligible rows, but one was a duplicate of base Egg hatching and the
+other used the game title as its discovery name. Those runtime/name boundaries
+are now deterministic gates; a prompt-corrected rerun still produced only
+body-compatible candidates that require no new runtime or were rejected for
+duplicate art/body semantics. Raw evidence is retained at
+`out/games/tick_tack_toe/local-targeted-llama31-2026-09-13-rerun.json`.
+
 The model is a creative search aid, not a rules engine. Keep Ollama bound to
 localhost; do not expose it from the hosted game.
 

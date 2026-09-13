@@ -59,6 +59,20 @@ class AdmissionTests(unittest.TestCase):
         self.assertEqual(result['status'], 'rejected')
         self.assertIn('schema instructions', result['reasons'][0])
 
+    def test_concept_subject_must_match_art_body(self):
+        result = admit(proposal(
+            name='Toe Fledgling',
+            concept='When this Egg moves into an adjacent empty cell, it lays one Egg.',
+            trigger='after_steps', effect='spawn_egg',
+            art={'base_kind': 'tack', 'attachments': []},
+        ))
+        self.assertEqual(result['status'], 'rejected')
+        self.assertIn('conflicts with base_kind tack', result['reasons'][0])
+
+    def test_game_title_embedded_in_name_is_not_a_discovery_name(self):
+        result = admit(proposal(name='Tick Tack Toe: Hatchling Shuffle'))
+        self.assertEqual(result['status'], 'rejected')
+
     def test_runtime_duplicate_is_not_a_discovery(self):
         result = admit(proposal(
             name='Nest Guardian',
@@ -113,6 +127,16 @@ class AdmissionTests(unittest.TestCase):
                                 art={'base_kind': 'tick', 'attachments': []}),
                        parents=['Egg', 'Tack'])
         self.assertEqual(result['status'], 'rejected')
+
+    def test_base_egg_hatching_is_not_a_discovery(self):
+        result = admit(proposal(
+            name='Fertile Ground',
+            concept='When this Egg is stepped on, it hatches into one Tick in an adjacent empty cell.',
+            trigger='after_steps', effect='spawn_tick',
+            art={'base_kind': 'egg', 'attachments': []},
+        ))
+        self.assertEqual(result['status'], 'rejected')
+        self.assertIn('base Egg hatching', result['reasons'][0])
 
     def test_admission_envelope_is_promotion_ready(self):
         payload = proposal(name='Brood Warden')

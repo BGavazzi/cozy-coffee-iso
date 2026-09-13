@@ -131,8 +131,20 @@ def concept_quality_reasons(proposal: dict) -> list[str]:
     return []
 
 
+def concept_body_reasons(proposal: dict) -> list[str]:
+    """Reject a concept whose grammatical subject contradicts its art body."""
+    match = re.search(r'\b(?:when|if)\s+(?:this\s+)?(tick|tack|toe|egg)\b',
+                      proposal['concept'].strip().lower())
+    if match and match.group(1) != proposal['art']['base_kind']:
+        return [f"concept subject {match.group(1)} conflicts with base_kind {proposal['art']['base_kind']}"]
+    return []
+
+
 def runtime_novelty_reasons(proposal: dict) -> list[str]:
     """Reject an opcode/body pair that is already a base-card behavior."""
+    if (proposal['trigger'], proposal['effect'], proposal['art']['base_kind']) == \
+            ('after_steps', 'spawn_tick', 'egg'):
+        return ['runtime rule duplicates existing base Egg hatching behavior']
     if (proposal['trigger'], proposal['effect'], proposal['art']['base_kind']) == \
             ('on_feed', 'spawn_egg', 'tick'):
         return ['runtime rule duplicates existing fertile Tick behavior']
@@ -146,7 +158,8 @@ def admit(proposal: dict, parents: list[str] | None = None) -> dict:
         return {'status': 'rejected', 'reasons': [str(exc)]}
     reasons = []
     name_key = _name_key(proposal['name'])
-    if not name_key or name_key in GENERIC_NAMES:
+    if (not name_key or name_key in GENERIC_NAMES or
+            'tick tack toe' in name_key):
         reasons.append('name is not meaningful enough for a discovery')
     if parents:
         name_id = _normalise_parent(proposal['name'])
@@ -166,6 +179,7 @@ def admit(proposal: dict, parents: list[str] | None = None) -> dict:
     pair = (proposal['trigger'], proposal['effect'])
     if pair in SIMULATABLE:
         reasons.extend(concept_quality_reasons(proposal))
+        reasons.extend(concept_body_reasons(proposal))
         reasons.extend(concept_effect_reasons(proposal))
         reasons.extend(runtime_novelty_reasons(proposal))
     if reasons:
