@@ -96,6 +96,19 @@ used a Tack while selecting `after_steps:remove_enemy`. It is therefore
 `needs_authoring`, another clean example that schema validity and partial
 semantic alignment are not enough for factory admission.
 
+The `qwen2.5-coder:7b` targeted benchmark (six pairs, 2026-09-13) returned
+6/6 schema-valid rows. Before the quality patch, two looked eligible:
+`Egg's Nest` was a field-list disguised as a concept and `Glimmer Tack` was a
+second name for the already-authored relocation signature. The admission gate
+now rejects schema-token leakage (`after_steps`, `on_feed`, `base_kind`, and
+similar field/opcode combinations) as non-player-facing prose. The rerun
+produced five `needs_authoring`/rejected rows and no new executable candidate;
+the strongest remaining failure was generic or wrong-body opcode selection.
+This is useful evidence that a small model can satisfy JSON formatting much
+more reliably than it can produce novel, body-compatible, player-legible
+mechanics. Raw rerun evidence is kept at
+`out/games/tick_tack_toe/local-targeted-coder-2026-09-13-rerun.json`.
+
 The model is a creative search aid, not a rules engine. Keep Ollama bound to
 localhost; do not expose it from the hosted game.
 

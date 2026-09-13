@@ -49,6 +49,16 @@ class AdmissionTests(unittest.TestCase):
         self.assertTrue(any('declared effect spawn_egg' in reason
                             for reason in result['reasons']))
 
+    def test_schema_instruction_leakage_is_not_player_facing_prose(self):
+        result = admit(proposal(
+            name="Egg's Nest",
+            concept='Egg for after_steps spawning, Tick for on_feed spawning an Egg.',
+            trigger='after_steps', effect='spawn_egg',
+            art={'base_kind': 'tack', 'attachments': []},
+        ))
+        self.assertEqual(result['status'], 'rejected')
+        self.assertIn('schema instructions', result['reasons'][0])
+
     def test_runtime_duplicate_is_not_a_discovery(self):
         result = admit(proposal(
             name='Nest Guardian',

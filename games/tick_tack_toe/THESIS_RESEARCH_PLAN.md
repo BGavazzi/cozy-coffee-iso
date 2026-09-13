@@ -181,6 +181,18 @@ signatures from being renamed by a model. Parent-pair checks are deliberately
 small and versioned: they document concrete prior discoveries rather than
 attempting an open-ended semantic similarity judgment.
 
+The coder-model comparison exposed a separate quality boundary. A
+`qwen2.5-coder:7b` six-pair targeted batch was 6/6 schema-valid, but its two
+apparently eligible rows were not both meaningful: `Egg's Nest` copied schema
+instructions into the concept, while `Glimmer Tack` repeated the newly-authored
+`after_steps:move_self` signature under a new name. The deterministic gate now
+rejects schema-token leakage as non-player-facing prose; the rerun yielded no
+new executable candidate. This gives the study a concrete metric beyond JSON
+validity: **player-facing concept rate** after instruction-leak and runtime-
+novelty checks. It also suggests that model comparisons should report
+eligible-after-quality-gates per dollar and per reviewer minute, not raw valid
+JSON rate.
+
 The follow-up prompt was strengthened to state the body mapping and require the
 concept to name the declared outcome. Three local checks still exposed model
 failure modes: `qwen2.5:7b` returned the literal schema token as its concept,

@@ -61,6 +61,15 @@ GENERIC_NAMES = {
     'tick tack toe',
 }
 GENERIC_CONCEPTS = {'a game piece', 'after_steps', 'new piece'}
+# Small local models sometimes emit the schema they were asked to fill rather
+# than a player-facing discovery.  Treat that as a quality failure even when
+# the JSON and opcode are otherwise valid: admitting it would spend render and
+# review budget on an instruction, not on a playable idea.
+SCHEMA_LEAK_TERMS = {
+    'after_steps', 'on_feed', 'on_eaten', 'on_play', 'spawn_egg',
+    'spawn_tick', 'spawn_tack', 'move_self', 'remove_enemy', 'score_line',
+    'base_kind', 'adjacent_empty',
+}
 EFFECT_CONCEPT_TERMS = {
     'spawn_egg': {'egg', 'lay', 'spawn', 'hatch', 'reproduc'},
     'spawn_tick': {'tick', 'spawn', 'hatch', 'become'},
@@ -110,6 +119,18 @@ def concept_effect_reasons(proposal: dict) -> list[str]:
     return []
 
 
+def concept_quality_reasons(proposal: dict) -> list[str]:
+    """Reject model instruction leakage masquerading as discovery prose."""
+    concept = proposal['concept'].strip().lower()
+    normalized = re.sub(r'[^a-z0-9_]+', ' ', concept)
+    hits = {term for term in SCHEMA_LEAK_TERMS if term in normalized}
+    # One ordinary word such as "egg" is harmless; two or more opcode/schema
+    # tokens, or explicit field-list phrasing, is a reliable leakage signal.
+    if len(hits) >= 2 or 'for after_steps' in concept or 'base_kind' in concept:
+        return ['concept contains schema instructions rather than player-facing prose']
+    return []
+
+
 def runtime_novelty_reasons(proposal: dict) -> list[str]:
     """Reject an opcode/body pair that is already a base-card behavior."""
     if (proposal['trigger'], proposal['effect'], proposal['art']['base_kind']) == \
@@ -144,6 +165,7 @@ def admit(proposal: dict, parents: list[str] | None = None) -> dict:
     reasons.extend(novelty_reasons(proposal, parents))
     pair = (proposal['trigger'], proposal['effect'])
     if pair in SIMULATABLE:
+        reasons.extend(concept_quality_reasons(proposal))
         reasons.extend(concept_effect_reasons(proposal))
         reasons.extend(runtime_novelty_reasons(proposal))
     if reasons:
