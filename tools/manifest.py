@@ -157,12 +157,12 @@ def check_ui(man: dict, active) -> list[str]:
     (`package_godot.py`'s `style_paths()` has the fullest account of this
     split across producers -- it independently arrived at "match each
     producer's own convention exactly rather than invent a third," which is
-    the same call made here, though it only threads through the suffix
-    convention for its own single `ui_dir` field and so silently stages
-    nothing from `ui_forge.py`'s nested directory for a non-default style.
-    That's a real gap in `package_godot.py`, not addressed here -- it wasn't
-    introduced by this change and fixing it means touching a different,
-    working, shipped file. Noted in `NEXT.md`.)
+    the same call made here. It used to thread through only the suffix
+    convention for a single `ui_dir` field and so silently stage nothing
+    from `ui_forge.py`'s nested directory for a non-default style; that gap
+    was flagged here and closed two commits later, PR #57 -- `style_paths()`
+    now returns `ui_forge_dir`/`ui_chrome_dir` and `stage_ui()` merges both,
+    same shape as the audit below.)
 
     Unifying the two conventions would mean changing what `ui_forge.py`/
     `ui_chrome.py` actually write to disk, which is a bigger, separate
