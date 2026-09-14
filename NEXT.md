@@ -10,8 +10,8 @@ passes found 3 of these 5 lines closed (with a fourth, the double-run
 topology, already shipped and merged, commit `71451c3`, despite this file's
 own Tier B2 wording still calling it unbuilt further down). **Read
 `ART_CRITIQUE.md`'s "Still open" section directly rather than trusting this
-paragraph** -- it will drift again. As of that same 2026-09-13 check, it holds
-only two items, both real:
+paragraph** -- it will drift again. As of a further 2026-09-13 pass, it holds
+three items, all real:
 
 - **Stages 1-3** (SDXL concept -> TRELLIS 2 mesh -> UniRig rig) need a GPU and
   model weights. The seam (`ingest.py`) is built and checked; nothing feeds
@@ -22,6 +22,15 @@ only two items, both real:
   Deliberately not "fixed" -- a rig boosted until the metric agreed would be a
   knob rather than a cause. Do not attempt to close this one; it is recorded
   as an accepted, understood gap, not a bug.
+- **The galley topology fails `manifest.py --check`'s composition test on 3 of
+  3 occurrences (100%)**, under both style packs. Not new -- commit
+  `71451c3`'s own message already measured this at n=40 and explicitly
+  declined to fix it (galley's focal box spans the room's full depth, so its
+  detail/mean-L reads low by the same box-size mechanism the closed corner
+  case named, just more severe). Never surfaced into `ART_CRITIQUE.md`'s prose
+  until now -- see "A real, already-measured galley finding was never folded
+  out of its own commit message". Do not loosen `MIN_FOCAL_L`/
+  `MIN_FOCAL_DETAIL` to admit it; that would tune the floor to the answer.
 
 The other three original lines are closed, each with its own write-up further
 down `ART_CRITIQUE.md` (search for "Focal detail: resolution-confirmed",
