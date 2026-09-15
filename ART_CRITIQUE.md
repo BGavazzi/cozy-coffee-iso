@@ -3526,6 +3526,16 @@ through two separate implementations.
   signal-to-noise gap no threshold placement closes. Left at 0.0 and
   recorded as a population-rate check (roughly 1 in 8-9 wall/L runs), not a
   per-room verdict.
+- **Added 2026-09-13: the galley topology fails composition (mean-L and/or
+  detail) on 3 of 3 occurrences in a fresh 12-plan scan (100%, matching its
+  own build commit's 100% at n=40)**, confirmed identical under both style
+  packs. This is NOT new -- commit `71451c3` already measured and explicitly
+  declined to fix it ("loosening MIN_FOCAL_L/MIN_FOCAL_DETAIL to admit it
+  would be tuning the instrument to the answer"), it just never made it into
+  this file's prose until "A real, already-measured galley finding was never
+  folded out of its own commit message" below. Do not loosen either floor to
+  admit galley; the mechanism (its focal box spans the full room depth, not
+  a strip near one wall) is understood and accepted, not a bug.
 - **Added 2026-09-13, still real: 4 of 20 `cat: ui` icons (`ui_coin`,
   `ui_icon_bagel`, `ui_icon_pastry`, `ui_icon_sandwich`) fail the speckle gate
   under BOTH styles**, not "2 of 14 under snes_rpg only" as an earlier note
@@ -5080,6 +5090,65 @@ would still slip through -- the fix trades "wrong at whichever resolution
 you happened to pick" for "wrong only if two specific, load-bearing
 resolutions agree it's wrong," which is the practical claim the delivered
 game actually needs, not the abstract one this bullet originally asked for.
+
+## A real, already-measured galley finding was never folded out of its own commit message
+
+`tools/manifest.py --check` currently prints 3 composition `ERROR`s under
+both style packs -- one on an L run, two on a galley -- neither mentioned
+anywhere in this file's prose. Chased both down rather than assuming either
+was new.
+
+**Plan numbering shifted when galley was added.** The commit that built the
+galley topology (`71451c3`) added a new branch to `floorplan.generate()`'s
+shared `rnd()` stream, which changes which seed draws which topology from
+that point on -- "plan 1" or "plan 10" in a pre-`71451c3` write-up (like the
+section directly above this one) is not the same room as "plan 1"/"plan 10"
+today. Re-ran `build_plan.py --focal-scan 12` fresh to get current identities
+rather than assume the old numbers still mean the same rooms:
+
+```
+  plan  1  L run      L +0.062  C +0.146  D -0.001   FAIL
+  plan  8  galley     L -0.012  C +0.045  D -0.019   FAIL
+  plan 10  galley     L -0.019  C +0.054  D -0.042   FAIL
+  plan 12  galley     L +0.031  C +0.054  D -0.013   FAIL
+  4 of 12 rooms fail the focal floors (33%)
+```
+
+**Today's plan 1 (L run) is the already-known, already-rescued case, not a
+new one.** `check_focal_contrast()` (what `manifest.py --check` actually
+calls) already carries the `FOCAL_CONFIRM_TARGET=480` confirmation described
+in the section directly above -- a failure at the scan's default 320 gets one
+more render at 480 before it's reported, and only a roughly-1-in-12 room
+fails both. `manifest.py --check`'s ERROR line names the specific room, not
+whether it was confirmed; this is consistent with that section's own finding
+(a resolution-dependent false positive lives around this rate) rather than
+evidence of a fresh regression.
+
+**Today's 3 galley failures are not new either -- they are commit `71451c3`'s
+own already-measured, already-decided-against-fixing finding, just never
+surfaced into this file.** That commit's message (`git log --format=%B -1
+71451c3`) states it directly: across a widened 40-plan scan, galley clears
+the contrast floor on all 3 of its occurrences but fails mean-L and/or detail
+on all 3 (100%, vs 8-33% for the other four topologies) -- "a structural
+consequence of the box's size... not fixed here because loosening
+MIN_FOCAL_L/MIN_FOCAL_DETAIL to admit it would be tuning the instrument to
+the answer." `focal_box()` unions every service/backbar/service_return zone;
+a galley's box spans the room's full depth (both runs on opposite walls)
+rather than a strip near one wall, which is presumably why L and D both read
+low -- the same box-size-vs-detail mechanism D1 (Tier D, closed) already
+named for L run's corner, more severe here because a galley's box is larger
+still. Re-verified live in this pass at n=12 (3/3 galley occurrences fail,
+matching the commit's own 3/3 at n=40) and confirmed it is not style-specific
+-- `manifest.py --check --style snes_rpg` shows the identical two galley
+composition messages, expected since this is pure geometry/luminance math,
+independent of palette.
+
+**Not a task.** Recorded here, matching the commit's own reasoning, so a
+future pass does not re-discover this and loosen the floor to admit it --
+that would hide the actual mechanism (a topology-specific focal-box-size
+effect) behind a threshold picked to make one topology's numbers agree,
+exactly the failure mode `check_focal_contrast`'s own resolution-confirmation
+fix (section above) was careful to avoid for a different reason.
 
 ## The UI icon roster grew to 20, and the speckle gate now fails 5 of them under both styles, not 2 under one
 
