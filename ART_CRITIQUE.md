@@ -3526,6 +3526,16 @@ through two separate implementations.
   signal-to-noise gap no threshold placement closes. Left at 0.0 and
   recorded as a population-rate check (roughly 1 in 8-9 wall/L runs), not a
   per-room verdict.
+- **Added 2026-09-13, still real: 4 of 20 `cat: ui` icons (`ui_coin`,
+  `ui_icon_bagel`, `ui_icon_pastry`, `ui_icon_sandwich`) fail the speckle gate
+  under BOTH styles**, not "2 of 14 under snes_rpg only" as an earlier note
+  here claimed -- see "The UI icon roster grew to 20, and the speckle gate now
+  fails 5 of them under both styles, not 2 under one" below for the full
+  measurement, two real fix attempts, and the one (`ui_icon_muffin`) that
+  actually worked. Left open the same way TripoSR speckle is: a measured,
+  cross-style limitation of the 2D icon path for subjects with a strong
+  fine-detail SDXL prior, not something `--retry-seeds` or more negation
+  words fixed on this evidence.
 
 ---
 
@@ -5070,3 +5080,78 @@ would still slip through -- the fix trades "wrong at whichever resolution
 you happened to pick" for "wrong only if two specific, load-bearing
 resolutions agree it's wrong," which is the practical claim the delivered
 game actually needs, not the abstract one this bullet originally asked for.
+
+## The UI icon roster grew to 20, and the speckle gate now fails 5 of them under both styles, not 2 under one
+
+An earlier note (this file, "UI art has a path now") measured 2 of the then-14
+`cat: ui` icons failing snes_rpg's speckle gate. Re-running the full roster
+fresh, live on current code, found two things wrong with that number: the
+roster is now 20 entries (six more added since), and the failures are not
+snes_rpg-specific at all.
+
+```
+python tools/ui_forge.py --style cozy_ghibli   -> 13/20 built
+python tools/ui_forge.py --style snes_rpg      -> 12/20 built
+```
+
+Five icons fail under **both** styles: `ui_coin`, `ui_icon_bagel`,
+`ui_icon_muffin`, `ui_icon_pastry`, `ui_icon_sandwich`. Two more fail under
+`cozy_ghibli` only (`ui_icon_cookie`, `ui_nameplate`) and three under
+`snes_rpg` only (`ui_clock_day`, `ui_heart_mood`, `ui_star_rating`) -- the
+single-style failures are consistent with the file's own established finding
+that speckle is seed-dependent (`--retry-seeds` is stochastic; a name passing
+one style and not the other on a given run is not evidence of a style-specific
+cause without a repeat sample). The cross-style overlap is the real signal:
+whatever is wrong with these five is upstream of either palette.
+
+**Root cause, seen directly in the concept images:** all five ask, explicitly
+or by the object's own nature, for something SDXL renders with fine surface
+detail regardless of the `UI_STYLE` wrapper's "no shading, no gradient" -- a
+gold coin gets engraved rim rivets, embossed numerals and radial brush lines;
+a bagel gets literal seed/crumb speckle; a sandwich's bread crust gets crumb
+flecks. `out/ui/ui_coin_concept_raw.png` shows this plainly: a mint-quality
+coin with an embossed "1", rivets around the rim, and fine radial hairlines,
+none of which the prompt asked for.
+
+**Two real fix attempts, two different strategies, one real result:**
+
+1. Targeted negation per icon (`"a round gold coin, smooth flat face, no
+   engraving, no texture"`, `"a plain bagel, smooth ring shape, no seeds, no
+   bread texture"`, etc.) -- no reliable improvement. `ui_coin` went
+   11.2% -> 11.5% (cap 6.2%), `ui_icon_bagel` 12.5% -> 14.8% (worse).
+2. Generic anti-texture framing instead of per-object negation (`"solid flat
+   colour, no grain, no specks"`) -- still no reliable improvement on the same
+   four: coin 11.4%, bagel 12.7%, pastry 14.5%, sandwich 21.8%, all still
+   gated, all within noise of the originals. A second `ui_coin` concept image
+   under this framing came back with the SAME rivets and embossed numeral,
+   confirming this is the same diffusion-negation weakness this repo already
+   measured for a design-doc subject elsewhere (see `games/lantern_path`,
+   PR #73/#74) -- a strong object prior (mint coin, bread crumb) survives
+   explicit "no X" phrasing in the prompt.
+3. Raising `--retry-seeds` was NOT attempted -- already measured and rejected
+   by this file's own earlier finding, one section up in this same area of
+   the code: a higher retry count found a passing seed for `ui_icon_pastry`
+   that was not recognisably a croissant, while genuinely good croissants at
+   lower seeds failed. More seeds buys gate-satisfaction, not quality, and
+   that finding is why `--retry-seeds` defaults to 2.
+
+One of the five WAS fixed, genuinely, not by gaming the gate: `ui_icon_muffin`
+originally asked for "two blueberries" -- two small, distinct, dark
+specks -- which is close to a textbook isolated-pixel trigger. Dropping the
+blueberries and adding "solid flat colour, no grain, no specks" passed
+cleanly under both styles (verified: `cozy_ghibli` seed 1 direct pass this
+run, `snes_rpg` seed 3 after 2 reseeds) and still reads as a muffin --
+visually confirmed, not just gate-confirmed, at 6x nearest-neighbour scale
+under both palettes.
+
+**Left open, the same way speckle-from-reconstruction was left open:** coin,
+bagel, pastry, and sandwich are recorded as a real, measured, cross-style
+limitation of the 2D icon path for subjects whose default SDXL depiction
+carries strong fine-detail priors that "no X" phrasing does not reliably
+suppress. Their prompts are reverted to the pre-this-pass originals in code
+(no proven benefit from the two attempts above, so no reason to carry an
+unproven diff) -- this section is the record, not the prompt text. A future
+pass with a genuinely different lever (a different icon-generation model, or
+accepting a visibly-imperfect-but-recognisable render the way the character
+ceiling accepts a lumpy blob) could revisit this; more reseeds and more
+negation words, on this evidence, will not.

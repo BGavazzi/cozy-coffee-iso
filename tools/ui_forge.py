@@ -81,7 +81,7 @@ UI_PROMPTS = {
     "ui_icon_tea": "a teacup with a tea bag tag",
     "ui_icon_pastry": "a croissant",
     "ui_icon_cold_brew": "a cold brew cup with a straw",
-    "ui_icon_muffin": "a blueberry muffin, no paper liner, smooth base, two blueberries",
+    "ui_icon_muffin": "a muffin, smooth rounded dome top, no paper liner, solid flat colour, no grain, no specks",
     "ui_icon_cookie": "a cookie with two large chocolate chunks, thick chunks",
     "ui_icon_bagel": "a sesame seed bagel, bread texture, no glaze, no icing",
     "ui_icon_sandwich": "one triangular sandwich wedge, single layer, not stacked, cheese and ham filling",
