@@ -3536,16 +3536,15 @@ through two separate implementations.
   folded out of its own commit message" below. Do not loosen either floor to
   admit galley; the mechanism (its focal box spans the full room depth, not
   a strip near one wall) is understood and accepted, not a bug.
-- **Added 2026-09-13, still real: 4 of 20 `cat: ui` icons (`ui_coin`,
-  `ui_icon_bagel`, `ui_icon_pastry`, `ui_icon_sandwich`) fail the speckle gate
-  under BOTH styles**, not "2 of 14 under snes_rpg only" as an earlier note
-  here claimed -- see "The UI icon roster grew to 20, and the speckle gate now
-  fails 5 of them under both styles, not 2 under one" below for the full
-  measurement, two real fix attempts, and the one (`ui_icon_muffin`) that
-  actually worked. Left open the same way TripoSR speckle is: a measured,
-  cross-style limitation of the 2D icon path for subjects with a strong
-  fine-detail SDXL prior, not something `--retry-seeds` or more negation
-  words fixed on this evidence.
+- ~~**Added 2026-09-13: 4 of 20 `cat: ui` icons (`ui_coin`, `ui_icon_bagel`,
+  `ui_icon_pastry`, `ui_icon_sandwich`) fail the speckle gate under BOTH
+  styles.**~~ Closed 2026-09-15: not by a better prompt (two attempts, still
+  correctly rejected), but by a downstream despeckle pass on the rendered
+  pixels -- see "Reopened: the 'left open' call above was wrong about which
+  lever was untried" below. `python tools/ui_forge.py` now builds 20/20 under
+  both styles. One caveat carried forward, not closed: passing the gate is
+  not the same as reading well -- `ui_coin`'s default-seed result still reads
+  poorly despite passing clean; see that section's own last paragraph.
 
 ---
 
@@ -5224,3 +5223,84 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## Reopened: the "left open" call above was wrong about which lever was untried
+
+"A genuinely different lever... more reseeds and more negation words, on this
+evidence, will not [work]" turned out to be correct about reseeds and prompt
+negation specifically, and wrong about having exhausted the levers. Both
+prior fix attempts changed the SDXL *prompt* -- what gets drawn. Neither
+touched the *pixel pipeline* downstream of it -- how a drawn image becomes a
+64px icon -- which is where `flat_pixelize`'s own history shows the other
+half of this exact problem was already fixed once before (the mean-vs-modal
+downsample bug, see that function's docstring). That precedent was sitting
+in the same file and wasn't applied here.
+
+**The mechanism:** `downsample_modal` (correctly, by design) preserves
+whatever a source block's majority colour is, so real fine surface detail at
+1024px -- a coin's engraved rivets, a bagel's seed texture, a sandwich crust's
+crumb flecks -- survives the downsample as genuine isolated-pixel scatter,
+not an artifact of quantization. That is different in kind from the bug
+`downsample_modal` was built to fix, and no amount of prompt-side negation
+reliably suppresses SDXL's prior for that detail (confirmed, independently,
+three separate times across this file: `firefly_token`, the two icon-prompt
+attempts above). But the check that gates on it (`check_icon`'s isolated-
+pixel ratio) is a *pixel-adjacency* measure, which means a *pixel-adjacency*
+fix is answering the actual question, where a prompt-text fix never could.
+
+**`_despeckle`** (`tools/ui_forge.py`, added after this section was first
+written) reassigns a pixel to its neighbourhood's modal colour only when (a)
+it is isolated by the exact same 4-neighbour rule the check uses, so nothing
+it touches could have been keeping an icon under the cap, and (b) at least 2
+of its up-to-8 neighbours already agree on a replacement, so a genuine
+silhouette corner or thin point -- not misdrawn, just locally unique -- is
+left alone rather than guessed at. Measured on real SDXL renders, both
+styles, the exact four icons this section called an accepted limitation:
+
+```
+icon              style        before   after
+ui_coin           cozy_ghibli   14.7%    1.8%
+ui_icon_bagel     cozy_ghibli    9.8%    4.2%
+ui_icon_sandwich  cozy_ghibli   17.9%    7.1%
+ui_coin           snes_rpg      15.5%    4.1%
+ui_icon_bagel     snes_rpg      12.1%    4.2%
+ui_icon_sandwich  snes_rpg      17.7%    6.4%
+```
+
+Five of six clear the 6.2% gate outright; the sixth (sandwich) goes from a
+wide miss to a narrow one the existing `--retry-seeds 2` budget closes in
+practice -- confirmed by actually running the full roster: **all four
+previously-permanent failures (`ui_coin`, `ui_icon_bagel`, `ui_icon_pastry`,
+`ui_icon_sandwich`) now build clean under both styles**, `ui_icon_pastry`
+and `ui_icon_sandwich` needing one reseed each, `ui_coin` and `ui_icon_bagel`
+needing none. `python tools/ui_forge.py --style cozy_ghibli` and `--style
+snes_rpg` both now report **20/20 icons built**, up from 13/20 and 12/20.
+Checked for regression against ten already-passing icons: every one measures
+equal or strictly lower isolated-pixel ratio after the change, never higher
+-- expected, since the two conservative rules above guarantee the function
+never touches a pixel that was contributing to a pass.
+
+**Not a full retraction of the earlier finding -- the diffusion-negation
+conclusion holds.** What was wrong was treating "prompt levers exhausted"
+as "levers exhausted." The right lesson, generalized: when a check measures
+a property of the *rendered pixels* (isolated-pixel ratio, contrast, spread)
+rather than a property of *what the artist drew* (subject fidelity,
+composition), a fix aimed at the pixel property directly should be
+considered before -- or at least alongside -- a fix aimed at the prompt,
+because the two are not the same lever even when they move the same number.
+
+**Passing is not the same as reading well, and this is not the same claim.**
+Building all 20 icons clean does not mean all 20 read as their intended
+subject -- `ui_coin` at its default seed (1) passes the gate at 1.8%
+isolated pixels and still does not read clearly as "a round gold coin": the
+render is dominated by a dark, low-legibility interior. A quick 5-seed
+comparison for this one icon (same prompt, same despeckle) found seed 3
+reads clearly as a gold coin with a visible emblem, and 4 of the 5 seeds
+pass the gate outright now that despeckle is in the pipeline (before, this
+few seeds would likely have found zero clean passes). Not fixed here: the
+shipped pipeline still takes the first seed that passes, not the best of
+several, and nothing in `_despeckle` or the check it satisfies can tell a
+murky composition from a legible one -- that is exactly the "the eye has to
+look" gap this file has named before (`ui_icon_pastry`'s own seed-4
+non-croissant, `MAX_RETRY_SEEDS`'s comment). Recorded so a future pass does
+not assume a clean build number means a reviewed-and-approved icon set.

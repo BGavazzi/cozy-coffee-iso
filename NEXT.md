@@ -10,8 +10,8 @@ passes found 3 of these 5 lines closed (with a fourth, the double-run
 topology, already shipped and merged, commit `71451c3`, despite this file's
 own Tier B2 wording still calling it unbuilt further down). **Read
 `ART_CRITIQUE.md`'s "Still open" section directly rather than trusting this
-paragraph** -- it will drift again. As of a further 2026-09-13 pass, it holds
-four items, all real:
+paragraph** -- it will drift again. As of a further 2026-09-15 pass, it holds
+three items, all real:
 
 - **Stages 1-3** (SDXL concept -> TRELLIS 2 mesh -> UniRig rig) need a GPU and
   model weights. The seam (`ingest.py`) is built and checked; nothing feeds
@@ -31,14 +31,17 @@ four items, all real:
   until now -- see "A real, already-measured galley finding was never folded
   out of its own commit message". Do not loosen `MIN_FOCAL_L`/
   `MIN_FOCAL_DETAIL` to admit it; that would tune the floor to the answer.
-- **4 of 20 `cat: ui` icons (`ui_coin`, `ui_icon_bagel`, `ui_icon_pastry`,
-  `ui_icon_sandwich`) fail the speckle gate under both style packs**, not
-  "2 of 14 under snes_rpg only" as an earlier pass claimed. Two real prompt
-  fix attempts measured, neither reliable; one sibling icon
-  (`ui_icon_muffin`) WAS genuinely fixed the same way. See
-  `ART_CRITIQUE.md`'s "The UI icon roster grew to 20..." for the full
-  writeup. Do not raise `--retry-seeds` to chase this -- already measured
-  and rejected elsewhere in this file (buys gate-satisfaction, not quality).
+
+**Closed 2026-09-15: the UI icon speckle gate.** The earlier claim here (4 of
+20 `cat: ui` icons failing the speckle gate under both styles, unfixable by
+prompt) was correct about prompt fixes and wrong to stop there -- a
+downstream despeckle pass on the rendered pixels (`tools/ui_forge.py`'s
+`_despeckle`) closes it. `ui_forge.py` now builds 20/20 under both styles.
+See `ART_CRITIQUE.md`'s "Reopened: the 'left open' call above was wrong
+about which lever was untried" for the full measurement and the one real
+caveat that survives: `ui_coin`'s own default-seed result passes the gate
+clean and still doesn't read well as a coin -- a gate-vs-eye gap, not a
+speckle problem, and not fixed by this change.
 
 The other three original lines are closed, each with its own write-up further
 down `ART_CRITIQUE.md` (search for "Focal detail: resolution-confirmed",
