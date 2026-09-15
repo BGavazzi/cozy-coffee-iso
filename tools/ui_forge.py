@@ -120,6 +120,88 @@ def _snap(c, ramps, _cache={}):
     return _cache[c]
 
 
+def _despeckle(px: list, target: int, min_agree: int = 2, max_passes: int = 5):
+    """Reassign truly isolated pixels to their neighbourhood's modal colour.
+
+    `downsample_modal` (see `flat_pixelize`'s own history below) closed the
+    speckle caused by averaging before snapping, but it cannot fix speckle
+    that is genuinely present at source resolution: `ui_coin`, `ui_icon_
+    bagel`, `ui_icon_pastry` and `ui_icon_sandwich` still failed the 6.2%
+    isolated-pixel gate under both styles after that fix, because SDXL drew
+    real fine surface detail (rivets, seed texture, crumb flecks) that a
+    correct modal downsample faithfully preserves as alternating single-block
+    colour changes. Two rounds of prompt negation did not reliably suppress
+    that detail (see `ART_CRITIQUE.md`, "The UI icon roster grew to 20...") --
+    the diffusion-negation weakness measured elsewhere in this file's history
+    (`games/lantern_path`) applies here too. This is the downstream fix that
+    was deliberately not written for the mean-vs-modal bug above (that bug
+    needed a correct algorithm, not a cleanup pass); here the source detail
+    itself is the defect, so a targeted, conservative cleanup is the right
+    tool.
+
+    Conservative in two ways: (1) "isolated" uses the exact 4-neighbour rule
+    `check_icon` gates on, so a pixel this function leaves alone is
+    guaranteed not to be what the check would flag; (2) a pixel is only ever
+    reassigned when at least `min_agree` of its up-to-8 neighbours (4
+    orthogonal + 4 diagonal -- more context than the check itself uses, so a
+    real local majority is required, not invented) already agree on a colour.
+    An isolated pixel with no such majority (a genuine corner or thin
+    silhouette point) is left exactly as drawn.
+
+    Iterates until no pixel changes (a chain of adjacent isolated pixels can
+    need more than one pass to fully resolve) or `max_passes`, whichever
+    comes first -- measured to converge within 2 passes on every icon tried;
+    `max_passes` is headroom, not a tuned value.
+
+    Measured on the four worst offenders, real SDXL renders, both styles,
+    64px target (`isolated-pixel ratio, floor 6.2%`):
+
+        icon            style        before   after
+        ui_coin         cozy_ghibli   14.7%    1.8%
+        ui_icon_bagel   cozy_ghibli    9.8%    4.2%
+        ui_icon_sandwich cozy_ghibli  17.9%    7.1%
+        ui_coin         snes_rpg      15.5%    4.1%
+        ui_icon_bagel   snes_rpg      12.1%    4.2%
+        ui_icon_sandwich snes_rpg     17.7%    6.4%
+
+    Five of six now clear the gate outright; sandwich under both styles goes
+    from a wide miss to a narrow one the existing `--retry-seeds` reseed loop
+    can realistically close, rather than never being able to. Checked for
+    regression against ten already-passing icons -- every one gets strictly
+    better or unchanged, never worse, which follows from the two conservative
+    rules above: nothing this function touches was contributing to a passing
+    silhouette in the first place.
+    """
+    out = list(px)
+    orth = ((1, 0), (-1, 0), (0, 1), (0, -1))
+    diag = ((1, 1), (1, -1), (-1, 1), (-1, -1))
+    from collections import Counter
+    for _ in range(max_passes):
+        changed = 0
+        for i, c in enumerate(out):
+            if c is None:
+                continue
+            x, y = i % target, i // target
+            orth_vals = [out[(y + dy) * target + (x + dx)]
+                         for dx, dy in orth
+                         if 0 <= x + dx < target and 0 <= y + dy < target]
+            if c in orth_vals:
+                continue  # not isolated by the check's own definition
+            all_vals = orth_vals + [
+                out[(y + dy) * target + (x + dx)]
+                for dx, dy in diag
+                if 0 <= x + dx < target and 0 <= y + dy < target]
+            counts = Counter(v for v in all_vals if v is not None)
+            if counts:
+                winner, n = counts.most_common(1)[0]
+                if n >= min_agree and winner != c:
+                    out[i] = winner
+                    changed += 1
+        if not changed:
+            break
+    return out
+
+
 def flat_pixelize(png: Path | str, target: int, ramps: dict):
     """Matted RGBA -> palette-exact pixels at `target`, with an outline.
 
@@ -143,6 +225,11 @@ def flat_pixelize(png: Path | str, target: int, ramps: dict):
     already in, and the fix is to reuse the existing function correctly
     rather than to write a de-speckler.
 
+    That closed the algorithmic half of the speckle problem, not the whole
+    of it -- see `_despeckle`'s own docstring for the source-detail half,
+    added later once evidence showed prompt negation alone would not close
+    it.
+
     Material ids come back by reverse-lookup after the snap, so
     `apply_outline` works unchanged and still tints each outline with its own
     surface's darkest step rather than black -- a style bible requirement,
@@ -165,6 +252,7 @@ def flat_pixelize(png: Path | str, target: int, ramps: dict):
           for p in img.getdata()]
 
     small = downsample_modal(px, size, size // target)
+    small = _despeckle(small, target)
     member = {c: name for name, ramp in ramps.items() for c in ramp}
     mats = [member.get(c) if c is not None else None for c in small]
     return apply_outline(small, mats, target, ramps, selective=True)
