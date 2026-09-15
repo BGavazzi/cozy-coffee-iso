@@ -2592,6 +2592,32 @@ rather than left to drift further. No logic changed —
 12` (2 of 12 fail: plan 1 -0.002, plan 10 -0.011) are byte-for-byte the same
 before and after this branch's diff.
 
+**Landed (PR #78): `manifest.py --check` never actually ran `check_contrast`
+against the fixed `CUSTOMERS` roster, so `elder`'s hair-vs-skin failure under
+`snes_rpg` (PR #23's own finding) was invisible to this command specifically.**
+`character.py`'s own `main()` has always called `check_contrast(ramps)` with
+no roster argument (the fixed roster), which is why `character.py --style
+snes_rpg` reports 4 blockers directly. `manifest.py`'s `check()` only ever
+called `check_contrast` once, on the *generated* extras (`check_contrast(ramps,
+_extras)`), never on `CUSTOMERS` — an omission, not a `--style` bug like PR
+#23/#24's, and not caught by either of those passes because both were
+measuring whether the *right palette* was used, not whether every check ran
+at all.
+
+Found while re-checking a discrepancy: `manifest.py --check --style snes_rpg`
+printed only 3 of the 4 blockers PR #23 documented (reader/regular/writer's
+waistlines, no elder). Traced to the missing call rather than assumed stale.
+Fixed by adding `for msg in _c.check_contrast(ramps): errs.append(msg)`
+alongside the existing `check_waistline`/`check_eye_legibility` calls.
+
+Verified both directions, clean pre/post pairs captured separately (not
+inferred): `cozy_ghibli` stays at 3 errors (galley/L-run composition only,
+untouched by this change) before and after; `snes_rpg` goes from 9 to 10
+errors, the new tenth being `elder: hair 'cream+1' is 0.088 from skin (need
+0.13) -- head reads as one lump` — the exact number PR #23 already measured.
+No threshold changed, no roster changed; `manifest.py --check` simply reports
+what `character.py --check` already knew.
+
 ---
 
 ## Tier A — CLOSED (historical record, not open work)

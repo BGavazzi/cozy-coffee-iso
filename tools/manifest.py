@@ -157,12 +157,12 @@ def check_ui(man: dict, active) -> list[str]:
     (`package_godot.py`'s `style_paths()` has the fullest account of this
     split across producers -- it independently arrived at "match each
     producer's own convention exactly rather than invent a third," which is
-    the same call made here, though it only threads through the suffix
-    convention for its own single `ui_dir` field and so silently stages
-    nothing from `ui_forge.py`'s nested directory for a non-default style.
-    That's a real gap in `package_godot.py`, not addressed here -- it wasn't
-    introduced by this change and fixing it means touching a different,
-    working, shipped file. Noted in `NEXT.md`.)
+    the same call made here. It used to thread through only the suffix
+    convention for a single `ui_dir` field and so silently stage nothing
+    from `ui_forge.py`'s nested directory for a non-default style; that gap
+    was flagged here and closed two commits later, PR #57 -- `style_paths()`
+    now returns `ui_forge_dir`/`ui_chrome_dir` and `stage_ui()` merges both,
+    same shape as the audit below.)
 
     Unifying the two conventions would mean changing what `ui_forge.py`/
     `ui_chrome.py` actually write to disk, which is a bigger, separate
@@ -362,6 +362,19 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         # declared: a spec that passes every stated rule and still renders as a
         # brown smear has only proved the rules were incomplete.
         for msg in _c.check_palette_spread():
+            errs.append(msg)
+        # `check_palette_spread` counts ramps, not the colours those ramps
+        # resolve to under the active style, so a roster tuned against
+        # cozy_ghibli's palette can still land two materials on the same
+        # rendered step once a different, more compressed palette is
+        # substituted in. `check_contrast` is what actually measures that:
+        # `character.py`'s own `main()` has always run it against the fixed
+        # `CUSTOMERS` roster (it's how `elder`'s hair-vs-skin failure under
+        # `snes_rpg`, 0.088 against a 0.13 floor, was originally found -- see
+        # NEXT.md PR #23), but `manifest.py --check` never called it here,
+        # only against the generated extras below -- so the same roster's
+        # same failure was invisible to this command specifically.
+        for msg in _c.check_contrast(ramps):
             errs.append(msg)
         # And a figure needs a waist. `check_palette_spread` counts ramps, not
         # values, so two different ramps landing on the same step slip past it:
