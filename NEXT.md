@@ -11,7 +11,7 @@ topology, already shipped and merged, commit `71451c3`, despite this file's
 own Tier B2 wording still calling it unbuilt further down). **Read
 `ART_CRITIQUE.md`'s "Still open" section directly rather than trusting this
 paragraph** -- it will drift again. As of a further 2026-09-13 pass, it holds
-three items, all real:
+four items, all real:
 
 - **Stages 1-3** (SDXL concept -> TRELLIS 2 mesh -> UniRig rig) need a GPU and
   model weights. The seam (`ingest.py`) is built and checked; nothing feeds
@@ -31,6 +31,14 @@ three items, all real:
   until now -- see "A real, already-measured galley finding was never folded
   out of its own commit message". Do not loosen `MIN_FOCAL_L`/
   `MIN_FOCAL_DETAIL` to admit it; that would tune the floor to the answer.
+- **4 of 20 `cat: ui` icons (`ui_coin`, `ui_icon_bagel`, `ui_icon_pastry`,
+  `ui_icon_sandwich`) fail the speckle gate under both style packs**, not
+  "2 of 14 under snes_rpg only" as an earlier pass claimed. Two real prompt
+  fix attempts measured, neither reliable; one sibling icon
+  (`ui_icon_muffin`) WAS genuinely fixed the same way. See
+  `ART_CRITIQUE.md`'s "The UI icon roster grew to 20..." for the full
+  writeup. Do not raise `--retry-seeds` to chase this -- already measured
+  and rejected elsewhere in this file (buys gate-satisfaction, not quality).
 
 The other three original lines are closed, each with its own write-up further
 down `ART_CRITIQUE.md` (search for "Focal detail: resolution-confirmed",
