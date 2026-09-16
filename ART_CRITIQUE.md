@@ -2673,6 +2673,74 @@ it argues the floor was already close to correctly placed on three objects,
 which the original bracket's honesty (`ART_CRITIQUE.md`'s prior entry) rather
 undersold.
 
+## Reopened: the seven-object speckle floor above was also only one lever tried
+
+The entry above, and `check_speckle`'s own Finding message, said "there is no
+render setting that fixes this: three were measured and none moved the
+number" and concluded the fix was to reject the mesh or ask stage 1 for a
+smoother subject. That is true of render settings and was never the whole
+answer -- render settings are a generation-stage lever, and the defect
+survives all the way to the rendered pixels regardless of which
+generation-stage lever gets pulled. A post-process aimed at the pixels
+themselves had never been tried: `render_batch.py`, `pixelize.py`, and
+`art_review.py` had zero mentions of despeckling anywhere in their history.
+
+This is the exact shape of the UI icon speckle case two entries up (see "The
+UI icon roster grew to 20, one PR fixed one, and four still fail" and its
+own reopening) -- two rounds of attempted fixes shared one lever (there,
+the prompt; here, render settings) while the check itself measures a
+downstream property (rendered pixel adjacency) neither lever touches
+directly.
+
+`pixelize.py` gained a `despeckle(px, target, min_agree=2, max_passes=5)`
+function -- the same conservative two-rule design proven on UI icons,
+generalized: only reassign a pixel that is isolated by the exact 4-neighbour
+rule the check gates on, and only reassign it to a colour that at least 2 of
+its up to 8 neighbours (4 orthogonal + 4 diagonal) already agree on. Wired
+into `render_batch.render_sprite` -- the core rendering function shared by
+every asset type in the factory, not just lifted props -- right after
+`downsample_modal` and before the outline pass, so outline pixels (which are
+deliberately different from their fill neighbours) are never mistaken for
+speckle.
+
+Measured against every cached `evening`-variant render already on disk (750
+frames spanning props, tiles, UI, and characters) at the exact
+`check_speckle` isolated-pixel ratio:
+
+    fails before despeckle: 59 / 750 frames
+    fails after despeckle:   0 / 750 frames
+    regressions:              0 (no already-passing frame moved closer to
+                                  the floor, let alone across it)
+
+basket, the worst known offender, went from 12.7-16.3% across all 8 azimuths
+to 0.0-0.2%. Fourteen objects had at least one failing frame in this cache --
+more than the seven named above (also bicycle, bottle, cake_slice, fern, and
+an unrelated stress-test render) -- and all fourteen clear the gate after the
+pass, 0 frames failing across all of them. Spot-checked by eye, not just by
+the numbers: a failing frame goes from illegible cross-ramp static to a
+shape with a legible shaded/lit region split; an already-passing frame
+(candle, french_press) is visually unchanged apart from a handful of stray
+pixels -- nothing that was contributing to legible detail was touched.
+
+Re-verified end to end, not just on the cache: re-rendered basket fresh from
+its cached mesh (`out/mesh/basket.obj`) through the real, now-patched
+`render_batch.py`, and `art_review.py` reports nothing to flag on all 8
+frames. Re-rendered all 32 cached meshes fresh the same way (256 frames) --
+255 clean, one narrow miss (`wooden_spoon`, one azimuth, 10.6% against a
+10.5% floor, exactly one pixel over). That pixel has no 2-of-8-neighbour
+colour majority -- a genuine point on the spoon handle's thin silhouette,
+which is precisely the case the conservative reassignment rule is designed
+to leave alone rather than paint over. Documented honestly rather than
+declared closed: this is a real, narrow, unfixed residual, not evidence the
+approach doesn't work.
+
+**Not a full retraction.** The render-settings conclusion still holds --
+three were measured and none moved the number, and that finding is
+unchanged. What was wrong was stopping there. `check_speckle`'s own Finding
+message is updated to match: a Finding today means a narrow miss survived a
+pass that already closed the wide cases, not that the mesh needs rejecting
+outright.
+
 ## Parameter-coverage audit for assetlib: no dead draws found, one design note
 
 NEXT.md D3 asked whether `assetlib`'s seeded generators have the character

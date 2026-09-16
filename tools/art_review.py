@@ -305,6 +305,16 @@ def check_speckle(px, w, h) -> list[Finding]:
     This is deliberately not `check_grid` run backwards. `check_grid` asks
     whether the art is secretly upscaled, which is a question about block
     structure; this asks whether any structure survived at all.
+
+    `render_batch.render_sprite` now runs `pixelize.despeckle` on every
+    sprite before this check ever sees it (see that function's docstring for
+    the full mechanism and measurements: 59 of 750 cached frames across every
+    asset category failed this exact check before the pass existed, 0 after,
+    0 regressions). A Finding from this function today means a *narrow*
+    miss survived that conservative pass -- typically a single pixel with no
+    2-of-8-neighbour majority, i.e. a genuine thin silhouette point or corner,
+    not the wide cross-ramp static this check was written against. Treat it
+    as a close call worth a look, not proof the mesh is unusable.
     """
     tot = iso = 0
     for y in range(h):
@@ -331,13 +341,19 @@ def check_speckle(px, w, h) -> list[Finding]:
         BLOCKER, "speckle",
         f"{share:.1%} of opaque pixels match none of their four neighbours "
         f"(authored art measures under 6.2% on its busiest frame)",
-        "Nothing at this resolution is legible as single scattered pixels. "
-        "The cause is sub-pixel detail in the source -- a reconstructor turns "
-        "a woven or grained surface into displaced geometry and noisy "
-        "per-vertex colour, and one 64px pixel covers hundreds of triangles "
-        "of it. There is no render setting that fixes this: three were "
-        "measured and none moved the number. Reject the mesh, or ask stage 1 "
-        "for a subject whose surface is smooth at this scale.",
+        "This frame already went through `despeckle` and still misses, which "
+        "means the surviving isolated pixels have no local colour majority -- "
+        "usually a handful of pixels on a thin silhouette point (a spoon "
+        "handle, a chair leg) rather than the wide cross-ramp static this "
+        "check was originally written against. Measure how far over the "
+        "floor it is (`iso - MAX_ISOLATED*tot` pixels) before deciding: a "
+        "one- or two-pixel miss is a narrow call, not evidence the mesh needs "
+        "rejecting. If it is wide, the cause is still sub-pixel detail in the "
+        "source -- a reconstructor turning a woven or grained surface into "
+        "displaced geometry and noisy per-vertex colour that one 64px pixel "
+        "covers hundreds of triangles of -- and rejecting the mesh or asking "
+        "stage 1 for a smoother-surfaced subject is still the right call "
+        "for that case.",
     )]
 
 
