@@ -4392,6 +4392,50 @@ through the new Continue button both came out auto-clean with no blockers at
 all. The honest scope line is object-shaped things without articulation,
 and it should be written down as such rather than discovered per-subject.
 
+## Re-checked after the despeckle fix: the gate clears, the knight still doesn't look like one
+
+Both remedies tried above (coarser marching cubes, a simplified prompt) were
+generation-stage levers, same category as the 3D lifted-object speckle
+case's "three render settings, none moved the number" (see "Reopened: the
+seven-object speckle floor above was also only one lever tried") -- worth
+checking whether this ceiling was the same mistake a third time, now that
+`render_batch.render_sprite` runs every sprite through `pixelize.despeckle`.
+
+It is not, and the distinction is worth recording precisely. Re-rendered the
+frog knight fresh from its cached mesh (`out/mesh/the_frog_knight_from_
+chrono_trigger.obj`) through the now-patched pipeline: `art_review.py`
+reports **nothing to flag on all 8 frames** -- the 11-12% speckle blocker and
+the 17-25% cross-ramp adjacency warning both clear, the latter apparently as
+a side effect of the same fix (adjacent-but-different-ramp noise was
+speckle's cross-ramp case, and cleaning the noise cleaned both checks at
+once).
+
+Looked at the actual sprites (`out/knight_grid.png`, all 8 azimuths, 8x
+upscaled) before calling anything closed. They do not read as a knight.
+They read as a hunched, monochrome frog-creature -- single skin-ramp
+throughout, no cape, no armour, no rapier as a separate legible object (a
+thin same-coloured line in two frames is the closest thing to a weapon
+silhouette). This is exactly what the original entry predicted a passing
+gate would not fix: **the mesh itself has no cape, no separable limbs, no
+rapier** -- geometry that was never reconstructed, not colour noise sitting
+on top of geometry that was. A pixel-level despeckle pass cannot invent
+missing topology; it can only clean the colour of topology that exists.
+
+**The honest conclusion is two findings, not one retraction:**
+- The character ceiling itself -- TripoSR cannot reconstruct articulated,
+  accessorized subjects at this fidelity -- is unchanged and still correctly
+  scoped as "needs a better reconstructor" (TRELLIS 2, still blocked on this
+  workstation's toolchain). Nothing in this pass argues otherwise.
+- But the *checks* that were standing in as an imperfect proxy for "does
+  this look like the intended subject" are now a measurably weaker proxy
+  than before: a mesh this visibly wrong now sails through `art_review.py`
+  with zero findings. That was already possible in principle (the checks
+  never claimed to verify subject identity), but this is the first measured
+  case of it actually happening, and it means a human look at character-kind
+  output stays necessary even after the pipeline reports clean -- the gate
+  passing is no longer even weak evidence that a character-kind asset reads
+  as its subject.
+
 ## The 29% that was being thrown away, and the one kind that stays thrown away
 
 If the scope line is "props," then the number that matters for throughput is
