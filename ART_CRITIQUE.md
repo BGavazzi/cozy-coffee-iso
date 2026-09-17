@@ -4439,18 +4439,42 @@ missing topology; it can only clean the colour of topology that exists.
 ## A second re-check, opposite result: `bread_loaf`'s "genuinely bad" 5/8 was speckle after all
 
 The frog knight (previous section) was a warning not to assume the despeckle
-fix generalizes. It is not an excuse to stop checking cases that were never
-part of that fix's own verification sweep. `bread_loaf` is one: `concept.py`'s
-`MIN_FILL` rationale and `factory.py`'s `RETRY_SEEDS` comment both cite it as
-the sharpest counter-example to "reseeding helps" -- "gated on seed 1, passed
-on seed 2, reached stage 5 -- and its sprites are still 5-of-8 blocked,
-identical to before," attributed to the mesh itself: "a loaf is an amorphous
-form TripoSR cannot resolve, not because it was small." That 5/8 number
-predates `pixelize.despeckle` (this same branch), and `bread_loaf` was not
-one of the 32 meshes re-rendered when the speckle fix's own coverage was
-verified two sections up ("Reopened: the seven-object speckle floor... 255
-clean, one narrow miss (`wooden_spoon`)") -- it fell outside that batch
-entirely, so nothing here actually re-checked it against the new lever.
+fix generalizes. `bread_loaf` is the other side of the same check:
+`concept.py`'s `MIN_FILL` rationale and `factory.py`'s `RETRY_SEEDS` comment
+both cite it as the sharpest counter-example to "reseeding helps" -- "gated
+on seed 1, passed on seed 2, reached stage 5 -- and its sprites are still
+5-of-8 blocked, identical to before," attributed to the mesh itself: "a loaf
+is an amorphous form TripoSR cannot resolve, not because it was small." That
+5/8 number predates `pixelize.despeckle` (this same branch).
+
+**Correction, same day, before this section's first draft had even been
+committed:** the paragraph here originally claimed `bread_loaf` "fell
+outside" the 32-mesh batch the speckle fix's own coverage check re-rendered
+two sections up ("Reopened: the seven-object speckle floor... 255 clean, one
+narrow miss (`wooden_spoon`)") and so had never actually been re-checked
+against the new lever. That claim was never verified before being written,
+and it does not hold up: `out/mesh/bread_loaf.obj` is one of exactly 32
+cached mesh files on disk, all dated 2026-08-23 through 2026-08-26 --- days
+before the despeckle commit (`6ce3604`, 2026-09-16) that says "all 32 cached
+meshes re-rendered fresh (256 frames), 255 clean, one honest narrow miss
+(`wooden_spoon`)." Arithmetic alone rules out `bread_loaf` sitting outside
+that count and still failing: one miss total, across all 256 frames, means
+every other mesh in the batch -- `bread_loaf` included -- already came back
+clean at that commit. The fix's own coverage check had already covered this
+case in aggregate; nobody had just written it down by name. This is the
+exact stale-unverified-claim mistake this file's "29%" entry describes
+catching once already, repeated in miniature by the paragraph that was
+citing that entry as precedent -- corrected here rather than quietly amended,
+per this file's own practice.
+
+What survives the correction: the concrete re-render below is still real,
+independent confirmation for this specific named subject (the original
+32-mesh result was an aggregate count, never broken out per-mesh in any
+doc), and the `concept.py`/`factory.py` comments it corrects were still
+citing a stale number regardless of whether that number had technically
+already been superseded upstream. What does not survive: any claim that this
+was newly-discovered coverage, or that the fix needed anything further to
+reach `bread_loaf`.
 
 Re-ran it directly. `main` (pre-despeckle), fresh render from the cached mesh
 (`out/mesh/bread_loaf_bound.obj`): `art_review.py` reports 5 of 8 frames
@@ -4469,9 +4493,10 @@ specific 5/8 number, even though it may still be true of the mesh's
 geometry in some other respect this pass did not measure. What was actually
 failing those 5 frames was the identical fine-grained-surface speckle named
 for basket's weave and cutting_board's wood grain two sections up, on a
-grainy crust instead of a woven basket -- the same cause, the same fix,
-just never re-tested here because this subject sat outside the batch that
-originally verified the fix's coverage.
+grainy crust instead of a woven basket -- the same cause, the same fix. Per
+the correction above, that fix had already reached this subject at the
+original despeckle commit; this pass names it and shows it, rather than
+being the thing that closes it.
 
 **What this does and does not change:**
 - `bread_loaf`'s stage-1 gate story is untouched -- reseeding still does not
