@@ -5224,3 +5224,75 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## `table_communal`: a coverage gap that was hiding a real defect, half-fixed
+
+Auditing `art_review.py`'s `GENERATORS` list (what `check_generator_range`
+actually measures) against every seeded builder in `assetlib.py`, the same
+kind of two-directional cross-check that found `gates.py`'s missing
+`organic_rig.check_roster` entry, turned up two more: `furnish.py` calls
+`assetlib.table()` directly for `table_2top_square` and `table_communal`,
+neither of which was ever added to `GENERATORS`. `table_round` and
+`table_4top` -- both of which delegate to the same `table()` -- were covered
+and passing, so this looked like simple bookkeeping at first.
+
+`table_2top_square` is: adding it passes cleanly (28.3% mean spread, 6.1%
+closest pair, both comfortably clear of the 15%/4.5% floors). `table_communal`
+is not. Its closest pair measured **0.48%** -- two of eight seeds render
+almost pixel-identical, the exact "seed is barely changing the shape" failure
+mode `check_generator_range`'s own docstring exists to catch, invisible until
+now purely because this recipe was never on the list it checks.
+
+**The mechanism, traced rather than guessed.** `table()`'s randomized draws
+(height, top thickness, overhang, base style, leg radius) are identical
+per-seed regardless of the table's own `w`/`d` -- the RNG doesn't know how
+big the table is. Tracing seeds 1-8 directly: seeds 1 and 3 both drew
+`_base_pedestal` ("Column on a splayed foot. **The cafe two-top.**" -- its own
+docstring). A single small central column, on a table communal-sized at
+4.0x2.0m, occupies a tiny and visually near-constant fraction of the
+silhouette regardless of which few centimetres of thickness/overhang/leg-
+radius the seed happened to draw -- so two pedestal seeds on this table are
+close to indistinguishable, a defect invisible on a `table_round` or
+`table_2top_square` (1.0x1.0m) precisely because the SAME absolute-unit
+variation is a much larger fraction of a much smaller table.
+
+**The fix, and what it did and didn't close.** `_base_trestle`'s own
+docstring already names the size this style belongs to instead: "Two end
+frames joined by a spine. **The long communal table.**" -- the code already
+knew which style suited which size, it just never enforced it. Added a
+size guard in `table()`, the same pattern already used to redirect `_base_
+trestle` to `_base_tripod` under a round top: `_base_pedestal` is excluded
+above `max(w, d) >= 2.5` and substituted with `_base_trestle`. Seeds 1/3's
+pair improved from 0.48% to 4.62%, clearing the pair floor outright.
+
+That fix is real and it is not the whole story. Excluding pedestal collapsed
+its seeds onto the remaining three styles, and doing that exposed a
+**second, pre-existing** collision that had been hiding behind the worse
+one: seeds 5 and 6 both drew `_base_posts` and measured 4.22% apart -- under
+the 4.5% floor, and present in the UNFIXED generator too, just never the
+closest pair because 1-vs-3 was always closer. `_base_posts` places four legs
+at `x0 + r*2.2` / `x1 - r*2.2`-style insets, so leg position does shift with
+the randomized radius `r` -- just, again, by centimetres against a 4-metre
+top. The general mechanism is not "pedestal is wrong," it is "every style's
+variety here is an absolute-unit draw, and a communal-scale table dilutes
+absolute units into invisibility regardless of which style holds them."
+
+**Left failing, deliberately, not given a custom floor.** `wall_art_framed`
+and three other generators in `GENERATORS` do carry an `own` floor, and each
+one is a case where the measured, honest ceiling of a *deliberately* subtle
+generator sits under the default bar for a stated reason (a sack's slump
+looking the same on purpose; a hue drawn from 4 buckets colliding by the
+pigeonhole principle). `table_communal` is not that: a communal table's base
+style and leg arrangement are exactly the kind of first-order silhouette
+change `table_round`/`table_4top`/`table_2top_square` all vary cleanly on.
+Setting `own` low enough to pass would be tuning the instrument to the
+answer -- the same trade this file has rejected everywhere else it was
+proposed (counter orientation, the detail floor's bracket, the mean-spread
+floor). `check_generator_range()` now correctly reports `table_communal`
+failing on both the mean and the pair floor, which is the honest state: a
+real defect, found by closing a coverage gap, half-closed by a real and
+verified fix, with a second, precisely diagnosed cause left as recorded,
+open work -- most likely closed properly by giving long tables a size-
+appropriate leg-count or leg-layout variation rather than more of the same
+few-centimetre radius/thickness draw, which is a real design pass, not a
+one-line fix.

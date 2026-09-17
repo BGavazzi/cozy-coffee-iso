@@ -573,6 +573,30 @@ def _pair_disagreement(a, b) -> float:
 GENERATORS = (
     ("table_round", lambda A, s: A.table_round(seed=s), 1.7, None, ""),
     ("table_4top", lambda A, s: A.table_4top(seed=s), 2.6, None, ""),
+    # `furnish.py` calls `assetlib.table()` directly for two more named
+    # recipes that were never added here -- found while auditing this list
+    # against every seeded builder in `assetlib.py`, not by a report.
+    ("table_2top_square",
+     lambda A, s: A.table(1.0, 1.0, 0.58, round_top=False, seed=s),
+     1.7, None, ""),
+    # This one FAILS, on purpose left failing rather than given a custom
+    # floor. It found a real defect: seeds 1 and 3 both drew `_base_pedestal`
+    # ("the cafe two-top") and rendered 0.48% apart, because a single small
+    # central column barely differs in silhouette against a 4m top -- the
+    # thickness/overhang/leg-radius draws that are `table()`'s only variety
+    # at this style are a few centimetres regardless of table size. Excluding
+    # `_base_pedestal` above `max(w, d) >= 2.5` (see `table()`) raised that
+    # pair to 4.62%, clearing the pair floor, but exposed a second,
+    # pre-existing same-style collision (`_base_posts`, seeds 5/6, 4.22%) that
+    # had been hiding behind the worse one. Real, partial progress, not a
+    # closed defect -- `own` is deliberately NOT set here, because a custom
+    # floor low enough to pass this would be tuning the instrument to the
+    # answer, exactly what this file's own doctrine rejects elsewhere. See
+    # ART_CRITIQUE.md, "table_communal: a coverage gap that was hiding a
+    # real defect, half-fixed".
+    ("table_communal",
+     lambda A, s: A.table(4.0, 2.0, 0.58, round_top=False, seed=s),
+     5.5, None, ""),
     ("chair", lambda A, s: A.chair(seed=s), 1.4, None, ""),
     ("plant_large", lambda A, s: A.plant_large(seed=s), 1.7, None, ""),
     ("plant_small", lambda A, s: A.plant_small(seed=s), 1.1, None, ""),
