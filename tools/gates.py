@@ -173,6 +173,9 @@ _DETERMINISTIC = [
     ("manifest.py", "check_ui",
      "Does every declared cat: ui entry exist, and does it still hold up?",
      "asset manifest"),
+    ("organic_rig.py", "check_roster",
+     "Real contrast/waistline evidence for THIS rig's own cast, not",
+     "organic-rig roster"),
     ("package_godot.py", "check_anim_layout",
      "Do the resolved rects fit the sheet, and does each one belong to one "
      "clip?", "engine export"),
