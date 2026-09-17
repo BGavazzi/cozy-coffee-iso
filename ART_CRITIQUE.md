@@ -5424,3 +5424,65 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## A third re-check, a genuinely mixed result: the basket that invented `check_speckle` was never re-tested against the fix it inspired
+
+Two sections up, "Four fixes, none of which worked, which is the finding"
+still reads, unedited since before this branch existed: *"There is no render
+setting. The remedy is upstream -- a subject whose surface is smooth at this
+scale, or a better reconstructor."* That basket -- the diagnostic subject
+whose 0.127-0.163 isolated-pixel share fixed `MAX_ISOLATED` at 0.105 in the
+first place -- was never part of either despeckle verification pass, this
+branch's own 32-cached-mesh sweep or the bread_loaf and character-ceiling
+follow-ups above: it isn't a shipped asset (no `basket`/`wicker_basket` id
+anywhere in `assets.yaml` or `subjects.yaml`), so nothing that iterates the
+real library would ever touch it. It sat in this file as a citation, not a
+render, while everything around it got re-tested.
+
+Re-ran it directly, the same way as `bread_loaf`. `main` (pre-despeckle),
+fresh render from `out/mesh/basket_bound.obj`: `art_review.py` reports 8 of 8
+frames blocked at **12.7%-16.3%** -- reproduces the recorded range in this
+file exactly, direction for direction. This branch (post-despeckle), same
+mesh, same render: **7 of 8 blocked, 11.1%-13.2%** -- one frame (`dir1`, the
+thinnest silhouette of the set) now clears; every other frame is lower than
+its `main` counterpart by 2-4 points but still above the 10.5% floor.
+Confirmed by eye, not just the count: an upscaled 8x before/after contact
+sheet (`out/basket_recheck/before_after.png`, all 8 azimuths) shows the two
+rows are close to indistinguishable -- the same dense cream/wood/neutral
+salt-and-pepper mix survives in both, unlike `bread_loaf`'s crust or the
+character-ceiling gate, where despeckle's effect was either total or a side
+effect large enough to see.
+
+So this is a third outcome, not a repeat of either prior re-check. `bread_loaf`
+(two sections up) fully generalized: despeckle was the untried lever and it
+closed the gate outright, 5/8 blocked to 0/8. The frog knight (three sections
+up) did not generalize at all: the gate cleared but the sprite still didn't
+read as its subject, a topology problem no pixel pass can touch. The basket
+is neither -- despeckle **measurably helps** (worst frame 16.3% -> 13.2%,
+average isolated-pixel share down about a quarter) **without closing the
+gate**, because its speckle is wider than the single-pixel-with-no-majority
+case the conservative two-rule pass is designed to remove: a woven surface's
+fine detail survives as small multi-pixel clusters, not lone dots, on a mesh
+this coarse at 64px. That is the literal mechanism the four original fixes
+already diagnosed -- "sub-pixel detail in the source... one 64px pixel covers
+hundreds of triangles of it" -- and despeckle, a real fifth lever the
+original four attempts never included, still runs into the same wall for
+*this specific subject*. The two-sections-up passage's "there is no render
+setting" is narrowly accurate as written (despeckle is not a render setting,
+it is exactly the downstream pixel lever this file elsewhere credits with
+fixing UI icons, lifted objects generally, and bread_loaf specifically) but
+its confident tone reads, after this check, as broader than the evidence
+now supports for the one subject it was built on. Left as the historical
+record with this section as the honest update, not rewritten in place --
+same practice as the frog-knight and bread_loaf follow-ups.
+
+**What this does and does not change:** `check_speckle`'s floor and mechanism
+are untouched -- this was a re-verification of an old, non-shipped diagnostic
+case, not a new fix, and nothing here argues for loosening `MAX_ISOLATED` or
+special-casing `basket` to pass. The basket was never going to ship regardless
+of this result; its only role is as the number that calibrated the floor, and
+that calibration is unaffected by whether despeckle later helps it. What
+changes is confidence in generalizing from any single re-checked case to "the
+speckle floor is now solved everywhere despeckle runs" -- `bread_loaf`
+supported that reading, this doesn't, and the honest position is that
+despeckle's coverage is measured per-subject, not assumed.
