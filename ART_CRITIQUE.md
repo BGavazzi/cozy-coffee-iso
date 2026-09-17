@@ -5304,3 +5304,43 @@ murky composition from a legible one -- that is exactly the "the eye has to
 look" gap this file has named before (`ui_icon_pastry`'s own seed-4
 non-croissant, `MAX_RETRY_SEEDS`'s comment). Recorded so a future pass does
 not assume a clean build number means a reviewed-and-approved icon set.
+
+## `ui_coin`: the gap above, closed for the one icon it was measured on
+
+Re-checked the paragraph above rather than just re-reading it: re-rendered
+`ui_coin` at seed 1 and seed 3 fresh, both styles, on this same branch.
+Both pass `check_icon` cleanly (confirmed by the CLI's own `OK` result, no
+`--retry-seeds` needed at either seed). Looked at all four renders before
+touching anything (`out/ui_coin_test/compare.png` -- seed 1 vs seed 3 under
+`cozy_ghibli`; `compare_styles.png` -- seed 3 under `cozy_ghibli` vs
+`snes_rpg`): seed 1 is a dark, murky disc with no readable emblem, exactly
+as the paragraph above describes. Seed 3 is unambiguously a round gold coin
+with a visible circular emblem, under both styles -- `snes_rpg`'s version
+reads with fewer shading bands and more saturation, consistent with that
+style's own bible, not a defect of the seed choice.
+
+**The fix:** `ui_forge.py` gains `UI_SEED_OVERRIDE`, a per-icon seed table
+consulted before the global `--seed` default, with `ui_coin: 3` as its only
+entry. This is deliberately narrow -- a measured, looked-at override for
+the one icon this was actually checked on, not a policy change to how
+seeds are chosen generally. Nothing about `_despeckle` or `check_icon`
+changed; this is a different lever again, one level up from both: neither
+a prompt change nor a pixel post-process, but picking the already-best
+member of a set the pipeline was already capable of producing and already
+had measured.
+
+**Verified no regression.** Full `ui_forge.py` run, both styles, no
+`--only`: **20/20 icons built** under `cozy_ghibli` and **20/20** under
+`snes_rpg`, same as before this change (the fix touches one icon's seed,
+not the gate or the despeckle pass, so every other icon's behaviour is
+untouched by construction, and the full-roster count confirms it rather
+than assuming it). `ui_coin`'s output from each full-batch run is
+byte-identical (sha256) to the standalone seed-3 renders looked at above,
+confirming the override actually takes effect in the real CLI path, not
+just in an isolated test.
+
+**Left as narrow as the evidence.** The paragraph above's real point
+stands: nothing here lets the pipeline tell a murky composition from a
+legible one on its own, for any *other* icon that might have the same
+problem without anyone having looked. This closes the one instance that
+was already measured and named, not the general gap.

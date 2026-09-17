@@ -38,10 +38,16 @@ prompt) was correct about prompt fixes and wrong to stop there -- a
 downstream despeckle pass on the rendered pixels (`tools/ui_forge.py`'s
 `_despeckle`) closes it. `ui_forge.py` now builds 20/20 under both styles.
 See `ART_CRITIQUE.md`'s "Reopened: the 'left open' call above was wrong
-about which lever was untried" for the full measurement and the one real
-caveat that survives: `ui_coin`'s own default-seed result passes the gate
-clean and still doesn't read well as a coin -- a gate-vs-eye gap, not a
-speckle problem, and not fixed by this change.
+about which lever was untried" for the full measurement. One real caveat
+was carried forward from there -- `ui_coin`'s own default-seed result
+passed the gate clean and still didn't read well as a coin, a gate-vs-eye
+gap despeckle can't touch -- and it's since been closed too, narrowly:
+`UI_SEED_OVERRIDE` in `ui_forge.py` pins `ui_coin` to seed 3, the specific
+seed a 5-seed-by-eye comparison already found reads clearly as a coin
+under both styles. See ART_CRITIQUE.md's "`ui_coin`: the gap above, closed
+for the one icon it was measured on". Not a general fix for "does this
+read well" -- just this one icon, on the evidence that was actually looked
+at.
 
 The other three original lines are closed, each with its own write-up further
 down `ART_CRITIQUE.md` (search for "Focal detail: resolution-confirmed",

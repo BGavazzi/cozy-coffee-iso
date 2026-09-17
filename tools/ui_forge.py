@@ -96,6 +96,26 @@ UI_PROMPTS = {
     "ui_heart_mood": "a heart symbol",
 }
 
+# Per-icon seed override. `--seed` (default 1) applies to everything else --
+# this exists only for an icon where the default seed passes the gate but
+# does not read well, and a specific better seed has actually been looked
+# at and confirmed, not just guessed. `_despeckle` and `check_icon` can only
+# tell isolated-pixel noise from a clean fill; neither can tell a murky
+# composition from a legible one, so this is the one place today "the eye
+# has to look" gets acted on rather than just named.
+UI_SEED_OVERRIDE = {
+    # Seed 1 passes clean (1.8%/4.1% isolated pixels, both styles) but reads
+    # as a dark, illegible blob -- no coin, no emblem, nothing to read at a
+    # glance. Seed 3 also passes clean under both styles and reads plainly
+    # as a round gold coin with a visible emblem, confirmed by eye
+    # (`out/ui_coin_test/compare.png`, `compare_styles.png`). See
+    # ART_CRITIQUE.md, "Passing is not the same as reading well, and this is
+    # not the same claim" -- this is that gap, closed for the one icon it
+    # was measured on, not a general policy (raising --retry-seeds instead
+    # would buy proxy-gaming, not quality, per this file's own CLI comment).
+    "ui_coin": 3,
+}
+
 # An icon that fills too little of its own frame has been drawn small inside
 # a lot of whitespace, and downsampling will hand back a few dozen pixels of
 # mush. Deliberately looser than `concept.py`'s 12% floor for props: an icon
@@ -393,7 +413,8 @@ def main() -> int:
     results = []
     for name, prompt in sorted(wanted.items()):
         print(f"\n=== {name} ===")
-        r = forge(name, prompt, args.target, ramps, pipe, seed=args.seed,
+        seed = UI_SEED_OVERRIDE.get(name, args.seed)
+        r = forge(name, prompt, args.target, ramps, pipe, seed=seed,
                   retries=args.retry_seeds, ui_dir=ui_dir)
         results.append(r)
         print(f"  {'OK' if r['ok'] else 'GATED'}"
