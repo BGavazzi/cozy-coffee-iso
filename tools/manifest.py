@@ -440,8 +440,14 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
             warns.append(msg)
         # A generator that has quietly become a fixed mesh renders a room that
         # looks entirely fine, which is why this needs to be a check and not an
-        # eye on a contact sheet.
-        for msg in check_generator_range():
+        # eye on a contact sheet. Swept across all 8 azimuths furniture actually
+        # ships at -- the default single 45-degree pair check was its own best
+        # case (an axis-aligned face-on view hides a boxy base's far-side
+        # variety that a corner-on view shows), the same wiring gap Hour 15's
+        # `check_buried_detail` fix closed for a different check.
+        from isorender import AZIMUTH_STEP
+        all_azimuths = tuple(45.0 + k * AZIMUTH_STEP for k in range(8))
+        for msg in check_generator_range(pair_azimuths=all_azimuths):
             warns.append(msg)
         # Neither spread floor has ever fired on the current library, which
         # says the library is healthy and says nothing about whether the mean

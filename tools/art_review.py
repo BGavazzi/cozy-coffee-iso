@@ -791,7 +791,8 @@ def check_spread_floor_regression() -> list[str]:
 
 def check_generator_range(seeds: int = 8, azimuth: float = 45.0,
                           floor: float = DEFAULT_SPREAD_FLOOR,
-                          pair_floor: float = CLOSEST_PAIR_FLOOR) -> list[str]:
+                          pair_floor: float = CLOSEST_PAIR_FLOOR,
+                          pair_azimuths=(45.0,)) -> list[str]:
     """Do the seeded generators actually generate different shapes?
 
     A generator can rot in a way nothing else here notices. Add a base style
@@ -807,6 +808,22 @@ def check_generator_range(seeds: int = 8, azimuth: float = 45.0,
     reported 8 of 8 for every generator in the library including the ones the
     eye read as a single object. That was `check_buried_detail`'s first metric
     exactly -- a measure of whether anything moved, standing in for how much.
+
+    The closest-pair floor is checked at every azimuth in `pair_azimuths`, not
+    only the mean spread's single `azimuth`. `furnish.py.build_one` renders
+    every one of these generators as an 8-direction rotating sprite, the same
+    fact Hour 15's `check_buried_detail` fix was about -- and a corner-on
+    default (45 degrees) turned out to be this check's OWN best case, not a
+    representative one: an axis-aligned view (90/180/270/360) shows only one
+    face of a boxy leg/post base, occluding whatever the far side changed, so
+    two seeds a corner view tells apart collapse to the identical silhouette
+    face-on. Measured directly: `table_4top` (5.2% at 45, floor 4.5%, a clean
+    pass) drops to 2.6% at 90; `bookshelf` and `bench` drop to 0.0% -- PIXEL-
+    IDENTICAL -- at 180. Five of nineteen generators fail this way, all at an
+    axis-aligned angle, none from a diagonal one -- a physically consistent
+    pattern (per this file's own convention, a `+ 'why'` note on the specific
+    GENERATORS entry if the mechanism needs restating there), not sensor
+    noise.
     """
     import sys
     from pathlib import Path
@@ -831,15 +848,28 @@ def check_generator_range(seeds: int = 8, azimuth: float = 45.0,
         # spread while two of its eight seeds rendered PIXEL-IDENTICAL, and
         # `table_4top` averaged 30% with a closest pair of 0.3%. Those are the
         # instances a player actually compares, because four chairs round one
-        # table come from four consecutive seeds.
+        # table come from four consecutive seeds. Checked across every azimuth
+        # in `pair_azimuths`, not just the mean's one, for the reason in this
+        # function's own docstring: a corner-on default hides collisions that
+        # only appear face-on, and furniture ships rotating through both.
         if pair_floor > 0.0 and own is None:
-            lo = min(_pair_disagreement(frames[i], frames[j])
-                     for i in range(len(frames))
-                     for j in range(i + 1, len(frames)))
-            if lo < pair_floor:
+            worst_az, worst_lo = None, None
+            for az in pair_azimuths:
+                az_frames = (frames if az == azimuth else
+                             [screen_materials(factory(A, s + 1), az, span)
+                              for s in range(seeds)])
+                lo = min(_pair_disagreement(az_frames[i], az_frames[j])
+                         for i in range(len(az_frames))
+                         for j in range(i + 1, len(az_frames)))
+                if worst_lo is None or lo < worst_lo:
+                    worst_az, worst_lo = az, lo
+            if worst_lo < pair_floor:
+                at = (f" at azimuth {worst_az:.0f}" if worst_az != azimuth
+                      else "")
                 out.append(f"{name}: closest pair of {seeds} seeds differs by "
-                           f"only {lo:.1%} (floor {pair_floor:.0%}) -- the "
-                           f"generator moves on average and repeats itself")
+                           f"only {worst_lo:.1%}{at} (floor {pair_floor:.0%}) "
+                           f"-- the generator moves on average and repeats "
+                           f"itself")
     return out
 
 

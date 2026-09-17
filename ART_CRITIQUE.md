@@ -5296,3 +5296,96 @@ open work -- most likely closed properly by giving long tables a size-
 appropriate leg-count or leg-layout variation rather than more of the same
 few-centimetre radius/thickness draw, which is a real design pass, not a
 one-line fix.
+
+## `check_generator_range`'s own corner-view default was hiding five more collisions, not just `table_communal`'s
+
+Before accepting the entry above's "a real design pass, not a one-line fix"
+as the end of it, asked the same question Hour 15 asked of
+`check_buried_detail`: every measurement of `table_communal` on record --
+this file's own, and `check_generator_range`'s real caller in
+`manifest.py` -- shares one lever, a fixed 45-degree azimuth, while
+`furnish.py.build_one` ships every one of these generators as an
+8-direction rotating sprite. Had a genuinely different lever (more angles)
+ever been tried on this specific check, the way it was on `check_buried_
+detail`? It had not. Swept `table_communal` across all 8 azimuths a real
+sprite ships at, closest pair per angle:
+
+    az    45    90   135   180   225   270   315   360
+    lo  3.91  0.00  3.91  0.00  3.91  0.00  3.91  0.00
+
+The default 45-degree check is `table_communal`'s OWN BEST CASE, not a
+representative one -- every axis-aligned angle (90/180/270/360) is
+PIXEL-IDENTICAL between its closest pair, worse than the 3.9% the existing
+write-up above already treats as a real failure. This is the opposite
+generalization from buried_detail's (there, the default hid a defect a
+wider sweep exposed as real; here, the default was already failing, and a
+wider sweep confirms the same defect is more severe than measured, not that
+it secretly passes elsewhere).
+
+**Swept the other 18 seed-variety generators the same way**, not just the
+one already known to be broken -- the buried_detail precedent was itself a
+warning against trusting one subject's result as the whole picture:
+
+    name               az=45 (default)   worst-of-8   worst azimuth
+    table_4top               5.2%           2.6%           90   NEW FAIL
+    bookshelf                15.9%          0.0%          180   NEW FAIL
+    bench                    9.0%           0.9%          180   NEW FAIL
+    espresso_machine         9.0%           4.0%          225   NEW FAIL
+    pastry_case               7.6%          3.0%          180   NEW FAIL
+    (14 others: worst-of-8 stays clear of the 4.5% floor)
+
+Five of nineteen generators -- over a quarter -- pass the check that ships
+today and fail at a real angle the sprite sheet actually renders. All five
+collisions land on an axis-aligned angle (90/180/225/270), none on a
+diagonal one, which is a physically consistent mechanism and not
+measurement noise: a corner-on (45-family) camera sees two faces of a boxy
+object at once, so a base/leg/shelf-contents difference on either face
+shows; a face-on (90-family) camera sees exactly one face and occludes
+whatever the far side changed, so two seeds that differ only there collapse
+to one silhouette.
+
+**Visually confirmed, not just numerically.** `bookshelf` seeds 1 and 2 at
+45 degrees show clearly different book colours and arrangement on the
+shelves -- correctly read as different by the existing check. The same two
+seeds at 180 degrees are both a flat, featureless orange plank: the
+bookshelf's closed side panel, with every shelf and book that distinguishes
+them on the opposite face, completely hidden. Not a rendering bug --
+`screen_materials`' own docstring already named this exact mechanism for
+silhouette alone ("an open-fronted carcass has the same outline whatever is
+on its shelves"); here the same occlusion swallows the *interior* detail
+the earlier fix (comparing materials, not silhouette) was written to catch,
+because at this specific angle there is no interior showing at all.
+
+**The fix: same wiring pattern as `check_buried_detail`.**
+`check_generator_range` gained a `pair_azimuths` parameter (default
+`(45.0,)`, preserving every existing caller's behaviour byte-for-byte
+unless it opts in), and now checks the closest pair at every azimuth in
+that tuple rather than only the mean's single `azimuth`, reporting whichever
+angle is worst. `manifest.py --check`'s real call site was updated to pass
+all 8 real ship azimuths, the same `45.0 + k * AZIMUTH_STEP` sweep Hour 15
+wired into `review_library()`.
+
+**Verified no regression.** `manifest.py --check`, both styles, before and
+after, on this branch: errors unchanged (3 / 10, matching PR #83's own
+baseline), warnings +5 each style (the five new generator names above,
+identical set under `cozy_ghibli` and `snes_rpg` -- expected, since
+`screen_materials` resolves material identity, not colour, so this
+mechanism is palette-independent by construction). Runtime cost: the sweep
+adds roughly 4 seconds to `check_generator_range` (0.9s to 4.9s) for
+checking 8 angles instead of 1 on 15 generators -- negligible against
+`manifest.py --check`'s multi-minute total. Full 40-test suite unchanged.
+
+**Left failing, deliberately, same reasoning as `table_communal` above.**
+None of the five newly-exposed generators gets an `own` floor -- their
+variety is not deliberately subtle, it is a first-order silhouette/interior
+change with a blind angle, and the honest fix is either giving the
+`table()`-style absolute-unit draws a size-relative version (as attempted
+for `table_communal`) or, for `bookshelf`/`bench`/`espresso_machine`/
+`pastry_case`, auditing what part of each object's variety lives only on
+the face an axis-aligned camera occludes. That is real per-generator
+geometry work, five instances of it, correctly out of scope for a check-
+wiring fix -- recorded here, not silently absorbed into a looser floor.
+
+Follow-up commit on this same branch (PR #83), continuing its own named
+check function rather than opening an unrelated topic. Left unmerged per
+standing practice.
