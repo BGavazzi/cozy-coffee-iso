@@ -4436,6 +4436,69 @@ missing topology; it can only clean the colour of topology that exists.
   passing is no longer even weak evidence that a character-kind asset reads
   as its subject.
 
+## A second re-check, opposite result: `bread_loaf`'s "genuinely bad" 5/8 was speckle after all
+
+The frog knight (previous section) was a warning not to assume the despeckle
+fix generalizes. It is not an excuse to stop checking cases that were never
+part of that fix's own verification sweep. `bread_loaf` is one: `concept.py`'s
+`MIN_FILL` rationale and `factory.py`'s `RETRY_SEEDS` comment both cite it as
+the sharpest counter-example to "reseeding helps" -- "gated on seed 1, passed
+on seed 2, reached stage 5 -- and its sprites are still 5-of-8 blocked,
+identical to before," attributed to the mesh itself: "a loaf is an amorphous
+form TripoSR cannot resolve, not because it was small." That 5/8 number
+predates `pixelize.despeckle` (this same branch), and `bread_loaf` was not
+one of the 32 meshes re-rendered when the speckle fix's own coverage was
+verified two sections up ("Reopened: the seven-object speckle floor... 255
+clean, one narrow miss (`wooden_spoon`)") -- it fell outside that batch
+entirely, so nothing here actually re-checked it against the new lever.
+
+Re-ran it directly. `main` (pre-despeckle), fresh render from the cached mesh
+(`out/mesh/bread_loaf_bound.obj`): `art_review.py` reports 5 of 8 frames
+blocked on `speckle`, 11.4-13.5% against the 10.5% floor -- reproduces the
+recorded number exactly. Same mesh, same render, this branch (post-despeckle):
+**0 of 8 blocked.** Confirmed by eye, not just the count -- upscaled
+before/after contact sheet (`out/bread_loaf_before_after.png`, all 8
+azimuths, 6x): the crust's mottled light/dark pattern and the sliced-loaf
+silhouette read identically in both rows; nothing that made it legible as
+bread got smoothed away, matching the "stray pixels only" pattern already
+confirmed for `candle`/`french_press` in the original despeckle measurement.
+
+So the mechanism `factory.py`'s own comment names for `bread_loaf` --
+"amorphous form TripoSR cannot resolve" -- was the wrong explanation for the
+specific 5/8 number, even though it may still be true of the mesh's
+geometry in some other respect this pass did not measure. What was actually
+failing those 5 frames was the identical fine-grained-surface speckle named
+for basket's weave and cutting_board's wood grain two sections up, on a
+grainy crust instead of a woven basket -- the same cause, the same fix,
+just never re-tested here because this subject sat outside the batch that
+originally verified the fix's coverage.
+
+**What this does and does not change:**
+- `bread_loaf`'s stage-1 gate story is untouched -- reseeding still does not
+  fix it, for the reason already given (reseeding hunts a concept image that
+  satisfies stage-1 heuristics; despeckle operates three stages later, on
+  rendered pixels, and neither lever touches what the other measures).
+  `factory.py`'s `RETRY_SEEDS` conclusion stands.
+- The specific claim that `bread_loaf` is a *counter-example* to reseeding
+  because its reconstruction is "genuinely bad" does not stand as stated --
+  the sprites that made it look bad are now clean. Whether the underlying
+  mesh geometry is *also* fine or also flawed in some way despeckle can't
+  touch is a question this pass did not answer either way, and is left
+  explicitly open rather than guessed at.
+- `concept.py`'s `MIN_FILL` argument (fill share does not predict blocked-
+  frame count) does not depend on this specific number -- but the two
+  examples it leads with, `basket` 8/8 and `cutting_board` 7/8, are the same
+  pre-despeckle blocked-frame counts as `bread_loaf`'s, both already
+  independently confirmed clean by the original despeckle pass. The
+  qualitative point (fill is not predictive) is not contradicted by fixing a
+  downstream artifact that was orthogonal to fill either way, but the exact
+  numbers quoted next to `basket`/`cutting_board`/`bread_loaf` in that
+  comment are now stale and worth a maintenance pass, not re-derived here --
+  re-deriving the full twenty/thirty-two-subject sweep behind that argument
+  is a larger undertaking than one hour's check, and doing it partially
+  would risk the exact stale-transcription mistake the "29%" entry above
+  already caught and corrected once.
+
 ## The 29% that was being thrown away, and the one kind that stays thrown away
 
 If the scope line is "props," then the number that matters for throughput is
