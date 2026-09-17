@@ -5427,3 +5427,76 @@ candidate for this exact gap, and nothing in `check_icon` or `_despeckle`
 checks for that automatically -- both operate on pixels within one frame,
 not on how many objects that frame contains. Still not fixed in general --
 the eye still has to look, one icon at a time.
+
+## The six chrome ids were still being generated, silently, for nothing
+
+A commit from well before this audit loop started already decided this
+question once: `ui_chrome.py`'s own message says plainly, "the six chrome
+ids belong in procedural code rather than in a diffusion prompt," and
+lists why -- `ui_coin`, `ui_ticket`, `ui_dialogue_frame`, `ui_nameplate`,
+`ui_upgrade_frame` and `ui_star_rating` are wrong-*shape* failures (a
+speech bubble photographed as a tablet, a star rendered as an eight-point
+burst, the coin "gated muddy"), and shape is not something `check_icon`'s
+isolated-pixel rule can see. `ui_chrome.py` was built to draw all six
+instead, deterministically, no GPU, no seed. `manifest.py`'s own
+`check_ui` docstring already calls `ui_coin` "a CHROME key" in its
+comments, as if the question were long settled.
+
+It was settled in prose and in the drawing code. It was never settled in
+`ui_forge.py`'s own `UI_PROMPTS` dict, which still listed all six --
+meaning every full `ui_forge.py` run has been spending real SDXL time (and
+this file's own `--retry-seeds` budget) generating six icons nobody was
+going to use. `ui_chrome.py` writes into the identical `out/ui/<id>.png`
+path `ui_forge.py` does, and this repo's own `README.md` documents running
+`ui_forge.py` and then `ui_chrome.py`, in that order -- so in every
+build that follows the documented steps, `ui_chrome.py`'s output silently
+overwrote `ui_forge.py`'s, every time, for six of the twenty declared `cat:
+ui` entries.
+
+**Confirmed, not assumed, before touching anything.** `set(ui_forge.
+UI_PROMPTS) & set(ui_chrome.CHROME)` returns exactly those six ids.
+Rebuilt `ui_coin` alone through `ui_forge.py`, saved a copy, then ran
+`ui_chrome.py --only ui_coin` and compared: two different files (sha256
+`583e35f...` vs `4404921...`), and looking at both makes the intent
+obvious at a glance -- `ui_forge.py`'s SDXL coin is the same kind of
+overworked, textured render this file has already recorded for `ui_coin`
+above; `ui_chrome.py`'s is a flat gold disc with a clean ring highlight,
+exactly the shape the chrome commit set out to draw. The two-directional
+coverage-audit technique this loop has used on `gates.py`, `GENERATORS`
+and `REQUIRED_PRODUCERS` in earlier hours applies here too, just checking
+set membership between two producers' own dicts instead of a producer
+against a catalog -- and it found a real gap the same way.
+
+**One honest consequence worth naming directly, not burying:** the
+`ui_coin` seed-tuning two sections above (`UI_SEED_OVERRIDE["ui_coin"] =
+3`, added earlier this same audit loop) was real work, correctly measured
+and correctly verified at the time -- seed 3 genuinely does read as a coin
+where seed 1 doesn't. It was never wrong. It was tuning a producer whose
+output turns out to never reach the shipped library, for a reason that has
+nothing to do with seeds. That is not the frog-knight case (a finding that
+turned out not to generalize) -- it is a finding that was correct and
+irrelevant, which is a different and equally worth-recording outcome: the
+measurement stands, the artifact it improved was already dead.
+
+**The fix:** removed all six ids from `ui_forge.py`'s `UI_PROMPTS`,
+removed the now-unreachable `UI_SEED_OVERRIDE["ui_coin"]` entry (left a
+comment explaining why it is gone rather than deleting the context
+silently), and fixed the module docstring's own `--only ui_coin,ui_ticket`
+example, which named two ids this change removes from what `--only` can
+select. `ui_icon_pastry`'s own precedent -- deleted from `UI_PROMPTS`
+outright once its generative path was rejected, not merely left to fail
+quietly -- is the standard this change follows, applied to six ids that
+were never actually failing, just never actually used.
+
+**Verified no regression, both styles, both tools.** `ui_forge.py`:
+14/14 built under `cozy_ghibli` and 14/14 under `snes_rpg` (was 20/20;
+the six removed ids are the entire difference, by construction).
+`ui_chrome.py`: unchanged, 10/10 both styles -- it never read
+`UI_PROMPTS`, so nothing about its own six chrome ids' output could have
+moved. `manifest.py --check`: identical to the documented baseline on both
+styles -- `cozy_ghibli` 3 errors (unchanged: plan 1 L-run, plan 8 galley
+brightness and detail), `snes_rpg` 10 errors (unchanged: the 4 character
+blockers, the 3 skin blockers, the 3 composition errors) -- confirming
+this is a compute-and-consistency fix, not a coverage change: every `cat:
+ui` id the manifest audits was already present on disk before this change
+(via `ui_chrome.py`) and still is after it.

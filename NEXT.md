@@ -36,18 +36,34 @@ three items, all real:
 20 `cat: ui` icons failing the speckle gate under both styles, unfixable by
 prompt) was correct about prompt fixes and wrong to stop there -- a
 downstream despeckle pass on the rendered pixels (`tools/ui_forge.py`'s
-`_despeckle`) closes it. `ui_forge.py` now builds 20/20 under both styles.
-See `ART_CRITIQUE.md`'s "Reopened: the 'left open' call above was wrong
-about which lever was untried" for the full measurement. One real caveat
-was carried forward from there -- `ui_coin`'s own default-seed result
-passed the gate clean and still didn't read well as a coin, a gate-vs-eye
-gap despeckle can't touch -- and it's since been closed too, narrowly:
-`UI_SEED_OVERRIDE` in `ui_forge.py` pins `ui_coin` to seed 3, the specific
-seed a 5-seed-by-eye comparison already found reads clearly as a coin
+`_despeckle`) closes it. `ui_forge.py` at the time built 20/20 under both
+styles. See `ART_CRITIQUE.md`'s "Reopened: the 'left open' call above was
+wrong about which lever was untried" for the full measurement. One real
+caveat was carried forward from there -- `ui_coin`'s own default-seed
+result passed the gate clean and still didn't read well as a coin, a
+gate-vs-eye gap despeckle can't touch -- and it was closed too, narrowly:
+`UI_SEED_OVERRIDE` in `ui_forge.py` pinned `ui_coin` to seed 3, the
+specific seed a 5-seed-by-eye comparison found reads clearly as a coin
 under both styles. See ART_CRITIQUE.md's "`ui_coin`: the gap above, closed
-for the one icon it was measured on". Not a general fix for "does this
-read well" -- just this one icon, on the evidence that was actually looked
-at.
+for the one icon it was measured on" -- a real, correctly-verified fix at
+the time, for a producer later found to be entirely superseded (see the
+next paragraph).
+
+**Since corrected: `ui_forge.py` was never the producer that ships `ui_coin`
+(or five other ids).** `ui_coin`, `ui_ticket`, `ui_dialogue_frame`,
+`ui_nameplate`, `ui_upgrade_frame` and `ui_star_rating` -- "the six chrome
+ids" `tools/ui_chrome.py`'s own commit already decided belong in
+procedural code, not a diffusion prompt -- were still sitting in
+`ui_forge.py`'s `UI_PROMPTS` months after `ui_chrome.py` was built to draw
+all six instead. Both write to the identical `out/ui/<id>.png` path, and
+this file's own documented run order (`ui_forge.py` then `ui_chrome.py`)
+means `ui_chrome.py`'s output silently won every time. `ui_forge.py` now
+builds **14/14**, both styles -- the six ids removed from `UI_PROMPTS`
+entirely, following the same precedent `ui_icon_pastry` set when ITS
+generative path was rejected (deleted, not left to fail quietly). See
+ART_CRITIQUE.md, "The six chrome ids were still being generated, silently,
+for nothing" -- including the honest note that the `ui_coin` seed-3 fix
+above was correct and is now moot, not wrong.
 
 The other three original lines are closed, each with its own write-up further
 down `ART_CRITIQUE.md` (search for "Focal detail: resolution-confirmed",

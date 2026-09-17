@@ -17,7 +17,7 @@ So UI art takes the short path: generate, matte, quantize, outline. Stages
 they were too slow.
 
     python tools/ui_forge.py                    # every ui entry in assets.yaml
-    python tools/ui_forge.py --only ui_coin,ui_ticket
+    python tools/ui_forge.py --only ui_icon_espresso,ui_icon_latte
     python tools/ui_forge.py --target 32        # icons are small by nature
 
 Nothing here is a new generation path. Every image comes from
@@ -73,8 +73,29 @@ UI_NEGATIVE = ("photograph, 3d render, realistic, shading, gradient, "
 
 # What each declared `cat: ui` id should actually depict. `assets.yaml` names
 # them but does not describe them, and "ui_icon_cold_brew" is not a prompt.
+#
+# Deliberately does NOT include `ui_ticket`, `ui_coin`, `ui_dialogue_frame`,
+# `ui_nameplate`, `ui_upgrade_frame` or `ui_star_rating` -- the six ids
+# `ui_chrome.py`'s own commit message calls "the six chrome ids [that]
+# belong in procedural code rather than in a diffusion prompt", after that
+# module's `check_generator_range`-style measurement found every one of
+# them is a wrong-*shape* failure, not a texture one (a speech bubble
+# photographed as a tablet, a star rendered as an eight-point burst, the
+# coin gated muddy). `ui_chrome.py` draws all six today, deterministically,
+# no GPU, and both scripts write into the identical `out/ui/<id>.png` path
+# -- so until 2026-09-17 these six were STILL in this dict too, meaning
+# every full `ui_forge.py` run spent real SDXL time (and this file's own
+# `--retry-seeds` budget) generating six icons that `ui_chrome.py` then
+# silently overwrote, every time, in the exact order this repo's own
+# README documents running them. Confirmed by sha256: a standalone
+# `ui_forge.py --only ui_coin` build followed by `ui_chrome.py --only
+# ui_coin` leaves a file on disk that does not match the one `ui_forge.py`
+# just wrote. See ART_CRITIQUE.md, "The six chrome ids were still being
+# generated, silently, for nothing" -- including the honest note that
+# Hour 10/11's `ui_coin`/`UI_SEED_OVERRIDE` tuning, while itself correctly
+# measured, was tuning a producer whose output never survives to the
+# shipped library.
 UI_PROMPTS = {
-    "ui_ticket": "a paper order ticket with a torn edge",
     "ui_icon_espresso": "a small espresso cup on a saucer",
     "ui_icon_latte": "a tall latte glass with foam",
     "ui_icon_cappuccino": "a cappuccino cup with foam heart",
@@ -87,12 +108,7 @@ UI_PROMPTS = {
     "ui_icon_sandwich": "one triangular sandwich wedge, single layer, not stacked, cheese and ham filling",
     "ui_icon_milk": "a glass milk bottle, no frame, no border",
     "ui_icon_beans": "a bag of coffee beans",
-    "ui_coin": "a round gold coin",
     "ui_clock_day": "a round clock face",
-    "ui_dialogue_frame": "a rounded rectangular speech bubble",
-    "ui_nameplate": "a horizontal rounded nameplate banner",
-    "ui_upgrade_frame": "a square badge frame with a notched border",
-    "ui_star_rating": "a five pointed star",
     "ui_heart_mood": "a heart symbol",
 }
 
@@ -104,16 +120,18 @@ UI_PROMPTS = {
 # composition from a legible one, so this is the one place today "the eye
 # has to look" gets acted on rather than just named.
 UI_SEED_OVERRIDE = {
-    # Seed 1 passes clean (1.8%/4.1% isolated pixels, both styles) but reads
-    # as a dark, illegible blob -- no coin, no emblem, nothing to read at a
-    # glance. Seed 3 also passes clean under both styles and reads plainly
-    # as a round gold coin with a visible emblem, confirmed by eye
-    # (`out/ui_coin_test/compare.png`, `compare_styles.png`). See
-    # ART_CRITIQUE.md, "Passing is not the same as reading well, and this is
-    # not the same claim" -- this is that gap, closed for the one icon it
-    # was measured on, not a general policy (raising --retry-seeds instead
-    # would buy proxy-gaming, not quality, per this file's own CLI comment).
-    "ui_coin": 3,
+    # No `ui_coin` entry here on purpose, not an oversight. Hour 10 of the
+    # autonomous audit measured, at real length, that seed 3 reads as a
+    # coin where seed 1 reads as a blob -- correct, and correctly verified
+    # at the time -- but `ui_coin` was removed from `UI_PROMPTS` entirely
+    # once it came out that this producer's `ui_coin` output never reaches
+    # the shipped library: `ui_chrome.py` draws it procedurally and, in
+    # this repo's own documented run order, always overwrites whatever
+    # `ui_forge.py` wrote first. See ART_CRITIQUE.md, "The six chrome ids
+    # were still being generated, silently, for nothing" -- the seed-3
+    # finding was real, the fix it justified (this entry) is now dead code
+    # for a different, upstream reason, not a wrong finding.
+    #
     # Seed 1 passes clean (isolated-pixel gate has nothing to say about
     # object count) but SDXL draws a whole shelf of a dozen bottles for
     # this prompt, not one -- confirmed by eye, both styles
