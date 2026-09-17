@@ -507,6 +507,37 @@ COLOUR_BUCKET = 8
 # seventeen of the thirty sit on 0.600 exactly, because the library is authored
 # out of ramp middles. That is not a coincidence to be preserved for its own
 # sake; it is what "the renderer supplies the shading" means in numbers.
+#
+# "Thirty" is now stale on its own terms: `assetlib.py` has grown to 55
+# builder functions (`review_library()`'s own filter, run fresh, confirms the
+# count), and re-measuring median L for every one of them under COZY_GHIBLI --
+# the style this floor/ceiling was supposedly measured against -- finds two
+# that already sit outside 0.596-0.845: `bean_hopper` (0.500, three prisms of
+# `wood-1` coffee beans dominate its surface -- a deliberately dark prop, not
+# a mis-authored one) and `book_stack`/`sugar_caddy`/`tip_jar`/`table_clutter`
+# clustering at the light end (0.845-0.969). This is why Hour 25's deferred
+# snes_rpg recalibration ("needs the same measurement discipline that
+# produced the cozy_ghibli numbers... a separate larger pass") is a harder
+# separate pass than just re-running that discipline once more: the reference
+# corpus it would re-run against has already moved since the original count,
+# for the DEFAULT style, not just the new one.
+#
+# It gets sharper than a stale count. Widening the floor to legitimately fit
+# `bean_hopper` under snes_rpg's own ramps requires ALBEDO_L_FLOOR near 0.41
+# (measured: `bean_hopper` 0.500 cozy_ghibli / 0.411 snes_rpg) -- and 0.408 is
+# the exact median L this check exists to catch: the pre-`delight()` teapot
+# regression `delight()`'s own docstring cites as the motivating bug ("a
+# near-black blob with the right silhouette"). A floor wide enough to admit
+# every legitimately dark authored prop is a floor that can no longer tell a
+# legitimately dark prop from an undelit reconstruction -- the two goals this
+# check was asked to serve (accommodate the real library's own range; still
+# catch the bug it was built for) are now in tension close enough that a
+# single global median-L threshold may not be the right shape for this check
+# regardless of style, a bigger question than either style's own number.
+# Left unrecalibrated on purpose, for both styles, pending that question --
+# not rushed into a threshold guess that would either reject real snes_rpg
+# props (today's floor, unchanged) or blind the check to the exact defect it
+# was written for (a floor loosened enough to fit the library's dark end).
 ALBEDO_L_FLOOR = 0.596
 ALBEDO_L_CEIL = 0.845
 # The modal authored value, and the middle step of both `wood` and `neutral`.

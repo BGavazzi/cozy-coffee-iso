@@ -5329,3 +5329,68 @@ and `tools/manifest.py` (all three call sites) -- branch
 `ingest-checks-style-blind`, left unmerged. `manifest.py --check --style
 cozy_ghibli` is byte-identical before and after; the 40-test unittest suite
 passes unchanged.
+
+---
+
+## The albedo floor's deferred recalibration is harder than it looked, and for a reason that predates snes_rpg entirely
+
+Came back to the "separate, larger pass" left open above with time actually
+budgeted for it, expecting to run the same measurement discipline that
+produced `ALBEDO_L_FLOOR`/`ALBEDO_L_CEIL` once for `cozy_ghibli` and once
+more for `snes_rpg`. It surfaced something the deferred write-up didn't
+anticipate: the reference corpus that discipline runs against has already
+moved, for the DEFAULT style too, not just the new one.
+
+`ALBEDO_L_FLOOR`'s own comment says the bracket comes from "every one of the
+thirty meshes in `assetlib`." Counted fresh with `review_library()`'s own
+filter (the same one `check_member_thickness`/`check_buried_detail` sweep
+the library with): 55, not 30. `assetlib.py` grew after the floor was set
+and nobody re-measured. Re-running the measurement against today's full 55
+under `cozy_ghibli` -- the style this floor is supposedly already correct
+for -- finds two real outliers already outside 0.596-0.845:
+
+    mesh            cozy_ghibli L   snes_rpg L
+    bean_hopper          0.500         0.411
+    book_stack            0.969         0.949
+
+`bean_hopper` is not a mis-authored prop -- three stacked prisms of `wood-1`
+(a step darker than the `wood` ramp's own middle) are the coffee beans
+themselves, the majority of its visible surface, a deliberately dark object.
+`book_stack`/`sugar_caddy`/`tip_jar`/`table_clutter` cluster the light end
+the same legitimate way. Neither is a defect; both are outside the
+documented bracket regardless of which style's palette resolves them.
+
+That reframes the deferred snes_rpg number, and makes it harder, not just
+later. Widening `ALBEDO_L_FLOOR` to legitimately admit `bean_hopper` under
+snes_rpg's own ramps needs a floor near 0.41 -- and 0.408 is the exact
+median L `delight()`'s own docstring cites as the motivating bug this check
+exists to catch: the pre-fix teapot regression, "a near-black blob with the
+right silhouette." A floor loose enough to admit every legitimately dark
+authored prop is a floor that can no longer tell a legitimately dark prop
+from an undelit reconstruction -- the two things this check is asked to do
+(fit the real library's range; still catch the bug it was built for) are
+close enough to genuinely conflict. That is not a snes_rpg-specific problem
+-- the same tension exists for `cozy_ghibli`'s own numbers today, snes_rpg's
+darker palette just makes the low end of it worse (bean_hopper 0.500 to
+0.411, a full 0.089 closer to the 0.408 regression value).
+
+**Verdict: still correctly left open, now for a sharper, verified reason.**
+This is not "the recalibration hasn't happened yet" -- it's "a single global
+median-L threshold may be the wrong shape for what this check is trying to
+distinguish, independent of which style's number gets picked," which is a
+bigger question than either style's own floor/ceiling and shouldn't be
+answered by picking a number under time pressure. Nothing changed in
+`ingest.py`'s checked-in behaviour -- `ALBEDO_L_FLOOR`/`ALBEDO_L_CEIL` are
+unmoved, `check_albedo_centre` is unmoved, and (confirmed by direct grep)
+neither is ever actually invoked against `assetlib.py`'s own authored
+meshes in any live path -- only inside `ingest()` itself and inside
+`check_albedo_regression`'s synthetic fixture, so today's finding has no
+live consequence, the same as the snes_rpg finding it extends. The 55-mesh
+sweep and its numbers are recorded here, plus a matching comment in
+`tools/ingest.py` next to the constants themselves, so a future pass starts
+from "the corpus moved and the floor's own tolerance is already tight
+against the regression it guards" instead of re-discovering both facts from
+zero. Doc-only follow-up commit on branch `ingest-checks-style-blind`
+(same branch, directly extends this PR's own deferred finding) -- 40-test
+suite passes, `manifest.py --check` unchanged both styles (nothing wired to
+this measurement in either direction).
