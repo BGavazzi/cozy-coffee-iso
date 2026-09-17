@@ -823,6 +823,7 @@ def review_library(floor_px=MIN_MEMBER_PX):
     """Run the mesh checks across every asset the blockout library exposes."""
     import inspect
     import assetlib
+    from isorender import AZIMUTH_STEP
     out, assets = [], {}
     for fn_name, fn in sorted(vars(assetlib).items()):
         if not callable(fn) or fn_name.startswith("_"):
@@ -840,7 +841,12 @@ def review_library(floor_px=MIN_MEMBER_PX):
             continue
         assets[fn_name] = mesh
         out += check_member_thickness(mesh, fn_name, floor_px=floor_px)
-    out += check_buried_detail(assets)
+    # Every one of these assets ships as an 8-direction rotating sprite
+    # (`furnish.py.build_one` renders each at `45 + k*AZIMUTH_STEP` for
+    # k in 0..7) -- the single-azimuth default this check documents for a
+    # fixed room-camera shot was never actually what's shipping here.
+    all_azimuths = [45.0 + k * AZIMUTH_STEP for k in range(8)]
+    out += check_buried_detail(assets, azimuths=all_azimuths)
     return out
 
 
