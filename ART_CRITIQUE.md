@@ -5344,3 +5344,86 @@ stands: nothing here lets the pipeline tell a murky composition from a
 legible one on its own, for any *other* icon that might have the same
 problem without anyone having looked. This closes the one instance that
 was already measured and named, not the general gap.
+
+## `ui_icon_milk`: a shelf of bottles, not a bottle, passing the same gate `ui_coin` did
+
+The paragraph directly above names the risk in the abstract -- "any *other*
+icon that might have the same problem without anyone having looked." Went
+looking rather than leaving it hypothetical. `NEXT.md`'s "Item/inventory
+icons beyond drinks" entry still claimed "the honest count is 2 of 6" for
+`ui_icon_muffin`/`cookie`/`bagel`/`sandwich`/`milk`/`beans`, unchanged since
+before `_despeckle` landed on this branch (the commit that added it never
+touched that paragraph). Rebuilt all six fresh on this branch, both styles,
+to find out what was actually still true rather than trusting either the
+old "2 of 6" claim or the newer despeckle commit message's "20/20" in the
+aggregate: **6 of 6 now clear the gate, both styles** --
+`_despeckle` (already shipped for `ui_coin`/`bagel`/`pastry`/`sandwich`)
+turns out to have quietly carried `cookie` and (combined with the earlier
+prompt fix) `muffin` over the line too, never counted. `NEXT.md`'s "2 of
+6"/"stays open" wording is stale, not wrong-in-spirit -- it describes a
+real state this branch has since moved past without saying so.
+
+Looked at all six before calling that the end of it, the same discipline
+the paragraph above used for `ui_coin`: **five read as intended.** The
+sixth, `ui_icon_milk`, does not. `out/item4_verify_sheet.png` (built for
+this pass) shows it plainly under both styles: not a milk bottle but a
+shelf of a dozen bottles, some barely distinguished from each other --
+`check_icon`'s isolated-pixel rule has nothing to say about how many
+objects are in frame, so a shelf full of small, mutually-adjacent bottle
+shapes reads as clean pixel adjacency to the gate while reading as the
+wrong picture to a person. Exactly `ui_coin`'s gap, on a subject nobody
+had pointed the same question at yet.
+
+**Swept seeds 1-6** (`ui_forge.forge()` called directly, `retries=0`, so
+each seed's real image is seen rather than masked by auto-reseed) under
+`cozy_ghibli`: seed 1 (today's silent default) is the shelf; seeds 3, 5
+and 6 are each a single, clearly-readable glass milk bottle (seeds 2 and 4
+fail a different, earlier check -- frame-fill -- and never reach an image
+worth judging). Confirmed seed 3 also reads as one bottle under
+`snes_rpg`, not just `cozy_ghibli` -- same cross-style check `ui_coin`'s
+fix got.
+
+**The fix:** `UI_SEED_OVERRIDE` gains `ui_icon_milk: 3`, same mechanism,
+same narrowness -- a looked-at, measured override for the one icon this
+was actually checked on. Picked 3 as the first passing seed found in the
+sweep rather than picking a "best of three" by additional subjective
+ranking, matching how `ui_coin`'s own seed was chosen.
+
+**Verified no regression.** Full `ui_forge.py` run, both styles, no
+`--only`: **20/20 built** under `cozy_ghibli` and **20/20** under
+`snes_rpg`, same counts as before this change. `ui_icon_milk`'s output
+from each full-batch run is byte-identical (sha256) to the standalone
+seed-3 renders looked at above, confirming the override takes effect in
+the real CLI path.
+
+While the sweep tool was already warmed up, looked at the other five
+"beyond drinks" icons too rather than stopping at the one that prompted
+this section: `ui_icon_muffin` under `cozy_ghibli` currently ships on
+seed 2 (`ui_forge.py`'s own auto-reseed picks the first seed that clears
+the gate after seed 1's frame-fill failure) -- and seed 2 draws **two**
+cupcakes plus a small dark artifact on the larger one's crown, not one
+muffin. Same gap, third instance: passes `check_icon` (object count is
+invisible to a pixel-adjacency rule), fails the eye. Swept seeds 1-7:
+2, 5 and 7 are each a multi-object composition (two cupcakes; a
+muffin-tin display of roughly a dozen; two muffins stacked); 3 and 6 are
+each a single, clean muffin. `snes_rpg`'s own auto-reseed already lands
+on seed 3 for this icon (confirmed clean earlier in this file, "one
+sibling icon WAS genuinely fixed"), so `UI_SEED_OVERRIDE["ui_icon_muffin"]
+= 3` closes both styles with the same one seed rather than two per-style
+picks. Verified the same way as `ui_icon_milk` above: full run, both
+styles, 20/20 built each, `ui_icon_muffin`'s `cozy_ghibli` output
+byte-identical (sha256) to the standalone seed-3 test; `snes_rpg`'s output
+unchanged from before this commit (it already reached seed 3 on its own).
+`ui_icon_bagel`, `ui_icon_cookie` and `ui_icon_sandwich` were also looked
+at in the same contact sheet and read as intended in both styles --
+checked, not assumed, but genuinely nothing to fix there today.
+
+**Left exactly as narrow as before.** Three icons in this family now carry
+a seed override for the identical reason (`ui_coin`, `ui_icon_milk`,
+`ui_icon_muffin`), which is enough of a pattern to name plainly: any icon
+whose prompt invites SDXL toward a "collection" framing (a shelf, a
+display case, a stack, a plate of several) rather than one object is a
+candidate for this exact gap, and nothing in `check_icon` or `_despeckle`
+checks for that automatically -- both operate on pixels within one frame,
+not on how many objects that frame contains. Still not fixed in general --
+the eye still has to look, one icon at a time.

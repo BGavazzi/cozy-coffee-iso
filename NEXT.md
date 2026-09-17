@@ -583,31 +583,50 @@ not, not every asset any game has ever shipped.
    fact -- and the claim they stood on, that text "would be mush at this
    size", turned out half right: a 36px writing area takes "Latte" at cap 9
    and takes "Flat White" at no shipping size at all.
-4. **Item/inventory icons beyond drinks.** Six subjects added to
+4. **Item/inventory icons beyond drinks.** ~~Six subjects added to
    `UI_PROMPTS` -- `ui_icon_muffin`, `ui_icon_cookie`, `ui_icon_bagel`,
    `ui_icon_sandwich`, `ui_icon_milk`, `ui_icon_beans` -- and the honest
-   count is 2 of 6, not 6 of 6. `ui_icon_milk` and `ui_icon_beans` clear the
-   speckle gate cleanly in both styles. The other four do not, in either
-   style, after four rounds of wording aimed at the specific cause each
-   round's renders showed: a bagel that kept rendering as a glazed,
-   sprinkled donut regardless of "no glaze, no icing"; a chocolate chip
-   cookie whose chip count SDXL will not take a number for, so it never
-   quantizes flat; a muffin whose fluted wrapper and blueberry drip streaks
-   survive every "no paper liner" instruction; a sandwich that stacked
-   itself into a two-layer club sandwich until "single layer, not stacked"
-   fixed the shape but not the speckle. See `proof/ui_icons_subjects.png`,
-   built and read by eye, not by gate score alone -- one snes_rpg pass
-   (`ui_icon_milk` seed 1) was a shelf of a dozen bottles, not one, and
-   another (`ui_icon_cookie` seed 2) was two cookies on a plate; both
-   cleared `MAX_ISOLATED` on pixel count and were rejected anyway, then
-   re-seeded to genuine single-subject passes. Recorded rather than
-   loosened: same standard the `dialogue_frame`/`nameplate` wrong-shape
-   finding set above (see this file's UI-art log). The ceiling here is
-   texture density, not shape complexity --
-   embedded chips, berries, seeds and layered fillings exceed the
-   modal-downsample speckle budget in a way a single-region cup, bottle or
-   bag does not. `UI_PROMPTS` stays open; six more lines does not close
-   this entry.
+   count is 2 of 6, not 6 of 6.~~ **Stale as of the despeckle pass below --
+   re-checked, now 6 of 6 clear the speckle gate, both styles.** The prompt
+   wording described below never reliably fixed any of the four
+   (`bagel`/`cookie`/`muffin`/`sandwich`); the downstream pixel despeckle
+   this file's UI-art log records for `ui_coin` and friends closed all four
+   without another wording change, the same untried-lever pattern, just
+   never re-counted here after it landed. History, for the record: a bagel
+   that kept rendering as a glazed, sprinkled donut regardless of "no glaze,
+   no icing"; a chocolate chip cookie whose chip count SDXL will not take a
+   number for, so it never quantized flat; a muffin whose fluted wrapper and
+   blueberry drip streaks survived every "no paper liner" instruction; a
+   sandwich that stacked itself into a two-layer club sandwich until "single
+   layer, not stacked" fixed the shape but not the speckle. See
+   `proof/ui_icons_subjects.png` (pre-despeckle) for what those renders
+   looked like, built and read by eye, not by gate score alone -- one
+   snes_rpg pass (`ui_icon_milk` seed 1) was a shelf of a dozen bottles, not
+   one, and another (`ui_icon_cookie` seed 2) was two cookies on a plate;
+   both cleared `MAX_ISOLATED` on pixel count and were rejected anyway, then
+   hand-re-seeded for that one proof image only, never wired into the
+   pipeline. **The `ui_icon_milk` shelf-of-bottles shape was real and is
+   fixed now, not just re-seeded for a proof image**: `UI_SEED_OVERRIDE` in
+   `ui_forge.py` pins it to seed 3, the same gate-passes-but-doesn't-read-
+   well gap and the same fix `ui_coin` got. See `ART_CRITIQUE.md`,
+   "`ui_icon_milk`: a shelf of bottles, not a bottle, passing the same gate
+   `ui_coin` did". Why prompt wording alone never closed the gate for the
+   other four is still true and still worth keeping: the ceiling was
+   texture density, not shape complexity -- embedded chips, berries, seeds
+   and layered fillings exceeded the modal-downsample speckle budget in a
+   way a single-region cup, bottle or bag does not -- which is exactly the
+   class of defect a downstream pixel pass can fix and a prompt cannot.
+   **`UI_PROMPTS` is closed on the gate**, 6 of 6. The despeckle pass's own
+   remaining caveat (gate-passing isn't the same as reading well) was
+   checked by eye for all six, not just `ui_coin`: `ui_icon_muffin` had the
+   identical shelf/multi-object gap `ui_icon_milk` did -- `cozy_ghibli`'s
+   own auto-reseed shipped two cupcakes plus a stray artifact on seed 2 --
+   now also fixed via `UI_SEED_OVERRIDE["ui_icon_muffin"] = 3`, the same
+   seed `snes_rpg` was already landing on by chance. `bagel`, `cookie` and
+   `sandwich` were looked at too and read as intended, both styles, no
+   change needed. See `ART_CRITIQUE.md`'s `ui_icon_milk` write-up (same
+   section, extended in place) for the muffin measurement and the full
+   sweep. This entry is genuinely done now, not just re-counted.
 5. ~~**Cursors and pointer states.**~~ **Done** -- `ui_chrome.py` gains
    three: `ui_cursor_pointer` (a standard 7-point arrow, not an original
    design -- unlike `star_rating`/`coin`, a cursor is a shape every player

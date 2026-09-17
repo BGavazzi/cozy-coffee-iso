@@ -114,6 +114,30 @@ UI_SEED_OVERRIDE = {
     # was measured on, not a general policy (raising --retry-seeds instead
     # would buy proxy-gaming, not quality, per this file's own CLI comment).
     "ui_coin": 3,
+    # Seed 1 passes clean (isolated-pixel gate has nothing to say about
+    # object count) but SDXL draws a whole shelf of a dozen bottles for
+    # this prompt, not one -- confirmed by eye, both styles
+    # (`out/milk_seed_sweep.png`, `out/milk_snes_seed1v3.png`). Swept
+    # seeds 1-6: 1 is the shelf; 3, 5 and 6 are each a single, clearly-
+    # readable glass milk bottle. Picked 3, matching this file's own
+    # first-good-seed convention rather than hand-picking the "best"
+    # among three passing options. See ART_CRITIQUE.md, "`ui_icon_milk`:
+    # a shelf of bottles, not a bottle, passing the same gate `ui_coin`
+    # did".
+    "ui_icon_milk": 3,
+    # cozy_ghibli's own auto-reseed currently lands on seed 2 (the first one
+    # that clears the gate after seed 1's frame-fill failure), which draws
+    # TWO cupcakes plus a small dark artifact on the larger one, not one
+    # muffin -- passes `check_icon` (isolated-pixel gate has nothing to say
+    # about object count) but is not the icon the prompt asked for. Swept
+    # seeds 1-7: 2, 5 and 7 are each a multi-object composition (two
+    # cupcakes; a muffin-tin display of a dozen; two muffins stacked); 3 and
+    # 6 are each a single, clean muffin. Picked 3 because it is also the
+    # seed snes_rpg's own auto-reseed already lands on and where the muffin
+    # read clean and single there too (see the earlier "genuinely fixed"
+    # muffin write-up in ART_CRITIQUE.md) -- one seed, confirmed by eye,
+    # good under both styles, rather than two different per-style picks.
+    "ui_icon_muffin": 3,
 }
 
 # An icon that fills too little of its own frame has been drawn small inside
