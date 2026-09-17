@@ -5224,3 +5224,108 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## `ingest.py`'s own binder checks were bare too -- one clean fix, one real finding too big to rush
+
+Same sweep as `check_focal_contrast` (the section above this one on the branch
+that fix shipped on): `manifest.py`'s comment on the neighbouring UI check
+already documents fixing "accepted the flag but measured cozy_ghibli's
+colours the whole time" (PR #23/#24/#25) for the character checks. Three call
+sites lower, `check_roundtrip`, `check_transform` and `check_albedo_regression`
+-- the stage 1-3 mesh-binder validation, `tools/ingest.py` -- were still
+called bare.
+
+**`check_roundtrip`: real coverage gap, no live casualty.** It exhaustively
+walks every step of the ACTIVE palette's own bindable ramps and asserts each
+one binds back to itself. Bare, it only ever walked cozy_ghibli's 37 steps,
+regardless of `--style` -- a future snes_rpg-specific binder defect could
+not have shown up here no matter which style was being checked. Threaded
+`ramps` through; both styles currently read clean (`[]`), so this closes a
+real gap with nothing hiding behind it today -- same shape as PR #88's
+`check_direction_stability` fix.
+
+**`check_transform`: a bug inside the fix for the bug.** This function
+already accepted `ramps` and used it correctly to write its adversarial
+fixture's MTL -- but then handed that file to its own nested `ingest(obj,
+up="y", height=want_h)` call BARE, so the binder that actually validates the
+round trip re-derived cozy_ghibli's palette internally regardless of what
+`ramps` this function itself received. Threading `ramps` only into
+`manifest.py`'s call site, without also fixing this nested call, would have
+made things WORSE than the status quo: under `--style snes_rpg` it would
+have written the fixture's colours in snes_rpg's own RGB and then asked the
+binder to match them against cozy_ghibli's ramps instead -- a guaranteed,
+entirely artificial mismatch with nothing to do with a real defect. Caught
+before shipping that by reading what the nested call actually does, not just
+threading a parameter and trusting the signature. Fixed both layers.
+
+**`check_albedo_regression`: the fixture bug was real, and fixing it
+surfaced something bigger.** One of its two `rebind_case` fixtures was a
+hardcoded literal, `(169, 113, 81)` -- "a colour already living on the
+library's own middle step," per its own comment, and specifically
+cozy_ghibli's `wood` ramp's middle step, by coincidence of which palette
+this file was authored against. Bare, this never showed: `ramps` was always
+cozy_ghibli's own file either way. Fixed to derive the test colour from the
+ACTIVE palette instead (`ramps["wood"][len(ramps["wood"]) // 2]`, matching
+`check_roundtrip`'s own "middle step is the canonical, named one"
+convention) -- but snes_rpg's own derived wood-mid colour, `(173, 88, 72)`,
+STILL trips `check_albedo_centre` as "too dark." That is not a fixture bug
+any more; it is `check_albedo_centre`'s own `ALBEDO_L_FLOOR`/`ALBEDO_L_CEIL`
+constants (0.596-0.845), which were measured once, empirically, against
+"every one of the thirty meshes in assetlib" under cozy_ghibli's palette
+specifically, and never re-derived for snes_rpg.
+
+Measured across the same 10-asset sample `check_roundtrip` already builds,
+median OKLab L per mesh, cozy_ghibli vs snes_rpg's own real palette:
+
+| asset     | cozy  | snes  |
+|-----------|-------|-------|
+| floor     | 0.500 | 0.411 |
+| counter   | 0.600 | 0.559 |
+| chair     | 0.600 | 0.559 |
+| table     | 0.600 | 0.559 |
+| plant     | 0.696 | 0.581 |
+| bookshelf | 0.600 | 0.559 |
+| crate     | 0.600 | 0.559 |
+| menu      | 0.600 | 0.559 |
+| espresso  | 0.596 | 0.479 |
+| pastry    | 0.716 | 0.639 |
+
+`espresso` is the prop that DEFINES cozy_ghibli's own floor at 0.596 (its
+docstring cites it as "the weakest known-good"). Under snes_rpg's own real
+colours it reads 0.479 -- and 8 of these 10 sampled assets fall entirely
+below the floor. This is not one unlucky material: `check_transform`'s own
+adversarial fixture (a real library chair, not a synthetic colour) trips the
+exact same warning once its nested `ingest()` call is properly threaded --
+"bound albedo median L 0.559 is too dark" -- confirming this from a second,
+independent, real-asset path, not just the regression test's synthetic one.
+
+If `check_albedo_centre` were ever actually exercised on a real snes_rpg
+mesh in production -- nothing has yet; GPU reconstruction is style-agnostic
+and could reach snes_rpg any time -- it would very likely reject nearly
+every correctly-authored, on-palette snes_rpg prop as "too dark," a
+systematic false-positive blocker for that style's own ingestion path, not
+a rare edge case.
+
+**Left open, on purpose, not manufactured into a rushed fix:** recalibrating
+`ALBEDO_L_FLOOR`/`ALBEDO_L_CEIL` per style needs the same empirical
+discipline that produced the cozy_ghibli numbers in the first place -- a
+real measurement across that style's own authored asset range, not a number
+picked to make one fixture pass. That is a separate, larger pass. Shipped
+today: `check_roundtrip` and `check_transform` are fully fixed and threaded
+in `manifest.py`; `check_albedo_regression`'s fixture no longer hardcodes a
+cozy_ghibli-specific literal, but its `manifest.py` call site is
+deliberately left bare until the floor/ceiling question above is actually
+resolved, with a comment pointing here. `check_transform`'s fix is shipped
+anyway, even though it now surfaces the same real finding via a real chair
+asset (`manifest.py --check --style snes_rpg` gains one new ERROR from
+this) -- the nested-`ingest()` bug it fixes is real and independent of the
+floor/ceiling question, and hiding a real defect to avoid an uncomfortable
+but honest new error would be the wrong trade, the same call this session
+made for `table_communal` (PR #83) and the L-run/galley/island composition
+findings (PR #91).
+
+Fixed in `tools/ingest.py` (`check_transform`, `check_albedo_regression`)
+and `tools/manifest.py` (all three call sites) -- branch
+`ingest-checks-style-blind`, left unmerged. `manifest.py --check --style
+cozy_ghibli` is byte-identical before and after; the 40-test unittest suite
+passes unchanged.

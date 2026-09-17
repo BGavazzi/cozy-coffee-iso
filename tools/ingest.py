@@ -345,6 +345,23 @@ def check_albedo_regression(ramps=None) -> list[str]:
     arbitrary RGB rather than per-vertex colour -- has no such protection.
     Nothing shifts an MTL's declared colours before binding them, so this is
     where an under- or over-exposed source actually reaches the check.
+
+    The second case's colour was `(169, 113, 81)` -- a literal, not a lookup,
+    and it turned out to be cozy_ghibli's `wood` ramp's own middle step by
+    coincidence of which palette this file was authored against. This
+    function has always accepted `ramps`, but the manifest.py call site that
+    is meant to pass the active style's never did (see `check_transform`'s
+    docstring, found the same sweep), so the literal's cozy_ghibli-ness never
+    showed: `ramps` was always cozy_ghibli's own file either way. Threaded
+    for real, snes_rpg's `wood` ramp's middle step is `(173, 88, 72)`, a
+    different colour with a different ramp length (5 steps, not 7) -- the old
+    literal isn't ON snes_rpg's ramp at all, so `check_albedo_centre` (test
+    is not a coincidence to be preserved) legitimately measures it as further
+    from centre, correctly by that function's own logic. That is a bug in
+    THIS fixture's assumption, not in the binder: derived from `ramps` below
+    instead of hardcoded, so the case tests "the palette's own middle step
+    round-trips clean" for whichever palette is actually active, the same
+    property `check_roundtrip` already tests this way two functions up.
     """
     from mesh import Mesh
     ramps = ramps or load_palette()
@@ -358,14 +375,21 @@ def check_albedo_regression(ramps=None) -> list[str]:
         return check_albedo_centre(bound, ramps)
 
     # A photographed-then-quantized dark source, well below the 0.596 floor.
+    # Not palette-derived on purpose: ALBEDO_L_FLOOR is a fixed OKLab
+    # threshold on the SOURCE's own lightness, not a palette value, so any
+    # sufficiently dark RGB triple is a valid fixture for any style.
     if not rebind_case((40, 34, 30)):
         out.append("regression: an MTL bound at albedo L ~0.16 did not trip "
                    "check_albedo_centre -- the rebind path has lost its "
                    "coverage")
-    # A colour already living on the library's own middle step.
-    if rebind_case((169, 113, 81)):
-        out.append("regression: check_albedo_centre fired on wood-3, a "
-                   "colour the palette authors directly -- false positive")
+    # A colour already living on the active palette's own middle step --
+    # `wood`'s, matching `check_roundtrip`'s own `len(steps) // 2` convention
+    # for "the canonical, named step" rather than an offset one.
+    wood_mid = ramps["wood"][len(ramps["wood"]) // 2]
+    if rebind_case(wood_mid):
+        out.append(f"regression: check_albedo_centre fired on wood-mid "
+                   f"{tuple(wood_mid)}, a colour the active palette authors "
+                   f"directly -- false positive")
 
     # The vertex-colour path, run against the real defect this check was
     # written for rather than a constructed one: the first teapot, field
@@ -406,6 +430,18 @@ def check_transform(ramps=None) -> list[str]:
     is the point: `load_obj`, `read_mtl` and the OBJ's 1-based indices are all
     part of the seam, and a fixture that skipped them would be testing the easy
     half.
+
+    `ramps` has to reach the inner `ingest()` call too, not just the MTL this
+    function writes -- it used to write the fixture's colours with whatever
+    `ramps` its own caller passed, then hand the file to `ingest(obj, up="y",
+    height=want_h)` bare, which re-derives cozy_ghibli's palette regardless.
+    Under any non-default `--style` that would have written, say, snes_rpg's
+    own chair colours into the MTL and then asked the binder to match them
+    against cozy_ghibli's ramps instead -- a guaranteed, entirely artificial
+    mismatch with nothing to do with a real defect. Caught before shipping a
+    naive fix that only added `ramps` to manifest.py's call site, which alone
+    would have made this worse, not better (see `check_albedo_regression`'s
+    docstring for the sibling fixture problem this same sweep found).
     """
     import tempfile
     import assetlib as A
@@ -434,7 +470,7 @@ def check_transform(ramps=None) -> list[str]:
                 f"{c / 255:.6f}" for c in palette_rgb(m, ramps))
             for m in mats) + "\n", encoding="utf-8")
 
-        mesh, rep = ingest(obj, up="y", height=want_h)
+        mesh, rep = ingest(obj, up="y", height=want_h, ramps=ramps)
 
     zs = [v[2] for v in mesh.verts]
     xs = [v[0] for v in mesh.verts]
