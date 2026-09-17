@@ -5224,3 +5224,89 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## `check_eye_legibility` only ever rendered azimuth 45
+
+Hours 20 and 21 both found real defects by asking whether a check's real
+caller exercised the same range the shipped asset actually varies over --
+`check_generator_range`'s pair floor, then `check_direction_stability`'s
+roster. `check_eye_legibility` is the third `character.py` gate with the
+same shape and the same fixed camera angle, and its own docstring already
+names the mechanism as inherently angle-dependent: "the eyes sit on the
+shaded front facet, so the lambert moves them... and only a render knows
+that." Lambert value is a function of the light-vs-surface angle, which
+changes with azimuth by definition -- a check built on that premise and
+then hardcoded to one azimuth was checking its own claim at a single,
+unverified sample point.
+
+**Swept all 8 azimuths across all 7 skin tones and found a clean three-way
+split, not a uniform "more angles helps":**
+
+    tone           0     45     90    135    180    225    270    315
+    skin-4        --    .196   .161   .196    --    .103*   --     --
+    skin-3        --    .196   .256   .256   .204   .204     --     --
+    skin-2        --    .196   .248   .353   .304   .304     --     --
+    skin-1        --    .256   .341   .450   .404   .404     --     --
+    skin         .103*  .353   .437   .547   .504   .504     --     --
+    skin+1       .204   .450   .533   .644   .602   .602     --    .204
+    skin+2       .304   .547   .533   .644   .602   .602     --    .304
+
+    (-- = no differing pixels between the plain and eyed render; floor .15)
+
+- **270 is fully occluded for every tone, no exceptions** -- the back of
+  the head, correctly showing no face. Not a defect at any tone.
+- **45, 90, 135, 225 show real, non-zero eye-vs-skin pixels for every
+  tone, no exceptions** -- geometrically unambiguous face-on angles.
+  Visually confirmed on `skin-4`: an upscaled render at 45/90 shows two
+  clearly legible eye squares; the same tone at 225 shows only a bare
+  sliver, matching its 0.103 measurement.
+- **0, 180, 315 are ambiguous.** Whether they show any differing pixels at
+  all depends on which skin tone is asked -- pure geometric occlusion
+  cannot do that, since occlusion doesn't know what colour the surface is.
+  These are very likely more instances of "eyes render pixel-identical to
+  skin," an even more severe version of the defect this check exists to
+  catch, at darker tones specifically -- but nothing here can yet
+  distinguish that from a genuine grazing-profile view, and a wrong guess
+  either way is worse than an honest gap. Left OUT of the fix, recorded as
+  open rather than resolved by assumption.
+
+**Fix.** `check_eye_legibility` gained an `azimuths` parameter, defaulting
+to the four decisively safe angles (`EYE_LEGIBILITY_AZIMUTHS = (45.0, 90.0,
+135.0, 225.0)`) instead of the bare `45.0` it always rendered. `manifest.py
+--check`'s call site needed no change -- it was already calling the
+function bare (`check_eye_legibility(ramps)`), so the widened default
+reaches it automatically, the same way narrowing a default closes a gap
+without touching every caller.
+
+**Two different outcomes per style, reported honestly as two different
+outcomes rather than one generalized claim:**
+
+- **`cozy_ghibli`: a genuinely new defect.** The old single-azimuth check
+  reported zero eye-legibility errors here. The sweep found one:
+  `skin-4` at azimuth 225 measures 0.103 against the 0.15 floor -- a real,
+  previously invisible failure, now an `ERROR` (3 -> 4).
+- **`snes_rpg`: confirmation, not discovery, plus one new fact.** NEXT.md
+  already documents this style's `skin-4`/`skin-3`/`skin-2` near-misses at
+  0.147 (PR #24) -- all three were already caught by the old 45-only
+  check, already counted in the existing 10-error baseline. The sweep adds
+  no new FAILING TONE, but does add real information: `skin-4` and
+  `skin-3` measure the *identical* 0.147 at all four checked azimuths, not
+  a range -- meaning this specific defect is a palette-proximity fact (the
+  skin/eye OKLab distance is nearly constant regardless of viewing angle
+  under this compressed ramp), not the shading-angle artifact the
+  mechanism section above describes for `cozy_ghibli`. `skin-2` fails only
+  at 45 (0.147) and clears the floor at 90/135/225 (0.266/0.266/0.152).
+  Error count rises 10 -> 16, entirely from repeating three already-known
+  root causes at the newly-checked angles, not from new subjects -- recorded
+  as such rather than left to look like six new defects. NEXT.md's own PR
+  #24 write-up updated with a pointer here rather than left stale.
+
+**Verified no regression.** Old single-azimuth call
+(`check_eye_legibility(ramps, azimuths=(45.0,))`) still returns exactly
+the pre-fix message sets for both styles, confirming the change is additive
+at the API surface. Full 40-test suite unchanged. `manifest.py --check`
+runtime: ~2.4 minutes, in line with existing cost (the sweep adds 3x the
+renders for one check out of dozens in the suite).
+
+New branch (`eye-legibility-single-azimuth`), unrelated to any other
+currently open PR's subject. Left unmerged per standing practice.
