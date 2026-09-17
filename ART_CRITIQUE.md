@@ -5224,3 +5224,79 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+---
+
+## The key-light-drift check's remaining hypothesis, tested and closed
+
+"The key-light-drift check was right about the drift and wrong about the
+cause" (above) left one door open: the dominant-ramp restriction it tried
+was an *approximation* of per-pixel material identity, and the section
+ended on "a fix that actually separates the two signals needs the raw
+per-pixel material id `rasterize()` already computes and `review_queue.py`
+never receives -- it only ever sees the final quantized PNG." That reads as
+an untried lever, exactly the shape this file exists to chase down, so it
+was chased down this pass.
+
+The buffer isn't actually missing. `render_batch.render_sprite()` computes
+it already -- `mat_small`, the real per-face material token from
+`mesh.rasterize()` carried through the same modal downsample the final PNG
+gets -- and just never returns it, because its only consumer today is
+`apply_outline()` inside the same function. Pulled it out (calling
+`rasterize()` and `downsample_modal()` again, outside `render_sprite`, on
+the same 8 real ship azimuths via `frame_all()` for exact parity with what
+`factory.py` actually renders) and restricted each frame's brightest-pixel
+pool to the asset's own cross-frame-stable body material -- the token with
+the largest *minimum* per-frame area share across all 8 directions, not a
+per-frame guess, which is a more principled selector than "dominant ramp"
+was.
+
+Verified the harness first: re-measuring the *unrestricted* spread through
+this real pipeline (real `_bound.obj` meshes from `out/mesh/`, real
+`frame_all()` span/centre fit, real `render_sprite()`, target 64 / factor 4,
+`cozy_ghibli` palette -- not a hand-rolled approximation) reproduced the
+already-published numbers exactly: kettle 3.5x4.5, candle 5.1x3.9. That
+match is what makes the restricted numbers below trustworthy rather than an
+artefact of a different measurement space.
+
+    object          unrestricted (pass/fail)   body-material-restricted
+    kettle          3.5x4.5   [ok]              12.1x7.5   [fail]
+    candle          5.1x3.9   [ok]               7.8x14.5  [fail]
+    french_press    3.2x4.9   [ok]                6.4x15.3 [fail]
+    teapot         11.5x5.7   [fail, x only]      6.6x18.7 [fail, worse]
+    cutting_board    9.2x9.7  [fail]             29.3x32.5 [fail, worse]
+    picture_frame  10.6x21.1  [fail]              28.4x28.3 [fail, worse]
+    wall_clock     21.1x17.7  [fail]              17.9x14.1 [fail, ~same]
+
+Strictly worse than the already-rejected dominant-ramp attempt, on every
+axis that attempt was measured against. All three round-object controls
+broke, not just candle. Neither case dominant-ramp partly helped (teapot,
+cutting_board) improved -- both got noisier instead. Getting the real
+buffer did not unlock the fix the docstring deferred to it.
+
+The reason is in `ingest.py`'s `bind_colour()`: a material token is a ramp
+name plus a lightness-step offset from that ramp's own middle step --
+`"neutral"` vs `"neutral-1"` vs `"neutral+2"` are three different tokens,
+not one. "This frame's dominant material" is therefore finer-grained than
+"this frame's dominant ramp" was, and measured min per-frame share for the
+chosen body-material token ranged 3%-43% across these seven objects -- even
+a visually-uniform round surface like a kettle's body is split across
+several step tokens by ordinary toon shading, so restricting the pool to
+one throws away most of the very population (a broad tonal gradient across
+the whole curved surface) that keeps a round object's centroid estimate
+stable in the first place. This is the same failure shape as the
+dominant-ramp attempt, not a different one that a finer key happens to
+share -- both are "restrict the brightest-pixel pool by material identity,"
+and any granularity of that idea, tested twice now, costs more stability on
+round objects than it buys on flat ones.
+
+**Verdict: does not generalize, and the specific hope this file's own
+prior entry left open is now closed, not just untried.** `check_direction_set`
+is unchanged -- still fires on 19 of 22, still correctly scoped to the three
+round objects as a regression guard, per the existing writeup. The
+docstring's "doesn't have that buffer today" line is updated in place to
+"has the buffer, tried it, it's worse" so a future pass doesn't re-derive
+and re-try the same idea a third time. No code behavior changed; this is a
+documentation-only commit, verified only by the numbers above (there is no
+image to inspect -- nothing about the check's shipped behavior or any
+sprite's pixels moved).
