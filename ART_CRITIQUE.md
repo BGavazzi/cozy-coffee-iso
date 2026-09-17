@@ -5224,3 +5224,85 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+---
+
+## `check_member_thickness`'s own sibling in `review_library()` had the exact
+## single-azimuth gap its neighbour was already fixed for
+
+`review_library()` runs two mesh checks over every `assetlib.py` generator:
+`check_buried_detail` (fixed for exactly this shape in an earlier pass, its
+own docstring stating the fix in plain terms -- "pass all eight for anything
+that ships as a rotating sprite") and, one call above it in the same
+function, `check_member_thickness` -- still hardcoded to `DimetricCamera
+(45.0)`, never touched. Every asset it checks IS one of those rotating
+sprites: `furnish.build_one` renders and saves 8 real PNGs per asset,
+unconditionally, at `45 + k*45` for `k in range(8)` -- `assets.yaml`'s `sym`
+field only trims the render BUDGET accounting elsewhere, it does not change
+which raw angles `furnish.py` actually generates a file for. So a flat panel
+that goes edge-on at some other angle ships a real, saved sprite this check
+never looked at.
+
+**Swept all 55 library assets across the real 8-azimuth set, not assumed.**
+One already-known failure (`plant_hanging`, previously reported at 35% from
+its single 45-degree sample) reproduces, now at a slightly different
+worst-case number from a different azimuth (38% at 135). Four assets that
+pass cleanly at 45 degrees fail hard at 180 (their own worst angle, matching
+this file's established "the default is the best case, not a blind spot
+hiding a pass" shape from the `table_communal` azimuth sweep): `menu_board`
+and `wall_sign` (both declared `2fold` in `assets.yaml`) and `wall_art_framed`
+(also `2fold`) all measure **100%** thin at 180 degrees -- the panel is
+rendered edge-on, ~1px wide, a vertical sliver where a flat rectangle should
+be. `sandwich_board` (`chalkboard_easel`, declared `sym: none` -- genuinely
+ships all 8 distinct frames, no symmetry-based ambiguity possible) measures
+**23%**, over the 20% floor, at the same 180-degree angle -- and this exact
+asset is already NAMED in the check's own docstring as a documented finding
+("a sandwich board built from zero-thickness quads measured 3px... a
+standing plane seen near edge-on collapses to a line"), just measured at the
+one angle (45) where that collapse happens to be mild.
+
+**Visually confirmed, not just numerically.** Rendered all four at all 8 real
+ship azimuths (`proof/member_thickness_edge_on.png`): six of eight frames
+show a normal, legible flat panel for every asset; the 180-degree frame (and,
+for the three `2fold` panels, the 0-degree frame too, matching their declared
+symmetry) shows a thin diagonal line or a razor-thin sliver -- unmistakably a
+"stray wire," exactly the failure class `MAX_THIN_SHARE` exists to catch.
+
+**A methodology choice that would have silently shipped a check that still
+couldn't see the defect, caught before writing the fix, not after.** The
+first design pooled every requested azimuth's runs into one combined share
+(sum thin pixels / sum total pixels across all 8 views) -- the natural
+generalization of the single-view formula. Ran it against the real library
+before committing to it: **every one of the four edge-on cases dropped back
+under the 20% floor**, because a fully edge-on view contributes almost no
+pixels at all, so its 100%-thin run barely moves a ratio dominated by the
+other seven, mostly-solid views. Pooling was the wrong lever for exactly the
+same reason a global roster recolour was the wrong lever in an earlier hour's
+finding: it touches a different, less-targeted quantity (an ACROSS-VIEW
+average) than what the check actually needs to answer ("does ANY real,
+shipped frame of this asset read as wire"). Fixed by judging each requested
+azimuth independently and reporting the worst one, not the pooled average --
+confirmed this is what actually surfaces all four cases before shipping it.
+
+**Verified, both styles, zero regression on everything already passing.**
+`check_member_thickness(mesh, name, floor_px, azimuths=(45.0,))` -- signature
+extended, default unchanged, so any other caller is unaffected by
+construction (`review_library` is its only caller in this repo). Full
+55-asset library swept at the real 8-azimuth set: exactly the five findings
+above, nothing else newly fails, nothing that previously failed newly
+passes. `manifest.py --check --style cozy_ghibli`: 3 errors (unchanged), 8
+warnings -> 12 (four new, additive, non-blocking -- this check has always
+reported through `warns`, not `errs`). `--style snes_rpg`: 10 errors
+(unchanged, this check is pure mesh geometry with no palette involved --
+same 4 new warnings, same numbers, confirming style-independence rather
+than assuming it). 40-test suite passes unchanged.
+
+**Left unfixed on purpose, same discipline as `check_buried_detail`'s own
+four findings.** This is a coverage-gap fix, not a geometry fix -- the four
+panels' actual thinness at 180 degrees is real, new information, not
+something this branch claims to have solved. A menu board, a wall sign and a
+framed art print are all meant to hang flush against a wall; whether the
+game ever actually presents a player with their 180-degree view (backing
+onto the wall) is a placement-and-camera question this check cannot answer
+and this hour did not investigate -- recorded here rather than assumed
+either way.

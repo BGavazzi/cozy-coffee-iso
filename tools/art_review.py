@@ -440,7 +440,7 @@ MAX_THIN_SHARE = 0.20         # how much of an asset may be thin before it wires
 
 
 def check_member_thickness(mesh, name="asset", ppu=ROOM_PX_PER_UNIT,
-                           floor_px=MIN_MEMBER_PX):
+                           floor_px=MIN_MEMBER_PX, azimuths=(45.0,)):
     """Thinnest drawn member, measured rather than modelled.
 
     Pixel-art convention is to exaggerate small members precisely because
@@ -460,32 +460,57 @@ def check_member_thickness(mesh, name="asset", ppu=ROOM_PX_PER_UNIT,
     built from zero-thickness quads measured 3 px because a standing plane seen
     near edge-on collapses to a line. Quads are right for floor overlays and
     wrong for anything vertical.
+
+    `azimuths` defaults to the single view `review_library()` used to check
+    against -- same convention `check_buried_detail` documents for the same
+    reason. Pass all eight for anything that ships as a rotating sprite.
+    Each azimuth is measured and judged SEPARATELY, worst one reported, not
+    pooled into one combined share: a flat panel that goes fully edge-on at
+    one azimuth contributes almost no pixels at all there, so pooling its
+    thin run in with the other seven (mostly-solid) views dilutes it below
+    the floor and hides exactly the frame this check exists to catch -- the
+    one where the asset briefly reads as a stray line. Confirmed empirically
+    before choosing this over pooling: a pooled 8-azimuth share left every
+    one of this file's real edge-on-collapse cases (see ART_CRITIQUE.md)
+    under the floor, worst-of-eight did not.
     """
     from isorender import DimetricCamera
     from mesh import rasterize
-    cam = DimetricCamera(45.0)
-    cam.span = 1.15
-    res = max(16, int(2 * cam.span * ppu))
-    mat, _, _ = rasterize(mesh, cam, res, target=(0.5, 0.5, 0.5))
-    runs = []
-    for y in range(res):
-        cur = 0
-        for x in range(res):
-            if mat[y * res + x] is not None:
-                cur += 1
-            elif cur:
+
+    def share_at(az):
+        cam = DimetricCamera(az)
+        cam.span = 1.15
+        res = max(16, int(2 * cam.span * ppu))
+        mat, _, _ = rasterize(mesh, cam, res, target=(0.5, 0.5, 0.5))
+        runs = []
+        for y in range(res):
+            cur = 0
+            for x in range(res):
+                if mat[y * res + x] is not None:
+                    cur += 1
+                elif cur:
+                    runs.append(cur)
+                    cur = 0
+            if cur:
                 runs.append(cur)
-                cur = 0
-        if cur:
-            runs.append(cur)
-    if not runs:
-        return [f"{name}: renders empty at room scale"]
-    total = sum(runs)
-    thin = sum(r for r in runs if r < floor_px)
-    share = thin / total
-    if share > MAX_THIN_SHARE:
-        return [f"{name}: {share:.0%} of its mass is in runs under {floor_px} px "
-                f"at room scale (limit {MAX_THIN_SHARE:.0%}) -- reads as wire"]
+        if not runs:
+            return None
+        total = sum(runs)
+        thin = sum(r for r in runs if r < floor_px)
+        return thin / total
+
+    worst_az, worst_share = None, -1.0
+    for az in azimuths:
+        share = share_at(az)
+        if share is None:
+            return [f"{name}: renders empty at room scale"]
+        if share > worst_share:
+            worst_az, worst_share = az, share
+    if worst_share > MAX_THIN_SHARE:
+        at = "" if len(azimuths) == 1 else f" at azimuth {worst_az:g}"
+        return [f"{name}: {worst_share:.0%} of its mass is in runs under "
+                f"{floor_px} px at room scale{at} "
+                f"(limit {MAX_THIN_SHARE:.0%}) -- reads as wire"]
     return []
 
 
@@ -823,6 +848,15 @@ def review_library(floor_px=MIN_MEMBER_PX):
     """Run the mesh checks across every asset the blockout library exposes."""
     import inspect
     import assetlib
+    from isorender import AZIMUTH_STEP
+    # `furnish.build_one` renders every one of these assets at all 8 of these
+    # exact azimuths, unconditionally -- assets.yaml's `sym` only trims the
+    # render BUDGET (fewer frames counted/staged as distinct), never which
+    # raw angles furnish.py actually generates a PNG for. So a real edge-on
+    # collapse at, say, 180 degrees ships a real file even for a declared
+    # `2fold` asset, and this check needs to see it. Same set `check_
+    # buried_detail`'s own docstring names for the identical reason.
+    ship_azimuths = tuple(45.0 + k * AZIMUTH_STEP for k in range(8))
     out, assets = [], {}
     for fn_name, fn in sorted(vars(assetlib).items()):
         if not callable(fn) or fn_name.startswith("_"):
@@ -839,7 +873,8 @@ def review_library(floor_px=MIN_MEMBER_PX):
         if not hasattr(mesh, "verts"):
             continue
         assets[fn_name] = mesh
-        out += check_member_thickness(mesh, fn_name, floor_px=floor_px)
+        out += check_member_thickness(mesh, fn_name, floor_px=floor_px,
+                                      azimuths=ship_azimuths)
     out += check_buried_detail(assets)
     return out
 
