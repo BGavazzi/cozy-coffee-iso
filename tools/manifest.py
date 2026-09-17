@@ -176,11 +176,17 @@ def check_ui(man: dict, active) -> list[str]:
     collapse to the same single `out/ui/`, which is why this is a strict
     generalisation of the old behaviour and not a change to it.
 
-    `ui_font` is left pointed at the one location `bitmap_font.py` can ever
-    write to (`out/ui/font/font.json`) regardless of `active`, because
-    `bitmap_font.py` has no `--style` flag at all yet -- a separate,
-    not-yet-started gap, the same category PR #24 left `check_ui` itself in
-    before #25/#36 closed it for the other two producers.
+    `ui_font` follows `ui_forge.py`'s own nested convention
+    (`out/ui/font/font.json`, or `out/ui/<style>/font/font.json` for a
+    non-default style) -- `bitmap_font.py` gained its own `--style` flag
+    the same day this function was first written, ten minutes after in the
+    same branch's history, and this one path was the one place that change
+    never reached: it stayed pointed at the default location regardless of
+    `active`, so `check_ui --style snes_rpg` was silently reading
+    `cozy_ghibli`'s own `font.json` (whichever one happened to exist) and
+    never once could report a missing or stale non-default font. See
+    ART_CRITIQUE.md, "`check_ui` was still checking the wrong style's font,
+    ten minutes after the fix that made it possible to".
     """
     from style import DEFAULT_STYLE
     base_ui_dir = ROOT / "out" / "ui"
@@ -211,16 +217,25 @@ def check_ui(man: dict, active) -> list[str]:
     # against its own index rather than against `out/ui/ui_font.png`, which
     # will never exist -- a glyph sheet is not an icon and does not live beside
     # them.
-    font_index = base_ui_dir / "font" / "font.json"
+    #
+    # Per-style, matching `bitmap_font.py`'s own `--out` default
+    # (`out/ui/font` for `cozy_ghibli`, `out/ui/<style>/font` otherwise) --
+    # `forge_dir` already resolves to exactly that directory for either
+    # case, so this reuses it rather than re-deriving the same path a
+    # second, divergeable way.
+    font_index = forge_dir / "font" / "font.json"
     if "ui_font" in declared:
         declared = [d for d in declared if d != "ui_font"]
         if not font_index.exists():
-            out.append("ui_font declared and no out/ui/font/font.json -- run "
-                       "tools/bitmap_font.py")
+            rel = font_index.relative_to(ROOT).as_posix()
+            style_flag = ("" if active.name == DEFAULT_STYLE
+                          else f" --style {active.name}")
+            out.append(f"ui_font declared and no {rel} -- run "
+                       f"tools/bitmap_font.py{style_flag}")
         else:
             meta = json.loads(font_index.read_text(encoding="utf-8"))
             gone = [e["file"] for e in meta.get("sizes", {}).values()
-                    if not (base_ui_dir / "font" / e["file"]).exists()]
+                    if not (forge_dir / "font" / e["file"]).exists()]
             if gone:
                 out.append(f"ui_font: font.json lists {len(gone)} sheet(s) "
                            f"with no PNG on disk: {', '.join(sorted(gone))}")
