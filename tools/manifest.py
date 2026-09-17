@@ -478,7 +478,13 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
             errs.append(f"floorplan: {msg}")
         # And the rooms built from those plans. A plan is rectangles and a room
         # is meshes; the plan checks say nothing about whether filling one
-        # produces chairs that face their tables.
+        # produces chairs that face their tables. Left bare (no `ramps`) on
+        # purpose: `collisions()`/`grounded()`/`seating_faces_tables()`/
+        # `screen_occlusion()` are all mesh-position geometry, never a pixel
+        # read, so which palette `build()` used to colour the roster cannot
+        # change any of their verdicts -- confirmed by fingerprinting
+        # `build()`'s own output across repeated calls before ruling this out
+        # rather than assuming it from the check names.
         from build_plan import check_built_rooms, check_focal_contrast
         for msg in check_built_rooms():
             errs.append(f"plan room: {msg}")
@@ -487,11 +493,21 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         # object or a pair of them; this one renders the whole frame and asks
         # whether the eye has anywhere to land. It is the slowest check in the
         # suite by a wide margin, and it is the only one that looks at the
-        # picture instead of the geometry.
-        for msg in check_focal_contrast():
+        # picture instead of the geometry -- which is exactly why, unlike its
+        # two neighbours here, it DOES need `ramps`: it was bare until this
+        # pass, so `--check --style snes_rpg` reported this section's errors
+        # against cozy_ghibli's render regardless of the flag. See
+        # `check_focal_contrast()`'s own docstring and ART_CRITIQUE.md for
+        # the measured before/after -- a real error reported for the wrong
+        # reason on one room, a real defect invisible under cozy_ghibli's
+        # palette surfaced on another, and correct numbers on a third that
+        # already failed under both.
+        for msg in check_focal_contrast(ramps=ramps):
             errs.append(f"composition: {msg}")
         # And whether the furniture is used. Everything above asks whether the
-        # room is correct; this asks whether it is inhabited.
+        # room is correct; this asks whether it is inhabited. Bare for the
+        # same geometry-only reason as `check_built_rooms()` above: this
+        # counts occupied stools by name prefix, never reads a pixel.
         from build_plan import check_stool_occupancy
         for msg in check_stool_occupancy():
             errs.append(f"occupancy: {msg}")
