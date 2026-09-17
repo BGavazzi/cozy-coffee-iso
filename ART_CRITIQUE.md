@@ -5224,3 +5224,47 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## `check_symmetry_claims`'s own `measured_symmetry` was bare -- a closed blind spot, not a defect
+
+Same sweep as the `check_focal_contrast` and `ingest.py` findings above:
+`manifest.py`'s FX symmetry cross-check, `check_symmetry_claims(fx_declared,
+fx_meshes)`, called `measured_symmetry(mesh)` bare -- no `ramps` -- despite
+that function already accepting one. `measured_symmetry` doesn't compare
+silhouettes; its own docstring is explicit that a first version comparing
+the raw lambert buffer was wrong and it compares "the quantized sprite" --
+full colour, after `shade_toon`'s ramp-step quantization -- for exact
+pixel-equality across rotations. That is a structurally palette-dependent
+comparison: two materials that quantize to visually indistinguishable bins
+under one palette's specific ramp spacing need not under another's, so a
+mesh could measure MORE symmetric than it truly is under one style and
+fewer under another, purely from where ramp boundaries happen to fall.
+
+Measured across all 8 FX generators (`fx.FX`), both palettes' own real
+ramps, at the exact `0.25` progress value `manifest.py` samples:
+
+| effect | cozy | snes |
+|---|---|---|
+| fx_steam_cup | 1 | 1 |
+| fx_steam_machine | 8 | 8 |
+| fx_pour_coffee | 1 | 1 |
+| fx_pour_milk | 1 | 1 |
+| fx_door_swing | 4 | 4 |
+| fx_ceiling_fan | 2 | 2 |
+| fx_rain_window | 8 | 8 |
+| fx_order_ready | 1 | 1 |
+
+Identical on every single one. No live casualty today -- the same shape as
+PR #88's `check_direction_stability` wiring fix, not PR #91/#92's real
+surfaced defects. Threaded `ramps` through `check_symmetry_claims` and
+`manifest.py`'s call site anyway: it is a real structural gap (a future FX
+generator or a future style's ramp spacing could trip it, and nothing here
+would have caught that before this fix, regardless of which `--style` was
+being checked), it is fully safe to close (proven by the table above, not
+assumed), and it costs nothing -- `manifest.py --check --style cozy_ghibli`
+and `--style snes_rpg` are both byte-identical before and after, 10/3 errors
+respectively, unchanged. 40-test unittest suite passes unchanged.
+
+Fixed in `tools/art_review.py` (`check_symmetry_claims`) and
+`tools/manifest.py` (its call site) -- branch `symmetry-claims-style-blind`,
+left unmerged.

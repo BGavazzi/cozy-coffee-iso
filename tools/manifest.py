@@ -346,13 +346,16 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
                          f"budgeted - no asset declares it")
         # Declared symmetry drives the entire render budget, so verify it
         # against the geometry rather than trusting the yaml. Every effect has a
-        # generator, so this is cheap and exact.
+        # generator, so this is cheap and exact. Threaded `ramps` here too --
+        # was bare, same bug class as the checks above; see
+        # `check_symmetry_claims`'s own docstring for the measured (empty)
+        # before/after.
         import fx as _fx
         from art_review import check_symmetry_claims
         fx_declared = {a["id"]: a.get("sym", "none")
                        for a in (man.get("fx") or [])}
         fx_meshes = {n: fn(0.25) for n, (fn, _) in _fx.FX.items()}
-        for msg in check_symmetry_claims(fx_declared, fx_meshes):
+        for msg in check_symmetry_claims(fx_declared, fx_meshes, ramps=ramps):
             (errs if "WRONG" in msg else warns).append(msg)
         for msg in _fx.check_loops():
             errs.append(msg)
