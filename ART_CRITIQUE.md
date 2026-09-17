@@ -5224,3 +5224,77 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## `check_direction_stability` was never in `manifest.py --check`, and checked one archetype when it did run
+
+Hour 20's `check_generator_range` fix (this file, "the 45-degree default was
+hiding five more collisions") found its bug by asking whether a check's real
+caller exercised the same range the shipped asset actually varies over.
+Applied the same question to every other `character.py` gate rather than
+stopping at one success, and it landed on a second, structurally different
+gap in a check that sits right next to the ones `manifest.py`'s own comments
+already record fixing.
+
+**Not wired in at all.** `grep -n "direction_stability" tools/manifest.py`
+returns nothing. `check_contrast`'s call site in `manifest.py` carries a
+comment naming the exact failure mode this is: "`character.py`'s own
+`main()` has always run [a check] against the fixed roster... but
+`manifest.py --check` never called it here... invisible to this command
+specifically" -- written about `check_contrast`, already fixed for it, and
+for `check_waistline`/`check_eye_legibility`/`check_spec_coverage` beside
+it. `check_direction_stability` -- the check for a character shrinking to an
+unreadable sliver at some rotation, arguably the most visually severe
+failure mode this file has on record -- sits one function away from all
+four and was never carried into the same fix. It only ran via `python
+tools/character.py`'s own separate `main()`, or transitively through
+`character.py --lock` feeding `style_approve.py`'s gate -- neither is part
+of the automated `manifest.py --check` pass this repo treats as the
+authoritative per-commit gate.
+
+**And when it did run, one archetype.** `check_direction_stability(spec=
+None)` defaulted to `CUSTOMERS[2]` ("regular") alone, not `ROSTER` -- unlike
+every sibling check (`check_contrast`, `check_waistline`, `check_palette_
+spread`), which already iterate `roster or ROSTER`. Measured the whole
+roster's minimum silhouette width against the 9px floor to see what that
+one-archetype default was missing:
+
+    barista     12.1px    reader      14.0px    student    10.2px (tightest)
+    regular     15.9px    commuter    15.3px    artist     14.0px
+    elder       11.3px    writer      15.3px    friend     15.1px
+
+`regular`, the one archetype actually checked, sits at 15.9px -- the
+roster's most COMFORTABLE margin, not its tightest. `student`, at 10.2px
+against a 9px floor (13% headroom, the closest anything comes to failing),
+was never checked by any automated path. Nothing currently fails -- this is
+a live coverage gap with no live casualty yet, the same "not a bug today,
+a bug waiting on the next roster edit" shape `check_contrast`'s own history
+already lived through once (the `elder` hair-vs-skin defect that motivated
+wiring it in was found on a re-run, not by the check existing in the first
+place).
+
+**Fix.** `check_direction_stability` now takes `roster=None` and iterates
+`roster or ROSTER`, matching its siblings exactly; `manifest.py --check`
+gained a call against the real roster and, alongside `check_contrast`/
+`check_waistline`, against the 12 generated extras too.
+
+**Proved the wiring has teeth, not just trusted the diff.** Temporarily
+tightened `MIN_SILHOUETTE_PX` from 9 to 11 (only `student`'s 10.2px falls
+in that gap) and re-ran `manifest.py --check`: two new `ERROR` lines
+appeared, `student dir3`/`dir7`, ordinary error count 3 -> 5. Reverted the
+floor immediately after. This is the same class of proof PR #78's fixture
+gave `check_albedo_regression` and Hour 20's forced 45-degree-vs-swept
+comparison gave `check_generator_range` -- a check that has never been
+observed catching anything is unverified, whatever its code reads like.
+
+**Verified no regression at the real floor.** `manifest.py --check`, both
+styles: 3 errors / 10 errors respectively, unchanged from the documented
+baseline, 0 new errors from either the full hand-written roster or the 12
+generated extras -- the roster genuinely clears 9px everywhere, this closes
+a blind spot rather than exposing a live defect. Runtime: ~2.5 minutes for
+the full suite, in line with its existing multi-minute cost; the added 168
+renders (9 roster members + 12 extras, x8 directions) are a small fraction
+of it. Full 40-test suite unchanged. `python tools/character.py` (no args)
+still runs clean, now against the same full roster instead of one spec.
+
+New branch (`direction-stability-not-wired`), unrelated to any currently
+open PR's own subject. Left unmerged per standing practice.

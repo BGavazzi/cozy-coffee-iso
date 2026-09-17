@@ -1105,7 +1105,7 @@ GAME_PX_PER_UNIT = 27.2
 MIN_SILHOUETTE_PX = 9
 
 
-def check_direction_stability(spec=None, min_px: int = MIN_SILHOUETTE_PX) -> list[str]:
+def check_direction_stability(roster=None, min_px: int = MIN_SILHOUETTE_PX) -> list[str]:
     """Every direction must stay above a readable pixel width at game scale.
 
     The first version of this check compared the *widest* direction to the
@@ -1117,23 +1117,36 @@ def check_direction_stability(spec=None, min_px: int = MIN_SILHOUETTE_PX) -> lis
     What actually broke in review was absolute, not relative -- the side views
     fell to a couple of pixels of body and the arms disappeared entirely. So the
     constraint is a floor in pixels at the scale the sprite is actually seen.
+
+    Checked against every member of `roster` (the full cast by default), not
+    one fixed spec. The original version took a single hardcoded `spec`
+    (`CUSTOMERS[2]`, "regular") -- not the roster's tightest case (`student`
+    sits at 10.2px, "regular" at 15.9px, both against a 9px floor), and not
+    swept by `manifest.py --check` at all: every other roster-shaped check
+    here (`check_contrast`, `check_waistline`, `check_palette_spread`) already
+    iterates `roster or ROSTER` for the exact reason `check_contrast`'s own
+    comment in `manifest.py` names for a sibling check -- "a spec that passes
+    every stated rule... has only proved the rules were incomplete" if nothing
+    ever asks the question of the rest of the cast.
     """
     from isorender import DimetricCamera
     from mesh import rasterize
     res, span = 192, 0.95
-    out, widths = [], []
-    for k in range(8):
-        cam = DimetricCamera(45.0 + k * 45.0)
-        cam.span = span
-        mat, _, _ = rasterize(build(spec or CUSTOMERS[2]), cam, res,
-                              target=(0.0, 0.0, 0.70))
-        cols = [i % res for i, m in enumerate(mat) if m is not None]
-        world = (max(cols) - min(cols)) * (2 * span) / res
-        widths.append(world * GAME_PX_PER_UNIT)
-    for k, w in enumerate(widths):
-        if w < min_px:
-            out.append(f"dir{k}: silhouette is {w:.1f} px wide at game scale "
-                       f"(floor {min_px}) -- reads as a sliver, not a figure")
+    out = []
+    for s in roster or ROSTER:
+        widths = []
+        for k in range(8):
+            cam = DimetricCamera(45.0 + k * 45.0)
+            cam.span = span
+            mat, _, _ = rasterize(build(s), cam, res, target=(0.0, 0.0, 0.70))
+            cols = [i % res for i, m in enumerate(mat) if m is not None]
+            world = (max(cols) - min(cols)) * (2 * span) / res
+            widths.append(world * GAME_PX_PER_UNIT)
+        for k, w in enumerate(widths):
+            if w < min_px:
+                out.append(f"{s.name} dir{k}: silhouette is {w:.1f} px wide "
+                           f"at game scale (floor {min_px}) -- reads as a "
+                           f"sliver, not a figure")
     return out
 
 

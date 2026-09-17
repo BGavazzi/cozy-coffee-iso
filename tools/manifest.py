@@ -397,6 +397,15 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         # differ in shirt and trousers and hair and still be one face.
         for msg in _c.check_spec_coverage(ramps=ramps):
             errs.append(msg)
+        # And every direction a figure ships in has to stay a figure, not
+        # thin to a sliver. `character.py`'s own `main()` has always run this
+        # (it's how a two-pixel side view would be caught) but only against
+        # one hardcoded roster member, and `manifest.py --check` never called
+        # it at all -- the same "invisible to this command specifically" gap
+        # `check_contrast`'s comment above already names for a sibling check,
+        # just never closed for this one.
+        for msg in _c.check_direction_stability():
+            errs.append(msg)
         # The generated extras have to pass everything the hand-written roster
         # does. They are proposed against exactly these predicates, so a failure
         # here means the solver has stopped consulting one of them -- which is
@@ -405,7 +414,8 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         _extras = _c.generate_roster(12, seed=1, ramps=ramps)
         for msg in (_c.check_contrast(ramps, _extras)
                     + _c.check_palette_spread(_extras)
-                    + _c.check_waistline(ramps, _extras)):
+                    + _c.check_waistline(ramps, _extras)
+                    + _c.check_direction_stability(_extras)):
             errs.append(f"generated: {msg}")
         # And no two members of a cast may be the same person. The three checks
         # above are predicates on ONE spec; a generator can satisfy all three
