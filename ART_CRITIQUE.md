@@ -5224,3 +5224,130 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+---
+
+## `character.py`'s "accepted, not-fixed-by-design" roster finding (PR #23)
+## reproduces, and had a real, untried third lever
+
+`NEXT.md`'s PR #23 write-up, later re-confirmed unchanged by PR #27's
+`animate.py --style` work, documents `character.py --style snes_rpg` failing
+`check_contrast` on `elder` (hair 0.088 from skin, need 0.13) and
+`check_waistline` on `reader`/`regular`/`writer` (shirt-vs-trousers 0.022 /
+0.040 / 0.080, need 0.085) -- and explicitly frames this as accepted, not
+fixed: "fixing the roster's colours risks breaking `cozy_ghibli`'s clean
+pass, and fixing the check floors would defeat their purpose." Re-ran both
+checks against the current checkout to confirm the claim before touching
+anything -- it reproduces exactly, same four names, same numbers:
+
+```
+elder: hair 'cream+1' is 0.088 from skin (need 0.13) -- head reads as one lump
+[waist] reader: shirt 'foliage' and trousers 'wood' are 0.022 apart in value (need 0.085)
+[waist] regular: shirt 'rose' and trousers 'wood' are 0.040 apart in value (need 0.085)
+[waist] writer: shirt 'sky' and trousers 'wood' are 0.080 apart in value (need 0.085)
+```
+
+**Root cause, confirmed by dumping both palettes' ramp L-values, not
+guessed:** `snes_rpg`'s palette is deliberately more saturated and lower-band
+than `cozy_ghibli`'s, and its `wood` ramp's mid-value dropped from L=0.600
+(cozy) to L=0.559 (snes) while `foliage`/`rose`/`sky` all compressed toward
+it from above (foliage 0.696->0.581, rose 0.716->0.600, sky 0.700->0.639) --
+four ramps that were comfortably spread apart under `cozy_ghibli`'s own
+lightness range converge under `snes_rpg`'s. `elder`'s skin tone (L=0.861 in
+snes_rpg, vs 0.700 in cozy) also happens to land almost inside its own
+`cream` hair ramp's range (0.681-0.949) under `snes_rpg` specifically, which
+is why `cream+1` -- fine under cozy -- reads as one lump there.
+
+**Both checks are pure OKLab-L comparisons on literal ramp+offset tokens
+(`ramps[ramp][index]`), not on rendered pixels.** Unlike PR #80/#81's UI/3D
+speckle, there is no downstream pixel/deterministic post-process available
+here at all -- the check never looks at a rendered pixel, so a despeckle-
+shaped fix is structurally not on the table for this one. The two levers PR
+#23 considered (recolour the shared roster globally, or loosen the check
+floor) are the only two that touch a *global* variable. Neither was checked
+against a **third, narrower lever**: override the specific failing fields
+**per style**, leaving `cozy_ghibli`'s own assignments completely untouched.
+
+**Verified empirically, not assumed:**
+
+- `character.ROSTER_OVERRIDES["snes_rpg"]` patches `elder.hair_mat` ->
+  `"cream-3"` (same ramp, three steps darker -> gap 0.180, clears 0.13) and
+  `reader`/`regular`/`writer`'s `trousers` -> `"wood-1"` (one step darker ->
+  gaps 0.170/0.189/0.228, all clear 0.085). All four picked by scanning the
+  ramps' own step tables for a legal offset that clears the floor, not by
+  guessing once and hoping.
+- `character.py --style snes_rpg`: 4 blockers -> **0 blockers**.
+  `character.py --style cozy_ghibli`: 0 blockers before and after (the
+  override table has no `cozy_ghibli` entry, so `roster_for("cozy_ghibli",
+  ...)` returns the input list unchanged -- structurally unreachable, not
+  just re-tested).
+- `check_palette_spread` and `check_roster_variety` (screen-space pairwise
+  distinctness, which involves an actual render pass) both still pass on the
+  overridden `snes_rpg` roster -- the fix doesn't trade one failing check for
+  another.
+- **Zero-regression, proven with real renders, not inferred:** sha256 of
+  `elder`/`reader`/`regular`/`writer`/`barista` rendered under
+  `--style cozy_ghibli` (azimuth 0, `render_batch.render_sprite`) is
+  byte-identical before and after this change (`git stash` A/B, all 5
+  hashes match). The 40-test suite passes unchanged.
+- **Visually confirmed, both fields:** `elder`'s hair goes from pale ivory
+  that visually blends into the hairline at the forehead to a clearly
+  separated tan/khaki that still reads as an appropriate light/grey elderly
+  hair colour. `reader`/`regular`/`writer`'s trousers, rendered seated
+  (`character.build(spec, seated=True)`, azimuth 45, where the leg is
+  actually exposed on screen) go from a value that nearly matches the shirt
+  to a visibly darker, distinct step -- looked at directly, not inferred from
+  the numbers alone.
+
+**Shipped for real, not just at check-time:** the override was threaded into
+the actual rendering path, not only the check. `animate.py`'s own roster
+construction (`[C.BARISTA] + C.CUSTOMERS`, the literal list that becomes
+every `snes_rpg` sprite sheet) now resolves through `character.roster_for
+(args.style, ...)` too -- otherwise the check would pass while the shipped
+sprites still carried the uncorrected colours, the exact "a check that
+cannot fail for the thing it claims to certify" anti-pattern this file's own
+discipline rule already names. `portrait.py`'s `check`/`build`/`demo` got the
+same threading, since a portrait bust is a dead-on closeup where `elder`'s
+hair/skin collision is at least as visible as on the 46px sprite.
+
+**A fourth, live call site was found only by re-running `manifest.py --check`
+after the fix, not by grepping ahead of time.** An earlier pass this hour
+grepped for `check_eyes_visible`/`check_determinism`/`check_palette_exact`
+(`portrait.py`'s OWN checks) across `manifest.py` and found no match, which
+correctly ruled those out. But `manifest.py` separately calls
+`character.check_contrast`/`check_waistline`/`check_palette_spread` directly
+on the bare `C.ROSTER` (added by PR #78, "fix-manifest-missing-contrast-
+check" -- itself a fix for this exact call being absent, landed before this
+session's window and not visible in a name-only grep for `portrait.py`'s
+functions). Re-running `manifest.py --check --style snes_rpg` after the
+`character.py`/`animate.py`/`portrait.py` changes above still showed the
+same four errors, unchanged, 10 total -- the override existed but this call
+site never used it. Threaded `character.roster_for(active.name)` into
+`manifest.py`'s three call sites (`check_contrast`, `check_waistline`,
+`check_palette_spread`; `check_eye_legibility`/`check_spec_coverage` measure
+different fields, untouched). `manifest.py --check --style snes_rpg`:
+10 errors -> 6, the remaining six being the separate, pre-existing skin-tone
+eye-legibility and room-composition findings this fix does not touch.
+`--style cozy_ghibli`: 3 errors, 8 warnings, unchanged before and after. The
+40-test suite passes after this addition too. Recorded here as a reminder
+that a name-grep proves absence only at the moment it's run -- rerunning the
+actual check after a fix is what caught the site the grep couldn't see.
+
+**This is a scoped patch, not the general fix, and that's stated rather than
+hidden.** The general fix is giving `CharacterSpec`'s colour fields a
+per-style `materials:` role instead of a literal ramp token -- the same
+deferred `assetlib.py`/`character.py` import-order generalization this
+file's earlier `wall_panel()` finding (PR #29) already pointed at, still not
+attempted here. `ROSTER_OVERRIDES` is a small, explicit, four-entry table
+that only ever applies to `snes_rpg` and only to the four fields it names;
+it does not generalize to a fifth style without a fifth hand-picked entry.
+That's an honest limitation of this fix, not a claim that the deeper
+generalization is unnecessary.
+
+**Net result:** the "accepted, not-fixed-by-design" framing in PR #23/NEXT.md
+was half right -- the two levers it named really don't work without a
+tradeoff -- but the finding as a whole does not hold: a real, safe, verified
+third lever existed and was never tried. `portrait.py --check --style
+snes_rpg` still reports the separate, pre-existing `reader` eye-occlusion
+blocker from PR #24 (a hair-geometry issue, unrelated to this fix, left
+exactly as-is -- not touched, not hidden).

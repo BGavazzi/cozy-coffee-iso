@@ -329,6 +329,15 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         # measured cozy_ghibli's colours the whole time. Same bug class as
         # character.py's and portrait.py's own --style (see NEXT.md).
         ramps = _lp(active.palette_path)
+        # `elder`/`reader`/`regular`/`writer`'s hair_mat/trousers were picked
+        # against cozy_ghibli's own OKLab values and fail check_contrast/
+        # check_waistline under snes_rpg's compressed palette (NEXT.md PR
+        # #23). `character.ROSTER_OVERRIDES` patches those fields for the
+        # styles that need it and is a no-op for cozy_ghibli -- threaded in
+        # below so this command's own check_contrast/check_waistline calls
+        # measure what the shipped roster (via animate.py's own roster_for
+        # call) will actually render, not the un-patched literals.
+        _roster = _c.roster_for(active.name)
         posable = set(_c.CLIPS)
         declared = set()
         fx_clips = 0
@@ -361,7 +370,7 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         # facts the manifest cannot state, so they are measured here rather than
         # declared: a spec that passes every stated rule and still renders as a
         # brown smear has only proved the rules were incomplete.
-        for msg in _c.check_palette_spread():
+        for msg in _c.check_palette_spread(_roster):
             errs.append(msg)
         # `check_palette_spread` counts ramps, not the colours those ramps
         # resolve to under the active style, so a roster tuned against
@@ -374,13 +383,13 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         # NEXT.md PR #23), but `manifest.py --check` never called it here,
         # only against the generated extras below -- so the same roster's
         # same failure was invisible to this command specifically.
-        for msg in _c.check_contrast(ramps):
+        for msg in _c.check_contrast(ramps, _roster):
             errs.append(msg)
         # And a figure needs a waist. `check_palette_spread` counts ramps, not
         # values, so two different ramps landing on the same step slip past it:
         # `elder` shipped with a wood shirt 0.004 in value from neutral
         # trousers and rendered as one column.
-        for msg in _c.check_waistline(ramps):
+        for msg in _c.check_waistline(ramps, _roster):
             errs.append(msg)
         # And a face needs eyes at every skin tone the generator may draw, not
         # only at the one the roster happens to use. This is the check that
