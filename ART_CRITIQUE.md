@@ -4153,6 +4153,29 @@ universal fix. Some collage failures are seed-specific, not prompt-specific,
 and the honest remedy there is "change the seed," which `factory.py`
 already supports per-subject.
 
+**Re-checked 2026-09-17, could not be reproduced.** Auditing this file's
+other "accepted limitation" claims for the same untried-lever pattern that
+closed the two speckle floors (PR #80, #81), this one looked like a natural
+next candidate for `--reference` (the multi-image IP-Adapter conditioning
+that shipped later in this same section, never actually tested against a
+still-failing collage case). Before spending GPU time on that, tried to
+reproduce today's baseline first -- and couldn't. `"a woven wicker basket"`
+at seeds 1 through 10 (seed 4 fails on an unrelated frame-fill/crowding
+finding, not collage) all pass `check_concept_fitness` cleanly: soft-alpha
+ratio 2.3-7.7% against the same 10% cap, two orders of magnitude under the
+54584% recorded above, and visually confirmed by eye across all nine --
+every one a single, clean, isolated basket, zero tiling. `NEGATIVE` is
+byte-identical to what it was when this entry was written (still exactly
+"... + collage, grid, tiled", per its own comment in `concept.py`), so this
+is not a prompt change closing the gap. Left unexplained rather than
+guessed at: the most likely cause is drift in a downloaded model weight
+(SDXL checkpoint, matte model, or both) between whenever this entry's run
+happened and today, which this repo's own code has no way to pin down after
+the fact. Recorded as the honest current state -- passing, today, on this
+machine, for this prompt -- not as a fix, since nothing in this repo
+changed to cause it. `--reference` remains genuinely untested against a
+live collage failure; there wasn't one to test it against this pass.
+
 Frog's specific case -- a small, non-photoreal creature described by name --
 also raised a question the repo hadn't answered yet: `character.py` is
 fully procedural and part-based, built for original café-cast archetypes
