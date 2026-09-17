@@ -2782,16 +2782,25 @@ detail, not lower).
 
 - **This is a prop pipeline, not a character pipeline, and the ceiling is
   stage 2.** `kind="character"` fixes the concept *image* for a named
-  character; TripoSR then reconstructs it as a lumpy semi-fused blob. The
-  frog knight blocks on 4 of 8 frames (11-12% isolated pixels against a
-  6.2% floor) with no separable limbs or weapon. Two cheap remedies were
-  measured and both failed: `--resolution 128` was a wash (still 4/8
-  blocked), and simplifying the prompt to reduce occlusion made it **worse**
-  (8/8 blocked, 15.3% mean) because "weapon held clear of the body" gives
-  the reconstructor thin unsupported geometry, which is the thing it handles
-  worst. The lever is a better reconstructor (TRELLIS 2, blocked below), not
-  prompt engineering. Scope line: object-shaped things without articulation.
-  See `ART_CRITIQUE.md`, "The character ceiling is stage 2, not stage 1".
+  character; TripoSR then reconstructs it as a lumpy semi-fused blob. Two
+  cheap remedies were measured and both failed: `--resolution 128` was a
+  wash (still 4/8 blocked), and simplifying the prompt to reduce occlusion
+  made it **worse** (8/8 blocked, 15.3% mean) because "weapon held clear of
+  the body" gives the reconstructor thin unsupported geometry, which is the
+  thing it handles worst. **Updated 2026-09-16:** the 4-of-8-frames,
+  11-12%-isolated-pixels blocker cited above no longer fires as of the
+  despeckle fix below -- `render_batch.render_sprite` now despeckles every
+  sprite, and the frog knight's speckle blocker (and its 17-25% cross-ramp
+  adjacency warning) both clear to 0 findings on all 8 frames. Looked at the
+  actual sprites before believing the gate: they still don't read as a
+  knight -- no cape, no separable limbs, no rapier as a legible object. The
+  real ceiling was never the speckle check, it was TripoSR's topology; the
+  gate clearing just makes that more precise, not less true. Lever is still
+  a better reconstructor (TRELLIS 2, blocked below), not prompt engineering
+  or pixel post-processing. Scope line unchanged: object-shaped things
+  without articulation. See `ART_CRITIQUE.md`, "The character ceiling is
+  stage 2, not stage 1" and its follow-up "Re-checked after the despeckle
+  fix: the gate clears, the knight still doesn't look like one".
 - **The far side of a single-view reconstruction cannot be verified by
   machine.** The eight frames are a consistent turnaround of geometry that is
   wrong on the back, so no image-space metric over the direction set can see
@@ -2804,11 +2813,19 @@ detail, not lower).
   `flash_attn`, `spconv`, `torch_scatter`/`torch_cluster`). Roughly 10 GB of
   admin-level installs either way. Revisit only if someone decides to change
   the workstation.
-- **Speckle has no downstream fix.** Colour-field smoothing, interpolated
-  normals and supersampling at 2/4/8/12 were all measured and none moved the
-  number. The downsample picks a representative sample rather than averaging,
-  by design, because averaging colour is what makes cross-ramp contamination
-  impossible.
+- **Closed 2026-09-16: speckle DOES have a downstream fix, it was just never
+  tried.** Colour-field smoothing, interpolated normals and supersampling at
+  2/4/8/12 were all measured and none moved the number -- true, and every
+  one of those is a rendering-stage lever applied *before* the pixels exist.
+  A post-process on the pixels themselves (`pixelize.despeckle`, the same
+  conservative reassign-only-with-a-local-majority pass proven on UI icons)
+  was never tried and closes 59 of 59 known failures across all 750 cached
+  frames on disk (props, tiles, UI, characters), 0 regressions. The
+  downsample still picks a representative sample rather than averaging, by
+  design -- that discipline is unchanged and is *why* despeckle's
+  reassignment rule can trust a 2-of-8-neighbour local majority instead of
+  inventing a colour. See `ART_CRITIQUE.md`, "Reopened: the seven-object
+  speckle floor above was also only one lever tried".
 - **Auto-uprighting is not a well-posed search.** Widening the pitch/roll
   search range on the same teapot found a second, deeper, differently-
   oriented optimum outside the original bounds — both are genuine flat
