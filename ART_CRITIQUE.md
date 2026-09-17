@@ -5224,3 +5224,68 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## `organic_rig.py`'s own `check_eyes_visible` had the same single-azimuth shape as `character.py`'s
+
+Third and fourth hour running this same audit against a `check_*` function
+that renders a figure to test eye legibility: `check_generator_range`
+(Hour 20), `check_direction_stability` (Hour 21), `check_eye_legibility`
+(Hour 22), and now `organic_rig.py`'s own `check_eyes_visible` -- a
+different file, the `snes_rpg`-only cylinder/sphere rig's equivalent of
+`character.py`'s check, built independently but with the identical blind
+spot: one hardcoded azimuth (90, not 45 this time), never varied.
+
+**Swept all 8 azimuths across the 4-member `ROSTER`.** Unlike `character.
+py`'s version of this sweep (this file, "`check_eye_legibility` only ever
+rendered azimuth 45"), the occlusion split here is clean and MEMBER-
+independent rather than tone-dependent -- every one of 0/180/225/270/315
+reads 0-2px for every roster member, consistently, no exceptions. A side or
+back view genuinely does not show this rig's face at all; that is correct,
+not a defect, and there is no ambiguous middle set to leave out this time.
+
+45, 90 and 135 all show real, comfortably nonzero eye pixels for every
+member. But 90 -- the one angle ever checked -- turned out to be this
+check's own best case by a wide margin:
+
+    member      az=45 (near eye)   az=90 (both eyes)   az=135 (near eye)
+    scout             8                 18 / 18               6
+    archivist          9                20 / 20               9
+    drifter             4                20 / 20               8
+    smith               5                20 / 20               7
+
+`drifter`'s near eye at 45 measures 4px against the 3px floor -- a genuine,
+if narrow, near-miss invisible to the only angle this check ever rendered.
+Visually confirmed: an upscaled render at 45 shows only a faint dark sliver
+past the head's silhouette where 90 shows two clearly legible eye squares.
+
+**Fix.** `check_eyes_visible` gained an `azimuths` parameter, defaulting to
+`EYES_VISIBLE_AZIMUTHS = (45.0, 90.0, 135.0)` instead of the bare `90.0` it
+always rendered.
+
+**Verified no regression.** Nothing in the safe three-azimuth set actually
+fails at the real 3px floor -- this closes a coverage gap and surfaces a
+narrow near-miss, it does not expose a live defect, the same shape Hour
+21's `check_direction_stability` fix took. Old single-azimuth call
+(`azimuths=(90.0,)`) still returns the exact pre-fix message set (zero).
+Proved the wiring has teeth rather than trusting the diff: temporarily
+raised `MIN_EYE_PIXELS` from 3 to 5 (which puts `drifter`'s 4px in range),
+re-ran `organic_rig.py --check`, got exactly the expected new problem
+(`drifter: left eye renders 4px at azimuth 45...`), reverted immediately
+after. `organic_rig.py --check` (real floor) still reports clean. Full
+40-test suite unchanged.
+
+**Not wired into `manifest.py --check`, and deliberately left that way
+this hour.** Unlike `character.py`'s checks, `organic_rig.py`'s `check()`
+is reachable only via its own CLI (`--check`/`--lock`) and, transitively,
+`style_approve.py`'s lockfile-approval gate -- never `manifest.py --check`
+directly. `style_approve.py`'s own comment explains why `organic_rig.py`
+exists as a separate, `ANY_OF` producer rather than a required one:
+`character.py` "still only knows box/prism" for any style (the import-
+order gap `NEXT.md` already documents), so `manifest.py`'s character block
+has no notion of which rig primitive is active and cannot safely branch to
+this file's checks without becoming aware of that -- a real, separate,
+already-scoped piece of architecture work, not a wiring oversight to close
+in passing the way `check_direction_stability`'s manifest gap was.
+
+New branch (`organic-rig-eyes-single-azimuth`), unrelated to any other
+currently open PR's subject. Left unmerged per standing practice.
