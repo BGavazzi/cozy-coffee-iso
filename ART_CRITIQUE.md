@@ -5486,3 +5486,61 @@ changes is confidence in generalizing from any single re-checked case to "the
 speckle floor is now solved everywhere despeckle runs" -- `bread_loaf`
 supported that reading, this doesn't, and the honest position is that
 despeckle's coverage is measured per-subject, not assumed.
+
+## Despeckle's own scope claim, checked: three render paths never got the fix, and none of them needed it
+
+This branch's own commit message and the addendum above describe despeckle
+as wired into "the shared rendering path for every asset type in the
+factory, not just lifted props" (`render_batch.render_sprite`). That is a
+testable claim about the code, not just about visual results, and it does
+not hold literally: `render_room.py`, `animate.py`, and
+`preview_characters.py` each call `rasterize`/`shade_toon`/
+`downsample_modal`/`apply_outline` directly, and none of the three goes
+through `render_sprite` at all -- `grep -n "despeckle(" tools/*.py` shows
+exactly one call site, inside `render_sprite` itself. Two of the three even
+say, in their own code, that they match the "real" path: `animate.
+render_frame`'s docstring called itself "exactly the path a static asset
+takes," and `preview_characters.render_one`'s comment said its grain setting
+was "matching `animate.render_frame`" specifically so the preview sheet
+would not drift from the shipping render. Neither statement has been true,
+in the despeckle sense, since the commit two sections up.
+
+Checked whether this is a live gap or a documentation-precision issue only,
+the same way `check_generator_range`'s azimuth blindness (Hour 20) and
+`check_collapse`'s width blindness (Hour 34) were checked before deciding
+whether anything needed fixing: despeckle exists to remove one specific
+noise pattern -- the per-vertex/per-pixel colour left behind by TripoSR mesh
+reconstruction or SDXL concept art. `grep -rn "load_obj|ingest" tools/
+render_room.py tools/animate.py tools/preview_characters.py tools/layout.py
+tools/assetlib.py` returns nothing: none of those five files ever load an
+ingested OBJ. `render_room.build_room()` -- and `build_plan.build()`, the
+generator that file's own composition checks (`check_focal_contrast` and
+friends) render through the same `render_room.render()` -- places every
+piece of furniture exclusively through `assetlib.py`'s own procedural
+generators (`counter`, `chair`, `table_round`, `grinder`, `plant_small`,
+...). `animate.py` and `preview_characters.py` rasterize exclusively
+`character.build()` output. Neither source has ever passed through TripoSR
+or the SDXL matte pipeline, so there is no noisy per-vertex colour for
+despeckle to remove in the first place, regardless of which branch renders
+it.
+
+Confirmed empirically, not just by absence of a code path: rendered the real
+demo room fresh (`python tools/render_room.py`, this branch, unmodified) and
+ran `check_speckle` directly against the output -- 0 findings, clean, the
+same result it would give on `main` before despeckle existed, because
+nothing in the room's geometry carries the defect either way.
+
+**Conclusion: the coverage gap is real as a fact about the code -- three
+render paths bypass despeckle entirely -- but has no live casualty, because
+none of the three ever renders content that could speckle. No functional fix
+ships here; wiring despeckle into `render_room.py`/`animate.py`/
+`preview_characters.py` defensively, with no measured defect for it to
+catch, would be exactly the "tuning the instrument to an answer nobody
+asked" this repo's own doctrine argues against.** What is worth fixing is
+the record: the commit message's "every asset type in the factory"
+overstates `render_sprite`'s actual reach, and the two docstrings quoted
+above were stale in this one specific respect. Corrected in place, same
+branch: `animate.render_frame` and `preview_characters.render_one` now say
+which parts of the path are actually shared (camera, quantization, palette,
+outline) and name despeckle as the one deliberate, harmless exception, with
+a pointer back to this section.
