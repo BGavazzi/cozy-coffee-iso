@@ -5224,3 +5224,90 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## Checked whether the open-PR pile has a hidden reconciliation burden beyond `check_member_thickness`/`check_buried_detail` -- it doesn't
+
+Two earlier fixes on `member-thickness-ship-scale` (PR #103) each had to be
+combined with an independently-opened sibling PR that rewrote the exact same
+function body (`check_member_thickness` vs `member-thickness-single-azimuth`,
+PR #95; `check_buried_detail` vs `buried-detail-azimuth-coverage`, PR #87).
+Both times, merging the two PRs separately would have produced a real git
+conflict, because both edited the same lines of the same function. With 26
+open PRs against this repo, worth checking whether that was two isolated
+incidents or the edge of something bigger waiting to bite whenever these get
+merged for real.
+
+**Where else are multiple open PRs touching the same file.** `gh pr diff
+<n> --name-only` across all 26 open PRs, excluding the two docs files every
+PR touches (`ART_CRITIQUE.md`, sometimes `NEXT.md`), surfaces two more
+clusters beyond the already-known `tools/art_review.py` one (which Hour 47
+already checked against #103's current diff and found clean):
+
+- `tools/manifest.py`'s `check(man, style)` function -- independently edited
+  by seven open PRs: #83 (table-communal-generator-coverage, lines
+  ~440-448), #88 (direction-stability-not-wired, ~397-414), #91
+  (focal-contrast-style-blind, ~478-507), #92 (ingest-checks-style-blind,
+  ~452-495), #93 (symmetry-claims-style-blind, ~346-361), #94
+  (roster-fields-style-blind, ~329-386), #101
+  (manifest-check-missing-organic-rig, ~427-458). Several of those ranges
+  overlap or sit within a few lines of each other -- on the strength of that
+  alone, this looked like the same shape of problem as the two already-fixed
+  cases.
+- `tools/character.py` -- independently edited by three open PRs: #88
+  (`check_direction_stability`), #89 (eye-legibility-single-azimuth,
+  `check_cast_silhouette`/`check_eye_legibility`), #94
+  (`place()`/`main()`).
+
+**Tested the hypothesis instead of trusting the line-number proximity.**
+`git merge-tree --write-tree <a> <b>` (read-only, no branch or working-tree
+change) against every pairwise combination: 21 pairs among the seven
+`manifest.py` branches, 3 pairs among the three `character.py` branches, all
+24 pairs run against `origin/<branch>` refs directly. Result: **every single
+pair merges `tools/manifest.py` and `tools/character.py` cleanly.** The only
+conflict `git merge-tree` reports for any pair is in `ART_CRITIQUE.md` --
+expected and uninteresting, since every one of these PRs appends its own
+prose section near that file's end; two independent appends to the same
+file always textually conflict and take ten seconds to resolve by hand,
+which is not the same class of problem as two PRs rewriting the same
+function body.
+
+Pairwise-clean doesn't prove a full N-way sequential merge stays clean (an
+early merge can shift line numbers under a later one), so went further:
+built a disposable local branch off `main` (`_scratch_conflict_test`, never
+pushed, deleted immediately after) and ran a real sequential `git merge` of
+all seven `manifest.py`-touching branches, one at a time, auto-resolving
+only the expected `ART_CRITIQUE.md` conflict at each step (content doesn't
+matter for this test) and otherwise letting git merge for real. At every one
+of the seven steps, `tools/manifest.py` (and, incidentally,
+`tools/art_review.py` and `tools/character.py` where a given branch also
+touched them) auto-merged with **zero conflicts**. The resulting file
+parses (`ast.parse`) and runs for real: `python tools/manifest.py --check
+--style cozy_ghibli` on the fully-combined tree completes in 6m10s, exit
+code 0, `3 errors, 16 warnings` -- error count unchanged from `main`'s
+baseline (3), warnings risen from `main`'s 8 to 16, consistent with seven
+independently-authored new checks each contributing roughly one new warning
+line, no crash, no `Finding`/message ever double-counted or malformed.
+
+**Why this differs from the two cases that DID need reconciling, stated
+mechanistically rather than just "checked, it's fine":** `check_member_
+thickness` and `check_buried_detail` each had two open PRs *rewriting the
+same existing lines* -- both changing what the function's body already did.
+These seven `manifest.py` PRs each *insert a new, independent block* into a
+long linear function without touching any line another PR also touches --
+git's three-way merge handles disjoint insertions landing within a few
+lines of each other just fine; it only requires manual resolution when two
+sides edit the identical lines. Line-range proximity in a diff header is not
+the same signal as an actual collision, and this hour's original hypothesis
+(guessed from proximity alone, before running `merge-tree`) would have been
+wrong if reported without the check.
+
+**No functional fix shipped, no branch touching `tools/manifest.py` or
+`tools/character.py` created** -- there was nothing to fix. This is a
+verified "checked whether the reconciliation-burden pattern generalizes to
+the rest of the open-PR pile, and for these ten PRs it doesn't" result, the
+same discipline as Hour 41's `check_speckle`-sibling check and Hour 45/46's
+non-generalization findings. Net effect for him: PRs #83, #88, #89, #91,
+#92, #93, #94, #101 can be merged in any order without the kind of manual
+code reconciliation #95 and #87 needed against #103 -- only the routine
+`ART_CRITIQUE.md` append conflict, same as merging any two PRs from this
+loop ever will.
