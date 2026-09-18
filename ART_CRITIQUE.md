@@ -5224,3 +5224,97 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## `bitmap_font.py`'s own layout helpers were weight-blind, same bug class as the Godot font-layout check, one file over
+
+The font-layout check `export_godot.py` fixed elsewhere this session
+(`check_font_layout`, see that section) was one symptom of a wider habit
+inside `bitmap_font.py` itself: `raster`/`glyph_box`/`ink_of`/`draw` all
+correctly thread `weight` through to the actual rasterizer, but `measure` --
+the function every width-based layout decision in this file goes through --
+never took a `weight` argument at all, and silently rasterized at
+`glyph_box`'s own default of 1 no matter what was actually being measured.
+Found by scanning every function in `tools/*.py` for a parameter that is
+never referenced in its own body (the same shape as `fridge_under`/`tip_jar`'s
+ignored `seed`, from earlier this session): `fit_cap`'s own `weight`
+parameter never reached `measure`, so a caller asking "does this fit at
+weight 2" silently got weight 1's answer.
+
+That alone would be a dead-parameter finding with no live path -- nothing in
+this repo calls `fit_cap` today (`ui_chrome.py` mentions it only in a
+comment). But the same defect reaches further than `fit_cap`: `render_line`
+-- the function `bitmap_font.py`'s own `--sample`/`--weight` CLI flags call
+directly -- sizes its output canvas with `measure(text, cap, tracking)`
+(weight-blind) and then draws the real ink with `draw(..., weight=weight)`
+(weight-correct). At weight 1 the two numbers agree by construction. At any
+other weight they don't, and `ui_chrome.Canvas.put`'s own bounds check
+(`0 <= x < self.w`) silently drops whatever ink falls outside the
+under-sized canvas -- so the rightmost several pixels of a bold sample line
+are rasterized and then thrown away, with no error and no BLOCKER, reachable
+by running the tool exactly as its own module docstring demonstrates
+(`python tools/bitmap_font.py --sample "..." --weight 2`).
+
+**Measured, not assumed.** Built real weight-2 renders via `render_line`
+itself (the actual production function, not an approximation) across five
+sample strings from the real UI copy and all four shipped cap sizes, and
+compared the canvas width it produced against the real ink extent `ink_of`
+reports at that same weight:
+
+    text              cap   canvas_w (pre-fix)   real ink needs   pixels silently dropped
+    Flat White         7           47                  57                   30
+    Flat White        13          100                 110                   46
+    0123456789         7           50                  60                   44
+    0123456789        13          109                 119                   55
+    Order #42          7           45                  54                   35
+    Order #42         13           97                 106                   43
+    gjpqy               7           26                  31                   11
+    gjpqy              13           53                  58                    6
+
+Every sample at every cap loses ink at weight 2, 6-55 real pixels depending
+on string length and cap size -- the trailing 1-2 characters' rightmost
+strokes, consistently. Visually confirmed at 8x nearest-neighbour scale
+(`out/font_sample.png`, `--sample "Flat White" --cap 13 --weight 2`): the
+pre-fix render's closing "e" is visibly sheared off; the same render with
+the fix applied shows a complete "White".
+
+`fit_cap` has the identical shape without needing Canvas at all: at
+`weight=2` it kept returning the exact same cap `weight=1` would have
+picked, for every sample and width tried, because it was calling the same
+weight-blind `measure`. Checked against the REAL weight-2 ink extent
+(`ink_of`, which does honor weight): the caps it picked routinely didn't
+fit -- e.g. `'Flat White'` at a 100px box, `fit_cap` said cap 13 fit at
+either weight, but cap 13's real weight-2 ink is 108px, 8px over the box it
+was declared to fit.
+
+**Fixed at the root, not per-caller.** `measure` gained a keyword-only
+`weight: int = 1` parameter, threaded to `glyph_box` exactly the way
+`ink_of`/`raster` already do. `wrap` gained the same, threaded into its own
+`measure` calls, since a wrap decision has the identical shape (a width
+comparison against text at a specific weight). `fit_cap` and `render_line`
+already accepted `weight` in their own signatures -- both just stopped
+dropping it, now passing it into `measure`. `block`'s `**kw`-forwarded
+`weight` is threaded into its own `wrap` call; its separate
+`glyph_box("A", cap)` call for line-height math is deliberately left at
+weight 1 -- checked directly (`glyph_box('A', cap, 1)` vs `glyph_box('A',
+cap, 2)` across all four shipped caps), height and baseline are identical at
+every weight, only advance changes, so that call was never the bug.
+
+**Zero regression at weight 1** (the only weight this repo has ever shipped,
+same fact PR #97's own finding established): captured `measure`, `wrap`,
+`fit_cap`, `render_line` and `check`'s output across 7 sample strings, 4
+call patterns and all 4 shipped cap sizes before and after the fix (70
+comparisons, `render_line`'s own rendered pixels hashed rather than
+eyeballed) -- identical on every one. `bitmap_font.py --check` still reports
+legible caps 7-20 and `SIZES = (7, 9, 11, 13)` unchanged. 40-test suite
+passes.
+
+Left as `weight=1` default everywhere, same as every other function in this
+file -- this is a coverage-gap fix, not a behavior change, for the same
+reason PR #97's was: nothing in the shipped pipeline calls any of these
+functions with a non-default weight today. The gap was real regardless,
+silently corrupting output the moment anything did, and the discovery method
+(scan every function for a parameter never read in its own body) is
+general -- worth re-running periodically rather than trusting this pass
+caught everything of this shape once. Branch `bitmap-font-weight-blind-layout`,
+new (unrelated to PR #97's `export_godot.py` subject, though the same root
+cause) -- left unmerged.
