@@ -1194,11 +1194,16 @@ Every producer `NEXT.md`'s own migration-order plan named as GPU-free
 (`furnish.py`, `render_room.py`, `build_plan.py`, `character.py`,
 `portrait.py`, `manifest.py`, `ui_chrome.py`, `tileset.py`, now
 `render_batch.py`) has `--style` wired through its actual checks, not just
-its `--lock` bookkeeping. `ui_forge.py`/`art_review.py`/`export_godot.py`
-remain -- the first needs `concept.py`'s SDXL pipeline to run at all (GPU),
-and the other two have not yet been looked at closely enough to know
-whether they carry the same accepted-but-ignored risk; left for a future
-PR rather than assumed clean.
+its `--lock` bookkeeping. `ui_forge.py` remains -- it needs `concept.py`'s
+SDXL pipeline to run at all (GPU). `art_review.py` and `export_godot.py`
+have both now been looked at: `art_review.py` turned out clean (below).
+`export_godot.py` was not the same bug but was carrying a different real
+one -- `check_font_layout` compared Godot's real layout against a
+weight-blind Python recomputation instead of the weight-correct advance
+`atlas()` already baked into the build; never fired in practice (nothing
+here has ever built a non-default weight), but reproducibly wrong the
+moment one is. Fixed, `ART_CRITIQUE.md`, "`export_godot.py`'s font check
+recomputes a number the build already got right, weight-blind."
 
 **Landed (PR #31, stacked on #30): `art_review.py` audited, and given a
 `--style` convenience flag -- it turned out clean, not another instance of

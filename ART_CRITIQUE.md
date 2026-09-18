@@ -5224,3 +5224,67 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+---
+
+## `export_godot.py`'s font check recomputes a number the build already got right, weight-blind
+
+`NEXT.md`'s own migration-order notes name `export_godot.py` as one of two
+files "not yet looked at closely enough to know whether it carries the same
+accepted-but-ignored risk" as the `--style`-accepted-but-unthreaded bug
+class PRs #23-#25 fixed elsewhere (`art_review.py`, the other file that
+notes name, was already audited and found clean in PR #31). Looked at it
+closely this pass.
+
+`check_font_layout` (`tools/export_godot.py`) runs Godot's own TextServer
+headless against the exported `.tres` font and compares each string's real
+layout width to `bitmap_font.measure(text, cap)` -- the "bitmap_font says"
+side of the check. `measure()` recomputes every glyph's advance from
+scratch via `glyph_box(ch, cap)`, which defaults its `weight` parameter to
+1 and never receives anything else, no matter what weight the font actually
+being checked was built at. Nothing in this repo passes `--weight` other
+than 1 today (checked: no call site in `package_godot.py`/`manifest.py`,
+no `weight` key in either style's `bible.yaml`), so this has never actually
+diverged -- but it is a real, reproducible latent gap, the same shape as
+this session's other "coverage gap, no live casualty" fixes, not a
+hypothetical one.
+
+Measured directly, not assumed: built the font twice via `bitmap_font.py`'s
+own real `atlas()`/`raster()` functions, once at `--weight 1` (today's only
+real setting) and once at `--weight 2`, then compared `measure()`'s
+recomputed width against each glyph's REAL advance (the one `atlas()`
+already baked into `font.json` at build time, the same number `stage_font()`
+passes through unchanged into the `.tres` Godot actually loads) across all
+four cap sizes and all eight of `verify_font.gd`'s own real sample strings:
+
+    weight=1 (today's only real build):  0 divergences / 32 comparisons
+    weight=2 (hypothetical, same code):  32 divergences / 32 comparisons,
+                                          `measure()` under-reporting every
+                                          string by 4-10px depending on cap
+
+At weight 1 the two computations agree byte-for-byte on every sample --
+confirming this has never fired a false pass or false fail under any build
+this repo has actually shipped. At weight 2 `measure()` is wrong on all 32,
+because a bolder stroke genuinely does push a glyph's rightmost ink pixel
+further right (`raster()`'s own comment: "the advance is the ink's own
+right edge... MEASURED rather than declared"), and `measure()`'s hardcoded
+weight=1 recomputation cannot see that.
+
+**Fixed by not recomputing at all.** `atlas()` already writes each glyph's
+real, weight-correct advance into `font.json`'s `glyphs` dict, which
+`package_godot.stage_font()` already passes through unchanged into `build`.
+`check_font_layout` now sums `build["font"]["sizes"][cap]["glyphs"][ch]
+["advance"]` for each character instead of calling `bitmap_font.measure()`
+-- reading the number that was actually shipped rather than re-deriving an
+approximation of it, one fewer place for the check's own reference value to
+drift from the real build. `bitmap_font`'s only remaining role in this
+check was the now-removed import; nothing else in `export_godot.py`
+changed. Verified: the 0-divergence / 32-divergence numbers above were
+produced by the exact comparison the patched function now performs
+in-process (font built fresh into a scratch `--out`, not the tracked
+`out/ui/font/`, and removed after); the check's OTHER half -- whether
+Godot's TextServer agrees with what `atlas()` baked in -- is untouched,
+same `verify_font.gd` script, same subprocess call. 40-test suite passes.
+
+Branch `font-layout-weight-blind`, new (unrelated to any other open PR's
+subject) -- left unmerged.
