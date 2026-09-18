@@ -5224,3 +5224,53 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## A sweep of the checks this session hadn't touched yet -- one already fixed, the rest genuinely clean
+
+Five files' check suites had never been looked at this session:
+`bitmap_font.py` (5 checks), `package_godot.py` (`check_anim_layout`,
+`check_palette_lut`), `floorplan.py` (`check_plan`), `palette_swap.py` (4
+checks), `fx.py` (`check_loops`). Read each for the two shapes this session
+keeps finding -- a hardcoded single azimuth/config tested when the real
+pipeline ships several, and a bare call where a real style/palette should
+be threaded -- and ran what could be run for real.
+
+**`bitmap_font.py`'s `weight` parameter is not the counter-`front` bug.**
+`check()`'s `weight=1` default looked like the same shape as `check_generator_
+range`'s untested-parameter gap two hours ago. It isn't: `grep` across
+`ui_chrome.py`, `manifest.py` and `package_godot.py` finds no call anywhere
+in the shipped pipeline that ever passes a non-default weight -- the game
+only ever sets type at weight 1, so testing weight 1 is testing what ships,
+not missing a variant. (The genuinely weight-blind bug in this file's own
+*layout* functions, `measure`/`wrap`/`fit_cap`, was already found and fixed
+on PR #98 -- a different bug, in different functions, correctly scoped
+there and not re-litigated here.) `check_render`'s `style` parameter is
+already threaded from its own caller, not bare.
+
+**`package_godot.py`'s two checks are pure structure, by construction.**
+`check_anim_layout` compares declared rect geometry against a sheet size,
+`check_palette_lut` already takes and correctly receives `style_name` from
+its caller. Neither has a hardcoded single-config gap.
+
+**`floorplan.py`'s `check_plan` is pure zone-overlap geometry** -- tile
+coordinates, window positions, service-run counts. No palette, no camera,
+nothing a style or azimuth sweep could expose.
+
+**`fx.py`'s `check_loops` compares a clip's phase-0 and phase-1 vertex
+positions** -- motion-loop correctness, not appearance. Same category.
+
+**`palette_swap.py` had already found and fixed the exact bug class this
+session hunts, before this session started** -- its own module docstring
+records it: every one of the file's four directory traversals inherited a
+"default-only blindness" even though `main()` had already threaded
+`--style` through the palette math, exactly the bare-call/hardcoded-default
+shape this session keeps finding elsewhere, already caught and fixed with
+a `sources_for(style)` resolver. Re-verified live rather than trusted:
+`python tools/palette_swap.py --all --check --style snes_rpg` -- 468 PNGs,
+29 distinct colours, all resolve to a base-palette identity, all 4 variant
+tables injective, all 12 sampled assets survive base -> variant -> base
+byte-identically. Clean, for real, today.
+
+**Not a task.** No code changed. One already-shipped fix confirmed still
+correct under `--style snes_rpg`, five otherwise-untouched check suites
+confirmed free of the two bug shapes this session targets.
