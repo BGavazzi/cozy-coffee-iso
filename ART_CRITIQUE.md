@@ -5544,3 +5544,98 @@ branch: `animate.render_frame` and `preview_characters.render_one` now say
 which parts of the path are actually shared (camera, quantization, palette,
 outline) and name despeckle as the one deliberate, harmless exception, with
 a pointer back to this section.
+
+## `MAX_ISOLATED`'s own calibration was cozy_ghibli-only, and it doesn't fully hold under `snes_rpg` -- despeckle already covers the gap anyway
+
+`check_speckle`'s floor comment (`tools/art_review.py`) is explicit about what
+it was measured against: "Over ten authored props at eight directions each...
+Three props lifted through TripoSR read 0.045 (kettle, good), 0.078 (teapot,
+acceptable) and 0.153 (basket, rejected)." Every one of those renders,
+checked, was `cozy_ghibli` -- `snes_rpg` didn't exist yet when this floor was
+set. Whether 0.105 is the right cut for a style with a genuinely different
+palette (fewer, more saturated ramps, per `snes_rpg`'s own bible) was never
+tested. Checked it directly, on this branch, re-rendering real meshes under
+both styles' real palettes:
+
+**Authored/procedural geometry (`assetlib.py`, what the entire real
+`furnish.py` catalog is built from) is unaffected or slightly safer under
+`snes_rpg`** -- `pastry_case` (the worst authored case in the original
+calibration, ~0.062) measures 0.062 under `cozy_ghibli` and 0.067 under
+`snes_rpg` here; `espresso_machine`, `grinder`, `table_round` all read flat
+or lower. No risk on this side, consistent with the floor's own margin
+("authored art is an order of magnitude below it and cannot trip it" --
+still true under both styles).
+
+**TripoSR-lifted geometry drifts upward under `snes_rpg`, consistently,
+across every mesh tested** (`out/mesh/*_bound.obj`, max isolated share per
+8-frame set):
+
+    mesh            cozy_ghibli   snes_rpg
+    kettle          0.057         0.073
+    teapot          0.080         0.076
+    coffee_cup      0.099         0.099
+    wine_glass      0.072         0.096
+    cheese_wheel    0.092         0.110  <- crosses the 0.105 floor
+    candle          0.090         0.121  <- crosses the 0.105 floor
+    cutting_board   0.148         0.188  (already failing under cozy_ghibli)
+    newspaper       0.129         0.167  (already failing under cozy_ghibli)
+    basket          0.163         0.221  (already failing under cozy_ghibli)
+
+Two meshes that pass cleanly under `cozy_ghibli` fail under `snes_rpg` on
+the identical geometry -- the same directional drift the four already-
+failing meshes show, just crossing the line rather than moving inside it.
+Mechanism, not coincidence: `snes_rpg`'s fewer, more saturated ramps mean
+coarser quantization steps, so the same per-vertex reconstruction noise is
+more likely to land two adjacent samples on opposite sides of a ramp
+boundary -- sharper cross-ramp adjacency, same underlying noise, worse
+isolated-pixel score.
+
+**Checked whether this is currently a live defect, not just a risk.**
+`grep -c "Recipe(" tools/furnish.py` -- 56 recipes, every one a `lambda s:
+A.xxx(...)` call into `assetlib.py`'s procedural generators (confirmed by
+`grep -n "load_obj|ingest\.load" tools/furnish.py`: zero hits beyond the
+`ingest.fit`/`mesh_geometry` import, which normalizes ANY mesh's scale and
+is not itself a load path). The one declared exception is real:
+`assets.yaml`'s `teapot` entry has no `Recipe`, and `furnish.py`'s own
+`UNMAPPED_REASON["teapot"]` says why -- `"already built on the SDXL path"`.
+Checked what that path actually shipped: `out/variants/{evening,golden_hour,
+night,overcast}/props/teapot_dir*.png` are real, committed sprites --
+measured directly against those files (not a reproduction), max isolated
+share **0.080** across all four lighting variants, comfortably under the
+floor, matching the reproduction above almost exactly. But
+`out/sprites_snes_rpg/` -- the one place `snes_rpg`'s own prop library would
+live -- contains no lifted content at all, `teapot` included (`ls
+out/sprites_snes_rpg/*.png`: `crate_cup` and `barista` only, the analytic
+demo scene and the animate.py sheet). `snes_rpg`'s real prop library, lifted
+or procedural, has never actually been rendered to completion. So: a real,
+measured, directional gap in the floor's own generality, and **no live
+casualty today**, because there is nothing currently shipped under
+`snes_rpg` for it to misjudge -- the same shape as this file's `check_
+collapse` and `render_room`/`animate` findings elsewhere in this session,
+not the shape of PR #100's grain finding.
+
+**Checked whether this branch's own fix already covers it, rather than
+assuming.** `despeckle(px, target, min_agree=2, max_passes=5)` takes no
+`ramps`/`style` argument -- it operates purely on already-quantized pixel
+adjacency, so nothing about its own logic should care which palette produced
+the input. Confirmed directly: ran the two crossing meshes, plus `teapot`
+and `kettle`, back through `despeckle()` under `snes_rpg`:
+
+    mesh            before (snes_rpg)   after despeckle
+    cheese_wheel    0.110                0.001
+    candle          0.121                0.000
+    teapot          0.076                0.001
+    kettle          0.073                0.001
+
+Closed completely, at the same conservative margin this branch's other
+verifications show, with zero additional code -- the fix already shipped on
+this branch is general across styles because nothing about it is
+style-specific, not because anyone tested it that way at the time. **No
+functional change ships from this section either** -- `MAX_ISOLATED` stays
+at 0.105 (loosening it would be exactly the "tune the instrument to the
+answer" move this repo's doctrine rejects, and it doesn't need loosening:
+despeckle already keeps every case tested inside it). The value here is
+confidence, recorded rather than assumed: the day someone actually renders
+`snes_rpg`'s prop library against real TripoSR-lifted meshes, this branch's
+fix is already the reason `check_speckle` won't need a second, style-specific
+fix on top of the first one.
