@@ -440,7 +440,7 @@ MAX_THIN_SHARE = 0.20         # how much of an asset may be thin before it wires
 
 
 def check_member_thickness(mesh, name="asset", ppu=ROOM_PX_PER_UNIT,
-                           floor_px=MIN_MEMBER_PX):
+                           floor_px=MIN_MEMBER_PX, span=None, centre=None):
     """Thinnest drawn member, measured rather than modelled.
 
     Pixel-art convention is to exaggerate small members precisely because
@@ -460,13 +460,47 @@ def check_member_thickness(mesh, name="asset", ppu=ROOM_PX_PER_UNIT,
     built from zero-thickness quads measured 3 px because a standing plane seen
     near edge-on collapses to a line. Quads are right for floor overlays and
     wrong for anything vertical.
+
+    `span`/`centre`, when given, override `ppu`/`cam.span`/the fixed look-at
+    point with the asset's own real per-object ship scale --
+    `render_batch.frame_all(mesh)`'s return values, at the same 64px canvas
+    `furnish.py` actually renders every shipped sprite at -- instead of a
+    fixed room-embedded camera. `review_library()` passes both, because
+    `furnish.py`'s per-object frame-filled sprite, not a room composite, is
+    what `package_godot.py` actually ships: `frame_all` fits each asset to
+    fill its own canvas, so a small object's real ship-scale ppu runs
+    1.2x-4.9x the fixed room value (measured across 16 real props;
+    `succulent` alone is 4.9x). Every member reads WIDER at the real scale
+    than at the fixed one, never narrower, so this can only relax a finding,
+    not hide a genuine one -- confirmed on the one live case this check had:
+    `plant_hanging` flagged 35% thin mass at the fixed room scale, 0% at its
+    own real span (0.466 vs the fixed camera's 1.15), because the fixed
+    camera renders it as a small object adrift in mostly-empty space rather
+    than filling its own sprite the way it actually ships.
+
+    `centre` matters as much as `span` here, not just as a companion value:
+    the fixed room-scale path's `target=(0.5, 0.5, 0.5)` assumes every asset
+    sits centred in its own tile, which is only ever approximately true.
+    Passing `span` alone and keeping that fixed point produced two assets
+    that rendered fully empty (`cup_and_saucer`, `cup_espresso` -- a span
+    tight enough to fill their own real sprite missed their actual geometry
+    entirely under the wrong look-at point) and one spurious 100% finding
+    (`wall_sign`, clipped rather than genuinely thin) before `centre` was
+    wired through too.
     """
     from isorender import DimetricCamera
     from mesh import rasterize
     cam = DimetricCamera(45.0)
-    cam.span = 1.15
-    res = max(16, int(2 * cam.span * ppu))
-    mat, _, _ = rasterize(mesh, cam, res, target=(0.5, 0.5, 0.5))
+    if span is not None:
+        cam.span = span
+        res = 64
+        scale_label = "ship scale"
+    else:
+        cam.span = 1.15
+        res = max(16, int(2 * cam.span * ppu))
+        scale_label = "room scale"
+    target = centre if centre is not None else (0.5, 0.5, 0.5)
+    mat, _, _ = rasterize(mesh, cam, res, target=target)
     runs = []
     for y in range(res):
         cur = 0
@@ -479,13 +513,13 @@ def check_member_thickness(mesh, name="asset", ppu=ROOM_PX_PER_UNIT,
         if cur:
             runs.append(cur)
     if not runs:
-        return [f"{name}: renders empty at room scale"]
+        return [f"{name}: renders empty at {scale_label}"]
     total = sum(runs)
     thin = sum(r for r in runs if r < floor_px)
     share = thin / total
     if share > MAX_THIN_SHARE:
         return [f"{name}: {share:.0%} of its mass is in runs under {floor_px} px "
-                f"at room scale (limit {MAX_THIN_SHARE:.0%}) -- reads as wire"]
+                f"at {scale_label} (limit {MAX_THIN_SHARE:.0%}) -- reads as wire"]
     return []
 
 
@@ -823,6 +857,7 @@ def review_library(floor_px=MIN_MEMBER_PX):
     """Run the mesh checks across every asset the blockout library exposes."""
     import inspect
     import assetlib
+    from render_batch import frame_all
     out, assets = [], {}
     for fn_name, fn in sorted(vars(assetlib).items()):
         if not callable(fn) or fn_name.startswith("_"):
@@ -839,7 +874,13 @@ def review_library(floor_px=MIN_MEMBER_PX):
         if not hasattr(mesh, "verts"):
             continue
         assets[fn_name] = mesh
-        out += check_member_thickness(mesh, fn_name, floor_px=floor_px)
+        # Real ship scale, not the fixed room camera -- `furnish.py`'s
+        # per-object frame-filled sprite is what `package_godot.py` actually
+        # ships, and it is not the same scale for most of this library. See
+        # `check_member_thickness`'s own docstring for the measured gap.
+        span, centre = frame_all(mesh)
+        out += check_member_thickness(mesh, fn_name, floor_px=floor_px,
+                                      span=span, centre=centre)
     out += check_buried_detail(assets)
     return out
 

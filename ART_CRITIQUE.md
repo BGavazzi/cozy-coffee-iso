@@ -5224,3 +5224,80 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## `check_member_thickness` was checking a scale nothing ships at, and it was wrong about the one thing it currently flags
+
+"New promoted check: member thickness" (this file, much earlier) describes
+`art_review.check_member_thickness` as rasterizing "at the scale it is
+actually seen (27.2 px/unit)." That was true when it was written. It is not
+true today: `furnish.py`'s per-object sprite -- `frame_all(mesh)` fitting
+each asset to fill its own 64px canvas -- is what `package_godot.py` actually
+packages and ships, not a fixed room-embedded camera. `render_room.py`, the
+thing that DOES use a fixed camera, writes to `proof/shop.png` and is never
+referenced by the export tooling; its own docstring calls it an integration
+test, not a shipped path.
+
+**Measured the gap rather than assumed it.** `frame_all`'s span, converted to
+an effective px/unit at the real 64px target, against the check's fixed
+27.2, across 16 real `assetlib.py` props:
+
+```
+prop            real ppu   room ppu   ratio
+counter          41.3        27.2      1.5x
+table_round       60.4        27.2      2.2x
+register          80.6        27.2      3.0x
+tip_jar          124.3        27.2      4.6x
+succulent        132.5        27.2      4.9x
+```
+
+Every one of the 16 sampled ran higher, never lower -- small objects most of
+all, because `frame_all` fills a small object's own canvas the same as a
+large one's, where the fixed camera renders a small object as a small shape
+adrift in mostly-empty space. Since the same floor (4px) is being compared
+against a systematically UNDER-estimated real scale, the fixed-scale check
+can only ever be too strict, never too lax -- it cannot hide a genuinely thin
+member from a player, but it can flag one that reads fine in its real,
+shipped form.
+
+**It was already doing that.** `review_library()`'s entire live output before
+this pass was one `check_member_thickness` finding: `plant_hanging: 35% of
+its mass is in runs under 4 px at room scale (limit 20%) -- reads as wire`.
+Re-measured at `plant_hanging`'s own real span (0.466, vs the fixed camera's
+1.15): **0%, clean pass.** The fixed camera renders `plant_hanging` small and
+adrift; its real per-object sprite fills the frame the way every shipped
+sprite does, and the same geometry reads fine.
+
+**The fix:** `check_member_thickness` gained optional `span`/`centre`
+parameters that, when given, replace the fixed camera with `frame_all`'s real
+values and render at the real 64px target instead of a `ppu`-derived
+resolution. `review_library()` now computes and passes both per asset. Kept
+the old `ppu`-based path as the default for any other caller, since nothing
+else in the codebase calls this function directly.
+
+**Wiring `span` alone was not enough, and this file's own words about
+verifying in both directions applied here too.** The fixed path's
+`target=(0.5, 0.5, 0.5)` assumes every asset sits centred in its own tile,
+which is only ever approximately true. Passing the tighter real `span`
+against that same wrong look-at point produced two assets that rendered
+**fully empty** (`cup_and_saucer`, `cup_espresso` -- a span tight enough to
+fill their real sprite missed their actual off-centre geometry entirely) and
+one spurious **100%** finding (`wall_sign`, clipped rather than genuinely
+thin) -- caught by re-running immediately after the first version of this
+fix, before it was called done. Wiring `frame_all`'s `centre` through as well
+(the same value `furnish.py` already passes to `render_sprite`) cleared all
+three.
+
+**Verified the check still has teeth, not just that it goes quiet.** A
+synthetic 0.02-unit rod (thinner than any real prop's structural member, at a
+plausible coffee-shop scale) still flags 100% thin mass at its own real ship
+span; a 0.12-unit post of the same height, rendered the same way, passes
+clean. The relaxation only removes a false positive; it does not remove the
+check's ability to catch a true one.
+
+**Zero regression, checked both styles.** `check_buried_detail` (the other
+half of `review_library()`, untouched by this change) reports the same 6
+findings before and after. `manifest.py --check` warning count drops by
+exactly 1 under both `--style cozy_ghibli` and `--style snes_rpg` -- the
+`plant_hanging` line disappearing, nothing else moving -- consistent with a
+style-agnostic geometry check whose one live finding was a false positive,
+not a style-specific one.
