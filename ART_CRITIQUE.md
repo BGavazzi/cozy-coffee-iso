@@ -5224,3 +5224,75 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## The entire prop library ships without the texture treatment rooms and characters get
+
+"Surface grain" (this file, above) is documented as "the largest single
+change" to this project's rendering -- world-space, anisotropic, per-material
+tonal noise that breaks up flat blockout surfaces, calibrated hardest on
+`wood` (0.85 of a ramp step, the largest amplitude in `GRAIN_BY_RAMP`) because
+wood holds the largest unbroken flat areas. `render_room.py`, `animate.py`
+and `preview_characters.py` all call `mesh.rasterize()` directly with
+`grain=1.0, ramps=ramps`. `render_batch.render_sprite()` -- the function
+`furnish.py` renders the *entire prop library* through, per that same
+function's own comment two paragraphs up about a different, already-fixed
+gap ("this call site was missed, which matters because `furnish.py` renders
+the entire prop library through it") -- never exposed `grain` or `wear` at
+all. Every chair, bookshelf, counter and shelf in this game ships with
+perfectly flat wood, while every room background and every character does
+not.
+
+Found by a second AST scan, complementary to the unused-parameter one that
+found the last two hours' fixes: this time scanning for a function that
+calls a sibling sharing a parameter name without forwarding it. Most of the
+18 hits were namesake collisions with unrelated meanings (`target` means
+"output resolution" in `render_sprite` and "world-space camera aim point" in
+`rasterize` -- a false positive, not a bug). This one wasn't a false
+positive in the usual sense either -- `render_sprite` didn't even expose
+`grain`, so there was no parameter to accidentally drop; it's the same
+"sibling call site missed" shape the function's own nearby comment already
+names, in a place nobody had looked for a second instance of it.
+
+**Measured, not assumed -- and the first surprise was the metric itself.**
+Comparing the *distinct colour count* of a `bookshelf`/`chair` render with
+`grain=0` vs `grain=1` at `furnish.py`'s real `--target 64 --factor 4`
+showed zero difference (13 vs 13, 7 vs 7) -- which would have wrongly closed
+this as a non-issue. Grain doesn't add new colours; it moves EXISTING ramp
+steps around spatially. Comparing per-pixel identity instead: 246 of 4096
+final pixels differ on `bookshelf` alone. The raw pre-quantization lambert
+buffer differs on 22,982 of 65,536 pixels (max deviation 0.11, comfortably
+under the one-ramp-step cap `GRAIN_BY_RAMP` documents). Visually confirmed
+at 8x scale across three real props (`bookshelf`, `chair`, `counter`, seed
+1, azimuth 45, real furnish.py resolution): every flat wood surface gains
+visible mottled texture with grain on, most clearly on the bookshelf's side
+panel and the counter's front face -- reading exactly like the "wood grain"
+effect this file already documents for rooms, because it *is* that effect,
+applied to a surface category that was never wired to receive it.
+
+**Fixed narrowly: the capability, not the default.** `render_sprite` gains
+`grain: float = 0.0, wear=None`, forwarded to `rasterize` (`ramps` only
+passed through when `grain > 0`, matching `rasterize`'s own gate). Default
+stays 0.0 -- `render_sprite` has callers `render_room.py`/`animate.py`/
+`preview_characters.py` don't: `character.py`, `organic_rig.py` and
+`portrait.py` all call it twice per eye-legibility check to diff a `plain`
+head against an `eyed` one pixel-for-pixel, and grain is world-space noise
+that would put false positives into that diff. A default flip belongs to
+whichever call site opts in deliberately, not to this shared function.
+
+**Zero regression, confirmed.** Hashed `render_sprite`'s real pixel output
+for 3 props x 2 azimuths, pre- and post-fix (`git stash`), byte-identical on
+every one -- no existing caller passes `grain`, so none of them moved.
+`character.py`'s own `main()` (0 blockers) and `organic_rig.py`'s (silhouette
+stability holds, roster clears contrast/waistline) both re-run clean.
+40-test suite passes.
+
+**Left open, deliberately: whether `furnish.py` should actually opt in.**
+That is a whole-prop-library visual change -- every already-shipped sprite
+would look different -- and this session's own standing discipline is not to
+make that call unilaterally (see the albedo-floor recalibration and the
+per-style roster-override scoping, both deferred for the same reason). The
+capability is real, measured, and visually positive on every sample tried;
+turning it on for the shipped library is a decision for a human looking at
+the images, not a line this PR changes. Branch
+`render-sprite-grain-wear-unwired`, new (unrelated to any other open PR's
+subject) -- left unmerged.
