@@ -5224,3 +5224,73 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## `manifest.py --check` never once called the rig that actually ships for `snes_rpg`
+
+NEXT.md's own PR #23/#24 writeups record, honestly, that `character.py`'s
+`CUSTOMERS` roster fails `check_contrast`/`check_waistline` under `snes_rpg`
+(elder/reader/regular/writer, the same four names this file's own recent
+entries keep re-measuring) and conclude it doesn't matter: *"this specific
+roster is cozy_ghibli-specific, and that's fine, because `style_approve.py`
+already derives `snes_rpg`'s character-roster evidence from `organic_rig.py`
+instead."* That sentence is true of `style_approve.py`. It was never checked
+against `manifest.py --check` itself, the command a person actually runs to
+sanity the pipeline -- and it isn't true there.
+
+`grep -n "organic_rig" tools/manifest.py` on `main` returns nothing.
+`manifest.py`'s `check()` calls seven different `character.py` functions
+against the box/prism roster, unconditionally, for every style -- and never
+once calls `organic_rig.check_roster`, `check_eyes_visible`, or
+`check_direction_stability`, for any style, ever. Concretely, under
+`--style snes_rpg`: the four box/prism blockers above are real lines in this
+command's own output (confirmed, fresh run: `10 errors` total, includes all
+four by name), while `organic_rig.py` -- `style_approve.py`'s own required
+evidence for this style, the rig real output actually uses -- contributes
+zero lines, pass or fail, because it is never called. A person reading this
+command's output has exactly the picture the accepted-limitation note above
+warned against: informed in detail about a roster real output does not use,
+uninformed about the one it does.
+
+This is the same shape as PR #86 (`check_ui` validating the wrong style's
+font) and PR #91-93 (composition/binder/symmetry checks measuring
+`cozy_ghibli`'s numbers under every style) -- a check exercising the wrong
+asset for the active style -- except here the failure mode is not "wrong
+numbers," it's "zero numbers": nothing this command runs would notice if
+`organic_rig.py`'s own cast broke tomorrow.
+
+Checked whether `organic_rig.py`'s checks could just be added unconditionally,
+the way `character.py`'s already are: no. `organic_rig.build()` indexes rig
+dict keys (`head_radius`, `torso_radius`, ...) that only a
+`rig.primitive: cylinder_sphere` bible defines --
+`organic_rig.check_eyes_visible(style_name="cozy_ghibli")` raises a bare
+`KeyError: 'head_radius'`, confirmed directly by calling it. `cozy_ghibli`'s
+own `style_bible.yaml` declares `rig.primitive: box_prism`;
+`snes_rpg`'s declares `cylinder_sphere` (`grep -A2 "^rig:"` on both bibles).
+So the dispatch has to be conditional on that field, and nothing in the
+codebase reads it programmatically today -- `style_approve.py`'s own
+`REQUIRED_PRODUCERS_ANY_OF` comment explains the distinction in prose but the
+actual mechanism there is "any of three producers has an approved lock
+entry," which never needed to branch on `primitive` in code.
+
+Fixed: `manifest.py`'s `check()` now reads `active.rig.get("primitive")` and,
+only when it is `"cylinder_sphere"`, calls `organic_rig.check_roster`,
+`check_eyes_visible`, and `check_direction_stability` against `active.name`,
+folding their messages into the same `errs` list every other character check
+already uses. `cozy_ghibli` (`box_prism`) skips the block entirely, so the
+new code path never executes there and cannot regress it.
+
+Verified, not assumed: `manifest.py --check --style cozy_ghibli` before and
+after this change is line-for-line identical (`3 errors, 9 warnings`, same
+messages). `manifest.py --check --style snes_rpg` before and after is
+identical too (`10 errors, 8 warnings`, same messages) -- `organic_rig.py`'s
+own cast is currently clean (confirmed separately: `check_roster`,
+`check_eyes_visible`, and `check_direction_stability` each return zero
+findings against `snes_rpg` today), so the new block adds real coverage
+without adding noise. Proved the coverage is real, not cosmetic, by
+injecting a deliberate defect -- monkeypatched one `organic_rig.ROSTER`
+entry's hair colour to exactly match its skin colour (zero contrast by
+construction) and re-ran `check()`: a new line appeared,
+`ERROR scout: hair 'skin+1' is 0.000 from skin (need 0.13) -- head reads as
+one lump`, `10 errors` became `11`. `main`'s `manifest.py` would report
+`10 errors` either way -- silent to a real regression in the rig that ships.
+40-test suite passes.

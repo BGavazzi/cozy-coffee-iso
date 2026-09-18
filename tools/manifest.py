@@ -427,6 +427,32 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         # whatever else separates the pair wearing it.
         for msg in _c.check_accessory_distinct():
             errs.append(f"accessory: {msg}")
+        # `character.py`'s box/prism rig above is not the geometry every style
+        # ships. For a `rig.primitive: cylinder_sphere` style (today: only
+        # `snes_rpg`), `organic_rig.py` is the ONE character producer
+        # `style_approve.py`'s `REQUIRED_PRODUCERS_ANY_OF` actually draws its
+        # evidence from (NEXT.md's own PR #23/#24 writeups say so explicitly:
+        # "this specific roster is cozy_ghibli-specific... style_approve.py
+        # already derives snes_rpg's character-roster evidence from
+        # organic_rig.py instead"). That sentence describes what
+        # `style_approve.py` does; it was never true of THIS command --
+        # `manifest.py --check` has called `organic_rig.check_roster`/
+        # `check_eyes_visible`/`check_direction_stability` exactly zero times,
+        # for any style, ever. Under `snes_rpg` that means the one rig that
+        # actually ships had no coverage here at all, while the box/prism
+        # checks above kept reporting on a roster real output never uses.
+        # `organic_rig.py`'s own build() indexes rig dict keys
+        # (`head_radius`, ...) that only a `cylinder_sphere` bible defines --
+        # calling it under `cozy_ghibli` raises a bare KeyError, confirmed
+        # directly, so this has to be conditional, not just added.
+        if active.rig.get("primitive") == "cylinder_sphere":
+            import organic_rig as _o
+            for msg in _o.check_roster(active.name):
+                errs.append(msg)
+            for msg in _o.check_eyes_visible(active.name):
+                errs.append(msg)
+            for msg in _o.check_direction_stability(active.name):
+                errs.append(msg)
         from animate import check_direction_labels
         for msg in check_direction_labels():
             errs.append(msg)
