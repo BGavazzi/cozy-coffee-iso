@@ -5288,3 +5288,60 @@ same `verify_font.gd` script, same subprocess call. 40-test suite passes.
 
 Branch `font-layout-weight-blind`, new (unrelated to any other open PR's
 subject) -- left unmerged.
+
+### Addendum: the same proof, run against the live Godot engine, not just in-process
+
+The verification above was explicitly scoped to an isolated in-process
+comparison -- `bitmap_font.atlas()`/`measure()` called directly in Python,
+never touching a running Godot instance -- because building the complete
+asset library locally to run the full `export_godot.py main()` pipeline
+(stage -> headless Godot `--import` -> headless Godot `--script
+build_all.gd` -> round-trip checks) was judged too expensive to justify at
+the time. That gap is closed here.
+
+`NEXT.md`'s own historical notes (an earlier, already-landed PR) record a
+cheap way to get real, non-fabricated content into an otherwise-empty local
+`out/` tree without building the whole library: `furnish.py --only <ids>`.
+Used it to build two real props (`grinder_burr`, `chair_wood`), then built a
+real `--weight 2` font via `bitmap_font.py --style cozy_ghibli --weight 2`
+(the same non-default weight the isolated proof above used), then ran the
+complete, unmodified `export_godot.py` pipeline with this branch's fix
+applied -- real staging, a real headless Godot 4.3 `--import` pass, a real
+headless `--script build_all.gd` build, and the real round-trip check. Full
+result:
+
+    -- round-trip check --
+      Godot reads all 5 palettes x 40 colours exactly, at nearest filtering
+      32 string widths match between Godot and bitmap_font
+
+All 32 comparisons pass against live Godot TextServer output, at the exact
+weight (2) where the pre-fix code was proven wrong on all 32 in isolation.
+
+That alone doesn't prove the fix was load-bearing for this run, though --
+it's also what a no-op check would report. So the contrast was run too:
+captured the same real `VERIFY_FONT_JSON:` output this pipeline run produced
+(via Godot's `verify_font.gd`, re-invoked directly, no need to re-run the
+import/build_all steps since their artifacts already existed) and replayed
+the OLD pre-fix comparison logic (`bitmap_font.measure(text, cap)`, the
+weight-blind recompute) against it in Python:
+
+    32/32 flagged as false BLOCKERs by the pre-fix code, against this
+    exact same real Godot output -- 4-10px under-reported per string,
+    matching the isolated proof's numbers exactly (e.g. cap 13
+    '0123456789': Godot 117px vs OLD recompute 107px, diff 10px)
+
+So on the identical real engine output: the fix reports a clean pass, the
+pre-fix code reports 32 false positives. This upgrades the finding from "an
+isolated Python-only proof, believed to generalize to the real pipeline" to
+"proven against live Godot engine output, with the old code's failure mode
+reproduced on that same output as the control." No further code change --
+`check_font_layout` is unchanged from the fix above.
+
+Local build state used for this: `furnish.py --only grinder_burr
+chair_wood` and the weight=2 font build wrote into the real (gitignored,
+never committed) `out/sprites/`, `out/ui/font/`, and
+`godot_export/project/resources/` locations rather than a scratch dir,
+because `export_godot.py`'s full pipeline doesn't support redirecting
+output elsewhere. The weight=2 test font was removed afterward to restore
+pre-test state; the two furnished props were left (harmless additions to an
+already-populated local sprite cache, not tracked by git either way).
