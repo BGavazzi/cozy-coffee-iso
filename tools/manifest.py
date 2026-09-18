@@ -361,72 +361,93 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         # facts the manifest cannot state, so they are measured here rather than
         # declared: a spec that passes every stated rule and still renders as a
         # brown smear has only proved the rules were incomplete.
-        for msg in _c.check_palette_spread():
-            errs.append(msg)
-        # `check_palette_spread` counts ramps, not the colours those ramps
-        # resolve to under the active style, so a roster tuned against
-        # cozy_ghibli's palette can still land two materials on the same
-        # rendered step once a different, more compressed palette is
-        # substituted in. `check_contrast` is what actually measures that:
-        # `character.py`'s own `main()` has always run it against the fixed
-        # `CUSTOMERS` roster (it's how `elder`'s hair-vs-skin failure under
-        # `snes_rpg`, 0.088 against a 0.13 floor, was originally found -- see
-        # NEXT.md PR #23), but `manifest.py --check` never called it here,
-        # only against the generated extras below -- so the same roster's
-        # same failure was invisible to this command specifically.
-        for msg in _c.check_contrast(ramps):
-            errs.append(msg)
-        # And a figure needs a waist. `check_palette_spread` counts ramps, not
-        # values, so two different ramps landing on the same step slip past it:
-        # `elder` shipped with a wood shirt 0.004 in value from neutral
-        # trousers and rendered as one column.
-        for msg in _c.check_waistline(ramps):
-            errs.append(msg)
-        # And a face needs eyes at every skin tone the generator may draw, not
-        # only at the one the roster happens to use. This is the check that
-        # made `SKIN_TONES` possible: the eyes were a tone offset on skin and
-        # vanished entirely below the middle of the range, so seven of the
-        # seven tones were unusable and nobody had looked, because the roster
-        # only ever asked for one.
-        for msg in _c.check_eye_legibility(ramps):
-            errs.append(msg)
-        # And every dimension of the generator has to be drawn from. The two
-        # that were not sat unremarked for eight passes beside five that were
-        # producing seventeen to twenty-four values each, because a dimension
-        # nobody varies is invisible in every downstream metric -- a cast can
-        # differ in shirt and trousers and hair and still be one face.
-        for msg in _c.check_spec_coverage(ramps=ramps):
-            errs.append(msg)
-        # The generated extras have to pass everything the hand-written roster
-        # does. They are proposed against exactly these predicates, so a failure
-        # here means the solver has stopped consulting one of them -- which is
-        # invisible on the sheet, because the sheet only shows what was
-        # accepted.
-        _extras = _c.generate_roster(12, seed=1, ramps=ramps)
-        for msg in (_c.check_contrast(ramps, _extras)
-                    + _c.check_palette_spread(_extras)
-                    + _c.check_waistline(ramps, _extras)):
-            errs.append(f"generated: {msg}")
-        # And no two members of a cast may be the same person. The three checks
-        # above are predicates on ONE spec; a generator can satisfy all three
-        # forty times and return forty variations of one person, each
-        # individually legal and collectively a crowd with one extra in it.
-        for msg in _c.check_roster_variety() + [
-                f"generated: {m}" for m in _c.check_roster_variety(_extras)]:
-            errs.append(msg)
-        # Same question asked of the shape alone. Variety compares materials
-        # too, so two identical figures in different shirts clear it easily --
-        # and did, while the cast contained a pair whose outlines matched to
-        # the pixel. Colour is noticed first; shape is what survives being one
-        # of eight figures at 46 px.
-        for msg in _c.check_cast_silhouette() + [
-                f"generated: {m}" for m in _c.check_cast_silhouette(_extras)]:
-            errs.append(msg)
-        # And the accessories on their own. The cast check holds whole people
-        # apart, which lets an accessory that changes nothing ride along behind
-        # whatever else separates the pair wearing it.
-        for msg in _c.check_accessory_distinct():
-            errs.append(f"accessory: {msg}")
+        #
+        # All nine checks in this block measure `character.py`'s own
+        # `ROSTER`/`CUSTOMERS`/`generate_roster` -- the box/prism cast. That
+        # roster is a SEPARATE, independently-authored cast from
+        # `organic_rig.ROSTER` below (confirmed: zero shared names --
+        # `elder`/`reader`/`regular`/`writer`/... here, `scout`/`archivist`/
+        # `drifter`/`smith`/... there), and for a `cylinder_sphere` style it is
+        # the same non-shipping producer the comment below this block already
+        # names: `style_approve.py` draws that style's real character evidence
+        # from `organic_rig.py` alone. Before this fix, that distinction was
+        # only honoured for the checks being ADDED (the `organic_rig` block
+        # below); the box/prism checks above kept running -- and blocking --
+        # unconditionally, so `manifest.py --check --style snes_rpg` reported
+        # elder/reader/regular/writer as build-blocking ERRORs every time, for
+        # a cast that has never shipped as `snes_rpg` art and never will while
+        # this style stays on `organic_rig.py`. That is exactly the
+        # NEXT.md-documented "accepted limitation" (PR #23/#24) -- the roster
+        # difference was accepted, the manifest command reporting it as a
+        # blocker every run was not. Gated so `box_prism` styles (today:
+        # `cozy_ghibli`) keep every one of these checks exactly as before.
+        if active.rig.get("primitive") != "cylinder_sphere":
+            for msg in _c.check_palette_spread():
+                errs.append(msg)
+            # `check_palette_spread` counts ramps, not the colours those ramps
+            # resolve to under the active style, so a roster tuned against
+            # cozy_ghibli's palette can still land two materials on the same
+            # rendered step once a different, more compressed palette is
+            # substituted in. `check_contrast` is what actually measures that:
+            # `character.py`'s own `main()` has always run it against the fixed
+            # `CUSTOMERS` roster (it's how `elder`'s hair-vs-skin failure under
+            # `snes_rpg`, 0.088 against a 0.13 floor, was originally found -- see
+            # NEXT.md PR #23), but `manifest.py --check` never called it here,
+            # only against the generated extras below -- so the same roster's
+            # same failure was invisible to this command specifically.
+            for msg in _c.check_contrast(ramps):
+                errs.append(msg)
+            # And a figure needs a waist. `check_palette_spread` counts ramps, not
+            # values, so two different ramps landing on the same step slip past it:
+            # `elder` shipped with a wood shirt 0.004 in value from neutral
+            # trousers and rendered as one column.
+            for msg in _c.check_waistline(ramps):
+                errs.append(msg)
+            # And a face needs eyes at every skin tone the generator may draw, not
+            # only at the one the roster happens to use. This is the check that
+            # made `SKIN_TONES` possible: the eyes were a tone offset on skin and
+            # vanished entirely below the middle of the range, so seven of the
+            # seven tones were unusable and nobody had looked, because the roster
+            # only ever asked for one.
+            for msg in _c.check_eye_legibility(ramps):
+                errs.append(msg)
+            # And every dimension of the generator has to be drawn from. The two
+            # that were not sat unremarked for eight passes beside five that were
+            # producing seventeen to twenty-four values each, because a dimension
+            # nobody varies is invisible in every downstream metric -- a cast can
+            # differ in shirt and trousers and hair and still be one face.
+            for msg in _c.check_spec_coverage(ramps=ramps):
+                errs.append(msg)
+            # The generated extras have to pass everything the hand-written roster
+            # does. They are proposed against exactly these predicates, so a failure
+            # here means the solver has stopped consulting one of them -- which is
+            # invisible on the sheet, because the sheet only shows what was
+            # accepted.
+            _extras = _c.generate_roster(12, seed=1, ramps=ramps)
+            for msg in (_c.check_contrast(ramps, _extras)
+                        + _c.check_palette_spread(_extras)
+                        + _c.check_waistline(ramps, _extras)):
+                errs.append(f"generated: {msg}")
+            # And no two members of a cast may be the same person. The three checks
+            # above are predicates on ONE spec; a generator can satisfy all three
+            # forty times and return forty variations of one person, each
+            # individually legal and collectively a crowd with one extra in it.
+            for msg in _c.check_roster_variety() + [
+                    f"generated: {m}" for m in _c.check_roster_variety(_extras)]:
+                errs.append(msg)
+            # Same question asked of the shape alone. Variety compares materials
+            # too, so two identical figures in different shirts clear it easily --
+            # and did, while the cast contained a pair whose outlines matched to
+            # the pixel. Colour is noticed first; shape is what survives being one
+            # of eight figures at 46 px.
+            for msg in _c.check_cast_silhouette() + [
+                    f"generated: {m}" for m in _c.check_cast_silhouette(_extras)]:
+                errs.append(msg)
+            # And the accessories on their own. The cast check holds whole people
+            # apart, which lets an accessory that changes nothing ride along behind
+            # whatever else separates the pair wearing it.
+            for msg in _c.check_accessory_distinct():
+                errs.append(f"accessory: {msg}")
         # `character.py`'s box/prism rig above is not the geometry every style
         # ships. For a `rig.primitive: cylinder_sphere` style (today: only
         # `snes_rpg`), `organic_rig.py` is the ONE character producer
