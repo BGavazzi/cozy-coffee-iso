@@ -5224,3 +5224,61 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## A pass over `manifest.py --check`'s remaining bare calls, and `portrait.py`'s fixed azimuth -- both confirmed correct as they are
+
+Two threads this hour, neither turning up a fix, both worth recording so a
+future pass does not re-open either.
+
+**Every bare (no-`ramps`) call left in `manifest.py`'s `check()` is bare for
+a real reason, not a missed spot.** This session has repeatedly found bare
+calls that should have carried `ramps`/`checks` (`check_focal_contrast`,
+`check_roundtrip`/`check_transform`/`check_albedo_regression`,
+`check_symmetry_claims`'s `measured_symmetry`), all still open on their own
+PRs on `main` today. Read every OTHER bare call still in `check()` looking
+for one more of the same shape:
+
+- `_c.check_palette_spread()` -- counts *ramp names* (`material(p)[0]` on
+  each part's material token) and their share of a roster's parts. Never
+  touches an actual RGB value or the `ramps` dict at all -- "neutral" is the
+  same string and the same problem whichever style's palette resolves it.
+- `_c.check_roster_variety()`, `_c.check_cast_silhouette()`,
+  `_c.check_accessory_distinct()` -- all silhouette/shape-only by their own
+  docstrings ("the shape-only half of `check_roster_variety`"), comparing
+  covered-pixel sets, not colours. `check_accessory_distinct` hardcodes
+  `accessory_mat="rose"` for every comparison, which looks like a style leak
+  at first read -- it isn't, because the measurement is alpha coverage, not
+  hue, and any bindable ramp produces the same silhouette.
+- `check_built_rooms()`, `check_stool_occupancy()` (`build_plan.py`) --
+  pure geometry: collisions, grounding, seating rotation, occlusion,
+  perch-rate. No material lookup anywhere in either function's body.
+
+All five are correctly parameter-free. Confirmed by reading each function's
+own body for a `ramps`/palette/colour touch point, not by pattern-matching
+the call site -- this is the same distinction "geometry-only, not
+style-specific" drew for `check_generator_range`'s `counter` fix two hours
+ago, applied here as a check rather than an assumption.
+
+**`portrait.py`'s `check_eyes_visible` uses a fixed `PORTRAIT_AZIMUTH = 90`,
+which looked at first glance like the single-azimuth bug class this session
+has found repeatedly (`check_buried_detail`, `check_member_thickness`,
+`check_eye_legibility`, ...). It isn't, and the module says so directly:**
+"A portrait never rotates, so `PORTRAIT_AZIMUTH = 90`: dead [on]" -- a
+portrait is a single fixed-angle UI headshot, architecturally never
+rendered at a second azimuth, the same category `screen_occlusion`'s fixed
+45 deg camera fell into (Hour 49). Confirmed rather than taken on faith:
+`grep` for any second call to `render_sprite`/`DimetricCamera` in
+`portrait.py` with a different azimuth turns up none -- every portrait
+render in this file uses the one constant.
+
+**Also checked, mechanically: does the pile of open PRs need reconciling
+again now that #109/#110 exist?** `git merge-tree` against every other open
+PR touching `tools/art_review.py`/`tools/assetlib.py` (#83, #87, #93, #95,
+#102, #103, #81) -- eight pairwise merges, all clean except the routine
+`ART_CRITIQUE.md` doc-append conflict every pair in this pile has. Matches
+Hour 48's finding that this pile's PRs insert independent blocks rather than
+rewrite shared lines; no new reconciliation burden from this hour's own two
+PRs.
+
+**Not a task.** No code changed, nothing to fix -- three separate checks,
+three confirmations that the code already does the right thing.
