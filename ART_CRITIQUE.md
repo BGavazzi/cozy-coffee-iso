@@ -5224,3 +5224,60 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## Checked whether `manifest.py`'s "accepted limitation, still fires as a blocker" bug generalizes to `portrait.py`'s own accepted `snes_rpg` gap -- it doesn't
+
+`manifest.py --check --style snes_rpg` was, until the previous fix,
+reporting 7 findings against `character.py`'s box/prism roster as
+build-blocking errors even though NEXT.md's own accepted-limitation
+doctrine says that roster doesn't ship for `cylinder_sphere` styles --
+the "accepted" framing covered the roster difference, not the noise the
+command kept producing every run.
+
+`portrait.py --check --style snes_rpg` carries the identical-looking
+accepted-limitation shape: it also builds portraits from `character.py`'s
+box/prism `head()`/`hair()`, also fails under `snes_rpg` (`reader`'s left
+eye renders 0px against bare skin -- `hair_mat` and `character.EYE` collide
+on `snes_rpg`'s more compressed `neutral` ramp), and NEXT.md's own writeup
+(PR #24) explicitly accepts it the same way: *"`style_approve.py` doesn't
+require `portrait.py` or `manifest.py` to pass, only `character.py` OR
+`portrait.py` OR `organic_rig.py` for the character-roster requirement, and
+`organic_rig.py`'s entry already satisfies it."* Given the previous section
+found that exact style of claim understated in practice, checked whether
+this one is too, rather than trusting the prose a second time.
+
+**It holds up.** Three things verified directly, not assumed:
+
+1. `style_approve.py`'s `REQUIRED_PRODUCERS_ANY_OF = ("character.py",
+   "portrait.py", "organic_rig.py")` or-logic (`tools/style_approve.py:56-76`)
+   is genuinely implemented the way the comment claims -- `current_approved`
+   checks `lock.json` for *any* approved, current entry across the three
+   named producers, not all three, so `organic_rig.py`'s own passing entry
+   really does satisfy the requirement regardless of `portrait.py`'s
+   `approved: false` row. Read the code, not just the docstring.
+2. `gates.py` (the 62-check deterministic/llm/taste catalog this loop
+   already fully audited for wiring, Hour 47) has no aggregate pass/fail
+   mode at all -- `--help` shows only `--list` and `--producer`, informational
+   commands, so there is no second gate anywhere that could re-block on
+   `portrait.py`'s failure independently of `style_approve.py`'s already-
+   verified or-logic.
+3. `grep -n "portrait" tools/package_godot.py tools/export_godot.py` returns
+   nothing at all, for either file. Portraits are not part of the shipped
+   export pipeline yet, for ANY style -- not a `snes_rpg`-specific gap, a
+   not-yet-integrated feature that applies equally to `cozy_ghibli`. There is
+   no path by which a wrong-rig portrait could reach a real build today.
+
+So the two cases look identical from their NEXT.md/ART_CRITIQUE.md prose
+alone -- both "accepted because `organic_rig.py` covers it" -- but differ in
+one load-bearing way: `manifest.py`'s box/prism checks fed one unconditional
+`errs` list with no or-logic at all, so "accepted" was true of the roster
+and false of the command's actual behaviour. `portrait.py`'s failure feeds
+`style_approve.py`'s real or-gate, correctly implemented, and reaches no
+export path either way. The mechanism the "accepted" claim depends on is
+present and working here, not merely asserted.
+
+No functional fix shipped, no code changed -- this is a legitimate "checked
+whether the previous bug generalizes, and for this sibling case it doesn't,
+because the machinery the claim rests on was independently verified to
+exist and work" result, same discipline as the ramp-coherence, character-
+scale, roster-variety, and screen-occlusion null results already on record.
