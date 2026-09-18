@@ -5301,3 +5301,60 @@ exactly 1 under both `--style cozy_ghibli` and `--style snes_rpg` -- the
 `plant_hanging` line disappearing, nothing else moving -- consistent with a
 style-agnostic geometry check whose one live finding was a false positive,
 not a style-specific one.
+
+## The scale fix above was still an incomplete picture -- a second, independently-opened fix on the same function needed folding in
+
+Auditing what else touches `check_member_thickness` before calling the scale
+fix done found `member-thickness-single-azimuth`, an open PR against the SAME
+function, opened independently and reaching a structurally identical insight
+from the other axis: the check has always rasterized a single fixed 45 degree
+view, but `furnish.build_one` ships every asset at all 8 real azimuths
+unconditionally, and a flat member that goes edge-on at some other angle can
+collapse to a stray line there without ever showing at 45. That fix already
+measured worst-of-8 (not pooled -- pooling dilutes a genuine edge-on collapse
+below the floor by averaging it against seven mostly-solid views) and
+verified it against this file's own recorded edge-on-collapse cases.
+
+Neither fix alone is a complete account of what `furnish.py` renders: the
+scale fix (above) still only looked at one azimuth; the azimuth fix still
+measured all 8 through the fixed room camera. Combined them on this branch --
+`check_member_thickness` now takes both `span`/`centre` (real per-object
+scale) and `azimuths` (worst-of-N, not pooled), and `review_library()` passes
+the real 8-azimuth ship set alongside the real span/centre it already
+computed.
+
+**Verified together, not just merged together.** Re-ran `review_library()`:
+still 6 findings, all `check_buried_detail`, `check_member_thickness`
+contributing zero -- the real library has no member that is thin at its real
+scale from ANY of its 8 real ship angles, not just the one this check used to
+look at. That is new information, not an assumption: printed the raw
+per-azimuth share for four real flat-panel props (`wall_sign`, `menu_board`,
+`sandwich_board`, `coat_rack`) to confirm the machinery produces real,
+varying numbers rather than trivially returning zero everywhere --
+`sandwich_board` measures 0% at six azimuths and 3% at the two it goes most
+edge-on, `coat_rack` 0-1%, both nowhere near the 20% floor but genuinely
+different by angle.
+
+**Positive control, since the real library currently has nothing to catch:**
+built a synthetic 0.01-thick flat panel that is normal-looking from most
+angles and goes fully edge-on at two of the eight. At azimuth 45 alone (the
+old default) it measures 0% and passes clean -- the exact blind spot the
+azimuth fix exists for. Across all 8 real azimuths at its own real span, it
+measures 100% thin mass at azimuths 180 and 360, correctly flagged: `thin_
+panel: 100% of its mass is in runs under 4px at ship scale at azimuth 180
+(limit 20%) -- reads as wire`.
+
+**Cost, measured rather than waved away:** `manifest.py --check` now runs in
+~2m55s for `cozy_ghibli` (member thickness alone went from ~24 rasterizes to
+~192, one per asset per real azimuth). Correct and still fast enough to run
+by hand or in CI; not free.
+
+**Left for him to reconcile, not resolved here:** `member-thickness-single-
+azimuth` remains open as its own PR with its own history and is NOT closed by
+this commit -- this branch folds its insight in and supersedes it
+functionally, but closing someone else's open PR is a call for him to make,
+not this pass. Flagging directly: merging both `member-thickness-ship-scale`
+and `member-thickness-single-azimuth` as separate PRs will conflict, since
+both rewrite the same function body differently. This branch is the version
+that has both fixes verified together; the standalone azimuth PR is now
+redundant with it but is left standing for him to close or not.

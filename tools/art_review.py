@@ -440,7 +440,8 @@ MAX_THIN_SHARE = 0.20         # how much of an asset may be thin before it wires
 
 
 def check_member_thickness(mesh, name="asset", ppu=ROOM_PX_PER_UNIT,
-                           floor_px=MIN_MEMBER_PX, span=None, centre=None):
+                           floor_px=MIN_MEMBER_PX, span=None, centre=None,
+                           azimuths=(45.0,)):
     """Thinnest drawn member, measured rather than modelled.
 
     Pixel-art convention is to exaggerate small members precisely because
@@ -487,39 +488,67 @@ def check_member_thickness(mesh, name="asset", ppu=ROOM_PX_PER_UNIT,
     entirely under the wrong look-at point) and one spurious 100% finding
     (`wall_sign`, clipped rather than genuinely thin) before `centre` was
     wired through too.
+
+    `azimuths` defaults to the single view this check has always used --
+    matching what `check_buried_detail`'s own docstring documents for the
+    identical reason, and what a second, independently-opened fix on this
+    same function (`member-thickness-single-azimuth`, discovered while
+    reconciling this one) found and fixed in isolation: `furnish.py` ships
+    every one of these assets at 8 real azimuths, unconditionally, and a
+    flat member that goes edge-on at some other angle can collapse to a
+    stray line there without ever showing it at 45 degrees. Each azimuth is
+    measured and judged SEPARATELY, worst one reported, not pooled into one
+    combined share -- pooling dilutes a genuine edge-on collapse below the
+    floor by averaging it against the other seven mostly-solid views, which
+    is exactly the frame this check exists to catch. That fix used the fixed
+    room camera for all 8 views; combined with `span`/`centre` here, all 8
+    are now measured at the REAL per-object ship scale too, not just the
+    real angle set -- neither fix alone was a complete picture of what
+    `furnish.py` actually renders.
     """
     from isorender import DimetricCamera
     from mesh import rasterize
-    cam = DimetricCamera(45.0)
-    if span is not None:
-        cam.span = span
-        res = 64
-        scale_label = "ship scale"
-    else:
-        cam.span = 1.15
-        res = max(16, int(2 * cam.span * ppu))
-        scale_label = "room scale"
-    target = centre if centre is not None else (0.5, 0.5, 0.5)
-    mat, _, _ = rasterize(mesh, cam, res, target=target)
-    runs = []
-    for y in range(res):
-        cur = 0
-        for x in range(res):
-            if mat[y * res + x] is not None:
-                cur += 1
-            elif cur:
+
+    def share_at(az):
+        cam = DimetricCamera(az)
+        if span is not None:
+            cam.span = span
+            res = 64
+        else:
+            cam.span = 1.15
+            res = max(16, int(2 * cam.span * ppu))
+        target = centre if centre is not None else (0.5, 0.5, 0.5)
+        mat, _, _ = rasterize(mesh, cam, res, target=target)
+        runs = []
+        for y in range(res):
+            cur = 0
+            for x in range(res):
+                if mat[y * res + x] is not None:
+                    cur += 1
+                elif cur:
+                    runs.append(cur)
+                    cur = 0
+            if cur:
                 runs.append(cur)
-                cur = 0
-        if cur:
-            runs.append(cur)
-    if not runs:
-        return [f"{name}: renders empty at {scale_label}"]
-    total = sum(runs)
-    thin = sum(r for r in runs if r < floor_px)
-    share = thin / total
-    if share > MAX_THIN_SHARE:
-        return [f"{name}: {share:.0%} of its mass is in runs under {floor_px} px "
-                f"at {scale_label} (limit {MAX_THIN_SHARE:.0%}) -- reads as wire"]
+        if not runs:
+            return None
+        total = sum(runs)
+        thin = sum(r for r in runs if r < floor_px)
+        return thin / total
+
+    scale_label = "ship scale" if span is not None else "room scale"
+    worst_az, worst_share = None, -1.0
+    for az in azimuths:
+        share = share_at(az)
+        if share is None:
+            return [f"{name}: renders empty at {scale_label}"]
+        if share > worst_share:
+            worst_az, worst_share = az, share
+    if worst_share > MAX_THIN_SHARE:
+        at = "" if len(azimuths) == 1 else f" at azimuth {worst_az:g}"
+        return [f"{name}: {worst_share:.0%} of its mass is in runs under "
+                f"{floor_px} px at {scale_label}{at} "
+                f"(limit {MAX_THIN_SHARE:.0%}) -- reads as wire"]
     return []
 
 
@@ -857,7 +886,16 @@ def review_library(floor_px=MIN_MEMBER_PX):
     """Run the mesh checks across every asset the blockout library exposes."""
     import inspect
     import assetlib
+    from isorender import AZIMUTH_STEP
     from render_batch import frame_all
+    # `furnish.build_one` renders every one of these assets at all 8 of these
+    # exact azimuths, unconditionally -- `assets.yaml`'s `sym` only trims the
+    # render BUDGET (fewer frames staged as distinct), never which raw angles
+    # furnish.py actually generates a PNG for. A real edge-on collapse ships
+    # a real file even for a declared symmetric asset, and this check needs
+    # to see it -- same set `check_buried_detail`'s own docstring names for
+    # the identical reason.
+    ship_azimuths = tuple(45.0 + k * AZIMUTH_STEP for k in range(8))
     out, assets = [], {}
     for fn_name, fn in sorted(vars(assetlib).items()):
         if not callable(fn) or fn_name.startswith("_"):
@@ -880,7 +918,8 @@ def review_library(floor_px=MIN_MEMBER_PX):
         # `check_member_thickness`'s own docstring for the measured gap.
         span, centre = frame_all(mesh)
         out += check_member_thickness(mesh, fn_name, floor_px=floor_px,
-                                      span=span, centre=centre)
+                                      span=span, centre=centre,
+                                      azimuths=ship_azimuths)
     out += check_buried_detail(assets)
     return out
 
