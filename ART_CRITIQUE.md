@@ -5224,3 +5224,57 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## Checked whether `counter`'s buried-detail bug is a pattern, not a one-off -- it isn't
+
+`counter(front="x")`'s bug (a separate PR, `counter-front-x-buried-detail`)
+was `check_generator_range` never exercising a non-default parameter that a
+real shipped call site uses. Several other `GENERATORS` entries share that
+same shape -- `check_generator_range`'s factory always calls the generator
+with only `seed` set, and a handful of these generators take a second
+parameter that real code overrides. Worth checking whether front="x" was
+one instance of a broader coverage gap or a true one-off.
+
+Found three real, non-default configurations `check_generator_range` never
+tests: `basket(fill=...)` (`render_room.py`/`build_plan.py` ship both
+`"foliage"` and `"rose"`, never the default `FABRIC`), `chair(cushion=...,
+frame=...)` (`furnish.py`'s `chair_metal`/`chair_cushioned` catalog entries,
+and `render_room.py`'s cushioned window-bar chairs), and `table_round(top=
+...)` (`render_room.py`'s three cafe tables, `"cream"` and `"wood"`, never
+the default `WOOD` passed positionally as a no-op). `bench`'s own
+`cushion`/`frame` parameters, by contrast, are never overridden anywhere in
+this repo's real call sites -- not a candidate, same conclusion either way
+without needing to test it.
+
+Measured all three at their real shipped values, at `check_generator_range`'s
+own exact span/floor for each generator (15% floor throughout):
+
+```
+table_round  top=wood (default)    23.45%
+table_round  top=cream (real)      27.23%
+chair        cushion=None,frame=wood (default)      40.48%
+chair        cushion=None,frame=metal (chair_metal)  40.48%
+chair        cushion=rose,frame=wood (real, window)  48.47%
+basket       fill=fabric (default)  29.82%
+basket       fill=foliage (real)    29.82%
+basket       fill=rose (real)       29.82%
+```
+
+All eight comfortably clear the 15% floor. **Does not generalize, and the
+reason is mechanical, not luck.** `front` in `counter()` changes WHICH AXIS
+the detail geometry sits on -- a placement bug, wrong by construction for
+one of its two branches. `fill`/`cushion`/`frame`/`top` in `basket`/`chair`/
+`table_round` only ever swap one material NAME for another at screen
+positions the geometry already varies by seed regardless of which material
+is bound there -- `screen_materials` measures whether the resolved material
+differs pixel-to-pixel between seeds, and a global material-role swap moves
+every seed's output the same way, so it cannot by itself collapse spread the
+way a buried, always-identical face can. The bug class the front="x" fix
+closed is specifically "an untested parameter changes GEOMETRY," not
+"an untested parameter exists" -- confirmed by finding several of the
+second kind and none of them mattering.
+
+**Not a task.** No code changed. Doc-only, same branch convention as the
+other confirmed-non-generalizing findings this session (`screen_occlusion`,
+`check_roster_variety`, `portrait.py`'s accepted limitation). 40-test suite
+unaffected (nothing here touches code).
