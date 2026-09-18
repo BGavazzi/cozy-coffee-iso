@@ -5224,3 +5224,38 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## `isorender.py`'s own projection assertion ignored the tolerance it declared
+
+Same discovery method as last hour's `bitmap_font` finding (an AST scan for
+function parameters never read in their own body), a different hit:
+`verify_projection(tol: float = 1e-6)` -- the function `isorender.py`'s own
+module docstring points to as proof the 2:1 dimetric projection claim
+"asserts it rather than trusting the arithmetic" -- accepted a `tol`
+argument and then asserted against a hardcoded `1e-6` literal instead of the
+parameter with that name. Every real call (`prove_shading.py`; `tileset.py`,
+twice) uses the default, so this never diverged in the shipped pipeline --
+same "no live casualty" shape as this session's font-weight findings, not a
+hypothetical one.
+
+**Confirmed the bug directly, not just by reading it.** The camera's own
+trig currently measures a deviation of ~5.6e-17 from the true 0.5 ratio
+(floating-point precision, not a real defect). Calling
+`verify_projection(tol=1e-20)` -- deliberately far stricter than that real
+deviation, which should fail if `tol` were honored -- **passed silently**,
+because the hardcoded `1e-6` was checked instead of the requested `1e-20`.
+That is airtight proof the parameter was decorative: a request for
+sub-attometer precision was silently downgraded to micron-scale precision
+with no error.
+
+**Fixed by checking against `tol` instead of the literal.** One-line change:
+`assert abs(ratio - 0.5) < tol`. Verified default-call behavior is
+byte-identical (`verify_projection()` still returns the exact same
+`0.49999999999999994`, same as before the fix); `tol=1e-20` now correctly
+raises; a genuinely loose `tol=1e-3` still passes, as it always did. Real
+callers re-run end to end post-fix: `prove_shading.py` ("projection check:
+0.500000000000 (exactly 2:1)") and `tileset.py --style cozy_ghibli` (both
+call sites, floor and wall tiling, unchanged output). 40-test suite passes.
+
+Branch `isorender-verify-projection-tol-blind`, new (unrelated to any other
+open PR's subject) -- left unmerged.
