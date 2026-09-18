@@ -224,6 +224,27 @@ def check_extremes(px) -> list[Finding]:
     return out
 
 
+# The 4% offset floor below is calibrated against cozy_ghibli's own band
+# count and does not hold across styles on identical geometry. Measured on
+# `table_round` (frame_all-framed, seed 1, all 8 azimuths, byte-identical
+# mesh both times): cozy_ghibli's 6-band ramp isolates the true highlight rim
+# into its own step (5.8% of lit pixels at the brightest L), producing a
+# dy offset of +4.0..+5.0px that crosses the floor on 4 of 8 frames. snes_rpg's
+# 4-band ramp on the SAME frames folds the tabletop's flat top face into that
+# same brightest step (11.9% of lit pixels), which spatially dilutes the "top
+# 20%" selection toward the object's centre and drops dy to +1.2..+1.9px --
+# under the floor on all 8. Same mesh, same camera, same key light; the
+# difference is entirely how many discrete steps the palette gives the
+# quantizer to isolate a highlight with. Left unfixed: `check_light_direction`
+# is a NOTE, never gates a build (`art_review.py --json` and its own CLI both
+# exit 0 regardless of findings, and nothing in `gates.py`/`manifest.py` wires
+# it to a BLOCKER), so this is advisory drift a human skimming one style's
+# report would see and the other style's would silently omit, not a build
+# regression. A style-invariant reformulation (weighting by the actual OKLab
+# gap between adjacent bands rather than a fixed pixel-count percentile) would
+# fix it properly; not attempted here, matching this file's own
+# `MAX_ISOLATED` precedent of naming a calibration gap without redesigning the
+# instrument inside the same pass that found it.
 def check_light_direction(px, w, h) -> list[Finding]:
     """Highlights should sit upper-left. A rough check, hence only a note."""
     lit = [(i % w, i // w, srgb_to_oklab(p[:3])[0])
