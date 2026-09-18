@@ -5224,3 +5224,89 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## Ran the real Godot round-trip export, both styles, real binary -- clean, and one near-miss chased down to already-correct architecture
+
+`export_godot.py`'s three round-trip checks (`check_nine_slice_roundtrip`,
+`check_palette_lut_godot`, `check_font_layout`) need an actual Godot 4.3
+binary -- unlike the SDXL/TripoSR stages, this one turned out to be genuinely
+available in this environment (`D:/vibes/.godot-tool/Godot_v4.3-stable_win64_console.exe`
+resolves and exists), so this is real, testable ground this hourly loop
+hadn't exercised end-to-end before.
+
+**First run, `--style cozy_ghibli`, came back with `0 fonts` and no
+`check_font_layout` output at all** -- looked, for a moment, like the same
+"declared but not built" shape as `out/ui/`'s empty icon library or
+`tileset.py`'s `--proof`-gated `check_manifest_placement` (Hour 57). Traced
+it: `out/ui/font/font.json` genuinely didn't exist in this environment --
+nothing in this session had run `bitmap_font.py` yet, and `check_font_layout`
+silently returns `[]` when `build.get("font", {}).get("sizes")` is empty,
+same as `check_nine_slice_roundtrip` does for an empty icon set. Built the
+font for real (`python tools/bitmap_font.py --style cozy_ghibli`, 4 sheets,
+90 glyphs) and re-ran the export -- `check_font_layout` then genuinely fired.
+
+**Chased whether the silent-skip itself is the bug, and it isn't.**
+`package_godot.py`'s `stage()` follows the identical `if dir.exists(): stage;
+if content: include` shape for every category -- sprites, anim, UI, tiles,
+font, all four other categories, not just this one -- so treating fonts as a
+special case would have been inventing an inconsistency, not fixing one.
+The real question is whether anything upstream is responsible for catching
+"declared but not built" before export, the way `manifest.py --check`
+already does for the UI icon library. Grepped `manifest.py` directly rather
+than assuming: `check_ui` already contains exactly this gate --
+`"ui_font declared and no out/ui/font/font.json -- run tools/bitmap_font.py"`
+(`manifest.py:217-219`) -- so `export_godot.py` silently trusting that an
+earlier, already-correct gate ran first is the intended layering, not a gap.
+No code change here; a real hypothesis, checked against the actual code, and
+retired.
+
+**With the real prerequisite built, ran the full pipeline for both styles,
+for real, not from cache:**
+
+```
+python tools/bitmap_font.py --style cozy_ghibli   # 4 sheets, 90 glyphs
+python tools/ui_chrome.py  --style cozy_ghibli    # (already on disk)
+python tools/export_godot.py --style cozy_ghibli  # exit 0
+  3 nine-slice margins match the drawn insets
+  Godot reads all 5 palettes x 40 colours exactly, at nearest filtering
+  32 string widths match between Godot and bitmap_font
+
+python tools/bitmap_font.py --style snes_rpg      # 4 sheets, 90 glyphs
+python tools/ui_chrome.py  --style snes_rpg       # 10/10 chrome pieces
+python tools/export_godot.py --style snes_rpg     # exit 0
+  3 nine-slice margins match the drawn insets
+  Godot reads all 5 palettes x 32 colours exactly, at nearest filtering
+  32 string widths match between Godot and bitmap_font
+```
+
+Zero BLOCKER lines, either style. Both runs used the real Godot 4.3 binary
+(`--headless --import`, then `--script build_all.gd`), not a mock or a
+Python-side approximation -- `check_palette_lut_godot` specifically reads the
+palette texture back through Godot's own resource loader and TextServer,
+which is the whole point of the check (a compression artifact or a filter
+setting that Pillow-side checks can't see). `git status` after both runs:
+nothing tracked changed (`godot_export/project*/`, `out/ui/font/`, and
+`out/ui_snes_rpg/` are all gitignored build/export output, as expected).
+
+**One already-known finding reconfirmed, not rediscovered.** `main` (this
+branch's base) still carries `check_font_layout`'s pre-fix, weight-blind
+`bitmap_font.measure(text, cap)` call (no `weight=` argument) -- exactly the
+bug the still-open, unmerged `font-layout-weight-blind` branch (PR #97)
+already found and fixed. It didn't fire in either run above because both
+`bitmap_font.py` runs used weight=1, the only weight this codebase's own
+shipped pipeline ever builds (Hour 56's own grep confirmed this) -- so
+`measure()`'s implicit weight=1 happens to agree with Godot's real, actually-
+weight-1 layout. Consistent with PR #97's own description ("never fired in
+practice, reproducibly wrong at any non-default font weight"), not a new
+data point, and not re-litigated further here.
+
+**Finding: no new live bug.** This is the first time this hourly loop has
+run the real Godot round-trip end to end for both styles rather than reading
+the check functions or testing a narrower slice of them. All three checks
+are correctly style-threaded (ramps/bible/font sizes all resolved per
+`--style`, confirmed by the different palette color counts -- 40 for
+`cozy_ghibli`, 32 for `snes_rpg` -- both read back correctly through Godot)
+and all pass clean against the real, freshly-built, real-Godot-verified
+export for both styles. Honest null result; the one real hypothesis chased
+this hour (silent-skip as a masked gap) checked out as already-correct
+layering once verified against `manifest.py`'s own code, not assumed.
