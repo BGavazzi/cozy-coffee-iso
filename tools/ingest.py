@@ -322,7 +322,7 @@ def signed_volume(mesh: Mesh) -> float:
     return tot
 
 
-def check_albedo_regression(ramps=None) -> list[str]:
+def check_albedo_regression(ramps=None, checks=None) -> list[str]:
     """Exercise `check_albedo_centre` on both of `ingest`'s two paths.
 
     It runs inside `ingest()` today and nothing in the suite calls `ingest()`
@@ -365,6 +365,10 @@ def check_albedo_regression(ramps=None) -> list[str]:
     """
     from mesh import Mesh
     ramps = ramps or load_palette()
+    checks = checks or {}
+    floor = checks.get("albedo_l_floor", ALBEDO_L_FLOOR)
+    ceil = checks.get("albedo_l_ceil", ALBEDO_L_CEIL)
+    target = checks.get("albedo_l_target", ALBEDO_L_TARGET)
     out = []
 
     def rebind_case(rgb):
@@ -372,12 +376,13 @@ def check_albedo_regression(ramps=None) -> list[str]:
         m.verts = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)]
         m.faces = [((0, 1, 2), None, "Solid")]
         bound, _table, _warns = rebind(m, {"Solid": rgb}, ramps)
-        return check_albedo_centre(bound, ramps)
+        return check_albedo_centre(bound, ramps, floor=floor, ceil=ceil)
 
-    # A photographed-then-quantized dark source, well below the 0.596 floor.
-    # Not palette-derived on purpose: ALBEDO_L_FLOOR is a fixed OKLab
-    # threshold on the SOURCE's own lightness, not a palette value, so any
-    # sufficiently dark RGB triple is a valid fixture for any style.
+    # A photographed-then-quantized dark source, well below either style's
+    # floor (0.257 in OKLab L against a lowest floor, snes_rpg's, of 0.479).
+    # Not palette-derived on purpose: the floor is a fixed OKLab threshold on
+    # the SOURCE's own lightness, not a palette value, so any sufficiently
+    # dark RGB triple is a valid fixture for any style.
     if not rebind_case((40, 34, 30)):
         out.append("regression: an MTL bound at albedo L ~0.16 did not trip "
                    "check_albedo_centre -- the rebind path has lost its "
@@ -400,14 +405,14 @@ def check_albedo_regression(ramps=None) -> list[str]:
     m.faces = [((0, 1, 2), None, "x")]
     dark = oklab_to_srgb255(0.408, 0.01, 0.005)
     m.vcolors = [dark, dark, dark]
-    bound, _hist, _worst = bind_vertex_colours(m, ramps)
-    if check_albedo_centre(bound, ramps):
+    bound, _hist, _worst = bind_vertex_colours(m, ramps, target=target)
+    if check_albedo_centre(bound, ramps, floor=floor, ceil=ceil):
         out.append("regression: delight left a uniform L-0.408 field bound "
                    "outside the authored range -- the shift regressed")
     return out
 
 
-def check_transform(ramps=None) -> list[str]:
+def check_transform(ramps=None, checks=None) -> list[str]:
     """A full pass over a mesh that looks like something a generator emitted.
 
     The binder can be right while the adapter is still useless, because a mesh
@@ -442,6 +447,17 @@ def check_transform(ramps=None) -> list[str]:
     naive fix that only added `ramps` to manifest.py's call site, which alone
     would have made this worse, not better (see `check_albedo_regression`'s
     docstring for the sibling fixture problem this same sweep found).
+
+    `checks` has to reach the same inner `ingest()` call for the same reason,
+    found later: this fixture's own chair binds to a real median L of 0.559
+    under `snes_rpg`'s ramps, below `cozy_ghibli`'s global 0.596 floor, so
+    `ingest()`'s `check_albedo_centre` call reported it as "too dark" and
+    that message landed here as an "unexpected warning" -- a real chair,
+    correctly transformed, correctly bound, failing THIS function's geometry
+    assertions for a reason that has nothing to do with geometry. Threading
+    `checks` (the active style's calibrated floor/ceiling, see the
+    `ALBEDO_L_*` constants) through closes it the same way the `ramps` fix
+    above did.
     """
     import tempfile
     import assetlib as A
@@ -470,7 +486,8 @@ def check_transform(ramps=None) -> list[str]:
                 f"{c / 255:.6f}" for c in palette_rgb(m, ramps))
             for m in mats) + "\n", encoding="utf-8")
 
-        mesh, rep = ingest(obj, up="y", height=want_h, ramps=ramps)
+        mesh, rep = ingest(obj, up="y", height=want_h, ramps=ramps,
+                          checks=checks)
 
     zs = [v[2] for v in mesh.verts]
     xs = [v[0] for v in mesh.verts]
@@ -531,13 +548,45 @@ COLOUR_BUCKET = 8
 # every legitimately dark authored prop is a floor that can no longer tell a
 # legitimately dark prop from an undelit reconstruction -- the two goals this
 # check was asked to serve (accommodate the real library's own range; still
-# catch the bug it was built for) are now in tension close enough that a
-# single global median-L threshold may not be the right shape for this check
-# regardless of style, a bigger question than either style's own number.
-# Left unrecalibrated on purpose, for both styles, pending that question --
-# not rushed into a threshold guess that would either reject real snes_rpg
-# props (today's floor, unchanged) or blind the check to the exact defect it
-# was written for (a floor loosened enough to fit the library's dark end).
+# catch the bug it was built for) are STILL in tension close enough that
+# "widen the global floor to swallow every outlier, in either style" remains
+# the wrong move, unattempted here for exactly the reason above. That is a
+# different question from the one below, though, and conflating them is what
+# left this file's constants untouched the first time this was looked at.
+#
+# The question these three constants actually answer is narrower: "where does
+# THIS style's TYPICAL, non-outlier authored prop sit." That number moves
+# with the palette, is measurable the same way the original 0.596/0.845/0.600
+# were measured, and is exactly what PR #92's own regression fixture proved
+# broken -- `wood-mid`, a colour the active `snes_rpg` palette authors
+# directly and not an outlier by any definition, was failing
+# `check_albedo_centre` under cozy_ghibli's global numbers, live, today,
+# on this branch (`check_albedo_regression(ramps=snes_ramps)`, run fresh:
+# "regression: check_albedo_centre fired on wood-mid (173, 88, 72)... false
+# positive"). That is the bug PR #92 demonstrated has a real, current
+# casualty; the bean_hopper/outlier question above does not (confirmed
+# separately: `check_albedo_centre` is never invoked against `assetlib.py`'s
+# own meshes in any live path).
+#
+# `cozy_ghibli`'s own three constants turn out to be exact ramp-middle values,
+# not independently chosen numbers: ALBEDO_L_FLOOR (0.596) is `neutral`'s own
+# middle step (0.5961), ALBEDO_L_TARGET (0.600) is `wood`'s (0.5998), and
+# ALBEDO_L_CEIL (0.845) is `cream`'s (0.8454) -- three-for-three, to the
+# thousandth. The SAME three ramps' middle steps under `snes_rpg`:
+# `neutral` 0.4786, `wood` 0.5592, `cream` 0.8604 -- applying the identical
+# derivation, not a new one, per-style overrides now live in each style's
+# `bible.yaml` `checks:` block (`albedo_l_floor`/`albedo_l_target`/
+# `albedo_l_ceil`), read by `ingest()` and threaded through here. The globals
+# below are now specifically `cozy_ghibli`'s own values, used as the fallback
+# when a style declares no override -- `cozy_ghibli`'s own `checks: {}` is
+# empty on purpose, so its behaviour is unchanged, byte for byte.
+#
+# The bean_hopper/book_stack outlier tension is UNCHANGED by this: neither
+# style's floor admits its own dark/light outliers (snes_rpg's new 0.479
+# floor excludes `bean_hopper`'s 0.411 exactly as cozy_ghibli's 0.596
+# excludes its own 0.500, the same margin relationship, not a loosened one)
+# -- this fix repositions the core-family threshold per style, it does not
+# widen either style's tolerance for what a "typical" prop looks like.
 ALBEDO_L_FLOOR = 0.596
 ALBEDO_L_CEIL = 0.845
 # The modal authored value, and the middle step of both `wood` and `neutral`.
@@ -584,13 +633,18 @@ def delight(vcolors, target: float = ALBEDO_L_TARGET):
     return out, before
 
 
-def check_albedo_centre(mesh: Mesh, ramps: dict) -> list[str]:
+def check_albedo_centre(mesh: Mesh, ramps: dict, floor: float = ALBEDO_L_FLOOR,
+                        ceil: float = ALBEDO_L_CEIL) -> list[str]:
     """Is the bound albedo where authored albedo lives?
 
     Reads the materials a mesh actually ended up with, so it catches a bad
     `delight` and a bad MTL by the same route, and it is the reading that turns
     "the sprite looks wrong" into a number. The bracket is wide and measured:
     a defect at 0.408 against a weakest known-good at 0.596.
+
+    `floor`/`ceil` default to `cozy_ghibli`'s own values so every existing
+    caller is unaffected; a style with a `checks:` override (today: `snes_rpg`,
+    see the constants above) passes its own here instead.
     """
     Ls = []
     for _, _, mat in mesh.faces:
@@ -600,17 +654,17 @@ def check_albedo_centre(mesh: Mesh, ramps: dict) -> list[str]:
         return []
     Ls.sort()
     p50 = Ls[len(Ls) // 2]
-    if ALBEDO_L_FLOOR <= p50 <= ALBEDO_L_CEIL:
+    if floor <= p50 <= ceil:
         return []
-    side = "dark" if p50 < ALBEDO_L_FLOOR else "light"
+    side = "dark" if p50 < floor else "light"
     return [f"bound albedo median L {p50:.3f} is too {side}; every authored "
-            f"prop lands in {ALBEDO_L_FLOOR:.3f}-{ALBEDO_L_CEIL:.3f}. A "
+            f"prop lands in {floor:.3f}-{ceil:.3f}. A "
             f"reconstructed colour field carries the concept image's lighting "
             f"and has to be de-lit before binding, or the renderer shades it "
             f"twice."]
 
 
-def bind_vertex_colours(mesh: Mesh, ramps: dict):
+def bind_vertex_colours(mesh: Mesh, ramps: dict, target: float = ALBEDO_L_TARGET):
     """Per-vertex colour -> a palette material per face.
 
     This is the half of the seam that had never met a real generator. `ingest`
@@ -625,10 +679,10 @@ def bind_vertex_colours(mesh: Mesh, ramps: dict):
     one ramp step, so per-vertex interpolation has nowhere to go.
     """
     cache, worst, table = {}, 0.0, {}
-    vcolors, before = delight(mesh.vcolors)
-    if abs(before - ALBEDO_L_TARGET) >= 0.02:
+    vcolors, before = delight(mesh.vcolors, target=target)
+    if abs(before - target) >= 0.02:
         print(f"  de-lit: albedo median L {before:.3f} -> "
-              f"{ALBEDO_L_TARGET:.3f}")
+              f"{target:.3f}")
     out = Mesh()
     out.verts = list(mesh.verts)
     out.normals = list(mesh.normals)
@@ -685,8 +739,19 @@ def mesh_geometry(mesh: Mesh) -> dict:
 
 def ingest(obj: Path | str, mtl: Path | str | None = None, up: str = "z",
            height: float | None = None, footprint: float | None = None,
-           ramps: dict | None = None):
+           ramps: dict | None = None, checks: dict | None = None):
+    """`checks` is the active style's `Style.checks` dict (a `style_bible.yaml`
+    `checks:` block) -- today, only `albedo_l_floor`/`albedo_l_ceil`/
+    `albedo_l_target` are read from it, falling back to `cozy_ghibli`'s own
+    values (this module's `ALBEDO_L_*` constants) when a key, or the whole
+    dict, is absent. `cozy_ghibli`'s own `checks:` is empty on purpose, so
+    passing `checks=None` (every caller before this) or `checks={}` behaves
+    identically to before this parameter existed."""
     ramps = ramps or load_palette()
+    checks = checks or {}
+    floor = checks.get("albedo_l_floor", ALBEDO_L_FLOOR)
+    ceil = checks.get("albedo_l_ceil", ALBEDO_L_CEIL)
+    target = checks.get("albedo_l_target", ALBEDO_L_TARGET)
     mesh = load_obj(obj, default_material="__unbound__")
     colours = read_mtl(mtl) if mtl else {}
     if not colours:
@@ -702,7 +767,7 @@ def ingest(obj: Path | str, mtl: Path | str | None = None, up: str = "z",
     # and a name survives a rebind in a way an averaged triangle colour does
     # not, so it wins wherever both exist.
     if not colours and mesh.vcolors and len(mesh.vcolors) == len(mesh.verts):
-        mesh, hist, worst = bind_vertex_colours(mesh, ramps)
+        mesh, hist, worst = bind_vertex_colours(mesh, ramps, target=target)
         warns = []
         if worst > MAX_BIND_DE:
             warns.append(f"worst vertex-colour bind is dE {worst:.3f} "
@@ -710,12 +775,12 @@ def ingest(obj: Path | str, mtl: Path | str | None = None, up: str = "z",
                          f"contain some of this mesh's colour, so that part "
                          f"is replacement rather than representation")
         table = sorted((m, f"{n} faces", d) for m, (n, d) in hist.items())
-        warns += check_albedo_centre(mesh, ramps)
+        warns += check_albedo_centre(mesh, ramps, floor=floor, ceil=ceil)
         return mesh, {"geometry": geom, "bindings": table, "warnings": warns,
                       "worst_bind_de": worst}
 
     mesh, table, warns = rebind(mesh, colours, ramps)
-    warns += check_albedo_centre(mesh, ramps)
+    warns += check_albedo_centre(mesh, ramps, floor=floor, ceil=ceil)
     worst = max((d for _, _, d in table), default=0.0)
     return mesh, {"geometry": geom, "bindings": table, "warnings": warns,
                   "worst_bind_de": worst}
@@ -733,9 +798,10 @@ def main() -> int:
     ap.add_argument("-o", "--out")
     args = ap.parse_args()
 
-    ramps = load_palette(load_style(args.style).palette_path)
+    active = load_style(args.style)
+    ramps = load_palette(active.palette_path)
     mesh, report = ingest(args.obj, args.mtl, args.up, args.height,
-                          args.footprint, ramps=ramps)
+                          args.footprint, ramps=ramps, checks=active.checks)
     g = report["geometry"]
     print(f"{len(mesh.verts)} verts, {len(mesh.faces)} tris")
     print(f"  scaled x{g['scale']:.4f} -> height {g['height']:.3f}, "
