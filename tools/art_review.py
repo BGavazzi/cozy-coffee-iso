@@ -920,7 +920,14 @@ def review_library(floor_px=MIN_MEMBER_PX):
         out += check_member_thickness(mesh, fn_name, floor_px=floor_px,
                                       span=span, centre=centre,
                                       azimuths=ship_azimuths)
-    out += check_buried_detail(assets)
+    # Same reasoning as check_member_thickness above, and check_buried_
+    # detail's own docstring already names it: "pass all eight for anything
+    # that ships as a rotating sprite," which every one of these assets
+    # does. The default single view is sized for the room composite these
+    # assets do not actually ship through (see check_member_thickness's
+    # docstring for why that path was confirmed to be a QA tool, not the
+    # shipped one).
+    out += check_buried_detail(assets, azimuths=ship_azimuths)
     return out
 
 

@@ -5358,3 +5358,54 @@ and `member-thickness-single-azimuth` as separate PRs will conflict, since
 both rewrite the same function body differently. This branch is the version
 that has both fixes verified together; the standalone azimuth PR is now
 redundant with it but is left standing for him to close or not.
+
+## `review_library()`'s other half had the same unfinished reconciliation, and finishing it found 4 real defects
+
+Auditing what else touches `review_library()` (the function both fixes above
+edited) before calling this branch done found the same shape of loose end
+one function over: `buried-detail-azimuth-coverage`, another already-open PR
+against this exact function, adds `azimuths=all_azimuths` to the
+`check_buried_detail(assets)` call at the bottom of `review_library()` --
+`check_buried_detail`'s own docstring already says "pass all eight for
+anything that ships as a rotating sprite," the identical lesson this
+branch's `check_member_thickness` fix just re-derived independently for its
+neighbour in the same function. This branch's `review_library()` still
+called `check_buried_detail(assets)` bare, so it would conflict with that
+PR the same way it conflicted with `member-thickness-single-azimuth` --
+completed it here rather than leaving a second half-reconciled function.
+
+`review_library()` already computes `ship_azimuths` for the member-thickness
+call (added this branch, this session); reused it for `check_buried_detail`
+rather than recomputing a second local list.
+
+**This one was not cosmetic.** Before: 6 `check_buried_detail` findings
+(`bean_hopper`, `drip_brewer`, `lamp_table`, `pourover_stand`,
+`sandwich_board`, `tip_jar`), all still present after. After: 10 -- 4 new,
+real defects invisible at the single azimuth this check has always run at:
+`bookshelf`, `chair`, `menu_board`, `wall_art_framed`. Spot-verified `chair`
+by hand (`front_facing` per azimuth, not trusted from the aggregate number):
+25.0% buried at azimuth 45 alone (the check's old default, passes clean
+against the 30% floor) but the geometry the check pools across all 8 real
+ship azimuths lands at 30.6%, rounding to the 31% the check now reports --
+a real object whose occluded-detail share crosses the floor only once every
+angle it actually ships at is counted, not at the one angle it used to be
+judged by.
+
+**Verified end to end, both styles.** `manifest.py --check` warnings rise by
+exactly 4 under both `--style cozy_ghibli` (8->12) and `--style snes_rpg`
+(7->11), error counts unchanged in both -- matching the 4 new `check_buried_
+detail` lines precisely, nothing else moving.
+
+**Cost, updated honestly:** `manifest.py --check` now runs ~4m10s per style
+(`check_buried_detail` went from checking each asset at 1 azimuth to 8, on
+top of `check_member_thickness`'s own 8x from the prior commit). Slower, and
+still a command meant to be run by hand or in CI, not per-request -- the
+same tradeoff already accepted for the scale/azimuth fix above, now paid
+twice in the same function for a check that was genuinely missing real
+coverage both times.
+
+**Same reconciliation note as above, not repeated in full:**
+`buried-detail-azimuth-coverage` remains open and is NOT closed by this
+commit. Merging it separately against this branch will conflict on the same
+line this branch already rewrote; this branch's version has both fixes
+verified together.
