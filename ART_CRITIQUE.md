@@ -9467,3 +9467,83 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## `pastry_case`'s height was the one lever `ACCEPTED_BURIAL` left standing, and it was drawn too narrow to use it
+
+`pastry_case` was one of the original generators `check_generator_range`
+left failing, deliberately, at an axis-aligned azimuth: 3.0-3.1% at
+90/360, under the 4.5% pair floor. `pastry_case` is also already in
+`art_review.ACCEPTED_BURIAL` for a DIFFERENT check (`check_buried_detail`),
+with the reason "a lidded display case has an interior its top pane
+covers". Checked directly whether that was the same mechanism rather than
+assuming it from the similar wording -- it is.
+
+**Traced, not assumed.** The closest pair at azimuth 180 was seeds 3 (a
+3-pastry, single-tier case) and 8 (4-pastry, single-tier) -- a real,
+visible-from-some-angles difference in pastry count, confirmed by rendering
+both at azimuth 45, where the interior is plainly different. At azimuth 180
+(looking straight down the case's narrow 0.8m end) the two render within
+3% of each other, confirmed by rendering: both show the same plain side
+profile, no pastries visible at all. The mechanism: this renderer has no
+transparency (`pastry_case`'s own comment already says so, for a different
+reason -- the front pane is left open rather than glazed specifically
+because "this renderer has no transparency"), so the case's own GLASS side
+panels are opaque to the z-buffer exactly like wood would be. Every pastry,
+mullion, and tier is behind that panel or the solid WOOD back from this
+one axis, so nothing about the seed's own interior choices can reach the
+silhouette there -- the exact fact `ACCEPTED_BURIAL["pastry_case"]` already
+names for a different check, confirmed here to gate this one too.
+
+**The lever that isn't occluded: overall height.** `carcass`/`top` are
+`rnd()`-drawn continuous deltas that set the case's outer silhouette --
+never hidden behind anything, from any azimuth, the same "outer boundary is
+the only thing a flat single-material check can see" fact `table_communal`'s
+own fix (`table_communal`'s carcass fixed for real", above) already used.
+Confirmed by isolated test: sweeping the full drawn range end to end changed
+26% of covered pixels at azimuth 180. But `rnd()` drawing 8 seeds from that
+range still put two of them (3 and 8) only 2.4cm of carcass height apart --
+the same small-sample coincidence this file has now hit four times
+(`bookshelf`, `bench`, `table_communal`, this one).
+
+**First attempt at the fix measured wrong, the same discipline the last
+three fixes held to.** Replacing the `rnd()` draw with the bijective slot
+(`(seed * 3) % 8`, proven three times over) at the ORIGINAL 0.14 draw range
+evenly spread the eight heights, but the step BETWEEN ADJACENT slots is
+1/7 of whatever range it spans -- at 0.14 that step alone measured 3.7% at
+azimuth 180, still under the 4.5% floor. Spreading a too-small range evenly
+does not add range; it just relocates the near-miss from whichever two
+seeds `rnd()` happened to land close together onto whichever two seeds are
+now adjacent in slot order. Widened the range to 0.20 (measured: the
+adjacent-slot step alone now clears 8.2%) rather than hand-tuning either
+the range or the seed pairing to the specific pair that failed.
+
+**Verified:**
+- `check_generator_range()`: `pastry_case` no longer appears in the failure
+  list (was failing on the closest-pair floor at azimuth 180/360 under the
+  widened sweep). The live single-azimuth default already passed before
+  this fix and still does, with a wider margin (mean 22.3% -> 29.9%,
+  closest pair 7.6% -> 13.9% at azimuth 45).
+- Full 8-azimuth sweep: azimuth 180/360's closest pair improved 3.0-3.1% ->
+  6.3-6.4%, clearing the 4.5% floor. All eight azimuths now pass.
+- `review_library()` (which runs `check_buried_detail`, the check
+  `ACCEPTED_BURIAL["pastry_case"]` was written for) reports the same 10
+  findings before and after, `pastry_case` in neither list -- this fix
+  changes the case's outer height, not its interior occlusion share, and
+  did not disturb the existing allowlisted exemption.
+- Full test suite (40 tests) passes unchanged.
+- Visual inspection by eye: the tallest and shortest drawn cases (seeds 5
+  and 8, the new range's extremes) both still read as proportionate
+  display cases, not stretched or broken -- proof images `pastry_case_
+  before_seed4_az180.png` / `_before_seed7_az180.png` (near-identical,
+  pre-fix) against `_after_seed4_az180.png` / `_after_seed7_az180.png`
+  (visibly different heights, post-fix).
+
+**Not touched, and does not need to be:** pastry count/layout and the
+second-tier decision stay `rnd()`-drawn exactly as before. They are the
+richer, more interesting variety this generator has, and they were never
+the problem -- they are simply invisible from this one axis, which is a
+fact about the camera and the renderer's lack of transparency, not about
+the generator. Making them ALSO bijective would not move this azimuth's
+number at all, confirmed by the isolated foot-height/stretcher tests in
+`table_communal`'s own fix: geometry entirely behind an opaque panel
+contributes zero pixels regardless of how it is chosen.
