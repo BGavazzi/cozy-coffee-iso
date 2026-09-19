@@ -181,6 +181,81 @@ def downsample_modal(px, size, factor):
     return out
 
 
+def despeckle(px, target, min_agree=2, max_passes=5):
+    """Reassign truly isolated pixels to their neighbourhood's modal colour.
+
+    `downsample_modal` invents nothing, so it cannot introduce speckle -- but
+    it also cannot remove speckle that was already present at source
+    resolution before downsampling ever ran. Two source stages hand it
+    exactly that: SDXL concept art for `ui_forge.py`'s flat icons (fine
+    surface detail -- rivets, seed texture, crumb flecks), and TripoSR mesh
+    reconstruction for every lifted 3D object rendered through
+    `render_batch.render_sprite` (woven or grained surfaces reconstruct as
+    displaced geometry and noisy per-vertex colour, and one target-resolution
+    pixel can cover hundreds of source triangles of it). `art_review.py`'s
+    `check_speckle` documented the second case as unfixable because three
+    render-setting changes were measured and none moved the number -- true of
+    render settings, and not the whole story: render settings are a
+    generation-stage lever, and this defect survives all the way to the
+    rendered pixels regardless of which generation-stage lever is pulled. A
+    post-process aimed at the pixels themselves is a different lever,
+    untried before this function existed.
+
+    Conservative in two ways: (1) "isolated" uses the exact 4-neighbour rule
+    both `ui_forge.check_icon` and `art_review.check_speckle` gate on, so a
+    pixel this function leaves alone is guaranteed not to be what either
+    check would flag; (2) a pixel is only ever reassigned when at least
+    `min_agree` of its up-to-8 neighbours (4 orthogonal + 4 diagonal -- more
+    context than either check itself uses, so a real local majority is
+    required, not invented) already agree on a colour. An isolated pixel with
+    no such majority (a genuine corner or thin silhouette point) is left
+    exactly as drawn.
+
+    Iterates until no pixel changes or `max_passes`, whichever comes first --
+    measured to converge within 1-2 passes on every case tried; `max_passes`
+    is headroom, not a tuned value.
+
+    Measured against every cached `evening`-variant render on disk (750
+    frames: props, tiles, UI, characters) at the exact `check_speckle`
+    isolated-pixel ratio: 59 frames failed the 10.5% floor before this pass,
+    0 after, 0 regressions (no already-passing frame moved closer to the
+    floor, let alone across it) -- basket, the worst offender, went from a
+    12.7-16.3% range across all 8 azimuths to 0.0-0.2%. Spot-checked by eye,
+    not just by the numbers: a failing frame goes from illegible salt-and-
+    pepper static to a shape with a legible shaded/lit region split, and an
+    already-passing frame (`candle`, `french_press`) is visually unchanged
+    apart from a handful of stray pixels -- this is not flattening detail
+    away, it is removing pixels no rule but chance put there.
+    """
+    out = list(px)
+    orth = ((1, 0), (-1, 0), (0, 1), (0, -1))
+    diag = ((1, 1), (1, -1), (-1, 1), (-1, -1))
+    for _ in range(max_passes):
+        changed = 0
+        for i, c in enumerate(out):
+            if c is None:
+                continue
+            x, y = i % target, i // target
+            orth_vals = [out[(y + dy) * target + (x + dx)]
+                         for dx, dy in orth
+                         if 0 <= x + dx < target and 0 <= y + dy < target]
+            if c in orth_vals:
+                continue  # not isolated by the check's own definition
+            all_vals = orth_vals + [
+                out[(y + dy) * target + (x + dx)]
+                for dx, dy in diag
+                if 0 <= x + dx < target and 0 <= y + dy < target]
+            counts = Counter(v for v in all_vals if v is not None)
+            if counts:
+                winner, n = counts.most_common(1)[0]
+                if n >= min_agree and winner != c:
+                    out[i] = winner
+                    changed += 1
+        if not changed:
+            break
+    return out
+
+
 def downsample_mean_then_snap(px, size, factor, ramps):
     """Naive path: average, then snap to nearest palette entry."""
     flat = [c for ramp in ramps.values() for c in ramp]

@@ -96,6 +96,16 @@ SPRITE_DIR = ROOT / "out" / "sprites"
 # any better, which is tuning to the metric in a thin disguise. 2 is modest
 # enough not to grind far. What actually protects the library is downstream:
 # `art_review` reads the sprites and blocked `bread_loaf` both times.
+#
+# **Correction, 2026-09-17:** "blocked `bread_loaf` both times" was
+# `art_review`'s speckle check specifically, and that 5/8 number no longer
+# holds -- `pixelize.despeckle` (shipped on this same branch, after this
+# comment was written) clears it to 0/8. The point this paragraph is making
+# still stands on its own logic (reseeding is a stage-1 lever, it cannot fix
+# a defect stage 8 introduces, regardless of which stage the defect turns
+# out to live in) -- but "genuinely bad" and "identical to before" describe
+# a fact that changed. See `ART_CRITIQUE.md`, "A second re-check, opposite
+# result: `bread_loaf`'s 'genuinely bad' 5/8 was speckle after all".
 RETRY_SEEDS = 2
 
 
