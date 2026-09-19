@@ -5447,6 +5447,67 @@ accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
 
+## Four more candidates checked this hour -- one already fixed on an open branch, three genuinely clean
+
+**`character.py`'s `check_waistline`/`check_spec_coverage`.** Both looked
+like plausible single-config-blindness candidates going in. Neither is:
+`check_waistline(ramps, roster=None)` takes `ramps` as a required positional
+(cannot be called bare) and `manifest.py` runs it twice -- once against the
+fixed `ROSTER` (`manifest.py:383`) and once against a 12-seed generated
+extras cast (`manifest.py:405-408`, `_c.check_waistline(ramps, _extras)`) --
+so the generated population this session's other bugs have hidden behind
+(`check_generator_range`'s `counter`, `check_spec_coverage`'s own `skin`/
+`blush` history) is already inside this check's real coverage, not outside
+it. `check_spec_coverage` is correctly `ramps=ramps` threaded at its own
+call site (`manifest.py:398`). Read, not run -- no new numbers, no fix.
+
+**`organic_rig.py`'s `check_roster`/`check_eyes_visible`/
+`check_direction_stability` wiring into `manifest.py --check`.** This is
+exactly the shape of gap this session hunts -- `snes_rpg`'s real shipped
+characters come from `organic_rig.py`, not `character.py`'s box/prism rig,
+so if `manifest.py --check --style snes_rpg` never called the former, its
+own character-roster gate would be checking a non-shipping producer while
+the real one went unverified. Checked whether that's still true on `main`:
+it isn't, on a branch already in flight. `gh pr view 101` names its own
+branch `manifest-check-missing-organic-rig`, and `git show` on it confirms
+`organic_rig.check_roster`/`check_eyes_visible`/`check_direction_stability`
+are already wired in, gated on `rig.primitive == cylinder_sphere`. Hour 50's
+own memory entry undersold this PR as "gated the box/prism checks off" --
+it did that too, but the organic-rig wiring is the larger, already-complete
+half. Nothing new to ship; re-confirmed via the actual diff, not the
+one-line summary.
+
+**`palette_forge.py`'s `check_separation`, run live, both styles.**
+Unconditional in `palette_forge.py main()` (`palette_forge.py:465`) --
+every real palette build already self-checks this, no `--proof`-style gate.
+Ran fresh for real numbers rather than trusting that:
+
+```
+python tools/palette_forge.py --style cozy_ghibli
+  closest palettes base/golden_hour at 0.0358 (floor 0.035)
+  all constraints pass; 4 variants
+
+python tools/palette_forge.py --style snes_rpg
+  closest palettes evening/overcast at 0.0471 (floor 0.035)
+  all constraints pass; 4 variants
+```
+
+`cozy_ghibli`'s base/golden_hour pair sits 0.0008 above the floor -- a real
+near-miss, but not a new one: the check's own docstring already names this
+exact case and value ("`golden_hour` sits just over it at 0.0358 by design,
+because late afternoon is meant to be a warm reading of the base palette
+rather than a different world"). Measured value matches the documented one
+exactly; nothing drifted.
+
+**`animate.py`'s `check_direction_labels`.** Self-verifying by
+construction -- re-derives the `DIRECTIONS` tuple from the camera basis and
+compares, no seed or style axis to under-test. Ran it directly: `[]`, clean.
+
+**Finding: no new live bug this hour.** One candidate (`organic_rig.py`
+wiring) turned out to already be fixed on an open, unmerged PR rather than
+still-open ground; the other three are correctly built and currently
+passing with real numbers behind them. Honest null result.
+
 ## `furnish.py`'s `check_distinct`, rebuilt from scratch for the whole real library, both styles -- clean, and by a structure that can't have the `counter`-shaped bug
 
 Started this hour on `ingest.py`'s `check_roundtrip` -- `manifest.py:458`
