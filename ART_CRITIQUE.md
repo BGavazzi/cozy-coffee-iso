@@ -5447,6 +5447,71 @@ accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
 
+## Following up on the last two hours' bug shapes elsewhere in the codebase -- five checked, all clean
+
+The last two hours found real problems by asking two specific questions
+that hadn't been asked of most of the codebase yet: "do two producers
+silently compete for the same output path" (`ui_forge.py`/`ui_chrome.py`,
+the previous section) and "does a check's pass actually match what ships,
+or only what the check's own author assumed ships" (`organic_rig.py`, two
+sections up). Applied both questions to five more files this hour rather
+than re-reading either finding as closed. No new bug -- an honest null
+result, but a real one, five real sub-investigations deep rather than a
+skim.
+
+**`bitmap_font.py`: is the cap-height axis tested the way the weight axis
+already was found to be (Hour 56)?** Checked directly rather than assuming
+symmetry between the two axes. It is, and better: `SIZES = (7, 9, 11, 13)`
+is explicitly derived from `survey(lo=5, hi=20)` sweeping every cap in that
+range through the full `check()` suite, and `--check` reprints the sweep
+and hard-fails if `SIZES` ever claims a cap the sweep doesn't actually
+pass -- the claim is self-verifying on every run, not asserted once and
+trusted. `check_render` (the pixel-level check, `px`/`w`/`h`) is called
+against the real written sheet for every one of the four shipped sizes
+inside `main()`'s own build loop, with `args.style` threaded through --
+confirmed by reading the call site, not inferred from the function
+signature.
+
+**`palette_swap.py`: does its variant output collide with any base
+producer's own path, the same shape as the `ui_forge`/`ui_chrome` bug?** It
+doesn't, by construction: `swap()` writes into `out/variants/<name>/`, a
+namespace no base producer (`furnish.py`, `ui_chrome.py`, `ui_forge.py`,
+`tileset.py`, `animate.py`) ever writes into, sibling to but disjoint from
+`out/sprites/`, `out/ui/`, `out/tiles/`, `sprites/`. This file's own module
+docstring also already documents, in detail, the exact multi-convention
+directory mess (`out/sprites/<style>/` vs `out/ui_<style>/` vs `out/ui/
+<style>/` vs `out/tiles_<style>/`) that made the `ui_forge`/`ui_chrome`
+collision possible in the first place, and already guards its own
+traversal against it (`sources_for()`'s `skip` sets) -- the file that would
+have been most likely to repeat this bug is the one that already
+diagnosed and fixed the general problem, for itself, before this session
+started.
+
+**`review_queue.py`: same style-threading question this session has hunted
+all along.** `build()`'s `load_palette(load_style(style).palette_path)`
+call is already correctly threaded, and its own comment names the exact
+Hour-25-class bug (`art_review.py`'s pre-PR-#31 bare `load_palette()`) it
+was written not to repeat. `check_direction_set` is geometry-plus-pixel
+(consistent key-light direction across a real direction set), no separate
+"tested config" to drift from a "shipped config" -- it grades whatever
+`records` it's handed.
+
+**`character.py`'s `_palette()` fallback**: a lazy, call-time default
+(`ramps or _palette()`), the same "sentinel-resolved-at-call-time" idiom
+this repo already committed to for exactly this reason (NEXT.md, PR #38).
+Confirmed the real call site that matters (`manifest.py`'s
+`generate_roster(12, seed=1, ramps=ramps)`, already audited Hour 60) passes
+`ramps` explicitly, so `_palette()`'s hardcoded `cozy_ghibli` default is
+never actually reached from the style-aware pipeline.
+
+**`fx.py`'s `check_loops`**: re-confirmed pure-geometry, no ramp or camera
+argument anywhere in its signature or body -- structurally cannot carry the
+cross-style-blindness bug class by construction, same conclusion Hour 56
+already reached, re-verified by reading the current function rather than
+trusting the earlier note.
+
+No code changes. Doc-only, same as every other hour this map stayed clean.
+
 ## Self-correction: "organic_rig.py is what actually ships" doesn't mean what this session's own memory took it to mean
 
 Not a bug in the repo -- a precision failure in how this hourly loop's own
