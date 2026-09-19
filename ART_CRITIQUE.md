@@ -5224,3 +5224,58 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## Checked whether Hour 61's eye-collision bug generalizes further -- it doesn't; `concept.py`'s `check_concept_fitness` run live against real cached data -- clean
+
+**Does the `hair_mat == EYE` collision reach further than `reader`?** Two
+angles, both closed. First: does `portrait.py` ever build a bust for a
+GENERATED character (where the proposal loop could draw the same collision
+by chance, same as `check_spec_coverage`'s own generated-extras concern)?
+Grepped every caller in the repo -- nothing outside `portrait.py` itself
+calls `build()`/`check()`, and neither of those ever calls
+`generate_roster`/`generate_spec`. Portraits are only ever built for the 9
+named `ROSTER` members; there's no generated population for this collision
+to hide in. Second: does `organic_rig.py`'s own roster (the one whose
+`check_eyes_visible` originally caught `archivist`) have another live
+instance? Ran all three of its checks fresh: `check_roster`,
+`check_eyes_visible`, `check_direction_stability` -- all `[]`. All four of
+its roster members (`scout`, `archivist`, `drifter`, `smith`) already carry
+`hair_mat="wood-4"`, not `EYE`'s own material. Nothing left to fix on either
+rig for this bug shape.
+
+**Pivoted to `concept.py`'s `check_concept_fitness`, untouched this session.**
+Unlike `ui_forge.py`'s icon gate, this one doesn't need SDXL to evaluate --
+it grades an already-matted PNG on disk (alpha-band width, fill fraction,
+edge-crop, second-blob size), so the 32 real cached, non-adversarial
+concept images in `out/concept/` (confirmed real production output, not a
+test fixture) are genuine testable ground. Ran it fresh against all of them
+(one, `teapot_1.png`, has no alpha channel and would need `rembg` to re-matte
+-- not installed in this environment, skipped, same shape of gap as
+`torch`/SDXL elsewhere):
+
+```
+32 testable images -> 0 problems
+```
+
+Also swept `out/kind_test/`, `out/neg_test/`, `out/probe_style/`,
+`out/final_test/` (26 more testable images) for completeness -- 19 problems
+surfaced there, but every one is a deliberately adversarial fixture by its
+own filename (`mario_plus_NEG_BASE`, `basket_plus_anti-collage`,
+`style_probe_basket_dir2` cropped at the frame edge on purpose) left over
+from the check's own development, described in its own docstring as the
+"C1 31-subject set" calibration study -- these are expected failures that
+prove the check still correctly rejects bad input, not live defects.
+
+`check_concept_fitness` also has no `ramps`/style parameter at all (pure
+alpha-channel and blob geometry on a 2D image) and no azimuth -- structurally
+immune to both of this session's two established bug shapes by construction,
+the same way `check_direction_labels` (Hour 60) and `check_distinct`
+(Hour 59) are. Called from three real production sites (`concept.py`'s own
+`main()`, `concept_ui.py`'s GUI, and `factory.py`'s actual generation loop,
+`factory.py:188/198`) -- genuinely load-bearing, not dead code.
+
+**Finding: no new live bug this hour.** Both follow-ups to Hour 61's fix
+closed cleanly (no generalization, nothing left on either rig), and
+`check_concept_fitness` -- heavily used, never individually audited before
+this session -- passes clean against every real, non-adversarial cached
+image available to test it with. Honest null result.
