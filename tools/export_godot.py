@@ -253,11 +253,26 @@ def check_font_layout(godot_bin: Path, build: dict,
     narrow and wide extremes, so a font that silently fell back to a monospaced
     cell would give them the same width; 'A B C' is the only one that exercises
     the space glyph; 'gjpqy' is all descenders.
+
+    The "bitmap_font says" side used to be `bitmap_font.measure(text, cap)`,
+    which recomputes each glyph's advance from scratch at `weight`'s default
+    of 1 -- silently ignoring whatever weight the font actually being checked
+    was built at. Nothing in this repo passes `--weight` other than 1 today
+    (confirmed: no call site, no style bible key), so this never diverged in
+    practice, but it's a real latent gap, not a hypothetical one -- measured
+    directly against real built fonts: at weight 1 (today's only real
+    setting) `measure()` matches the true advance on all 32 comparisons
+    (4 cap sizes x 8 sample strings); at weight 2, all 32 diverge, under-
+    reporting every string by 4-10px depending on cap size.
+    `build["font"]["sizes"][cap]["glyphs"]` already carries the real,
+    weight-correct per-glyph advance `atlas()` baked in at build time (the
+    same numbers `stage_font()` passes through into the `.tres` Godot just
+    measured) -- reading THAT instead of recomputing it is both the fix and
+    a simplification: one fewer place the check's number can drift from what
+    was actually shipped.
     """
     if not build.get("font", {}).get("sizes"):
         return []
-    sys.path.insert(0, str(ROOT / "tools"))
-    import bitmap_font
 
     cmd = [str(godot_bin), "--headless", "--path", str(project_dir),
            "--script", "verify_font.gd"]
@@ -272,8 +287,10 @@ def check_font_layout(godot_bin: Path, build: dict,
     checked = 0
     for cap_s, widths in json.loads(line[len(tag):]).items():
         cap = int(cap_s)
+        glyphs = build["font"]["sizes"].get(cap_s, {}).get("glyphs", {})
+        fallback = glyphs.get("?", {"advance": 0})
         for text, godot_w in widths.items():
-            mine = bitmap_font.measure(text, cap)[0]
+            mine = sum(glyphs.get(ch, fallback)["advance"] for ch in text)
             checked += 1
             if abs(godot_w - mine) > 0.5:
                 out.append(f"cap {cap}: Godot lays {text!r} out {godot_w:g}px "
