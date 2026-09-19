@@ -22,15 +22,19 @@ three items, all real:
   Deliberately not "fixed" -- a rig boosted until the metric agreed would be a
   knob rather than a cause. Do not attempt to close this one; it is recorded
   as an accepted, understood gap, not a bug.
-- **The galley topology fails `manifest.py --check`'s composition test on 3 of
-  3 occurrences (100%)**, under both style packs. Not new -- commit
-  `71451c3`'s own message already measured this at n=40 and explicitly
-  declined to fix it (galley's focal box spans the room's full depth, so its
-  detail/mean-L reads low by the same box-size mechanism the closed corner
-  case named, just more severe). Never surfaced into `ART_CRITIQUE.md`'s prose
-  until now -- see "A real, already-measured galley finding was never folded
-  out of its own commit message". Do not loosen `MIN_FOCAL_L`/
-  `MIN_FOCAL_DETAIL` to admit it; that would tune the floor to the answer.
+- **Mostly closed 2026-09-19, unmerged
+  (`galley-focal-box-was-one-box-for-two-counters`):** the galley topology's
+  3-of-3 `check_focal_contrast` composition failures, blamed here on the
+  focal box's *size*, were actually caused by its *shape* -- one union box
+  spanning a galley's two opposite-wall counters scores the aisle between
+  them as focal region. Splitting it into one box per counter (byte-identical
+  for every other topology) clears 2 of the 3 occurrences outright and both
+  style packs' `manifest.py --check` no longer report any galley line. The
+  third occurrence still misses the detail floor narrowly (-0.002 against
+  0.000), for a different, real reason confirmed by eye -- see
+  `ART_CRITIQUE.md`, "The galley composition failure... had an untried lever
+  after all -- the box, not the floor". Still true for what remains: do not
+  loosen `MIN_FOCAL_L`/`MIN_FOCAL_DETAIL` to admit it.
 
 **Closed 2026-09-15: the UI icon speckle gate.** The earlier claim here (4 of
 20 `cat: ui` icons failing the speckle gate under both styles, unfixable by
@@ -522,6 +526,23 @@ instead (the `galley-multicounter` PR, not yet folded into
   and one bare one" — `check_built_rooms`-equivalent checks (collisions,
   grounded, seating-faces-tables, screen occlusion) are clean across all 13
   galley seeds found in the first 400.
+
+  **Mostly closed, on the `galley-focal-box-was-one-box-for-two-counters`
+  branch (unmerged):** "box size" above was the right symptom, wrong
+  mechanism — it isn't that the union box is big, it's that its middle
+  third is the aisle between two opposite-wall counters, real floor scored
+  as focal region. Splitting `focal_box()` into one box per counter
+  (clustered by proximity; byte-identical for every other topology, checked
+  across 59 seeds) clears seeds 8 and 12 outright and moves seed 10's detail
+  reading from a clear miss (-0.042) to -0.002 against the 0.000 floor —
+  still failing, narrowly, for a genuine reason confirmed by eye: the wood
+  floor between the counters carries real plank-seam detail of its own. Both
+  styles' `manifest.py --check` lose their galley composition lines entirely
+  (the suite's one-per-topology sample is seed 8, which now passes clean).
+  See `ART_CRITIQUE.md`, "The galley composition failure... had an untried
+  lever after all -- the box, not the floor" for full numbers. Same
+  reasoning as above still applies to what's left: do not loosen the floor
+  for seed 10's -0.002.
 
 Kept below as a record, not an open queue. Read `ART_CRITIQUE.md`'s final
 "Still open" section before touching anything that produces art — it is a

@@ -360,24 +360,35 @@ def focal_report(px, target, cam, centre, span, box=None):
     the wrong instrument -- darkening a corner ADDS ramp transitions there, so a
     deliberate vignette scored as detail and the "focal peak" landed in an empty
     corner.
+
+    `box` is a LIST of world-space boxes, one per counter -- `focal_box()`
+    returns one per run rather than a single box unioning all of them, for
+    the reason recorded there (a galley's two runs are on opposite walls;
+    one bounding box between them is mostly aisle). A pixel counts as
+    "inside" if it falls in any counter's projected hull, so a multi-run
+    plan grades on the union of its real counters, not the rectangle that
+    happens to contain them all.
     """
     from oklab import srgb_to_oklab
-    (ax, bx), (ay, by), (az, bz) = box or FOCAL_BOX
-    us, vs = [], []
-    for x in (ax, bx):
-        for y in (ay, by):
-            for z in (az, bz):
-                p = (x, y, z)
-                us.append(dot(p, cam.right) - dot(centre, cam.right))
-                vs.append(dot(p, cam.up) - dot(centre, cam.up))
-    def to_px(u, v):
-        # `px` is the full target x target buffer, before the crop-to-content
-        # step. Subtracting the crop origin here shifted the rect off the
-        # counter entirely and produced a contrast of exactly 0.000 -- a number
-        # a real region cannot have, and the tell that the box was degenerate.
-        return ((u / span * 0.5 + 0.5) * target,
-                (0.5 - v / span * 0.5) * target)
-    pts = [to_px(u, v) for u, v in zip(us, vs)]
+    boxes = box if box else [FOCAL_BOX]
+
+    def project(b):
+        (ax, bx), (ay, by), (az, bz) = b
+        us, vs = [], []
+        for x in (ax, bx):
+            for y in (ay, by):
+                for z in (az, bz):
+                    p = (x, y, z)
+                    us.append(dot(p, cam.right) - dot(centre, cam.right))
+                    vs.append(dot(p, cam.up) - dot(centre, cam.up))
+        def to_px(u, v):
+            # `px` is the full target x target buffer, before the crop-to-content
+            # step. Subtracting the crop origin here shifted the rect off the
+            # counter entirely and produced a contrast of exactly 0.000 -- a number
+            # a real region cannot have, and the tell that the box was degenerate.
+            return ((u / span * 0.5 + 0.5) * target,
+                    (0.5 - v / span * 0.5) * target)
+        return [to_px(u, v) for u, v in zip(us, vs)]
 
     # The eight corners of a world-space box project to a HEXAGON, not to a
     # rectangle, and taking their axis-aligned bounding box was grading a
@@ -388,7 +399,7 @@ def focal_report(px, target, cam, centre, span, box=None):
     # answer in a known direction; it just makes the instrument deaf, and the
     # first sign of that was a contrast floor that had to be set NEGATIVE to
     # let real rooms through.
-    hull = _convex_hull(pts)
+    hulls = [_convex_hull(project(b)) for b in boxes]
 
     w = target
     def stats(pred):
@@ -400,7 +411,8 @@ def focal_report(px, target, cam, centre, span, box=None):
         return (sum(Ls) / len(Ls),
                 Ls[int(len(Ls) * 0.95)] - Ls[int(len(Ls) * 0.05)])
 
-    inside = _in_hull(hull)
+    in_tests = [_in_hull(h) for h in hulls]
+    inside = lambda x, y: any(t(x, y) for t in in_tests)
     n_in = sum(1 for i, c in enumerate(px)
                if c is not None and inside(i % w, i // w))
     if n_in < 200:
