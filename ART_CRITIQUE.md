@@ -9467,3 +9467,63 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## PR cluster reconciliation: ten open branches, checked for real conflicts rather than assumed clean, and one genuine cross-PR interaction found
+
+Ten branches were open at once for the first time this session (`#128`
+through `#137`), all forked from the same point on `main` and all appending
+new sections to `ART_CRITIQUE.md`. Worth checking directly whether they
+would actually combine cleanly, the same discipline `table_communal` (PR
+#134) and `pastry_case` (PR #135) each already applied to their own
+predecessor open PRs, rather than assuming ten independent green
+`MERGEABLE` badges against `main` means they are mergeable *together*.
+
+**Merged all ten into one local, unpushed scratch branch, in PR order,
+resolving each conflict by hand rather than picking a side blindly.**
+Every single conflict was `ART_CRITIQUE.md`, and every one had the same
+shape: two sections independently appended right after the same anchor
+paragraph ("Same reconciliation note as above... verified together."),
+which is what forking from the same unmoved `main` guarantees. None were a
+real logical collision -- each pair of sections covers a different
+generator or a different check, so every conflict resolved to "keep both,
+in PR order," the mechanical case this shape predicts. `tools/assetlib.py`
+(touched by `#132`/`#133`/`#134`/`#135`) auto-merged with no conflicts at
+all in every case, because each branch edits a different generator
+function with no overlapping lines.
+
+**One pair was not mechanical, and is worth flagging on its own.**
+`tools/character.py` is touched by both `#130` (eyes were lambert-shaded,
+fixed by making `EYE` a flat 1-step spot colour instead of a shaded
+`neutral` offset) and `#137` (widening `EYE_LEGIBILITY_AZIMUTHS`). The file
+itself auto-merged with no conflict markers -- the two edits sit on
+different lines -- but the two fixes *interact*: `#137`'s own "13 new
+defects" count was measured against `#130`'s pre-fix `EYE` (`neutral-2`,
+lambert-shaded), not against `#130`'s fix. Re-ran `check_eye_legibility()`
+on the combined branch (both fixes applied together): **11 findings, not
+14.** `skin-4` at azimuth 225 (the original Hour 22 finding `#130` was
+written to fix) is gone entirely, as expected. Three of `#137`'s own 13 --
+`skin-4`/az180, `skin`/az315, and both `skin+1`/`skin+2` at az315 -- also
+close or partially close: a flat, unshaded eye colour cannot collide with
+a *lit* face the way a lambert-shaded one can, so several of the colour
+collisions `#137` found using the old shaded eye material stop being
+collisions once the eye stops shading at all. Eleven survive anyway
+(`skin-4`/`skin-3`/`skin-2`/`skin-1` at az0, the same four at az315,
+`skin`/`skin-4` at az180/315 with nonzero-but-still-under-floor gaps) -- a
+flat colour still has one fixed value, and for the darkest tones that
+value can sit close enough to their own shaded value at some angle
+regardless. Neither branch's own numbers were wrong on its own base; they
+were each measured against `main` in isolation, which is the correct and
+only way to verify a single PR, and is exactly why this combined check is
+worth doing once several land near each other.
+
+**Not a fix shipped here.** No code changed beyond what `#128`-`#137`
+already carry individually; this section exists so whoever merges this
+cluster knows the real combined `check_eye_legibility` count in advance
+(11, not 14 and not the sum of either alone) instead of discovering it
+after `#130` and `#137` land in some order and `manifest.py --check`'s
+count doesn't match either PR's own stated delta. Scratch branch used for
+this verification was local-only and not pushed; the ten source branches
+remain the real, individually reviewable units -- this is a compatibility
+report, not an eleventh feature.
+
+Full 40-test suite on the ten-way-merged state: 40 passed.
