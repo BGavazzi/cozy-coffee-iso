@@ -5447,6 +5447,56 @@ accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
 
+## Spot-checking the pre-Hour-58 part of the open-PR pile after Hour 69's discovery, plus two fresh candidates -- all clean
+
+Hour 69 found that PR #80's own commits are labelled "Hour 10/11 of the
+recurring audit" and carry this session's own session ID -- meaning a large
+early stretch of this same run (roughly Hour 1 through Hour 57) produced
+real, shipped PRs that fell out of context after compaction, and one of
+them (PR #80) had already fixed a bug this session rediscovered
+independently two hours ago. That makes the earlier part of the pile a real
+risk, not a curiosity, so this hour spot-checked three more early-numbered
+branches directly rather than assuming Hour 69 was the only collision.
+
+**PR #82 (`gates-catalog-organic-rig-roster`, "Hour 7")**: adds
+`organic_rig.py`'s three check functions to `gates.py`'s own catalog. Read
+in light of Hour 67's finding (`organic_rig.py`'s geometry never renders a
+real scene) to make sure the two didn't contradict each other -- they
+don't: PR #82 is about whether `gates.py --list` completely enumerates
+every `check_*` function that exists, which is orthogonal to whether the
+producer that check function grades is wired into content generation.
+`organic_rig.py` legitimately owns real, catalogued checks; it just doesn't
+own any shipped pixels yet. No overlap, no correction needed.
+
+**PR #84 (`docs-wicker-basket-collage-recheck`, "Hour 4")** and **PR #93
+(`symmetry-claims-style-blind`)**: both fully self-contained, both already
+verified and closed by their own commit messages (a stale collage-defect
+claim re-tested and found not reproducible; a bare `measured_symmetry()`
+call found style-blind and threaded, confirmed no live casualty on either
+style). Neither touches a file this session's later hours have shipped a
+fix to. No conflict, nothing to add.
+
+**Two fresh, unrelated candidates, checked for completeness rather than
+left unexamined because the pile-audit found nothing:**
+
+- `bitmap_font.py`'s glyph set (`GLYPHS`, 90 keys) covers full printable
+  ASCII, which sounds like a natural "is coverage tested against what
+  actually ships" question in this session's usual shape. It isn't a live
+  one: `grep -rn "label:\|display_name:" assets.yaml` and a search for any
+  strings/localization file both come back empty -- there is no real
+  in-game text content declared anywhere yet for a coverage check to grade
+  against. Structurally the same "no live casualty" shape as several
+  earlier findings this session, just for content that doesn't exist yet
+  rather than a code path that doesn't run yet.
+- `wall_trim`/`wall_trim_shadow` (the two bible keys added by `279d1a8`,
+  the commit that forced the style re-lock this file already documents):
+  confirmed `grep -rn "wall_trim\b" tools/*.py` returns exactly one consuming file,
+  `tileset.py`, already threaded call-time correctly (PR #38's
+  `make_wall_patterns(materials)` factory, verified clean Hour 57). No
+  second, parallel hardcoded reference anywhere else to drift from it.
+
+No code changes. Doc-only, real due diligence, nothing new to fix.
+
 ## Following up on the last two hours' bug shapes elsewhere in the codebase -- five checked, all clean
 
 The last two hours found real problems by asking two specific questions
