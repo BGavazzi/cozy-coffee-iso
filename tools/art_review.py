@@ -495,6 +495,7 @@ def check_member_thickness(mesh, name="asset", ppu=ROOM_PX_PER_UNIT,
     camera renders it as a small object adrift in mostly-empty space rather
     than filling its own sprite the way it actually ships.
 
+
     `centre` matters as much as `span` here, not just as a companion value:
     the fixed room-scale path's `target=(0.5, 0.5, 0.5)` assumes every asset
     sits centred in its own tile, which is only ever approximately true.
