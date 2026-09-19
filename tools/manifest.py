@@ -176,11 +176,17 @@ def check_ui(man: dict, active) -> list[str]:
     collapse to the same single `out/ui/`, which is why this is a strict
     generalisation of the old behaviour and not a change to it.
 
-    `ui_font` is left pointed at the one location `bitmap_font.py` can ever
-    write to (`out/ui/font/font.json`) regardless of `active`, because
-    `bitmap_font.py` has no `--style` flag at all yet -- a separate,
-    not-yet-started gap, the same category PR #24 left `check_ui` itself in
-    before #25/#36 closed it for the other two producers.
+    `ui_font` follows `ui_forge.py`'s own nested convention
+    (`out/ui/font/font.json`, or `out/ui/<style>/font/font.json` for a
+    non-default style) -- `bitmap_font.py` gained its own `--style` flag
+    the same day this function was first written, ten minutes after in the
+    same branch's history, and this one path was the one place that change
+    never reached: it stayed pointed at the default location regardless of
+    `active`, so `check_ui --style snes_rpg` was silently reading
+    `cozy_ghibli`'s own `font.json` (whichever one happened to exist) and
+    never once could report a missing or stale non-default font. See
+    ART_CRITIQUE.md, "`check_ui` was still checking the wrong style's font,
+    ten minutes after the fix that made it possible to".
     """
     from style import DEFAULT_STYLE
     base_ui_dir = ROOT / "out" / "ui"
@@ -211,16 +217,25 @@ def check_ui(man: dict, active) -> list[str]:
     # against its own index rather than against `out/ui/ui_font.png`, which
     # will never exist -- a glyph sheet is not an icon and does not live beside
     # them.
-    font_index = base_ui_dir / "font" / "font.json"
+    #
+    # Per-style, matching `bitmap_font.py`'s own `--out` default
+    # (`out/ui/font` for `cozy_ghibli`, `out/ui/<style>/font` otherwise) --
+    # `forge_dir` already resolves to exactly that directory for either
+    # case, so this reuses it rather than re-deriving the same path a
+    # second, divergeable way.
+    font_index = forge_dir / "font" / "font.json"
     if "ui_font" in declared:
         declared = [d for d in declared if d != "ui_font"]
         if not font_index.exists():
-            out.append("ui_font declared and no out/ui/font/font.json -- run "
-                       "tools/bitmap_font.py")
+            rel = font_index.relative_to(ROOT).as_posix()
+            style_flag = ("" if active.name == DEFAULT_STYLE
+                          else f" --style {active.name}")
+            out.append(f"ui_font declared and no {rel} -- run "
+                       f"tools/bitmap_font.py{style_flag}")
         else:
             meta = json.loads(font_index.read_text(encoding="utf-8"))
             gone = [e["file"] for e in meta.get("sizes", {}).values()
-                    if not (base_ui_dir / "font" / e["file"]).exists()]
+                    if not (forge_dir / "font" / e["file"]).exists()]
             if gone:
                 out.append(f"ui_font: font.json lists {len(gone)} sheet(s) "
                            f"with no PNG on disk: {', '.join(sorted(gone))}")
@@ -397,6 +412,15 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         # differ in shirt and trousers and hair and still be one face.
         for msg in _c.check_spec_coverage(ramps=ramps):
             errs.append(msg)
+        # And every direction a figure ships in has to stay a figure, not
+        # thin to a sliver. `character.py`'s own `main()` has always run this
+        # (it's how a two-pixel side view would be caught) but only against
+        # one hardcoded roster member, and `manifest.py --check` never called
+        # it at all -- the same "invisible to this command specifically" gap
+        # `check_contrast`'s comment above already names for a sibling check,
+        # just never closed for this one.
+        for msg in _c.check_direction_stability():
+            errs.append(msg)
         # The generated extras have to pass everything the hand-written roster
         # does. They are proposed against exactly these predicates, so a failure
         # here means the solver has stopped consulting one of them -- which is
@@ -405,7 +429,8 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         _extras = _c.generate_roster(12, seed=1, ramps=ramps)
         for msg in (_c.check_contrast(ramps, _extras)
                     + _c.check_palette_spread(_extras)
-                    + _c.check_waistline(ramps, _extras)):
+                    + _c.check_waistline(ramps, _extras)
+                    + _c.check_direction_stability(_extras)):
             errs.append(f"generated: {msg}")
         # And no two members of a cast may be the same person. The three checks
         # above are predicates on ONE spec; a generator can satisfy all three
@@ -440,8 +465,14 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
             warns.append(msg)
         # A generator that has quietly become a fixed mesh renders a room that
         # looks entirely fine, which is why this needs to be a check and not an
-        # eye on a contact sheet.
-        for msg in check_generator_range():
+        # eye on a contact sheet. Swept across all 8 azimuths furniture actually
+        # ships at -- the default single 45-degree pair check was its own best
+        # case (an axis-aligned face-on view hides a boxy base's far-side
+        # variety that a corner-on view shows), the same wiring gap Hour 15's
+        # `check_buried_detail` fix closed for a different check.
+        from isorender import AZIMUTH_STEP
+        all_azimuths = tuple(45.0 + k * AZIMUTH_STEP for k in range(8))
+        for msg in check_generator_range(pair_azimuths=all_azimuths):
             warns.append(msg)
         # Neither spread floor has ever fired on the current library, which
         # says the library is healthy and says nothing about whether the mean
@@ -504,7 +535,13 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
             errs.append(f"floorplan: {msg}")
         # And the rooms built from those plans. A plan is rectangles and a room
         # is meshes; the plan checks say nothing about whether filling one
-        # produces chairs that face their tables.
+        # produces chairs that face their tables. Left bare (no `ramps`) on
+        # purpose: `collisions()`/`grounded()`/`seating_faces_tables()`/
+        # `screen_occlusion()` are all mesh-position geometry, never a pixel
+        # read, so which palette `build()` used to colour the roster cannot
+        # change any of their verdicts -- confirmed by fingerprinting
+        # `build()`'s own output across repeated calls before ruling this out
+        # rather than assuming it from the check names.
         from build_plan import check_built_rooms, check_focal_contrast
         for msg in check_built_rooms():
             errs.append(f"plan room: {msg}")
@@ -513,11 +550,21 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         # object or a pair of them; this one renders the whole frame and asks
         # whether the eye has anywhere to land. It is the slowest check in the
         # suite by a wide margin, and it is the only one that looks at the
-        # picture instead of the geometry.
-        for msg in check_focal_contrast():
+        # picture instead of the geometry -- which is exactly why, unlike its
+        # two neighbours here, it DOES need `ramps`: it was bare until this
+        # pass, so `--check --style snes_rpg` reported this section's errors
+        # against cozy_ghibli's render regardless of the flag. See
+        # `check_focal_contrast()`'s own docstring and ART_CRITIQUE.md for
+        # the measured before/after -- a real error reported for the wrong
+        # reason on one room, a real defect invisible under cozy_ghibli's
+        # palette surfaced on another, and correct numbers on a third that
+        # already failed under both.
+        for msg in check_focal_contrast(ramps=ramps):
             errs.append(f"composition: {msg}")
         # And whether the furniture is used. Everything above asks whether the
-        # room is correct; this asks whether it is inhabited.
+        # room is correct; this asks whether it is inhabited. Bare for the
+        # same geometry-only reason as `check_built_rooms()` above: this
+        # counts occupied stools by name prefix, never reads a pixel.
         from build_plan import check_stool_occupancy
         for msg in check_stool_occupancy():
             errs.append(f"occupancy: {msg}")
