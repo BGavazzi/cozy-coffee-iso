@@ -5447,6 +5447,114 @@ accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
 
+## `check_generator_range`'s single azimuth wasn't the bug; the untested configuration was
+
+This session has repeatedly found generator/asset checks blind to one fixed
+`azimuth=45.0` while a real prop ships at all 8. `check_generator_range`
+(`art_review.py`) has that exact same default, so it was the obvious next
+thing to sweep -- and an 8-azimuth pass over all 24 seeded generators did
+flip 5 of them (`bookshelf`, `pastry_case`, `counter`, `fridge_under`,
+`wall_art_framed`) from passing at 45 deg to failing at others.
+
+**That result doesn't survive contact with how this pipeline actually
+uses azimuth, though.** Every prop here is rendered by `furnish.py` at all
+8 real camera azimuths regardless of declared `sym` (`sym` is purely a
+`manifest.py` render-*budget* accounting concept -- confirmed by reading
+`furnish.py`'s own placement loop, which never consults it), so the naive
+"sweep the raw camera azimuth around an unrotated mesh" test looked like
+the right shape of question. But the architecture doctrine this session
+already established for `screen_occlusion` (azimuth check, Hour 49) applies
+here too: **the camera is fixed at 45 deg and objects rotate**, not the
+other way round. Re-tested the 5 flips at the one real camera azimuth
+(45) crossed with the only rotations this codebase's own placement code
+ever actually uses (0/90/180/270, `Layout.scatter`'s `rot_choices`, and the
+specific hand-authored rotations in `build_plan.py`): `bookshelf` at its
+two real shipped rotations (0, 270, `build_plan.py`'s back-bar shelving)
+reads 21.6%/21.4% against its 15% floor -- clean. `pastry_case` and
+`fridge_under` are clean at every rotation. `wall_art_framed` isn't placed
+anywhere in this repo's real room compositions at all (catalog-only, in
+`furnish.py`'s `Recipe` table, never called from `build_plan.py` or
+`render_room.py`) -- no live casualty regardless. **Four of five: does not
+generalize**, same conclusion as `screen_occlusion` and `check_roster_variety`
+before it, for the same architectural reason.
+
+**The fifth, `counter`, is a real, live, currently-shipping bug -- but not
+the azimuth-blindness one.** `counter()` takes a `front` parameter ("y" or
+"x", which face carries the seed-driven style detail) that `check_generator_range`
+never varies -- its `GENERATORS` entry is `lambda A, s: A.counter(seed=s)`,
+always the default `front="y"`. `render_room.py`'s window bar run (line 170)
+places the real, shipped counter with `front="x"` explicitly -- "the window
+bar tiles along y, so its +y face is a joint between two modules and its
+front is +x," per the generator's own docstring. That configuration was
+never exercised by the check at any azimuth, single or swept.
+
+Measured directly: `front="x"`, 8 seeds, real camera (45 deg), 0.25% screen
+spread against the shared 4% floor -- 7 of 8 seeds produce byte-identical
+on-screen materials, only seed 8 differs by one pixel's worth. `front="y"`,
+same seeds, same azimuth: 7.47%, clean, genuinely varying (drawers, shelf,
+beaded styles all show up). Confirmed by eye, not just by the metric --
+rendered `screen_materials`' own colour-mapped output at 4x for both
+`front="y"` seeds 1/2 (clearly different: plain vs. two drawer lines) and
+`front="x"` seeds 1/2 (visually identical, both plain, no drawer lines on
+the right face at all).
+
+**Root cause, found by reading `counter()`'s own geometry, not guessed:**
+the carcass box is `add_box((0.0, 0.06, base), (1.0, 0.94, top), WOOD)` --
+inset on y (0.06-0.94, "so two neighbours never share a reveal," per its own
+comment) but spanning the FULL x range (0.0-1.0, "so a run tiles
+seamlessly"). The style-detail quad is drawn a fixed 0.9412 proud of
+whichever axis is the "front," and 0.9412 sits just past the carcass's own
+y1=0.94 boundary -- correct, visible, for `front="y"`. For `front="x"` the
+same 0.9412 sits *inside* the carcass's own x-range (which runs to 1.0), not
+past it -- the detail quad is drawn 0.06 units inside solid wood, fully
+buried by the carcass's own geometry from every camera angle. One shared
+constant, two different boundaries it was supposed to clear, correct for
+one and silently wrong for the other -- the same shape of bug
+`check_buried_detail` exists to catch, just never exercised on this asset's
+non-default configuration.
+
+**Fixed at the source, in `assetlib.counter()`:** `face` is now
+`0.9412` for `front="y"` and `1.0012` for `front="x"` (the carcass's own
+x1=1.0, plus the identical 0.0012 proud-of-surface margin the y case
+already used). Verified: `front="x"` spread goes from 0.25% to 8.56% (now
+comparable to `front="y"`'s 7.47%, same seeds, same randomly-chosen styles,
+now actually visible on screen); rendered and eyeballed the fix directly --
+seed 2's drawer lines now show on the right (+x) face exactly as they
+already did on the left (+y) face for the equivalent `front="y"` case.
+`front="y"`'s own mesh is confirmed byte-identical before/after (hashed
+every seed's vertex+material data) -- this is a `front="x"`-only fix.
+
+**Closed the coverage gap too, not just the bug**, matching this session's
+own established convention (`check_roundtrip`, `check_albedo_regression`,
+and others all got a check-side fix alongside the code-side one): added
+`counter_front_x` as its own `GENERATORS` entry, `lambda A, s:
+A.counter(seed=s, front="x")`, same 4% floor. Confirmed it actually catches
+what it's meant to -- reverted just the `assetlib.py` fix with the new
+entry still in place, and it fires exactly as expected (`counter_front_x:
+screen spread 0% over 8 seeds`); restored the fix, clean again.
+
+**Geometry-only, not style-specific** -- `counter()`'s mesh construction has
+no palette/ramp dependency, so this affects `cozy_ghibli` and `snes_rpg`
+identically (verified: 7.47%/8.56% either way, independent of which
+style's ramps get bound downstream). Unlike most of this session's findings,
+there was no cross-style calibration question to ask here at all.
+
+**Verified end to end.** `manifest.py --check --style cozy_ghibli`: 3 errors
+before this branch's own baseline, 2 after -- not from anything this fix
+targeted directly, but the already-known, already-documented noise-floor
+case (`check_focal_contrast`'s "plan 1, L run," sitting at D -0.001 against
+a 0.000 floor, see "Focal detail: resolution-confirmed, not
+resolution-invariant" and "A real, already-measured galley finding..."
+above) flipped to a pass once the counter's front carried real detail pixels
+again -- consistent with that section's own finding that a defect sitting
+exactly on a zero floor can flip either way on an unrelated change, not a
+deliberate fix, and not claimed as one. The two galley errors (`71451c3`'s
+own already-decided-against-fixing finding) are unchanged, as expected --
+unrelated topology. `--style snes_rpg`: 10 errors before, 9 after, same
+L-run flip, same unrelated 7 character-roster/eye-legibility errors and 2
+galley errors untouched. 40-test suite: 40 passed. `check_generator_range()`
+and `check_spread_floor_regression()`: both clean before and after.
+
 ## Checked whether `manifest.py`'s "accepted limitation, still fires as a blocker" bug generalizes to `portrait.py`'s own accepted `snes_rpg` gap -- it doesn't
 
 `manifest.py --check --style snes_rpg` was, until the previous fix,

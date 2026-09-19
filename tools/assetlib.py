@@ -399,7 +399,25 @@ def counter(kick=True, seed: int | None = None, front: str = "y",
     # would read as one four-tile cabinet rather than as two.
     lo, hi = 0.035, 0.965
     z0, z1 = base + 0.03, round(top - 0.03, 10)
-    face, n = (0.9412, (0.0, 1.0, 0.0)) if front == "y" else (0.9412, (1.0, 0.0, 0.0))
+    # `face` has to sit a hair proud of whichever axis the carcass box itself
+    # stops short of, the same way the crate's slats sit proud of its faces --
+    # otherwise the detail quad lands INSIDE the solid carcass instead of on
+    # its surface, and gets fully buried by it. The carcass is inset on y
+    # (0.06-0.94, "so two neighbours never share a reveal") but spans the FULL
+    # x range (0.0-1.0, "so a run tiles seamlessly", see the docstring above) --
+    # two different boundaries, so `front`'s two branches need two different
+    # proud-of-surface offsets, not the one 0.9412 both used to share. That one
+    # value was correct for y (0.94 + 0.0012) and silently wrong for x, where
+    # the carcass's own boundary is 1.0, not 0.94: every front="x" counter
+    # (the window bar run, `render_room.py`'s `front="x"` calls) drew its
+    # style detail 0.06 units inside its own solid wood, fully occluded from
+    # every camera angle. Confirmed dead by eye and by measurement: with the
+    # shared 0.9412, front="x" read pixel-identical across 7 of 8 seeds
+    # (0.25% screen spread); with its own 1.0012, it matches front="y"'s
+    # spread almost exactly (8.56% vs 7.47%, same seeds, same styles, now
+    # actually visible).
+    face_y, face_x = 0.9412, 1.0012
+    face, n = (face_y, (0.0, 1.0, 0.0)) if front == "y" else (face_x, (1.0, 0.0, 0.0))
 
     def put(u0, u1, v0, v1, mat):
         a, b = lo + (hi - lo) * u0, lo + (hi - lo) * u1

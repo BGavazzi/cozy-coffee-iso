@@ -716,6 +716,19 @@ GENERATORS = (
      "do something, not a lot. Calibrated under a measured 7%, the same way "
      "the occlusion thresholds were -- a floor set looser than the scan that "
      "found the defect is a floor that is blind"),
+    ("counter_front_x", lambda A, s: A.counter(seed=s, front="x"), 1.5, 0.04,
+     "the same fitted module as `counter` above, but with `front=\"x\"` -- the "
+     "configuration `render_room.py`'s window bar run actually ships, tiled "
+     "along y so its own +y face is a joint between modules. Not the same "
+     "test as `counter`: that entry only ever calls the default `front=\"y\"`, "
+     "and the two are not interchangeable geometry -- `front=\"x\"`'s detail "
+     "quad used to be drawn inside the carcass's own solid wood (the carcass "
+     "is inset on y but spans the full x range, and one shared proud-of-"
+     "surface offset only cleared the y boundary), fully buried and pixel-"
+     "invariant across every seed but one, measured at 0.25% screen spread "
+     "against this same 4% floor. Fixed in `assetlib.counter`; this entry "
+     "exists so a regression here fails loudly instead of only in a room a "
+     "human happens to look at"),
     # The nine widened onto this list in the same pass that fixed fridge_under
     # and tip_jar (both had a `seed` parameter their body never touched --
     # ART_CRITIQUE.md, "fridge_under and tip_jar: a seed parameter that did
