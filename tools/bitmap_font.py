@@ -366,12 +366,20 @@ def glyph_box(ch: str, cap: int, weight: int = 1) -> tuple[int, int, int]:
 
 # --- text --------------------------------------------------------------------
 
-def measure(text: str, cap: int, tracking: int = 0) -> tuple[int, int, int]:
-    """(width, height, baseline_row) of a single line, in pixels."""
-    _, h, base = glyph_box("A", cap)
+def measure(text: str, cap: int, tracking: int = 0, *,
+           weight: int = 1) -> tuple[int, int, int]:
+    """(width, height, baseline_row) of a single line, in pixels.
+
+    `weight` is keyword-only and defaults to 1 so every existing positional
+    call (there were several, all implicitly at weight 1) keeps its exact
+    behavior. Before this, `measure` always rasterized at `glyph_box`'s own
+    default of 1 no matter what a caller actually wanted measured -- see
+    `render_line`'s and `fit_cap`'s docstrings for where that was reachable.
+    """
+    _, h, base = glyph_box("A", cap, weight)
     w = 0
     for ch in text:
-        adv, _, _ = glyph_box(ch, cap)
+        adv, _, _ = glyph_box(ch, cap, weight)
         w += adv + tracking
     return max(0, w - tracking), h, base
 
@@ -389,20 +397,25 @@ def ink_of(text: str, cap: int, weight: int = 1, tracking: int = 0) -> tuple[set
     return out, max(0, x - tracking), h, base
 
 
-def wrap(text: str, cap: int, width: int, tracking: int = 0) -> list[str]:
+def wrap(text: str, cap: int, width: int, tracking: int = 0, *,
+        weight: int = 1) -> list[str]:
     """Greedy word wrap to a pixel width.
 
     Words longer than the line are placed alone and allowed to overrun rather
     than being broken mid-word: a hyphenation rule is a typographic decision
     this font has no basis for making, and an overrun is visible where a silent
     mid-word break is not.
+
+    `weight` (keyword-only, default 1) is forwarded to `measure` so a wrap
+    decision made for bold text is measured at the width bold text actually
+    draws at, not at weight 1's narrower advance.
     """
     lines: list[str] = []
     for para in text.split("\n"):
         cur = ""
         for word in para.split(" "):
             trial = f"{cur} {word}".strip()
-            if cur and measure(trial, cap, tracking)[0] > width:
+            if cur and measure(trial, cap, tracking, weight=weight)[0] > width:
                 lines.append(cur)
                 cur = word
             else:
@@ -432,9 +445,17 @@ def draw(canvas, text: str, x: int, y: int, cap: int, *, weight: int = 1,
 
 def block(canvas, text: str, x: int, y: int, cap: int, width: int, *,
           leading: int = 2, **kw) -> int:
-    """Wrapped, multi-line. Returns the height consumed."""
+    """Wrapped, multi-line. Returns the height consumed.
+
+    Line height comes from `glyph_box("A", cap)` at weight 1 regardless of
+    `kw.get("weight")` -- checked, not assumed: a glyph's height and baseline
+    are weight-invariant (only advance grows with weight), so this is safe
+    at any weight `draw` below is called with. The wrap width decision is
+    not weight-invariant, so `weight` is forwarded to `wrap` explicitly.
+    """
     _, h, _ = glyph_box("A", cap)
-    lines = wrap(text, cap, width, kw.get("tracking", 0))
+    lines = wrap(text, cap, width, kw.get("tracking", 0),
+                weight=kw.get("weight", 1))
     for i, line in enumerate(lines):
         draw(canvas, line, x, y + i * (h + leading), cap, **kw)
     return len(lines) * (h + leading) - leading
@@ -609,10 +630,21 @@ def render_line(text: str, cap: int, *, weight: int = 1, tracking: int = 0,
     rather than a second path that writes colours directly. Text on a UI panel
     is the same kind of object as the panel, and sharing the resolve step is
     what keeps it palette-exact without a second implementation to check.
+
+    Before this fix, the canvas below was sized by `measure(text, cap,
+    tracking)` -- always at weight 1, regardless of this function's own
+    `weight` argument -- while `draw` a few lines down rasterized the real
+    ink at the real `weight`. At weight 2 that under-sizes the canvas by
+    4-10px depending on text and cap (measured, `--sample ... --weight 2`),
+    and `ui_chrome.Canvas.put` silently drops anything outside its bounds
+    (see its own `0 <= x < self.w` guard) -- so the rightmost several ink
+    pixels of a bold sample line were rendered and then silently discarded,
+    reachable directly through this file's own `--sample`/`--weight` CLI
+    flags. Fixed by measuring at the same weight `draw` uses.
     """
     from ui_chrome import resolve
     from pixelize import load_palette
-    w, h, _ = measure(text, cap, tracking)
+    w, h, _ = measure(text, cap, tracking, weight=weight)
     extra = 1 if shadow else 0
     c = _canvas(w + pad * 2 + extra, h + pad * 2 + extra)
     draw(c, text, pad, pad, cap, weight=weight, tracking=tracking, ink=ink,
@@ -670,9 +702,15 @@ def fit_cap(text: str, width: int, sizes=SIZES, weight: int = 1,
     measurable, and the answer is: partly. A 36px writing area takes a short
     order at cap 7 and does not take a long one, so the caller gets the size
     that fits or None, and can decide.
+
+    `weight` was accepted here and silently dropped before this fix -- the
+    fit decision was always made at `measure`'s old hardcoded weight of 1,
+    so a caller asking "does this fit at weight 2" got weight 1's answer
+    with no indication anything was wrong. See `render_line`'s docstring
+    for the same bug reachable through the CLI's own `--weight` flag.
     """
     for cap in sorted(sizes, reverse=True):
-        if measure(text, cap, tracking)[0] <= width:
+        if measure(text, cap, tracking, weight=weight)[0] <= width:
             return cap
     return None
 
