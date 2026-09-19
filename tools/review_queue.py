@@ -73,9 +73,43 @@ def check_direction_set(records) -> list[str]:
     jumps. Measured before/after on all 22 -- it fixed 2 (teapot, roughly
     cutting_board) and broke a clean pass (candle, 3.4x16.2 vs the original
     5.1x3.9), because narrowing the pool made the centroid noisier than the
-    cross-material signal it was removing. Not shipped. A real fix needs the
-    raw per-pixel material id from `rasterize()`, not the quantized PNG this
-    check only ever sees -- `review_queue.py` doesn't have that buffer today.
+    cross-material signal it was removing. Not shipped.
+
+    Tried a second time with the buffer this docstring used to say was
+    missing: `render_batch.render_sprite()`'s own `mat_small` (the real
+    per-pixel material token from `mesh.rasterize()`, propagated through the
+    same modal downsample the final PNG gets) is not discarded on principle,
+    it is just local and never returned. Rebuilt it outside that function and
+    restricted the pool to each object's own cross-frame-stable body material
+    (the token with the largest *minimum* per-frame area share across all 8
+    directions, not a per-frame guess). Result, on the three round controls
+    plus the four objects the first attempt was measured against: strictly
+    worse everywhere, not just noisier on one case --
+
+        object          unrestricted (pass/fail)   body-material-restricted
+        kettle          3.5x4.5   [ok]              12.1x7.5   [fail]
+        candle          5.1x3.9   [ok]               7.8x14.5  [fail]
+        french_press    3.2x4.9   [ok]                6.4x15.3 [fail]
+        teapot         11.5x5.7   [fail, x only]      6.6x18.7 [fail, worse]
+        cutting_board    9.2x9.7  [fail]             29.3x32.5 [fail, worse]
+        picture_frame  10.6x21.1  [fail]              28.4x28.3 [fail, worse]
+        wall_clock     21.1x17.7  [fail]              17.9x14.1 [fail, ~same]
+
+    All three round-object controls broke (not just candle), and neither
+    previously-helped case (teapot, cutting_board) improved -- both got
+    worse instead. The reason isn't a labelling shortcut this time, it's the
+    label granularity `bind_colour()` actually produces: a material token is
+    a ramp name plus a lightness-step offset from that ramp's middle step
+    (`ingest.py`'s "neutral" vs "neutral-1" vs "neutral+2"), so "this frame's
+    one dominant material" is finer than "this frame's one dominant ramp" --
+    measured min per-frame share for the chosen body material ranged 3%-43%
+    across these seven objects, i.e. even a round object's own single-colour
+    surface is split across several tokens by shading, and restricting to
+    one throws away most of the population that makes its centroid estimate
+    stable. The real per-pixel material buffer exists now (this test built
+    it) and using it directly still doesn't work -- the fix this docstring
+    used to defer to a missing buffer needs a coarser identity than any
+    per-pixel material token this pipeline produces, not just access to one.
 
     Left firing as a regression guard on the three round objects it can
     actually speak to; treat a "drifts" verdict on anything else as an
