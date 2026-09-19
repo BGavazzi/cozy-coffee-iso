@@ -5447,6 +5447,84 @@ accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
 
+## `tileset.py`'s three checks, run against the real shipped tile atlases -- clean, correctly threaded, no gap
+
+`ui_forge.py`'s `check_icon` was the first candidate this hour: deterministic,
+needs no GPU to re-evaluate once a PNG exists. Dead end before it started --
+`out/ui/` has zero PNGs on disk in this environment (`manifest.py --check`'s
+own "24 declared but not built" warning already says so), and Torch/SDXL are
+confirmed unavailable in this session's Python env (Hour 47, reconfirmed
+Hour 57), so there is no way to produce fresh ones either. Nothing to test
+against; abandoned rather than forced.
+
+`tileset.py` is different: `out/tiles/` (`cozy_ghibli`) and
+`out/tiles_snes_rpg/` (`snes_rpg`) both hold real, already-built tile atlases
+and `tileset.json` manifests -- genuine, non-GPU-dependent shipped data, a
+good candidate for the same "was the real configuration ever tested" audit
+`counter`'s `front="x"` bug (Hour 53) came from.
+
+**The three checks, and how they're wired.** `check_lattice(width)` is pure
+integer arithmetic (is the lattice step on whole pixels) -- no style
+dependency, correctly bare. `check_collapse(fn, variants, width, ramps, ...)`
+and `check_manifest_placement(meta, width, ramps, ..., wall_patterns=...)`
+both take `ramps` and (for placement) `wall_patterns`, both resolved inside
+`build()` from `style.materials`/`style.palette_path` for whichever
+`--style` was passed (`tileset.py:901-906`) -- not module-level constants,
+not a default bound at import time. This is the style-threading shape Hours
+52/55 spent real effort confirming or fixing elsewhere in this codebase; here
+it was already correct.
+
+**The one real gap: `check_manifest_placement` only runs behind `--proof`.**
+`build()` gates it (`tileset.py:993-1006`) along with the 3x3 tiling proofs
+and the room-corner composite -- a plain `tileset.py --style X` (no flag)
+never calls it. Grepping every caller in the repo, exactly one place passes
+`proof=True`: `concept_ui.py`'s `run_procedural`, wired to a button in a
+Gradio-style dev preview app (`concept_ui.py:289`, its own comment explains
+why -- "the half of the library that always works" was terminal-only until
+this tab existed). `manifest.py --check` never touches `tileset.py` at all
+(confirmed: zero references outside a docstring mention), and no pytest file
+references `check_manifest_placement`. So in this repo's actual automated
+surface (the test suite, `manifest.py --check`), this check never runs --
+only a human clicking a specific dev-tool button exercises it.
+
+**That's a real coverage gap, but not the `counter`-shaped bug.** The
+`counter` bug was a check silently validating a configuration
+(`front="y"`) the real pipeline doesn't ship, while the one it does ship
+(`front="x"`) was never touched by any check at any azimuth. Here the
+question is different and testable directly: does `check_manifest_placement`
+still pass when actually run, today, against the real on-disk atlases, at
+the one width (`64px`, `tileset.py`'s own default) this codebase has ever
+shipped tiles at -- nothing else calls `tileset.py` with a `--width`
+override, so 64px is not an undertested value, it's the only one that
+exists.
+
+Ran it directly, both styles, matching exactly what `concept_ui.py`'s button
+does:
+
+```
+python tools/tileset.py --proof --style cozy_ghibli   # exit 0
+python tools/tileset.py --proof --style snes_rpg       # exit 0
+```
+
+Both printed `manifest placement: rebuilt from tileset.json alone,
+pixel-identical` alongside clean `check_lattice`/`check_collapse` output and
+clean 3x3/3-tile tiling proofs for every floor and wall type. No BLOCKER
+lines, either style. `git status` after both runs shows nothing tracked
+changed (`out/` is gitignored, as expected for build output).
+
+**Finding: no live casualty.** The check is real, correctly threaded, and
+currently passing against the actual shipped tile atlases for both styles --
+unlike the icon-speckle and `counter` cases, there is no discrepancy between
+what's tested and what's shipped to point a fix at. The only defect is
+process: a real correctness check (`gates.py` itself lists it as a
+deterministic gate, "can a consumer rebuild the room from the published
+numbers alone?") is reachable only by manually running `--proof` or clicking
+through a dev-tool tab, not by anything CI or the test suite would run. That
+is worth naming so a future regression in this specific check doesn't sit
+silently unnoticed the way `out/ui/`'s absence sits unnoticed until someone
+greps for it -- but it is a coverage note, not a bug to fix, and this hour
+ships no code change against it.
+
 ## A sweep of the checks this session hadn't touched yet -- one already fixed, the rest genuinely clean
 
 Five files' check suites had never been looked at this session:
