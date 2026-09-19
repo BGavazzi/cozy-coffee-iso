@@ -5447,6 +5447,50 @@ accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
 
+## Checked whether `check_cast_silhouette`'s single-azimuth fix generalizes to its material-based sibling `check_roster_variety` -- it doesn't
+
+`check_cast_silhouette`'s own docstring records a real, already-fixed defect:
+the shape-only cast-distinctness check used to compare a single fixed
+azimuth, and "a pair that separates at 45 and collapses at 0 is a pair that
+collapses one frame in eight" -- so it now runs over all 8 real sprite
+directions. Its sibling, `check_roster_variety` (the colour-and-shape,
+material-based half of the same "are any two characters the same person"
+question -- "the character version of `check_generator_range`") still
+declares `azimuth: float = 45.0` as a single default and has never been
+extended past it. Same file, same purpose family, same author's own lesson
+sitting three functions away -- worth checking whether it was ever applied
+here.
+
+**Measured directly rather than assumed.** Computed `check_roster_variety`'s
+pairwise material spread (`screen_materials` + `_screen_spread`, the same
+instrument the check itself uses) across all 8 real ship azimuths for the
+real roster (barista + 8 customers) and the real generated-extras call
+(`generate_roster(12, seed=1)`, exactly as `manifest.py --check` invokes it).
+Every pair, at every azimuth, cleared the 38% floor with room to spare --
+tightest real margin 41.9% (`barista`/`artist` at azimuth 270, floor 38%).
+Not satisfied with one population: stress-tested 60 generated extras across
+5 seeds (`C(60,2)` = 1,770 pairs x 8 azimuths = 14,160 measurements) for any
+pair that clears 45 degrees but drops under the floor at another azimuth.
+**Zero.**
+
+**Mechanistic reason this check resists the bug class its sibling had,** the
+same shape of explanation the ramp-coherence cross-style check earned
+earlier this session: `check_cast_silhouette` compares OUTLINE, a thin
+boundary that a hat or a limb can fully hide behind at the wrong angle.
+`check_roster_variety` compares MATERIAL COVERAGE -- large, mostly-
+uncontested blocks of shirt/trousers/hair colour that stay visible, just
+partially reshuffled by occlusion, across nearly every azimuth a humanoid
+figure is viewed from. The metric that is fragile to viewing angle is the
+one built on a thin, easily-occluded feature; the one built on broad colour
+regions is not, independent of which specific check it lives in.
+
+Not a bug, and not tuned to make it look that way: the floor (0.38) and the
+real margins (42-62%) both predate this check, and the azimuth sweep only
+added measurement, no threshold changes. Documented per this session's
+standing instruction to record a checked-and-doesn't-generalize result
+honestly, the same as the frog-knight case and `check_direction_stability`'s
+scale check earlier this session.
+
 ## Checked whether `check_member_thickness`'s wrong-scale bug generalizes to `character.py`'s equivalent -- it doesn't
 
 `check_member_thickness`'s fix (this session) found `ROOM_PX_PER_UNIT`
