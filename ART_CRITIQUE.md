@@ -5447,6 +5447,71 @@ accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
 
+## `ui_forge.check_icon`'s speckle floor was never actually `art_review`'s number, despite every account since this file's first commit saying it was
+
+With canonical accepted-limitation claims and the multi-PR reconciliation
+sweep both exhausted (Hour 72), this hour went looking in a different place
+the untried-lever pattern can hide: not a check's *logic*, but a constant a
+check trusts without re-deriving, the same shape as Hour 43's wrong-scale
+`check_member_thickness` bug and Hour 53's buried-detail-offset bug, just
+found this time in a threshold rather than a geometry constant.
+
+`tools/ui_forge.py`'s `MAX_ISOLATED = 0.062`, with the comment directly
+above it: "Same number `art_review` blocks sprites on, and deliberately the
+same... they get held to one standard rather than to a softer one." The
+file's own creating commit (`77ccdcb`, "Add ui_forge.py") says the same
+thing in different words: "It now uses art_review's own number." Both are
+wrong, and have been since the moment they were written.
+
+`git log -p --all -- tools/art_review.py | grep "MAX_ISOLATED ="` returns
+exactly one hit, across every commit on every branch in this repository:
+`MAX_ISOLATED = 0.105`, set 2026-08-23 (`a747436`) and never touched again
+anywhere. `ui_forge.py` was created three days later, 2026-08-26, already
+carrying `0.062` -- a number that was never `art_review`'s at any point in
+this repository's history, not "used to be and drifted," just wrong from
+the first commit. The confusion is not a one-off typo either: PR #80's own
+`ART_CRITIQUE.md` (an earlier incarnation of this audit loop, predating
+this session -- see Hour 69's finding about that PR) independently repeats
+it while investigating the frog-knight character ceiling: "a check whose
+floor is 'authored art measures under 6.2% on its busiest frame'" --
+checked directly against `art_review.py` on that same PR's own branch,
+which is 0.105, not 0.062. Whoever wrote both passages believed 6.2% was
+`art_review`'s real number; it never was.
+
+**Practical effect**: every icon `ui_forge.py` has ever built was checked
+against a floor 41% stricter than the sprite standard it was explicitly
+designed to match ("the same kind of object... held to one standard"). Not
+a softer gate that let bad art through -- the opposite, a harder gate than
+intended, silently rejecting or forcing reseeds on icons that would have
+cleared the standard the code claims to enforce.
+
+**Fix**: `tools/ui_forge.py` no longer defines its own `MAX_ISOLATED`.
+`from art_review import MAX_ISOLATED` replaces the hand-typed literal, so
+the two constants cannot drift apart silently again -- the same "fix the
+architecture, not the symptom" lever the despeckle-into-`render_sprite`
+wiring (PR #81) used, applied to a constant instead of a function call.
+
+**Verified**: `import ui_forge; ui_forge.MAX_ISOLATED == art_review.MAX_ISOLATED
+== 0.105` directly, at the Python level, no assumption. `check_icon` re-run
+against two synthetic fixtures -- a solid single-colour icon (0 problems,
+same as before) and a full checkerboard (100.0% isolated, still fails
+loudly at the new floor's `10.5%` cap, same as it would have at the old
+6.2% cap -- genuine speckle isn't a borderline case either way, confirming
+the check still catches what it exists to catch). `ui_forge.py --help`
+still parses. 40-test suite passes unchanged.
+
+**What could not be verified**: whether any specific real icon's pass/fail
+verdict actually flips, because no real `ui_forge`-produced icon PNG exists
+on disk this session (`out/ui/*.png` holds only `ui_chrome.py`'s procedural
+output -- coin, cursors, frames -- torch/SDXL has been unavailable every
+hour of this loop) and every historical isolated-pixel percentage recorded
+in `ART_CRITIQUE.md` for real generated icons (13.4%, 19.1%, 33.5%, and the
+frog knight's 11-12%) sits well above both 6.2% and 10.5%, so none of the
+recorded cases happen to fall in the 6.2%-10.5% band where the fix would
+have changed a verdict. The fix is provably correct on its own terms
+(constants now match, by construction) even though no cached evidence
+happens to demonstrate a flipped verdict.
+
 ## Closing the last gap in the PR-reconciliation sweep: every multi-PR file cluster in the open pile is now directly verified, not just trusted
 
 This session's own PR-conflict reconciliation habit (Hours 44/47/48/55/63/64/70/71) has, each time, checked a specific slice of the open pile -- a named list of PRs sharing a file, or a newly-added PR against an older cluster. What hadn't been done, until this hour: a full, from-scratch inventory of every `tools/*.py` file touched by two or more of the 46 currently-open PRs, cross-checked against what this session's own memory already claims was reconciled -- because that memory record is itself a claim that can drift, same as any other doc in this repo, and the standing lesson from Hour 63/69 is to verify claims rather than carry them forward.

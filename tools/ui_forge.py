@@ -322,11 +322,24 @@ def flat_pixelize(png: Path | str, target: int, ramps: dict):
 
 
 # An icon whose pixels mostly have no matching neighbour is speckle, not
-# art, whatever the coverage says. Same number `art_review` blocks sprites
-# on, and deliberately the same: an icon and a sprite are the same kind of
-# object once they are palette-quantized pixels, so they get held to one
-# standard rather than to a softer one written to make this tool pass.
-MAX_ISOLATED = 0.062
+# art, whatever the coverage says. Meant to be the same number `art_review`
+# blocks sprites on since this file's first commit ("It now uses
+# art_review's own number") -- an icon and a sprite are the same kind of
+# object once they are palette-quantized pixels, so they should be held to
+# one standard rather than to a softer one written to make this tool pass.
+#
+# That intent was never actually met: this constant was hand-typed as 0.062
+# and has sat that way, untouched, since the file's creation, while
+# `art_review.MAX_ISOLATED` has been 0.105 since before this file existed
+# (confirmed via `git log -p` across every branch in the open PR pile --
+# one commit ever sets it, and it has never been 0.062). Both the original
+# commit message and PR #80's own ART_CRITIQUE.md prose ("authored art
+# measures under 6.2%") repeat the same wrong number, so this was believed,
+# not just mistyped once. Net effect: icons have always been checked
+# against a floor 41% stricter than the sprite standard they were meant to
+# match, not the same one. Imported directly rather than re-typed, so the
+# two cannot drift apart silently again.
+from art_review import MAX_ISOLATED  # noqa: E402
 
 
 def check_icon(px, target: int, ramps: dict) -> list[str]:
