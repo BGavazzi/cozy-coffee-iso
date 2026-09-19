@@ -5447,6 +5447,78 @@ accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
 
+## Checked whether `screen_occlusion`'s fixed `azimuth=45.0` is the same bug as the sprite checks -- it isn't, and the numbers show exactly why
+
+`Layout.screen_occlusion(azimuth: float = 45.0, share: float = 0.35, depth:
+float = 0.8)` has the identical signature shape as every check this loop has
+already found and fixed for single-azimuth blindness --
+`check_member_thickness`, `check_buried_detail`, `check_cast_silhouette`,
+`check_eye_legibility`, `organic_rig`'s eye check. All five of those measure
+a *sprite* that genuinely ships at all 8 real rotation azimuths, and were
+wrong to only ever check one. `screen_occlusion` looked, from the signature
+alone, like the same shape of gap: it is called from `manifest.py` and
+`build_plan.py` with no azimuth argument, defaulting to 45.0, and nothing
+in the codebase ever calls it at any other angle.
+
+**Tested it before assuming that pattern repeats.** Ran the hand-authored
+reference room (`render_room.build_room()`, "six passes of art direction
+live in its 48 coordinates" per its own module docstring) through
+`screen_occlusion` at all 8 real sprite azimuths:
+
+| azimuth | findings |
+|---|---|
+| 45 (the default) | **0** |
+| 0 | 16 |
+| 90 | 12 |
+| 135 | 17 |
+| 180 | 18 |
+| 225 | 9 |
+| 270 | 14 |
+| 315 | 15 |
+
+That is not a small or ambiguous gap -- the hand-tuned room is completely
+clean at exactly one angle and has real, named, double-digit overlaps
+(`decor#coats` hiding 99% of `decor#gbasket#0` at az=0, `prop#espresso`
+hiding 100% of two cups at az=135, and so on) at every other angle tested.
+Ran the same sweep against three `build_plan.generate()`-produced rooms
+(seeds 1/2/3, algorithmic placement, not hand-tuned) to check this wasn't an
+artifact of one hand-authored scene: all three show the identical shape --
+0 findings at 45, 5-13 findings at every other angle (seed 1: 6/7/9/8/12/9/9
+across 0/90/135/180/225/270/315; seed 2: 5/7/13/9/5/10/8; seed 3:
+6/9/10/7/8/6/13).
+
+**Traced why, rather than stopping at "the numbers look the same shape as a
+bug."** `screen_occlusion` is a pure geometry check -- it projects each
+placement's world-space bounding box through `DimetricCamera(azimuth)` and
+compares 2D screen-space overlap (`tools/layout.py:306-374`). It never
+rasterizes a pixel, never touches a ramp or a palette, so the cross-style-
+calibration bug class (the OTHER established shape this loop has found,
+`check_speckle`/`check_light_direction`) cannot apply to it at all --
+there's no rendered image for a style to bias. That leaves only the
+single-azimuth question, and the codebase's own architecture doctrine
+answers it directly (`README.md`, on the first time this exact mistake
+happened with a *different* check): "in an isometric game the camera is
+fixed and the *object* rotates." Props and characters rotate -- they ship
+sprite sheets covering all 8 real azimuths, which is why checking only one
+was a real bug for them. The room itself does not rotate; there is no
+camera-pan feature, no per-angle room export, and `build_plan.py`'s own
+placement algorithm calls `screen_occlusion(45.0)` internally as a
+constraint DURING generation (`tools/build_plan.py:1257`), actively placing
+objects to avoid occlusion at that one angle and no other. The three
+generated rooms above are clean at 45 not by luck but because the generator
+was optimizing for exactly that.
+
+So the sharp 0-vs-double-digit swing across azimuths, which would be
+alarming evidence of a coverage gap for a sprite check, is instead exactly
+what correct behaviour looks like for a check whose subject only ever
+exists at one camera angle: it proves the room was actually validated at
+the one view that matters, not that seven other views were silently
+skipped. No functional fix shipped, no code changed -- the default is
+correct as written. A legitimate "checked whether the pattern generalizes,
+and it doesn't, here is the mechanistic and numeric reason" result, same
+discipline as the ramp-coherence, character-scale, and roster-variety null
+results already on record.
+
 ## Checked whether the open-PR pile has a hidden reconciliation burden beyond `check_member_thickness`/`check_buried_detail` -- it doesn't
 
 Two earlier fixes on `member-thickness-ship-scale` (PR #103) each had to be
