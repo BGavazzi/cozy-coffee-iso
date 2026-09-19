@@ -5281,3 +5281,61 @@ reference `UI_PROMPTS` at all (grepped, confirmed) so it's untouched by
 this change; the 40-test suite passes unchanged. No visual re-render needed
 -- this fix touches which ids `ui_forge.py` is willing to *attempt*, not
 what any producer draws.
+
+## Correction: this was not a fresh discovery, and PR #80 already fixed it, more completely, two days earlier
+
+Found doing this hour's PR-reconciliation sweep against `tools/ui_forge.py`,
+the same practice that caught the Hour 61/63 provenance error on
+`character.py`'s `reader`/`EYE` collision. `git merge-tree main
+origin/despeckle-icon-pipeline origin/ui-forge-chrome-ownership-collision`
+returns three real conflict blocks in `tools/ui_forge.py` itself, not just
+the routine `ART_CRITIQUE.md` tail-append -- both branches independently
+edit the exact same region of `UI_PROMPTS` and the module docstring's
+`--only` example, in the same direction.
+
+PR #80's third commit (`ae13323`, dated 2026-09-17, titled "remove the six
+chrome-owned ids from `UI_PROMPTS`, generated for nothing") is the same
+finding this branch's own section above claims: `set(UI_PROMPTS) &
+set(CHROME)` is the identical six ids, both write to the identical
+`out/ui/<id>.png` path, and a plain `python tools/ui_forge.py` silently
+regenerated all six through SDXL. Its own message even changed the module
+docstring's `--only` example to the identical replacement pair
+(`ui_icon_espresso,ui_icon_latte`) this branch picked independently.
+
+**PR #80's fix is more complete than this branch's.** Two differences:
+
+- **Scope**: PR #80 deletes the six ids from `UI_PROMPTS` outright, so
+  `--only ui_coin` now hits the "unknown ui ids" error path -- no path back
+  to generating a chrome-owned id via SDXL at all. This branch instead kept
+  a soft default-exclude with an explicit-`--only` override. `ui_chrome.py`'s
+  own docstring ("It is not a prompt to tune. It is the wrong tool.") argues
+  for PR #80's harder stance, and it matches this repo's own established
+  precedent (`ui_icon_pastry`'s generative path was deleted outright when
+  rejected, not left reachable behind a flag) more closely than this
+  branch's softer one did.
+- **Depth**: PR #80 also found and removed a second, related piece of dead
+  code this branch never looked for -- `UI_SEED_OVERRIDE["ui_coin"] = 3`
+  (added in PR #80's own second commit, tuning which SDXL seed `ui_coin`
+  used) became unreachable the moment `ui_coin` left `UI_PROMPTS`, and PR
+  #80 removed it with a comment explaining why the tuning was correct at
+  the time but the artifact it improved was already dead. This branch's fix
+  left that entry untouched because it never knew to look for it.
+
+**Same shape as the Hour 63 correction, applied to this branch instead of a
+different one**: a real fix, independently re-derived and independently
+verified (both branches confirm the same six-id overlap, the same shared
+output path, the same zero-regression result), that turns out to already
+exist, earlier and more complete, on a PR this session hadn't cross-checked
+against before publishing. The underlying diagnosis in both cases was
+correct -- this is not a "the finding was wrong" correction, it is a
+"the finding was not new, and a better version of the fix already existed"
+correction, the second time this exact shape has happened this session
+(the first being `character.py`'s `reader` collision vs PR #24/#94).
+
+**No new code change here.** The honest recommendation for whoever
+reconciles the open PR pile: prefer PR #80's version of this fix over this
+branch's -- it is earlier, stricter (matches `ui_chrome.py`'s own stated
+doctrine), and catches a second dead-code consequence this branch missed.
+This branch's own fix is not wrong, just redundant and slightly softer;
+left open rather than closed, per standing practice, for him to reconcile
+directly.
