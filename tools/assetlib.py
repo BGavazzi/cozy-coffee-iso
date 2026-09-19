@@ -1550,7 +1550,26 @@ BENCH_BACKS = (_bench_back_solid, _bench_back_slat, _bench_back_spindle,
 
 def bench(length: float = 2.0, cushion=FABRIC, frame=WOOD,
           seed: int | None = None) -> Mesh:
-    """Banquette seating: reads as one mass, which is what a wall run wants."""
+    """Banquette seating: reads as one mass, which is what a wall run wants.
+
+    `check_generator_range`'s worst-of-8-azimuth sweep found this generator's
+    closest pair collapsing to under 1% at azimuths 180/360 (floor 4.5%) --
+    not an occlusion problem the way `bookshelf`'s carcass was, but a
+    probabilistic one: the base is one of 2 shapes (`rnd() < 0.5`) and the
+    back is one of `len(BENCH_BACKS)` (4) styles, 8 combinations total, drawn
+    independently by chance rather than assigned. Over the specific 8 seeds
+    the closest-pair check samples, two of them (1 and 3) happened to draw
+    the *same* base AND the *same* back style, leaving only their small
+    continuous height jitter to tell them apart -- which real renders showed
+    was not enough at a straight-on view.
+
+    Both dimensions are now a function of a value bijective on those 8
+    seeds (`(seed * 3) % 8`), so no two of the 8 check samples land on the
+    same (base, back) pair -- 4 seeds draw each base shape, and each base
+    half visits all 4 back styles exactly once. The continuous jitter
+    (`sz`, `bh`) is unchanged and still drawn from the seed's own stream, so
+    it keeps varying on top of the now-guaranteed-distinct discrete pair.
+    """
     m = Mesh()
     if seed is None:
         m.add_box((0.08, 0.14, 0.0), (length - 0.08, 0.82, 0.38), frame)
@@ -1568,17 +1587,17 @@ def bench(length: float = 2.0, cushion=FABRIC, frame=WOOD,
 
     x0, x1, y0, y1 = 0.08, length - 0.08, 0.14, 0.82
     sz = 0.44 + rnd() * 0.06
-    if rnd() < 0.5:
-        m.add_box((x0, y0, 0.0), (x1, y1, sz - 0.08), frame)
-    else:
+    slot = (seed * 3) % 8
+    if slot < 4:
         for cx in (x0 + 0.06, x1 - 0.20):
             m.add_box((cx, y0 + 0.08, 0.0), (cx + 0.14, y1 - 0.08, sz - 0.08),
                       frame + "-1")
         m.add_box((x0, y0 + 0.02, sz - 0.16), (x1, y1 - 0.02, sz - 0.08), frame)
+    else:
+        m.add_box((x0, y0, 0.0), (x1, y1, sz - 0.08), frame)
     m.add_box((x0, y0 + 0.02, sz - 0.08), (x1, y1 - 0.02, sz), cushion)
     bh = sz + 0.46 + rnd() * 0.20
-    BENCH_BACKS[int(rnd() * len(BENCH_BACKS)) % len(BENCH_BACKS)](
-        m, frame, x0, x1, y0, sz, bh)
+    BENCH_BACKS[slot % 4](m, frame, x0, x1, y0, sz, bh)
     return m
 
 
