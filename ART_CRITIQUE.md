@@ -9478,13 +9478,31 @@ at azimuth 225 (seeds 6 and 7), just under `CLOSEST_PAIR_FLOOR` (4.5%) --
 the smallest gap of any generator on the original list by a wide margin
 (`table_communal` and `pastry_case` both started near 0%).
 
-**Not live-gating.** `manifest.py --check` and `check_generator_range()`'s
-own default call only check `pair_azimuths=(45.0,)`, where this generator
-measures 9.0% -- comfortably clear. The 4.04% failure only shows up under
-the full 8-azimuth diagnostic sweep this branch (and #132-#135) used to
-audit the rest of this list, which is not wired into any live gate. Said
-plainly so nobody mistakes this for a shipping defect: nothing is broken
-today.
+**Correction (caught auditing a sibling defect the following hour, before
+this branch merged):** the paragraph originally here claimed this gap was
+"not live-gating" because `check_generator_range()`'s own bare default only
+checks `pair_azimuths=(45.0,)`. That default is real, but it is not what
+`manifest.py --check` actually calls -- reading the call site
+(`tools/manifest.py`, the `check_generator_range` block) shows it passes
+`pair_azimuths=all_azimuths`, the full 8-azimuth sweep, on purpose (its own
+comment: "the default single 45-degree pair check was its own best case...
+swept across all 8 azimuths furniture actually ships at"). A fresh
+`manifest.py --check --style cozy_ghibli` on unpatched `main` confirms it:
+`espresso_machine`'s az225 gap prints as a real line in the command's real
+output today -- `warning espresso_machine: closest pair of 8 seeds differs
+by only 4.0% at azimuth 225 (floor 4%)`.
+
+What was true: it is a **warning**, not an error (`check_generator_range`'s
+messages all feed `manifest.py`'s `warns` list, never `errs`), so it does
+not block a build the way `check_spread_floor_regression` or the buried-
+detail errors do. What was false: calling it a diagnostic-only artifact
+nobody sees. It is not blocking, but it is not invisible either -- anyone
+running the command today sees this exact line, the same as
+`table_communal`'s and `pastry_case`'s own pre-fix warnings did before
+#134/#135. Corrected here rather than silently, because the rest of this
+section's conclusion (the fix doesn't generalize, so it's better left as an
+honest warning than forced) does not change -- only the claim about who
+sees it.
 
 **The occlusion is real, and traced the same way as the last two.**
 Rendered seed 6 and seed 7 at azimuth 225 side by side
