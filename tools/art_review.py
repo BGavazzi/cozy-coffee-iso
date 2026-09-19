@@ -652,6 +652,30 @@ def _pair_disagreement(a, b) -> float:
 GENERATORS = (
     ("table_round", lambda A, s: A.table_round(seed=s), 1.7, None, ""),
     ("table_4top", lambda A, s: A.table_4top(seed=s), 2.6, None, ""),
+    # `furnish.py` calls `assetlib.table()` directly for two more named
+    # recipes that were never added here -- found while auditing this list
+    # against every seeded builder in `assetlib.py`, not by a report.
+    ("table_2top_square",
+     lambda A, s: A.table(1.0, 1.0, 0.58, round_top=False, seed=s),
+     1.7, None, ""),
+    # This one FAILS, on purpose left failing rather than given a custom
+    # floor. It found a real defect: seeds 1 and 3 both drew `_base_pedestal`
+    # ("the cafe two-top") and rendered 0.48% apart, because a single small
+    # central column barely differs in silhouette against a 4m top -- the
+    # thickness/overhang/leg-radius draws that are `table()`'s only variety
+    # at this style are a few centimetres regardless of table size. Excluding
+    # `_base_pedestal` above `max(w, d) >= 2.5` (see `table()`) raised that
+    # pair to 4.62%, clearing the pair floor, but exposed a second,
+    # pre-existing same-style collision (`_base_posts`, seeds 5/6, 4.22%) that
+    # had been hiding behind the worse one. Real, partial progress, not a
+    # closed defect -- `own` is deliberately NOT set here, because a custom
+    # floor low enough to pass this would be tuning the instrument to the
+    # answer, exactly what this file's own doctrine rejects elsewhere. See
+    # ART_CRITIQUE.md, "table_communal: a coverage gap that was hiding a
+    # real defect, half-fixed".
+    ("table_communal",
+     lambda A, s: A.table(4.0, 2.0, 0.58, round_top=False, seed=s),
+     5.5, None, ""),
     ("chair", lambda A, s: A.chair(seed=s), 1.4, None, ""),
     ("plant_large", lambda A, s: A.plant_large(seed=s), 1.7, None, ""),
     ("plant_small", lambda A, s: A.plant_small(seed=s), 1.1, None, ""),
@@ -846,7 +870,8 @@ def check_spread_floor_regression() -> list[str]:
 
 def check_generator_range(seeds: int = 8, azimuth: float = 45.0,
                           floor: float = DEFAULT_SPREAD_FLOOR,
-                          pair_floor: float = CLOSEST_PAIR_FLOOR) -> list[str]:
+                          pair_floor: float = CLOSEST_PAIR_FLOOR,
+                          pair_azimuths=(45.0,)) -> list[str]:
     """Do the seeded generators actually generate different shapes?
 
     A generator can rot in a way nothing else here notices. Add a base style
@@ -862,6 +887,22 @@ def check_generator_range(seeds: int = 8, azimuth: float = 45.0,
     reported 8 of 8 for every generator in the library including the ones the
     eye read as a single object. That was `check_buried_detail`'s first metric
     exactly -- a measure of whether anything moved, standing in for how much.
+
+    The closest-pair floor is checked at every azimuth in `pair_azimuths`, not
+    only the mean spread's single `azimuth`. `furnish.py.build_one` renders
+    every one of these generators as an 8-direction rotating sprite, the same
+    fact Hour 15's `check_buried_detail` fix was about -- and a corner-on
+    default (45 degrees) turned out to be this check's OWN best case, not a
+    representative one: an axis-aligned view (90/180/270/360) shows only one
+    face of a boxy leg/post base, occluding whatever the far side changed, so
+    two seeds a corner view tells apart collapse to the identical silhouette
+    face-on. Measured directly: `table_4top` (5.2% at 45, floor 4.5%, a clean
+    pass) drops to 2.6% at 90; `bookshelf` and `bench` drop to 0.0% -- PIXEL-
+    IDENTICAL -- at 180. Five of nineteen generators fail this way, all at an
+    axis-aligned angle, none from a diagonal one -- a physically consistent
+    pattern (per this file's own convention, a `+ 'why'` note on the specific
+    GENERATORS entry if the mechanism needs restating there), not sensor
+    noise.
     """
     import sys
     from pathlib import Path
@@ -886,15 +927,28 @@ def check_generator_range(seeds: int = 8, azimuth: float = 45.0,
         # spread while two of its eight seeds rendered PIXEL-IDENTICAL, and
         # `table_4top` averaged 30% with a closest pair of 0.3%. Those are the
         # instances a player actually compares, because four chairs round one
-        # table come from four consecutive seeds.
+        # table come from four consecutive seeds. Checked across every azimuth
+        # in `pair_azimuths`, not just the mean's one, for the reason in this
+        # function's own docstring: a corner-on default hides collisions that
+        # only appear face-on, and furniture ships rotating through both.
         if pair_floor > 0.0 and own is None:
-            lo = min(_pair_disagreement(frames[i], frames[j])
-                     for i in range(len(frames))
-                     for j in range(i + 1, len(frames)))
-            if lo < pair_floor:
+            worst_az, worst_lo = None, None
+            for az in pair_azimuths:
+                az_frames = (frames if az == azimuth else
+                             [screen_materials(factory(A, s + 1), az, span)
+                              for s in range(seeds)])
+                lo = min(_pair_disagreement(az_frames[i], az_frames[j])
+                         for i in range(len(az_frames))
+                         for j in range(i + 1, len(az_frames)))
+                if worst_lo is None or lo < worst_lo:
+                    worst_az, worst_lo = az, lo
+            if worst_lo < pair_floor:
+                at = (f" at azimuth {worst_az:.0f}" if worst_az != azimuth
+                      else "")
                 out.append(f"{name}: closest pair of {seeds} seeds differs by "
-                           f"only {lo:.1%} (floor {pair_floor:.0%}) -- the "
-                           f"generator moves on average and repeats itself")
+                           f"only {worst_lo:.1%}{at} (floor {pair_floor:.0%}) "
+                           f"-- the generator moves on average and repeats "
+                           f"itself")
     return out
 
 

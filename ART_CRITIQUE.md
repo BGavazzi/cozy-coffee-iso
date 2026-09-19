@@ -5447,6 +5447,171 @@ accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
 
+## `table_communal`: a coverage gap that was hiding a real defect, half-fixed
+
+Auditing `art_review.py`'s `GENERATORS` list (what `check_generator_range`
+actually measures) against every seeded builder in `assetlib.py`, the same
+kind of two-directional cross-check that found `gates.py`'s missing
+`organic_rig.check_roster` entry, turned up two more: `furnish.py` calls
+`assetlib.table()` directly for `table_2top_square` and `table_communal`,
+neither of which was ever added to `GENERATORS`. `table_round` and
+`table_4top` -- both of which delegate to the same `table()` -- were covered
+and passing, so this looked like simple bookkeeping at first.
+
+`table_2top_square` is: adding it passes cleanly (28.3% mean spread, 6.1%
+closest pair, both comfortably clear of the 15%/4.5% floors). `table_communal`
+is not. Its closest pair measured **0.48%** -- two of eight seeds render
+almost pixel-identical, the exact "seed is barely changing the shape" failure
+mode `check_generator_range`'s own docstring exists to catch, invisible until
+now purely because this recipe was never on the list it checks.
+
+**The mechanism, traced rather than guessed.** `table()`'s randomized draws
+(height, top thickness, overhang, base style, leg radius) are identical
+per-seed regardless of the table's own `w`/`d` -- the RNG doesn't know how
+big the table is. Tracing seeds 1-8 directly: seeds 1 and 3 both drew
+`_base_pedestal` ("Column on a splayed foot. **The cafe two-top.**" -- its own
+docstring). A single small central column, on a table communal-sized at
+4.0x2.0m, occupies a tiny and visually near-constant fraction of the
+silhouette regardless of which few centimetres of thickness/overhang/leg-
+radius the seed happened to draw -- so two pedestal seeds on this table are
+close to indistinguishable, a defect invisible on a `table_round` or
+`table_2top_square` (1.0x1.0m) precisely because the SAME absolute-unit
+variation is a much larger fraction of a much smaller table.
+
+**The fix, and what it did and didn't close.** `_base_trestle`'s own
+docstring already names the size this style belongs to instead: "Two end
+frames joined by a spine. **The long communal table.**" -- the code already
+knew which style suited which size, it just never enforced it. Added a
+size guard in `table()`, the same pattern already used to redirect `_base_
+trestle` to `_base_tripod` under a round top: `_base_pedestal` is excluded
+above `max(w, d) >= 2.5` and substituted with `_base_trestle`. Seeds 1/3's
+pair improved from 0.48% to 4.62%, clearing the pair floor outright.
+
+That fix is real and it is not the whole story. Excluding pedestal collapsed
+its seeds onto the remaining three styles, and doing that exposed a
+**second, pre-existing** collision that had been hiding behind the worse
+one: seeds 5 and 6 both drew `_base_posts` and measured 4.22% apart -- under
+the 4.5% floor, and present in the UNFIXED generator too, just never the
+closest pair because 1-vs-3 was always closer. `_base_posts` places four legs
+at `x0 + r*2.2` / `x1 - r*2.2`-style insets, so leg position does shift with
+the randomized radius `r` -- just, again, by centimetres against a 4-metre
+top. The general mechanism is not "pedestal is wrong," it is "every style's
+variety here is an absolute-unit draw, and a communal-scale table dilutes
+absolute units into invisibility regardless of which style holds them."
+
+**Left failing, deliberately, not given a custom floor.** `wall_art_framed`
+and three other generators in `GENERATORS` do carry an `own` floor, and each
+one is a case where the measured, honest ceiling of a *deliberately* subtle
+generator sits under the default bar for a stated reason (a sack's slump
+looking the same on purpose; a hue drawn from 4 buckets colliding by the
+pigeonhole principle). `table_communal` is not that: a communal table's base
+style and leg arrangement are exactly the kind of first-order silhouette
+change `table_round`/`table_4top`/`table_2top_square` all vary cleanly on.
+Setting `own` low enough to pass would be tuning the instrument to the
+answer -- the same trade this file has rejected everywhere else it was
+proposed (counter orientation, the detail floor's bracket, the mean-spread
+floor). `check_generator_range()` now correctly reports `table_communal`
+failing on both the mean and the pair floor, which is the honest state: a
+real defect, found by closing a coverage gap, half-closed by a real and
+verified fix, with a second, precisely diagnosed cause left as recorded,
+open work -- most likely closed properly by giving long tables a size-
+appropriate leg-count or leg-layout variation rather than more of the same
+few-centimetre radius/thickness draw, which is a real design pass, not a
+one-line fix.
+
+## `check_generator_range`'s own corner-view default was hiding five more collisions, not just `table_communal`'s
+
+Before accepting the entry above's "a real design pass, not a one-line fix"
+as the end of it, asked the same question Hour 15 asked of
+`check_buried_detail`: every measurement of `table_communal` on record --
+this file's own, and `check_generator_range`'s real caller in
+`manifest.py` -- shares one lever, a fixed 45-degree azimuth, while
+`furnish.py.build_one` ships every one of these generators as an
+8-direction rotating sprite. Had a genuinely different lever (more angles)
+ever been tried on this specific check, the way it was on `check_buried_
+detail`? It had not. Swept `table_communal` across all 8 azimuths a real
+sprite ships at, closest pair per angle:
+
+    az    45    90   135   180   225   270   315   360
+    lo  3.91  0.00  3.91  0.00  3.91  0.00  3.91  0.00
+
+The default 45-degree check is `table_communal`'s OWN BEST CASE, not a
+representative one -- every axis-aligned angle (90/180/270/360) is
+PIXEL-IDENTICAL between its closest pair, worse than the 3.9% the existing
+write-up above already treats as a real failure. This is the opposite
+generalization from buried_detail's (there, the default hid a defect a
+wider sweep exposed as real; here, the default was already failing, and a
+wider sweep confirms the same defect is more severe than measured, not that
+it secretly passes elsewhere).
+
+**Swept the other 18 seed-variety generators the same way**, not just the
+one already known to be broken -- the buried_detail precedent was itself a
+warning against trusting one subject's result as the whole picture:
+
+    name               az=45 (default)   worst-of-8   worst azimuth
+    table_4top               5.2%           2.6%           90   NEW FAIL
+    bookshelf                15.9%          0.0%          180   NEW FAIL
+    bench                    9.0%           0.9%          180   NEW FAIL
+    espresso_machine         9.0%           4.0%          225   NEW FAIL
+    pastry_case               7.6%          3.0%          180   NEW FAIL
+    (14 others: worst-of-8 stays clear of the 4.5% floor)
+
+Five of nineteen generators -- over a quarter -- pass the check that ships
+today and fail at a real angle the sprite sheet actually renders. All five
+collisions land on an axis-aligned angle (90/180/225/270), none on a
+diagonal one, which is a physically consistent mechanism and not
+measurement noise: a corner-on (45-family) camera sees two faces of a boxy
+object at once, so a base/leg/shelf-contents difference on either face
+shows; a face-on (90-family) camera sees exactly one face and occludes
+whatever the far side changed, so two seeds that differ only there collapse
+to one silhouette.
+
+**Visually confirmed, not just numerically.** `bookshelf` seeds 1 and 2 at
+45 degrees show clearly different book colours and arrangement on the
+shelves -- correctly read as different by the existing check. The same two
+seeds at 180 degrees are both a flat, featureless orange plank: the
+bookshelf's closed side panel, with every shelf and book that distinguishes
+them on the opposite face, completely hidden. Not a rendering bug --
+`screen_materials`' own docstring already named this exact mechanism for
+silhouette alone ("an open-fronted carcass has the same outline whatever is
+on its shelves"); here the same occlusion swallows the *interior* detail
+the earlier fix (comparing materials, not silhouette) was written to catch,
+because at this specific angle there is no interior showing at all.
+
+**The fix: same wiring pattern as `check_buried_detail`.**
+`check_generator_range` gained a `pair_azimuths` parameter (default
+`(45.0,)`, preserving every existing caller's behaviour byte-for-byte
+unless it opts in), and now checks the closest pair at every azimuth in
+that tuple rather than only the mean's single `azimuth`, reporting whichever
+angle is worst. `manifest.py --check`'s real call site was updated to pass
+all 8 real ship azimuths, the same `45.0 + k * AZIMUTH_STEP` sweep Hour 15
+wired into `review_library()`.
+
+**Verified no regression.** `manifest.py --check`, both styles, before and
+after, on this branch: errors unchanged (3 / 10, matching PR #83's own
+baseline), warnings +5 each style (the five new generator names above,
+identical set under `cozy_ghibli` and `snes_rpg` -- expected, since
+`screen_materials` resolves material identity, not colour, so this
+mechanism is palette-independent by construction). Runtime cost: the sweep
+adds roughly 4 seconds to `check_generator_range` (0.9s to 4.9s) for
+checking 8 angles instead of 1 on 15 generators -- negligible against
+`manifest.py --check`'s multi-minute total. Full 40-test suite unchanged.
+
+**Left failing, deliberately, same reasoning as `table_communal` above.**
+None of the five newly-exposed generators gets an `own` floor -- their
+variety is not deliberately subtle, it is a first-order silhouette/interior
+change with a blind angle, and the honest fix is either giving the
+`table()`-style absolute-unit draws a size-relative version (as attempted
+for `table_communal`) or, for `bookshelf`/`bench`/`espresso_machine`/
+`pastry_case`, auditing what part of each object's variety lives only on
+the face an axis-aligned camera occludes. That is real per-generator
+geometry work, five instances of it, correctly out of scope for a check-
+wiring fix -- recorded here, not silently absorbed into a looser floor.
+
+Follow-up commit on this same branch (PR #83), continuing its own named
+check function rather than opening an unrelated topic. Left unmerged per
+standing practice.
+
 ## A third re-check, a genuinely mixed result: the basket that invented `check_speckle` was never re-tested against the fix it inspired
 
 Two sections up, "Four fixes, none of which worked, which is the finding"
