@@ -9467,3 +9467,81 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## Checked whether `MIN_FOCAL_CONTRAST` needed the same per-style treatment `MAX_ISOLATED` and the albedo floor already got -- it doesn't, and the numbers say why
+
+`check_focal_contrast --style snes_rpg` currently fails contrast on plan 1
+(L run, +0.001 against a 0.030 floor) and plan 3 (island, +0.000) -- real,
+correctly-measured defects per "`check_focal_contrast` was grading every
+style's room against cozy_ghibli's palette" above, left open there rather
+than fixed. Two style-specific floors already exist for exactly this shape
+of problem (`styles/snes_rpg/bible.yaml`'s `albedo_l_floor`/`_ceil`/`_target`,
+and `MAX_ISOLATED`'s per-style calibration, PR #127) -- worth checking
+whether `MIN_FOCAL_CONTRAST` was the same bug a third time before assuming
+these two failures need a content fix instead.
+
+**The mechanism that would predict this:** `check_focal_contrast`'s own
+docstring calibrated its contrast floor against "a frame containing 37
+distinct lightness values" -- that number belongs to `cozy_ghibli`'s
+palette specifically. Counted fresh: `cozy_ghibli` has 39 distinct OKLab L
+values across its 9 ramps, `snes_rpg` has 31 (`styles/snes_rpg/bible.yaml`'s
+own design intent -- "fewer, more saturated ramps, fewer visible shading
+bands"). A 5-95 percentile spread over fewer available quantization levels
+reads lower for the identical composition on general grounds, which is
+exactly the reasoning that justified `MAX_ISOLATED`'s and the albedo
+floor's per-style values.
+
+**Measured instead of assumed -- and the prediction fails.** All 5
+topologies' contrast reading, same seeds, `cozy_ghibli` vs `snes_rpg`,
+properly built (not re-coloured) under each:
+
+```
+seed  1 L run       ghibli C=+0.146   snes C=+0.001   (-0.145)
+seed  2 peninsula   ghibli C=+0.101   snes C=+0.077   (-0.024)
+seed  3 island      ghibli C=+0.146   snes C=+0.000   (-0.146)
+seed  8 galley      ghibli C=+0.045   snes C=+0.091   (+0.046)
+seed 11 wall run    ghibli C=+0.146   snes C=+0.078   (-0.068)
+```
+
+A step-count explanation predicts a roughly UNIFORM drop across every room
+-- fewer available lightness levels compresses the percentile spread the
+same way regardless of what the room contains. That is not what happened.
+Two rooms (L run, island) crash to essentially zero, two (peninsula, wall
+run) drop by a third to a half, and one (galley) reads HIGHER under
+`snes_rpg` than under `cozy_ghibli`. A palette-wide calibration problem
+cannot produce a room that gets BETTER under the smaller palette. This
+rules out the hypothesis this section opened with.
+
+**Looked at the two failing rooms by eye rather than trusting either
+number** (`proof/snes_contrast_Lrun_probe.png`,
+`proof/snes_contrast_island_probe.png`, both rendered at 480 through the
+real `--style snes_rpg` pipeline). Both read as reasonably composed at a
+glance -- the counter is a visible cream/tan surface against a warm brown
+floor in both. That is a genuine gap between what the eye accepts and what
+the metric measures, but it is not evidence the floor is wrong: the same
+gap, in the other direction, is exactly what "`check_focal_contrast` was
+grading every style's room against cozy_ghibli's palette" already used to
+justify NOT touching the floor when this style-blind bug was first found.
+An instrument that both eyes and numbers agree is close is not the same
+claim as an instrument that is miscalibrated.
+
+**Conclusion: does not generalize, and left un-fixed here on purpose.**
+`MAX_ISOLATED` and the albedo floor needed per-style values because the
+SAME material read as a different absolute lightness under a different
+palette by construction -- a property of the palette alone, uniform across
+every room that uses it. L-run's and island's contrast collapse is not
+that: it is specific to those two topologies' own geometry (an L-run's
+service-return arm, an island's freestanding back-bar-as-exposed-end
+construction documented in `BACK_COUNTER_H`'s own comment above) interacting
+with `snes_rpg`'s specific ramp choices in a way `peninsula`/`wall run`/
+`galley` do not share. Loosening `MIN_FOCAL_CONTRAST` for `snes_rpg` would
+hide a real, topology-specific defect behind a threshold that also happens
+to admit two genuinely under-contrasted rooms -- the identical mistake this
+file has already named and refused twice (the `MIN_FOCAL_L`/
+`MIN_FOCAL_DETAIL` galley entry, and contrast's own "THE CONTRAST FLOOR IS
+NEGATIVE" reasoning). Whatever actually fixes L-run and island under
+`snes_rpg` is a palette-authoring or counter-material question -- which
+ramp step the counter's material resolves to under this style's specific
+9-ramp set -- not a measurement bug this pass's tools can verify or fix
+mechanically. Left open, correctly, as a real and specific finding rather
+than folded into a floor change.
