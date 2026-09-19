@@ -5447,6 +5447,48 @@ accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
 
+## Checked whether `check_member_thickness`'s wrong-scale bug generalizes to `character.py`'s equivalent -- it doesn't
+
+`check_member_thickness`'s fix (this session) found `ROOM_PX_PER_UNIT`
+(27.2, "the room framing") was being used as if it were furniture's real
+ship scale when `furnish.py`'s per-object `frame_all` framing actually varies
+1.2x-4.9x from it. `character.py` has the exact same shape of constant --
+`GAME_PX_PER_UNIT = 27.2` ("Room framing resolves 27.2 px per world unit...
+a limb or a body narrower than this many pixels there stops reading as a
+shape") -- used by `check_direction_stability` with a hardcoded `span=0.95`,
+the same pattern that was wrong for furniture. Worth checking whether it is
+also wrong here.
+
+**It isn't, and the reason is structural, not luck.** Characters ship
+through `animate.build_sheet()`, which calls `fit(spec, clip_specs)` to get
+each character's own real per-character span across every pose in every
+clip -- `furnish.py`'s `frame_all` equivalent, confirmed by reading the
+production path (`build_sheet` is what `package_godot.py` packs, the same
+way `frame_all`'s sprite was confirmed to be furniture's real ship path).
+Unlike furniture, which ranges from a teacup to a bookshelf, every character
+is the same humanoid rig at the same declared height -- so the real per-
+character span has almost nowhere to drift.
+
+Measured directly rather than assumed: the real roster (barista + 8
+customers) all land within 1-3% of the assumed 0.95 (0.9410 to 0.9745), and
+12 generated extras (`generate_roster`, seed 1 -- deliberately the more
+parameter-varied population) land within 1-2% (0.9397 to 0.9667). Went one
+step further than a span comparison, since a small span difference could
+still flip a verdict near the floor: recomputed every character's actual
+per-direction pixel width at BOTH the assumed 0.95 and their own real `fit`
+span, and diffed the pass/fail call against `MIN_SILHOUETTE_PX` (9) for all
+21 characters x 8 directions = 168 checks. **Zero verdicts flip.** The
+closest real case to the floor, `student`, measures 10.23px at the assumed
+scale -- 1.23px of margin, comfortably wider than the largest span-driven
+error observed (about 0.3px).
+
+Not a bug: `check_direction_stability`'s comment already frames this as "the
+scale the sprite is actually seen," and for characters specifically, that
+claim holds up under measurement the same way it stopped holding up for
+furniture. The difference is the object population, not the check's design --
+a fixed camera assumption is only as wrong as the size variance of the
+things it's assumed for, and humanoid characters have almost none.
+
 ## `check_light_direction`'s 4% floor is also cozy_ghibli-calibrated -- and it fails the opposite way `check_speckle` did
 
 An earlier pass here found `check_speckle`'s `MAX_ISOLATED` floor was
