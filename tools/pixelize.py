@@ -62,6 +62,9 @@ MATERIAL_RAMPS = {
     "lamp_glow": "lamp_glow",
     "accent_read": "accent_read",
     "gold_coin": "gold_coin",
+    # Not emissive -- a mark that must stay legible from every angle, which
+    # is the same requirement in different words. See character.py's `EYE`.
+    "eye": "eye",
 }
 
 

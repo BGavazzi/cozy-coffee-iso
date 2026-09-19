@@ -75,11 +75,35 @@ SKIN_TONES = ("skin-4", "skin-3", "skin-2", "skin-1", "skin",
 # skin surface. An eye is a different material from a cheek in every art style
 # there is.
 #
-# `neutral-2` over `neutral-1` because the flat 0.304 in that last row is the
-# eye clamping too -- it holds its gap by getting lighter as the skin does,
-# and a mid-grey eye on a pale face is a weaker mark than a near-black one.
-# `neutral-2` keeps the floor at 0.196 and stays dark at the light end.
-EYE = "neutral-2"
+# `neutral-2` was the fix for eight passes after that -- and it was still a
+# SHADED material, so the table above is a bracket over LAMBERT VALUES the
+# rig happens to reach, not over every value it can reach. The azimuths swept
+# in `check_eye_legibility`'s own history (see ART_CRITIQUE.md, "`check_eye_
+# legibility` only ever rendered azimuth 45") found the case that table
+# never sampled: `skin-4` at azimuth 225 measures 0.103, not because the
+# ANCHOR tone was wrong -- it wasn't, 45/90/135 all clear the floor at this
+# same tone -- but because a grazing key angle shades the front facet down
+# far enough that the eye's own ramp step and the cheek's collapse to the
+# same one, the identical "zero at the ramp floor" mechanism the table above
+# already named for `skin + "-4"`, now reached by VIEWING ANGLE instead of
+# by skin tone. Choosing a still-darker anchor cannot fix a floor collision;
+# it only moves which azimuth reaches it.
+#
+# `MATERIAL_RAMPS` already has a mechanism for exactly this: a 1-step ramp
+# renders as itself "at any lambert -- an emissive surface, not a shaded
+# one" (`pixelize.py`). `lamp_glow`/`gold_coin` use it because those objects
+# ARE light sources or self-evidently flat metal; an eye is neither, but it
+# has the same requirement stated differently -- legible from every angle,
+# not just the ones a four-tone bracket happened to sample. `EYE` now names
+# a dedicated `eye` spot colour (each style's own darkest `neutral` step,
+# cloned rather than shared, so nothing else can drift onto it) instead of
+# a shaded step of `neutral`. Verified empirically before committing to it,
+# not assumed from the mechanism alone: swapping `EYE` to any existing
+# 1-step ramp as a test closed the `skin-4`/225 failure outright (1 error to
+# 0), confirming the fix is the flatness, not a particular colour. See
+# ART_CRITIQUE.md, "Eyes were lambert-shaded like any other surface, and the
+# azimuth-225 failure was the collision that shading guarantees eventually".
+EYE = "eye"
 
 # Cross-section radii. Depth is kept near width -- the whole point of the prism
 # rewrite -- rather than the 0.265 x 0.175 slab that broke the diagonals.
