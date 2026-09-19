@@ -9467,3 +9467,116 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## `espresso_machine`'s az225 gap is real occlusion, but its one un-occluded lever doesn't generalize the way the last two did -- documented honestly, not fixed
+
+Last remaining item on `check_generator_range`'s original worst-of-8-azimuth
+"left failing, deliberately" list (`table_4top`, `bookshelf`, `bench`,
+`table_communal`, `pastry_case` are all resolved -- see their own sections
+above and PRs #132-#135). `espresso_machine`'s closest pair measured 4.04%
+at azimuth 225 (seeds 6 and 7), just under `CLOSEST_PAIR_FLOOR` (4.5%) --
+the smallest gap of any generator on the original list by a wide margin
+(`table_communal` and `pastry_case` both started near 0%).
+
+**Not live-gating.** `manifest.py --check` and `check_generator_range()`'s
+own default call only check `pair_azimuths=(45.0,)`, where this generator
+measures 9.0% -- comfortably clear. The 4.04% failure only shows up under
+the full 8-azimuth diagnostic sweep this branch (and #132-#135) used to
+audit the rest of this list, which is not wired into any live gate. Said
+plainly so nobody mistakes this for a shipping defect: nothing is broken
+today.
+
+**The occlusion is real, and traced the same way as the last two.**
+Rendered seed 6 and seed 7 at azimuth 225 side by side
+(`proof/espresso_machine_seed6_az225.png`,
+`proof/espresso_machine_seed7_az225.png`) -- both come out as an almost
+featureless dark box, visually near-identical. The same two seeds at
+azimuth 90 (`proof/espresso_machine_seed6_az90.png`,
+`proof/espresso_machine_seed7_az90.png`) are obviously different: one
+visible group/cup cluster versus three. Azimuth 225 is a near-total
+occlusion view for this generator's silhouette -- the first time this
+generator's own list has hit occlusion at a *diagonal* azimuth rather than
+one aligned to an axis (`table_4top`'s and `pastry_case`'s occlusion both
+showed up at 180/360, straight down an axis).
+
+**The one lever that crosses the outer silhouette boundary at az225 is
+`lift`** (`espresso_machine`'s existing +-0.065 shell-height draw, added in
+an earlier pass -- see its own docstring note about two seeds once
+rendering pixel-identical). Confirmed with an isolated shell-only test mesh
+built from the same box coordinates: the full +-0.065 range gives 27.7% diff
+at az225 in isolation, strong signal. The actual seed 6/7 gap is only ~1cm
+of that range (-0.056 vs -0.046) and measures 4.04% in the real, full
+generator -- diluted from what the lever alone would give, the same
+shared/occluding-geometry pattern documented for `table_communal`'s failed
+shared-shelf attempt: parts of the machine that sit nearer the camera than
+the shell's height-varying edges (the drip tray, gauge, and group/cup
+clusters) cover some of the pixels that would otherwise show the height
+difference, and fixed-position parts identical between every seed add
+covered pixels to the comparison's denominator without ever contributing a
+difference.
+
+**Widening `lift` does not cleanly fix this, unlike `table_communal` and
+`pastry_case`.** Those two each had exactly one seed-driven source of
+variety feeding the failing azimuth, so widening its draw range shrank the
+gap monotonically. `espresso_machine` draws `lift` from the *same* `rnd()`
+stream as several other seed-driven choices in sequence (group count,
+groups-vs-cups counts, whether an accessory panel is drawn, whether a
+second steam wand is drawn) -- so changing `lift`'s multiplier does not
+just change `lift`, it changes how close `lift` lands to *other* seeds'
+values, at every azimuth, while those other draws stay exactly as they
+were. Swept the range continuously from 0.13 (current) to 0.40 in ~40
+steps, checking the full 8-azimuth x 28-pair sweep at each step:
+
+```
+RANGE=0.13  worst=0.0404 az=225 seeds=(6,7)  [fail -- current]
+RANGE=0.14  worst=0.0449 az=315 seeds=(3,8)  [fail]
+RANGE=0.15  worst=0.0469 az=270 seeds=(5,7)  [PASS]
+RANGE=0.16  worst=0.0452 az=270 seeds=(5,7)  [PASS]
+RANGE=0.17  worst=0.0582 az=360 seeds=(1,8)  [PASS]
+RANGE=0.18  worst=0.0029 az=270 seeds=(6,7)  [fail -- worse than baseline]
+RANGE=0.19  worst=0.0058 az=270 seeds=(6,7)  [fail]
+RANGE=0.20  worst=0.0530 az=225 seeds=(6,7)  [PASS]
+RANGE=0.21  worst=0.0385 az=270 seeds=(6,7)  [fail]
+RANGE=0.22  worst=0.0453 az=270 seeds=(6,7)  [PASS]
+RANGE=0.23  worst=0.0010 az=270 seeds=(6,7)  [fail]
+RANGE=0.24  worst=0.0289 az=270 seeds=(6,7)  [fail]
+```
+
+Pass/fail oscillates with no monotonic trend as the range widens -- each
+step moves seed 6 and 7's `lift` values through a different point in
+azimuth-225 *and* azimuth-270 screen space at once, and which pair becomes
+the new worst case keeps changing. A range exists that happens to clear all
+8 azimuths for these particular 8 seeds (0.34 does, checked separately),
+but getting there means tuning the constant against this specific seed set
+until the oscillation happens to land on a pass, not converging on a fix
+with headroom the way the leg-position and height levers did for the last
+two generators. `CLOSEST_PAIR_FLOOR`'s own comment in `art_review.py`
+already names this exact trap: "a floor set low enough to pass this would
+be tuning the instrument to the answer." The same logic applies in reverse
+to tuning the generator until the floor happens to pass.
+
+Also tried making `lift` a bijective seed-slot draw (the technique that
+worked cleanly for `table_communal` and `pastry_case`) at the current
+range: made az225 worse, not better (worst case drops to 1.48% at a
+different pair, az180) -- bijecting a single lever that shares a draw
+sequence with several unrelated choices just relocates which two seeds
+collide, same as widening does, because the thing actually being tuned is
+"where do 8 already-fixed other configurations happen to sit," not the
+lever itself.
+
+**Not pursued further.** The gap is small (0.46 percentage points, on a
+diagnostic sweep with no live consumer), the fix that worked twice before
+does not generalize a third time, and the range that does happen to clear
+all 8 seeds (0.34, more than 2.5x the current draw) risks a visibly
+over-tall or over-short machine for no benefit against anything that
+actually ships. This is the same honest-non-fix shape as the frog-knight
+character-ceiling case: a real, traced, verified mechanism that does not
+resolve to a clean lever this time. Left as-is; `lift`'s existing +-0.065
+range and its own docstring note stand unchanged.
+
+With this, the entire original "left failing, deliberately" list from
+`check_generator_range`'s worst-of-8-azimuth sweep is now accounted for:
+four real fixes (`bookshelf`, `bench`, `table_communal`, `pastry_case`) and
+one honestly-documented remaining gap (`espresso_machine`, this section) --
+matching `table_4top`'s own residual az90 note in its section above, a
+small named gap left open rather than chased past the point of a clean fix.
