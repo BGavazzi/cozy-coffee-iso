@@ -399,7 +399,25 @@ def counter(kick=True, seed: int | None = None, front: str = "y",
     # would read as one four-tile cabinet rather than as two.
     lo, hi = 0.035, 0.965
     z0, z1 = base + 0.03, round(top - 0.03, 10)
-    face, n = (0.9412, (0.0, 1.0, 0.0)) if front == "y" else (0.9412, (1.0, 0.0, 0.0))
+    # `face` has to sit a hair proud of whichever axis the carcass box itself
+    # stops short of, the same way the crate's slats sit proud of its faces --
+    # otherwise the detail quad lands INSIDE the solid carcass instead of on
+    # its surface, and gets fully buried by it. The carcass is inset on y
+    # (0.06-0.94, "so two neighbours never share a reveal") but spans the FULL
+    # x range (0.0-1.0, "so a run tiles seamlessly", see the docstring above) --
+    # two different boundaries, so `front`'s two branches need two different
+    # proud-of-surface offsets, not the one 0.9412 both used to share. That one
+    # value was correct for y (0.94 + 0.0012) and silently wrong for x, where
+    # the carcass's own boundary is 1.0, not 0.94: every front="x" counter
+    # (the window bar run, `render_room.py`'s `front="x"` calls) drew its
+    # style detail 0.06 units inside its own solid wood, fully occluded from
+    # every camera angle. Confirmed dead by eye and by measurement: with the
+    # shared 0.9412, front="x" read pixel-identical across 7 of 8 seeds
+    # (0.25% screen spread); with its own 1.0012, it matches front="y"'s
+    # spread almost exactly (8.56% vs 7.47%, same seeds, same styles, now
+    # actually visible).
+    face_y, face_x = 0.9412, 1.0012
+    face, n = (face_y, (0.0, 1.0, 0.0)) if front == "y" else (face_x, (1.0, 0.0, 0.0))
 
     def put(u0, u1, v0, v1, mat):
         a, b = lo + (hi - lo) * u0, lo + (hi - lo) * u1
@@ -741,6 +759,20 @@ def table(w: float = 1.0, d: float = 1.0, h: float = 0.58, top=WOOD,
         # disc with three bases one of which was drawn twice, and the closest
         # pair of eight round tables measured 2.9%.
         style = _base_tripod
+    if not round_top and style is _base_pedestal and max(w, d) >= 2.5:
+        # A single central column is "the cafe two-top" by its own docstring,
+        # and stops making sense once the top is long enough to need someone
+        # sitting at each end to reach the middle. It also stops making
+        # variety: `leg_r`/`thick`/`over` are the same few-centimetre draw
+        # regardless of table size, so on a 4m communal top that draw is a
+        # rounding error against the silhouette -- seeds 1 and 3 both landed
+        # on `_base_pedestal` here and rendered 0.48% apart, under the 4.5%
+        # closest-pair floor, invisible only because `table_communal` (the
+        # `table()` caller this size belongs to) was never added to
+        # `check_generator_range`'s `GENERATORS`. `_base_trestle`'s own
+        # docstring already names the size this style belongs to instead:
+        # "the long communal table."
+        style = _base_trestle
     # 0.085 read as tree trunks under a disc; 0.052 read as wire. Each base
     # style scales this itself, because a lone raked leg carries more load --
     # and looks like it should -- than one of four posts.
