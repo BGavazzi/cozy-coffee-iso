@@ -1078,7 +1078,8 @@ def check_focal_contrast(n: int = 5, seed: int = 1,
                          confirm_target: int = FOCAL_CONFIRM_TARGET,
                          l_floor: float = MIN_FOCAL_L,
                          c_floor: float = MIN_FOCAL_CONTRAST,
-                         d_floor: float = MIN_FOCAL_DETAIL) -> list[str]:
+                         d_floor: float = MIN_FOCAL_DETAIL,
+                         ramps=None) -> list[str]:
     """A generated room's counter must still read as the place to look.
 
     The last of the composition questions to survive being measured. Depth
@@ -1173,6 +1174,30 @@ def check_focal_contrast(n: int = 5, seed: int = 1,
     `render_room.py`'s own delivery resolution -- and is reported only if it
     fails at BOTH. A room that passes at `target` never pays for the second
     render, so the common case costs nothing extra; only the failures do.
+
+    `ramps=None`, threaded to both `build()` and `render()` below, added the
+    same session `check_generator_range`/`check_direction_stability`/
+    `check_eye_legibility` each picked up their own coverage gap: this
+    function had none of manifest.py's own fix for the bug its neighbours
+    just above it in this file's `check()` call already name in a comment
+    ("Same bug class as character.py's and portrait.py's own --style"). Both
+    `build()`'s call and, separately, this function's OWN `render()` call
+    were bare -- `render()` has an identical `ramps or load_palette()`
+    fallback to `character.py`'s `_palette()`, so every reading this check
+    has ever produced was against cozy_ghibli's palette regardless of
+    `--style`. IMPORTANT: `ramps` has to reach `build()`, not just
+    `render()` -- `_people()` -> `generate_roster()` uses the palette during
+    roster generation itself, so re-colouring a cozy_ghibli-BUILT room is not
+    the same room as one actually built for the target style. A first
+    attempt at measuring this that threaded `ramps` only into `render()`
+    reported plan 1 (L run) passing snes_rpg's contrast floor comfortably
+    (+0.078); the properly-built room reports +0.001, failing. See
+    ART_CRITIQUE.md for the corrected before/after: `--style snes_rpg` used
+    to silently report cozy_ghibli's DETAIL failure and numbers for plan 1
+    (real error, wrong reason -- its own render fails CONTRAST instead), and
+    reported nothing at all for plan 3 (island), a real contrast failure
+    specific to snes_rpg's own palette that cozy_ghibli's render of the same
+    room happens to pass.
     """
     import io as _io
     import contextlib
@@ -1180,12 +1205,12 @@ def check_focal_contrast(n: int = 5, seed: int = 1,
     from render_room import render
 
     def read_room(plan, tgt):
-        L = build(plan)
+        L = build(plan, ramps=ramps)
         buf = _io.StringIO()
         with contextlib.redirect_stdout(buf):
             render(L, light_rig(plan), tgt, Path(tempfile.gettempdir())
                    / "_focal_check.png", wear=L.wear_field(),
-                   focal=focal_box(plan))
+                   focal=focal_box(plan), ramps=ramps)
         hits = _re.findall(r"([+-]\d\.\d\d\d)", buf.getvalue())
         return (float(hits[0]), float(hits[1]), float(hits[2])) \
             if len(hits) >= 3 else None
@@ -1260,7 +1285,8 @@ def check_built_rooms(n: int = 6, seed: int = 1) -> list[str]:
 
 
 def _focal_scan(n: int, target: int,
-                confirm_target: int = FOCAL_CONFIRM_TARGET) -> int:
+                confirm_target: int = FOCAL_CONFIRM_TARGET,
+                ramps=None) -> int:
     """Every plan from 1 to n, graded against the focal floors.
 
     Exists because the suite check samples ONE ROOM PER TOPOLOGY -- four
@@ -1287,6 +1313,14 @@ def _focal_scan(n: int, target: int,
 
     Not folded into the suite because twelve rooms is several minutes, and a
     check nobody runs protects nothing.
+
+    `ramps=None`, threaded through to `build()` and `render()` here for the
+    same reason `check_focal_contrast()` just above needed it: this is the
+    same measuring instrument, run manually, and was carrying the identical
+    bare `render()` call -- caught only because `main()`'s own `--style`
+    flag already exists on this file's parser and simply was never passed
+    down this path (it short-circuits to `_focal_scan()` before `main()`'s
+    own ramps-resolution block runs).
     """
     import io as _io
     import contextlib
@@ -1294,12 +1328,12 @@ def _focal_scan(n: int, target: int,
     from render_room import render
 
     def read_room(plan, tgt):
-        L = build(plan)
+        L = build(plan, ramps=ramps)
         buf = _io.StringIO()
         with contextlib.redirect_stdout(buf):
             render(L, light_rig(plan), tgt, Path(tempfile.gettempdir())
                    / "_focal_scan.png", wear=L.wear_field(),
-                   focal=focal_box(plan))
+                   focal=focal_box(plan), ramps=ramps)
         hits = _re.findall(r"([+-]\d\.\d\d\d)", buf.getvalue())
         return float(hits[0]), float(hits[1]), float(hits[2])
 
@@ -1353,15 +1387,6 @@ def main() -> int:
                          "reading directly, not for normal use")
     args = ap.parse_args()
 
-    if args.focal_scan:
-        return _focal_scan(args.focal_scan, args.target or FOCAL_TARGET,
-                           confirm_target=0 if args.no_confirm
-                           else FOCAL_CONFIRM_TARGET)
-
-    plan = F.generate(args.seed)
-    bad = F.check_plan(plan)
-    print(f"plan seed {args.seed}: " + ("clean" if not bad else "; ".join(bad)))
-    print(F.describe(plan))
     # Resolved before `build()` runs, not after: `build()` is what generates
     # the roster (`_people()` -> `C.generate_roster()`), and a roster proposed
     # against the wrong palette's contrast/waistline checks is a roster that
@@ -1369,11 +1394,29 @@ def main() -> int:
     # renders with. Same bug class as `main()`'s own `ramps` used to be for
     # the render call alone -- computed too late to reach every place a style
     # decision needs to land.
+    #
+    # Moved above the `--focal-scan` early return, which used to skip this
+    # block entirely: `--style` was declared on this same parser and read by
+    # every other mode here, but `--focal-scan` returned before the block
+    # that resolves it ever ran, so `build_plan.py --focal-scan N --style
+    # snes_rpg` silently scanned N rooms in cozy_ghibli's colours. See
+    # `check_focal_contrast()`'s docstring for the measured numbers this
+    # produces -- `_focal_scan()` is the same instrument, run manually.
     ramps = None
     if args.style:
         from pixelize import load_palette
         from style import load_style
         ramps = load_palette(load_style(args.style).palette_path)
+
+    if args.focal_scan:
+        return _focal_scan(args.focal_scan, args.target or FOCAL_TARGET,
+                           confirm_target=0 if args.no_confirm
+                           else FOCAL_CONFIRM_TARGET, ramps=ramps)
+
+    plan = F.generate(args.seed)
+    bad = F.check_plan(plan)
+    print(f"plan seed {args.seed}: " + ("clean" if not bad else "; ".join(bad)))
+    print(F.describe(plan))
     L = build(plan, ramps=ramps)
     print(f"  {L.generated} props placed by constraint, "
           f"{len(L.items)} tracked in all")

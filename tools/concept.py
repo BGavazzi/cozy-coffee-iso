@@ -222,6 +222,21 @@ DEFAULT_IP_SCALE = 0.45  # see "Reference images" above for the measured sweep
 # it caught `bread_loaf` correctly, which is the right place for that
 # judgement to live. Full write-up: `ART_CRITIQUE.md`, "`MIN_FILL` was
 # rejecting better work than it was admitting".
+#
+# **Correction, 2026-09-17:** the blocked-frame counts quoted above
+# (`basket` 8/8, `cutting_board` 7/8, `bread_loaf` 5/8) all predate
+# `pixelize.despeckle` and are stale as *current* numbers -- all three were
+# failing on `art_review`'s speckle check specifically, and all three now
+# render clean (0/8) through the despeckled pipeline. `bread_loaf`'s
+# "amorphous form TripoSR cannot resolve" explanation was the wrong
+# mechanism for its 5/8: that was rendered-pixel noise on a grainy crust,
+# the same cause as basket's weave, not a silhouette/topology defect. See
+# `ART_CRITIQUE.md`, "A second re-check, opposite result: `bread_loaf`'s
+# 'genuinely bad' 5/8 was speckle after all". The qualitative conclusion
+# here (fill share does not predict blocked-frame count) is not undermined
+# by this -- despeckle is orthogonal to fill either way -- but the specific
+# numbers above should not be read as current without re-running the sweep,
+# which that entry deliberately does not do.
 MIN_FILL = 0.02
 MAX_FILL = 0.72
 EDGE_MARGIN = 0.02       # clear border, as a fraction of the short side
