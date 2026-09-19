@@ -5447,6 +5447,56 @@ accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
 
+## Continuing the pre-Hour-58 pile sweep: PR #90's eye-visibility fix, re-verified fresh rather than trusted, and it retroactively strengthens Hour 62's own finding
+
+Hour 70 spot-checked three early branches for conflicts; this hour picked
+one more, chosen for direct relevance rather than at random: PR #90
+(`organic-rig-eyes-single-azimuth`, "Hour 23") widened
+`organic_rig.py`'s `check_eyes_visible` from a single hardcoded azimuth
+(90) to three (45/90/135), the exact single-azimuth-blindness bug class
+this session hunted extensively in its own Hours 20-49 window -- directly
+relevant because Hours 61/62/67 all touched `organic_rig.py`'s eye
+material and rendering, and none of them cross-checked this branch first.
+
+**Re-ran it fresh rather than trusting the commit message.** Checked out
+the branch, ran `organic_rig.py --style snes_rpg --check` live: clean.
+Confirmed the widened azimuth set is actually present
+(`EYES_VISIBLE_AZIMUTHS = (45.0, 90.0, 135.0)`) and `check_eyes_visible()`
+genuinely returns `[]` today, not an assumption carried from the original
+commit. Reproduced the fix's own verification method to confirm the near-
+miss it found is still real, not a stale number: raised `MIN_EYE_PIXELS`
+5 -> 5 (one above the real 3px floor) and re-ran -- `drifter: left eye
+renders 4px at azimuth 45 (need 5)`, the exact member, angle and pixel
+count the original commit recorded, reproduced live, today, on unrelated
+current code.
+
+**Reconciliation, not just verification.** `git merge-tree main
+origin/organic-rig-eyes-single-azimuth origin/gates-catalog-organic-rig-
+roster` (PR #90 vs PR #82): zero conflict markers, not even the routine
+`ART_CRITIQUE.md` one. `git merge-tree main
+origin/organic-rig-eyes-single-azimuth origin/organic-rig-never-actually-
+renders-a-scene` (PR #90 vs this session's own PR #122): exactly one
+conflict block, confined to the usual `ART_CRITIQUE.md` tail-append;
+`NEXT.md` merges clean. No real code conflict either way.
+
+**What this retroactively confirms about Hour 62's own work**: Hour 62
+ran `organic_rig.py`'s checks and reported all four roster members clean,
+`hair_mat=wood-4` not colliding with `EYE`, but did so against `main`'s
+default single-azimuth `check_eyes_visible` -- the *weaker* version, since
+PR #90's 3-azimuth widening was never merged. That result still holds
+under the *stronger* check verified here (same `[]` outcome, `drifter`'s
+own near-miss is about a DIFFERENT thing -- occlusion margin at 45 degrees,
+not a hair/eye material collision), so Hour 62's conclusion was correct,
+just not tested against the toughest available version of the check at the
+time. Worth stating precisely rather than leaving as an unstated gap: not
+every hour's own verification automatically incorporates every other
+unmerged branch's strengthened checks, and this is the kind of thing a
+reconciliation pass exists to catch.
+
+No code changes -- PR #90 already contains the real fix, still valid,
+still unmerged, still worth keeping. This branch just confirms it rather
+than leaving it untouched in the pile.
+
 ## Spot-checking the pre-Hour-58 part of the open-PR pile after Hour 69's discovery, plus two fresh candidates -- all clean
 
 Hour 69 found that PR #80's own commits are labelled "Hour 10/11 of the
