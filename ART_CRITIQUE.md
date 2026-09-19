@@ -8791,6 +8791,96 @@ Follow-up commit on this same branch (PR #83), continuing its own named
 check function rather than opening an unrelated topic. Left unmerged per
 standing practice.
 
+## `bookshelf`'s carcass fixed for real -- `add_box` was the wrong primitive, not the wrong idea
+
+Picked `bookshelf` off the five-generator list above as a real, scoped
+instance of the recurring audit's "genuinely different lever" pattern:
+every measurement of it on record shares one lever -- book colour, inside
+the open carcass -- while five of the eight real ship azimuths look at the
+*outside* of that carcass and cannot see it. `crate` already has the
+downstream lever this needed: value-not-geometry detail (its `"wood-2"`
+slats) drawn on the faces a camera can actually reach.
+
+**The measurement was worse than recorded.** The entry above names `180`
+as bookshelf's one "NEW FAIL." Swept all 8 real ship azimuths directly
+against the live `GENERATORS` entry:
+
+    az45   az90   az135  az180  az225  az270  az315  az360
+    15.9%  23.7%  15.9%   0.0%   0.0%   0.0%   0.0%   0.0%
+
+Five of eight are PIXEL-IDENTICAL across all 8 seeds, not one -- the entire
+closed carcass (back, both sides, top), not just the straight-on back view.
+
+**First attempt (a separate branch, `bookshelf-carcass-was-one-box-
+regardless-of-seed`, left open as a documentation-only PR) built the
+highlight as a second `add_box` abutting the original along an
+axis-aligned split.** It passed the check -- worst case 8.5% on the live
+`check_generator_range` -- and failed by eye: real fleck artifacts at the
+panel corners where two independently-boxed pieces met
+(`proof/bookshelf_multipanel_attempt_artifacts_az45.png` on that branch).
+Reducing scope to one panel closed the artifact but reopened two of the
+five broken azimuths, because one panel alone does not carry enough
+visible area to move the number at every angle. That branch's own honest
+conclusion: real progress, not a shippable fix, and a guess at three
+possible next steps.
+
+**The actual bug was the primitive, not the amount of geometry.** An
+axis-aligned box epsilon (`y - e` to nudge a face "toward the camera") is
+only toward the camera for whichever azimuths happen to agree with that
+one axis -- at the others, the two boxes' near-coincident faces tie in the
+z-buffer and flicker pixel to pixel, which is exactly the fleck pattern
+observed. `crate` never has this problem, and its own docstring says why:
+its slats are `add_quad` -- a single flat surface offset along its *own*
+outward face normal ("a thousandth of a unit proud of each face"), which
+has no axis blind spot because it is not competing with a second box's
+faces at all, on any axis, from any angle.
+
+Rebuilt bookshelf's highlight the same way: one `add_quad` per panel, each
+offset 0.0014 along that panel's own outward normal (`facing=(0,-1,0)`
+for the back, `(-1,0,0)`/`(1,0,0)` for the sides, `(0,0,1)` for the top),
+positioned by a value bijective on the seeds 1..8 the closest-pair check
+samples (`(seed * 3) % 8`, so no two of those eight seeds can land on the
+same seam on any panel; left/right run opposite so the two side highlights
+don't read as one diagonal wrapping the case).
+
+**Verified against the live check, not a reimplementation.**
+`check_generator_range(pair_azimuths=<all 8 real ship azimuths>)` reported
+`bookshelf` failing before this branch's change and does not after (6
+findings instead of 7, exactly the bookshelf line gone, the other five
+generators' own separate, still-open findings unchanged). Worst case
+across all 8 azimuths: 7.5% (at 225/315), comfortably over the 4.5% floor.
+
+**Verified clean by eye, not just by the check -- the exact test the
+`add_box` attempt failed.** `proof/bookshelf_before_seed1_az180.png`
+(flat, featureless, matching the 0.0% measurement) against
+`proof/bookshelf_quadfix_seed1_az180.png` (a clear two-tone plank seam,
+no artifacts) and `proof/bookshelf_quadfix_seed4_az270.png` (a different
+seed, different seam position, and the same shelf-edge speckle the
+*unmodified* render already shows at this grazing angle -- confirmed
+pre-existing and unrelated by rendering the original at az270 directly,
+not carried in by this change).
+
+**Zero regression.** `review_library()`'s `bookshelf` buried-detail line
+is byte-identical before and after (168/440 fully-occluded tris) -- the
+new quads are seed-conditional and `review_library` renders the canonical
+`seed=None` figure, so they never enter that measurement. Full 40-test
+suite: unchanged, 40 passed. `manifest.py --check`'s own live output is
+unchanged by this fix on either style, for the same reason it never showed
+`bookshelf` failing in the first place: PR #83's `pair_azimuths` widening
+is not wired into `manifest.py`'s call site on `main` yet, an orthogonal,
+already-completed piece of work sitting on its own unmerged branch.
+
+The documentation-only branch above (`bookshelf-carcass-was-one-box-
+regardless-of-seed`, PR #131) is superseded by this one -- its own
+three-option "what a future pass could try" list is answered by the first
+option it named (fix the primitive so panels don't z-fight), not by a
+narrower floor or a single-beam redesign. Left standing rather than
+deleted, since it is the honest record of what was tried and ruled out
+first.
+
+New branch (`bookshelf-carcass-quad-seam-fix`). Left unmerged per standing
+practice.
+
 ## A third re-check, a genuinely mixed result: the basket that invented `check_speckle` was never re-tested against the fix it inspired
 
 Two sections up, "Four fixes, none of which worked, which is the finding"

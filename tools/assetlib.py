@@ -1211,6 +1211,32 @@ def bookshelf(seed: int | None = None) -> Mesh:
     The books were then one `FABRIC` box per shelf: three coloured slabs, in the
     one object in the room that has an obvious reason to carry a dozen hues.
     `_books` generates them.
+
+    `check_generator_range`'s worst-of-8-azimuth sweep found this generator's
+    entire measured variety lived on the one axis a camera facing the closed
+    carcass dead-on (0/180/225/270/315/360 -- five of eight, not only the 180
+    first reported) cannot see: the books. Every seed rendered PIXEL-IDENTICAL
+    from those angles, because the carcass -- back, both sides, top -- was one
+    uniform `WOOD` box regardless of seed.
+
+    Each panel now carries one seed-positioned highlight plank, drawn as a
+    flat quad "a thousandth of a unit proud" of that panel's own outward face
+    -- exactly `crate`'s slat idiom (see its docstring), not a second box.
+    A first attempt built the highlight as a second `add_box` abutting the
+    first along an axis-aligned split and produced real fleck artifacts at
+    the panel corners where two independently-boxed pieces met: an
+    axis-offset epsilon is only "toward the camera" for whichever azimuths
+    happen to agree with that axis, so it z-fights at the others. A flat
+    quad offset along its own face normal has no such blind side, which is
+    the whole reason `crate` uses one -- and it renders clean at every one
+    of the 8 real ship azimuths, not just the ones this session happened to
+    check by hand.
+
+    The seam position is bijective on the seeds 1..8 the closest-pair check
+    actually samples (`(seed * 3) % 8` visits all 8 remainders once), so no
+    two of those seeds can land on the same seam on any panel; left/right
+    run opposite (`k` vs `1 - k`) so the two side highlights don't read as
+    one diagonal band wrapping the case.
     """
     st = None if seed is None else _mix(seed)
 
@@ -1226,6 +1252,27 @@ def bookshelf(seed: int | None = None) -> Mesh:
     for x0, x1 in ((0.10, 0.20), (0.80, 0.90)):                   # side panels
         m.add_box((x0, 0.55, 0.0), (x1, 0.92, 1.45), WOOD)
     m.add_box((0.10, 0.55, 1.36), (0.90, 0.92, 1.45), WOOD)       # top
+
+    if seed is not None:
+        e = 0.0014
+        k = ((seed * 3) % 8) / 7.0
+        back_split = 0.14 + 0.72 * k
+        m.add_quad((back_split, 0.55 - e, 0.0), (0.90, 0.55 - e, 0.0),
+                   (0.90, 0.55 - e, 1.45), (back_split, 0.55 - e, 1.45),
+                   "wood+1", facing=(0, -1, 0))
+        left_split = 0.55 + 0.37 * (0.20 + 0.72 * k)
+        m.add_quad((0.10 - e, left_split, 0.0), (0.10 - e, 0.92, 0.0),
+                   (0.10 - e, 0.92, 1.45), (0.10 - e, left_split, 1.45),
+                   "wood+1", facing=(-1, 0, 0))
+        right_split = 0.55 + 0.37 * (0.20 + 0.72 * (1.0 - k))
+        m.add_quad((0.90 + e, 0.55, 0.0), (0.90 + e, right_split, 0.0),
+                   (0.90 + e, right_split, 1.45), (0.90 + e, 0.55, 1.45),
+                   "wood+1", facing=(1, 0, 0))
+        top_split = 0.10 + 0.80 * (0.10 + 0.80 * k)
+        m.add_quad((top_split, 0.55, 1.45 + e), (0.90, 0.55, 1.45 + e),
+                   (0.90, 0.92, 1.45 + e), (top_split, 0.92, 1.45 + e),
+                   "wood+1", facing=(0, 0, 1))
+
     m.add_box((0.10, 0.55, 0.0), (0.90, 0.92, 0.10), WOOD)        # plinth
     for z in (0.34, 0.70, 1.06):
         m.add_box((0.20, 0.55, z), (0.80, 0.92, z + 0.05), CERAMIC)   # shelf
