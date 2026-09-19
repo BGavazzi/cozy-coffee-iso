@@ -178,13 +178,26 @@ class DimetricCamera:
 
 
 def verify_projection(tol: float = 1e-6) -> float:
-    """A ground-plane unit square must project 2:1. Returns the measured ratio."""
+    """A ground-plane unit square must project 2:1. Returns the measured ratio.
+
+    `tol` was accepted and then ignored -- the assert below hardcoded 1e-6
+    directly rather than checking against the parameter with that name.
+    Every real call (`prove_shading.py`, `tileset.py` x2) uses the default,
+    so this never diverged in practice, and the measured deviation itself is
+    at floating-point-precision scale (~5.6e-17 on this camera's own trig),
+    far under either number -- but a caller asking for a stricter or looser
+    tolerance than 1e-6 would have silently gotten 1e-6's answer instead,
+    the same shape as `bitmap_font.fit_cap`'s ignored `weight` earlier this
+    session. Confirmed the bug directly before fixing it: `tol=1e-20` (far
+    stricter than the real ~5.6e-17 deviation) passed silently pre-fix; it
+    correctly raises post-fix.
+    """
     cam = DimetricCamera(45.0)
     corners = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)]
     us = [dot(c, cam.right) for c in corners]
     vs = [dot(c, cam.up) for c in corners]
     ratio = (max(vs) - min(vs)) / (max(us) - min(us))
-    assert abs(ratio - 0.5) < 1e-6, f"projection is {ratio:.9f}:1, expected 0.5"
+    assert abs(ratio - 0.5) < tol, f"projection is {ratio:.9f}:1, expected 0.5"
     return ratio
 
 

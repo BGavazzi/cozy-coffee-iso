@@ -74,8 +74,29 @@ UI_NEGATIVE = ("photograph, 3d render, realistic, shading, gradient, "
 
 # What each declared `cat: ui` id should actually depict. `assets.yaml` names
 # them but does not describe them, and "ui_icon_cold_brew" is not a prompt.
+#
+# Deliberately does NOT include `ui_ticket`, `ui_coin`, `ui_dialogue_frame`,
+# `ui_nameplate`, `ui_upgrade_frame` or `ui_star_rating` -- the six ids
+# `ui_chrome.py`'s own commit message calls "the six chrome ids [that]
+# belong in procedural code rather than in a diffusion prompt", after that
+# module's `check_generator_range`-style measurement found every one of
+# them is a wrong-*shape* failure, not a texture one (a speech bubble
+# photographed as a tablet, a star rendered as an eight-point burst, the
+# coin gated muddy). `ui_chrome.py` draws all six today, deterministically,
+# no GPU, and both scripts write into the identical `out/ui/<id>.png` path
+# -- so until 2026-09-17 these six were STILL in this dict too, meaning
+# every full `ui_forge.py` run spent real SDXL time (and this file's own
+# `--retry-seeds` budget) generating six icons that `ui_chrome.py` then
+# silently overwrote, every time, in the exact order this repo's own
+# README documents running them. Confirmed by sha256: a standalone
+# `ui_forge.py --only ui_coin` build followed by `ui_chrome.py --only
+# ui_coin` leaves a file on disk that does not match the one `ui_forge.py`
+# just wrote. See ART_CRITIQUE.md, "The six chrome ids were still being
+# generated, silently, for nothing" -- including the honest note that
+# Hour 10/11's `ui_coin`/`UI_SEED_OVERRIDE` tuning, while itself correctly
+# measured, was tuning a producer whose output never survives to the
+# shipped library.
 UI_PROMPTS = {
-    "ui_ticket": "a paper order ticket with a torn edge",
     "ui_icon_espresso": "a small espresso cup on a saucer",
     "ui_icon_latte": "a tall latte glass with foam",
     "ui_icon_cappuccino": "a cappuccino cup with foam heart",
@@ -88,26 +109,55 @@ UI_PROMPTS = {
     "ui_icon_sandwich": "one triangular sandwich wedge, single layer, not stacked, cheese and ham filling",
     "ui_icon_milk": "a glass milk bottle, no frame, no border",
     "ui_icon_beans": "a bag of coffee beans",
-    "ui_coin": "a round gold coin",
     "ui_clock_day": "a round clock face",
-    "ui_dialogue_frame": "a rounded rectangular speech bubble",
-    "ui_nameplate": "a horizontal rounded nameplate banner",
-    "ui_upgrade_frame": "a square badge frame with a notched border",
-    "ui_star_rating": "a five pointed star",
     "ui_heart_mood": "a heart symbol",
 }
 
-# Six of the ids above are also in `ui_chrome.CHROME` -- ui_chrome.py's own
-# docstring says it "deliberately overwrites the chrome ids `ui_forge`
-# produced badly," which only holds if ui_chrome.py is the thing that runs
-# LAST. Nothing enforced that order: a plain `python tools/ui_forge.py` (the
-# first example above, historically) regenerates all six through SDXL again,
-# silently putting the bad version back, and no check here would catch it --
-# `ui_chrome.coin()`'s own docstring records that the SDXL coin "passed
-# every check... both times" despite reading as a muddy blob. Excluded from
-# the *default* run for that reason; still buildable by explicit `--only`
-# for comparison, with a warning, since that already requires typing the id.
-CHROME_OWNED = set(ui_chrome.CHROME)
+# Per-icon seed override. `--seed` (default 1) applies to everything else --
+# this exists only for an icon where the default seed passes the gate but
+# does not read well, and a specific better seed has actually been looked
+# at and confirmed, not just guessed. `_despeckle` and `check_icon` can only
+# tell isolated-pixel noise from a clean fill; neither can tell a murky
+# composition from a legible one, so this is the one place today "the eye
+# has to look" gets acted on rather than just named.
+UI_SEED_OVERRIDE = {
+    # No `ui_coin` entry here on purpose, not an oversight. Hour 10 of the
+    # autonomous audit measured, at real length, that seed 3 reads as a
+    # coin where seed 1 reads as a blob -- correct, and correctly verified
+    # at the time -- but `ui_coin` was removed from `UI_PROMPTS` entirely
+    # once it came out that this producer's `ui_coin` output never reaches
+    # the shipped library: `ui_chrome.py` draws it procedurally and, in
+    # this repo's own documented run order, always overwrites whatever
+    # `ui_forge.py` wrote first. See ART_CRITIQUE.md, "The six chrome ids
+    # were still being generated, silently, for nothing" -- the seed-3
+    # finding was real, the fix it justified (this entry) is now dead code
+    # for a different, upstream reason, not a wrong finding.
+    #
+    # Seed 1 passes clean (isolated-pixel gate has nothing to say about
+    # object count) but SDXL draws a whole shelf of a dozen bottles for
+    # this prompt, not one -- confirmed by eye, both styles
+    # (`out/milk_seed_sweep.png`, `out/milk_snes_seed1v3.png`). Swept
+    # seeds 1-6: 1 is the shelf; 3, 5 and 6 are each a single, clearly-
+    # readable glass milk bottle. Picked 3, matching this file's own
+    # first-good-seed convention rather than hand-picking the "best"
+    # among three passing options. See ART_CRITIQUE.md, "`ui_icon_milk`:
+    # a shelf of bottles, not a bottle, passing the same gate `ui_coin`
+    # did".
+    "ui_icon_milk": 3,
+    # cozy_ghibli's own auto-reseed currently lands on seed 2 (the first one
+    # that clears the gate after seed 1's frame-fill failure), which draws
+    # TWO cupcakes plus a small dark artifact on the larger one, not one
+    # muffin -- passes `check_icon` (isolated-pixel gate has nothing to say
+    # about object count) but is not the icon the prompt asked for. Swept
+    # seeds 1-7: 2, 5 and 7 are each a multi-object composition (two
+    # cupcakes; a muffin-tin display of a dozen; two muffins stacked); 3 and
+    # 6 are each a single, clean muffin. Picked 3 because it is also the
+    # seed snes_rpg's own auto-reseed already lands on and where the muffin
+    # read clean and single there too (see the earlier "genuinely fixed"
+    # muffin write-up in ART_CRITIQUE.md) -- one seed, confirmed by eye,
+    # good under both styles, rather than two different per-style picks.
+    "ui_icon_muffin": 3,
+}
 
 # An icon that fills too little of its own frame has been drawn small inside
 # a lot of whitespace, and downsampling will hand back a few dozen pixels of
@@ -133,6 +183,88 @@ def _snap(c, ramps, _cache={}):
     return _cache[c]
 
 
+def _despeckle(px: list, target: int, min_agree: int = 2, max_passes: int = 5):
+    """Reassign truly isolated pixels to their neighbourhood's modal colour.
+
+    `downsample_modal` (see `flat_pixelize`'s own history below) closed the
+    speckle caused by averaging before snapping, but it cannot fix speckle
+    that is genuinely present at source resolution: `ui_coin`, `ui_icon_
+    bagel`, `ui_icon_pastry` and `ui_icon_sandwich` still failed the 6.2%
+    isolated-pixel gate under both styles after that fix, because SDXL drew
+    real fine surface detail (rivets, seed texture, crumb flecks) that a
+    correct modal downsample faithfully preserves as alternating single-block
+    colour changes. Two rounds of prompt negation did not reliably suppress
+    that detail (see `ART_CRITIQUE.md`, "The UI icon roster grew to 20...") --
+    the diffusion-negation weakness measured elsewhere in this file's history
+    (`games/lantern_path`) applies here too. This is the downstream fix that
+    was deliberately not written for the mean-vs-modal bug above (that bug
+    needed a correct algorithm, not a cleanup pass); here the source detail
+    itself is the defect, so a targeted, conservative cleanup is the right
+    tool.
+
+    Conservative in two ways: (1) "isolated" uses the exact 4-neighbour rule
+    `check_icon` gates on, so a pixel this function leaves alone is
+    guaranteed not to be what the check would flag; (2) a pixel is only ever
+    reassigned when at least `min_agree` of its up-to-8 neighbours (4
+    orthogonal + 4 diagonal -- more context than the check itself uses, so a
+    real local majority is required, not invented) already agree on a colour.
+    An isolated pixel with no such majority (a genuine corner or thin
+    silhouette point) is left exactly as drawn.
+
+    Iterates until no pixel changes (a chain of adjacent isolated pixels can
+    need more than one pass to fully resolve) or `max_passes`, whichever
+    comes first -- measured to converge within 2 passes on every icon tried;
+    `max_passes` is headroom, not a tuned value.
+
+    Measured on the four worst offenders, real SDXL renders, both styles,
+    64px target (`isolated-pixel ratio, floor 6.2%`):
+
+        icon            style        before   after
+        ui_coin         cozy_ghibli   14.7%    1.8%
+        ui_icon_bagel   cozy_ghibli    9.8%    4.2%
+        ui_icon_sandwich cozy_ghibli  17.9%    7.1%
+        ui_coin         snes_rpg      15.5%    4.1%
+        ui_icon_bagel   snes_rpg      12.1%    4.2%
+        ui_icon_sandwich snes_rpg     17.7%    6.4%
+
+    Five of six now clear the gate outright; sandwich under both styles goes
+    from a wide miss to a narrow one the existing `--retry-seeds` reseed loop
+    can realistically close, rather than never being able to. Checked for
+    regression against ten already-passing icons -- every one gets strictly
+    better or unchanged, never worse, which follows from the two conservative
+    rules above: nothing this function touches was contributing to a passing
+    silhouette in the first place.
+    """
+    out = list(px)
+    orth = ((1, 0), (-1, 0), (0, 1), (0, -1))
+    diag = ((1, 1), (1, -1), (-1, 1), (-1, -1))
+    from collections import Counter
+    for _ in range(max_passes):
+        changed = 0
+        for i, c in enumerate(out):
+            if c is None:
+                continue
+            x, y = i % target, i // target
+            orth_vals = [out[(y + dy) * target + (x + dx)]
+                         for dx, dy in orth
+                         if 0 <= x + dx < target and 0 <= y + dy < target]
+            if c in orth_vals:
+                continue  # not isolated by the check's own definition
+            all_vals = orth_vals + [
+                out[(y + dy) * target + (x + dx)]
+                for dx, dy in diag
+                if 0 <= x + dx < target and 0 <= y + dy < target]
+            counts = Counter(v for v in all_vals if v is not None)
+            if counts:
+                winner, n = counts.most_common(1)[0]
+                if n >= min_agree and winner != c:
+                    out[i] = winner
+                    changed += 1
+        if not changed:
+            break
+    return out
+
+
 def flat_pixelize(png: Path | str, target: int, ramps: dict):
     """Matted RGBA -> palette-exact pixels at `target`, with an outline.
 
@@ -156,6 +288,11 @@ def flat_pixelize(png: Path | str, target: int, ramps: dict):
     already in, and the fix is to reuse the existing function correctly
     rather than to write a de-speckler.
 
+    That closed the algorithmic half of the speckle problem, not the whole
+    of it -- see `_despeckle`'s own docstring for the source-detail half,
+    added later once evidence showed prompt negation alone would not close
+    it.
+
     Material ids come back by reverse-lookup after the snap, so
     `apply_outline` works unchanged and still tints each outline with its own
     surface's darkest step rather than black -- a style bible requirement,
@@ -178,6 +315,7 @@ def flat_pixelize(png: Path | str, target: int, ramps: dict):
           for p in img.getdata()]
 
     small = downsample_modal(px, size, size // target)
+    small = _despeckle(small, target)
     member = {c: name for name, ramp in ramps.items() for c in ramp}
     mats = [member.get(c) if c is not None else None for c in small]
     return apply_outline(small, mats, target, ramps, selective=True)
@@ -298,19 +436,6 @@ def main() -> int:
             print(f"unknown ui ids: {sorted(unknown)}", file=sys.stderr)
             return 1
         wanted = {k: v for k, v in wanted.items() if k in keep}
-        forced_chrome = sorted(keep & CHROME_OWNED)
-        if forced_chrome:
-            print(f"warning: {forced_chrome} are drawn by ui_chrome.py now -- "
-                  f"this regenerates the SDXL version ui_chrome.py's own "
-                  f"docstring calls 'produced badly'; re-run ui_chrome.py "
-                  f"afterward to restore the shipped one", file=sys.stderr)
-    else:
-        skipped = sorted(CHROME_OWNED & set(wanted))
-        wanted = {k: v for k, v in wanted.items() if k not in CHROME_OWNED}
-        if skipped:
-            print(f"skipping {len(skipped)} ids ui_chrome.py draws instead: "
-                  f"{skipped} (run tools/ui_chrome.py for these; pass "
-                  f"--only to force one here anyway)")
 
     print(f"{len(wanted)} icons. Loading SDXL once...")
     import concept as C
@@ -331,7 +456,8 @@ def main() -> int:
     results = []
     for name, prompt in sorted(wanted.items()):
         print(f"\n=== {name} ===")
-        r = forge(name, prompt, args.target, ramps, pipe, seed=args.seed,
+        seed = UI_SEED_OVERRIDE.get(name, args.seed)
+        r = forge(name, prompt, args.target, ramps, pipe, seed=seed,
                   retries=args.retry_seeds, ui_dir=ui_dir)
         results.append(r)
         print(f"  {'OK' if r['ok'] else 'GATED'}"

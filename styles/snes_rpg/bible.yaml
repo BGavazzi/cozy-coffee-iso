@@ -315,4 +315,18 @@ rig:
   sprite_target_px: 46
   portrait_target_px: 128
 
-checks: {}
+checks:
+  # ingest.py's ALBEDO_L_FLOOR/ALBEDO_L_CEIL/ALBEDO_L_TARGET, measured the
+  # same way cozy_ghibli's own were: each is this style's own middle step of
+  # the ramp cozy_ghibli's value turned out to be (neutral/wood/cream
+  # respectively -- confirmed to the thousandth: cozy's 0.596/0.600/0.845 are
+  # neutral-mid 0.5961, wood-mid 0.5998, cream-mid 0.8454). This style's own
+  # middle steps: neutral-mid 0.4786, wood-mid 0.5592, cream-mid 0.8604.
+  # Without this override, check_albedo_centre rejected snes_rpg's own
+  # wood-mid colour as "too dark" against cozy_ghibli's floor (confirmed
+  # live via check_albedo_regression before this fix) and check_transform's
+  # real chair fixture (bound median 0.559) failed for the same unrelated
+  # reason. See tools/ingest.py and ART_CRITIQUE.md for the full derivation.
+  albedo_l_floor: 0.479
+  albedo_l_ceil: 0.860
+  albedo_l_target: 0.559

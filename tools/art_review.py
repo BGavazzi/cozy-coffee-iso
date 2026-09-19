@@ -224,6 +224,27 @@ def check_extremes(px) -> list[Finding]:
     return out
 
 
+# The 4% offset floor below is calibrated against cozy_ghibli's own band
+# count and does not hold across styles on identical geometry. Measured on
+# `table_round` (frame_all-framed, seed 1, all 8 azimuths, byte-identical
+# mesh both times): cozy_ghibli's 6-band ramp isolates the true highlight rim
+# into its own step (5.8% of lit pixels at the brightest L), producing a
+# dy offset of +4.0..+5.0px that crosses the floor on 4 of 8 frames. snes_rpg's
+# 4-band ramp on the SAME frames folds the tabletop's flat top face into that
+# same brightest step (11.9% of lit pixels), which spatially dilutes the "top
+# 20%" selection toward the object's centre and drops dy to +1.2..+1.9px --
+# under the floor on all 8. Same mesh, same camera, same key light; the
+# difference is entirely how many discrete steps the palette gives the
+# quantizer to isolate a highlight with. Left unfixed: `check_light_direction`
+# is a NOTE, never gates a build (`art_review.py --json` and its own CLI both
+# exit 0 regardless of findings, and nothing in `gates.py`/`manifest.py` wires
+# it to a BLOCKER), so this is advisory drift a human skimming one style's
+# report would see and the other style's would silently omit, not a build
+# regression. A style-invariant reformulation (weighting by the actual OKLab
+# gap between adjacent bands rather than a fixed pixel-count percentile) would
+# fix it properly; not attempted here, matching this file's own
+# `MAX_ISOLATED` precedent of naming a calibration gap without redesigning the
+# instrument inside the same pass that found it.
 def check_light_direction(px, w, h) -> list[Finding]:
     """Highlights should sit upper-left. A rough check, hence only a note."""
     lit = [(i % w, i // w, srgb_to_oklab(p[:3])[0])
@@ -305,6 +326,16 @@ def check_speckle(px, w, h) -> list[Finding]:
     This is deliberately not `check_grid` run backwards. `check_grid` asks
     whether the art is secretly upscaled, which is a question about block
     structure; this asks whether any structure survived at all.
+
+    `render_batch.render_sprite` now runs `pixelize.despeckle` on every
+    sprite before this check ever sees it (see that function's docstring for
+    the full mechanism and measurements: 59 of 750 cached frames across every
+    asset category failed this exact check before the pass existed, 0 after,
+    0 regressions). A Finding from this function today means a *narrow*
+    miss survived that conservative pass -- typically a single pixel with no
+    2-of-8-neighbour majority, i.e. a genuine thin silhouette point or corner,
+    not the wide cross-ramp static this check was written against. Treat it
+    as a close call worth a look, not proof the mesh is unusable.
     """
     tot = iso = 0
     for y in range(h):
@@ -331,13 +362,19 @@ def check_speckle(px, w, h) -> list[Finding]:
         BLOCKER, "speckle",
         f"{share:.1%} of opaque pixels match none of their four neighbours "
         f"(authored art measures under 6.2% on its busiest frame)",
-        "Nothing at this resolution is legible as single scattered pixels. "
-        "The cause is sub-pixel detail in the source -- a reconstructor turns "
-        "a woven or grained surface into displaced geometry and noisy "
-        "per-vertex colour, and one 64px pixel covers hundreds of triangles "
-        "of it. There is no render setting that fixes this: three were "
-        "measured and none moved the number. Reject the mesh, or ask stage 1 "
-        "for a subject whose surface is smooth at this scale.",
+        "This frame already went through `despeckle` and still misses, which "
+        "means the surviving isolated pixels have no local colour majority -- "
+        "usually a handful of pixels on a thin silhouette point (a spoon "
+        "handle, a chair leg) rather than the wide cross-ramp static this "
+        "check was originally written against. Measure how far over the "
+        "floor it is (`iso - MAX_ISOLATED*tot` pixels) before deciding: a "
+        "one- or two-pixel miss is a narrow call, not evidence the mesh needs "
+        "rejecting. If it is wide, the cause is still sub-pixel detail in the "
+        "source -- a reconstructor turning a woven or grained surface into "
+        "displaced geometry and noisy per-vertex colour that one 64px pixel "
+        "covers hundreds of triangles of -- and rejecting the mesh or asking "
+        "stage 1 for a smoother-surfaced subject is still the right call "
+        "for that case.",
     )]
 
 
@@ -440,7 +477,8 @@ MAX_THIN_SHARE = 0.20         # how much of an asset may be thin before it wires
 
 
 def check_member_thickness(mesh, name="asset", ppu=ROOM_PX_PER_UNIT,
-                           floor_px=MIN_MEMBER_PX):
+                           floor_px=MIN_MEMBER_PX, span=None, centre=None,
+                           azimuths=(45.0,)):
     """Thinnest drawn member, measured rather than modelled.
 
     Pixel-art convention is to exaggerate small members precisely because
@@ -460,32 +498,95 @@ def check_member_thickness(mesh, name="asset", ppu=ROOM_PX_PER_UNIT,
     built from zero-thickness quads measured 3 px because a standing plane seen
     near edge-on collapses to a line. Quads are right for floor overlays and
     wrong for anything vertical.
+
+    `span`/`centre`, when given, override `ppu`/`cam.span`/the fixed look-at
+    point with the asset's own real per-object ship scale --
+    `render_batch.frame_all(mesh)`'s return values, at the same 64px canvas
+    `furnish.py` actually renders every shipped sprite at -- instead of a
+    fixed room-embedded camera. `review_library()` passes both, because
+    `furnish.py`'s per-object frame-filled sprite, not a room composite, is
+    what `package_godot.py` actually ships: `frame_all` fits each asset to
+    fill its own canvas, so a small object's real ship-scale ppu runs
+    1.2x-4.9x the fixed room value (measured across 16 real props;
+    `succulent` alone is 4.9x). Every member reads WIDER at the real scale
+    than at the fixed one, never narrower, so this can only relax a finding,
+    not hide a genuine one -- confirmed on the one live case this check had:
+    `plant_hanging` flagged 35% thin mass at the fixed room scale, 0% at its
+    own real span (0.466 vs the fixed camera's 1.15), because the fixed
+    camera renders it as a small object adrift in mostly-empty space rather
+    than filling its own sprite the way it actually ships.
+
+
+    `centre` matters as much as `span` here, not just as a companion value:
+    the fixed room-scale path's `target=(0.5, 0.5, 0.5)` assumes every asset
+    sits centred in its own tile, which is only ever approximately true.
+    Passing `span` alone and keeping that fixed point produced two assets
+    that rendered fully empty (`cup_and_saucer`, `cup_espresso` -- a span
+    tight enough to fill their own real sprite missed their actual geometry
+    entirely under the wrong look-at point) and one spurious 100% finding
+    (`wall_sign`, clipped rather than genuinely thin) before `centre` was
+    wired through too.
+
+    `azimuths` defaults to the single view this check has always used --
+    matching what `check_buried_detail`'s own docstring documents for the
+    identical reason, and what a second, independently-opened fix on this
+    same function (`member-thickness-single-azimuth`, discovered while
+    reconciling this one) found and fixed in isolation: `furnish.py` ships
+    every one of these assets at 8 real azimuths, unconditionally, and a
+    flat member that goes edge-on at some other angle can collapse to a
+    stray line there without ever showing it at 45 degrees. Each azimuth is
+    measured and judged SEPARATELY, worst one reported, not pooled into one
+    combined share -- pooling dilutes a genuine edge-on collapse below the
+    floor by averaging it against the other seven mostly-solid views, which
+    is exactly the frame this check exists to catch. That fix used the fixed
+    room camera for all 8 views; combined with `span`/`centre` here, all 8
+    are now measured at the REAL per-object ship scale too, not just the
+    real angle set -- neither fix alone was a complete picture of what
+    `furnish.py` actually renders.
     """
     from isorender import DimetricCamera
     from mesh import rasterize
-    cam = DimetricCamera(45.0)
-    cam.span = 1.15
-    res = max(16, int(2 * cam.span * ppu))
-    mat, _, _ = rasterize(mesh, cam, res, target=(0.5, 0.5, 0.5))
-    runs = []
-    for y in range(res):
-        cur = 0
-        for x in range(res):
-            if mat[y * res + x] is not None:
-                cur += 1
-            elif cur:
+
+    def share_at(az):
+        cam = DimetricCamera(az)
+        if span is not None:
+            cam.span = span
+            res = 64
+        else:
+            cam.span = 1.15
+            res = max(16, int(2 * cam.span * ppu))
+        target = centre if centre is not None else (0.5, 0.5, 0.5)
+        mat, _, _ = rasterize(mesh, cam, res, target=target)
+        runs = []
+        for y in range(res):
+            cur = 0
+            for x in range(res):
+                if mat[y * res + x] is not None:
+                    cur += 1
+                elif cur:
+                    runs.append(cur)
+                    cur = 0
+            if cur:
                 runs.append(cur)
-                cur = 0
-        if cur:
-            runs.append(cur)
-    if not runs:
-        return [f"{name}: renders empty at room scale"]
-    total = sum(runs)
-    thin = sum(r for r in runs if r < floor_px)
-    share = thin / total
-    if share > MAX_THIN_SHARE:
-        return [f"{name}: {share:.0%} of its mass is in runs under {floor_px} px "
-                f"at room scale (limit {MAX_THIN_SHARE:.0%}) -- reads as wire"]
+        if not runs:
+            return None
+        total = sum(runs)
+        thin = sum(r for r in runs if r < floor_px)
+        return thin / total
+
+    scale_label = "ship scale" if span is not None else "room scale"
+    worst_az, worst_share = None, -1.0
+    for az in azimuths:
+        share = share_at(az)
+        if share is None:
+            return [f"{name}: renders empty at {scale_label}"]
+        if share > worst_share:
+            worst_az, worst_share = az, share
+    if worst_share > MAX_THIN_SHARE:
+        at = "" if len(azimuths) == 1 else f" at azimuth {worst_az:g}"
+        return [f"{name}: {worst_share:.0%} of its mass is in runs under "
+                f"{floor_px} px at {scale_label}{at} "
+                f"(limit {MAX_THIN_SHARE:.0%}) -- reads as wire"]
     return []
 
 
@@ -573,6 +674,30 @@ def _pair_disagreement(a, b) -> float:
 GENERATORS = (
     ("table_round", lambda A, s: A.table_round(seed=s), 1.7, None, ""),
     ("table_4top", lambda A, s: A.table_4top(seed=s), 2.6, None, ""),
+    # `furnish.py` calls `assetlib.table()` directly for two more named
+    # recipes that were never added here -- found while auditing this list
+    # against every seeded builder in `assetlib.py`, not by a report.
+    ("table_2top_square",
+     lambda A, s: A.table(1.0, 1.0, 0.58, round_top=False, seed=s),
+     1.7, None, ""),
+    # This one FAILS, on purpose left failing rather than given a custom
+    # floor. It found a real defect: seeds 1 and 3 both drew `_base_pedestal`
+    # ("the cafe two-top") and rendered 0.48% apart, because a single small
+    # central column barely differs in silhouette against a 4m top -- the
+    # thickness/overhang/leg-radius draws that are `table()`'s only variety
+    # at this style are a few centimetres regardless of table size. Excluding
+    # `_base_pedestal` above `max(w, d) >= 2.5` (see `table()`) raised that
+    # pair to 4.62%, clearing the pair floor, but exposed a second,
+    # pre-existing same-style collision (`_base_posts`, seeds 5/6, 4.22%) that
+    # had been hiding behind the worse one. Real, partial progress, not a
+    # closed defect -- `own` is deliberately NOT set here, because a custom
+    # floor low enough to pass this would be tuning the instrument to the
+    # answer, exactly what this file's own doctrine rejects elsewhere. See
+    # ART_CRITIQUE.md, "table_communal: a coverage gap that was hiding a
+    # real defect, half-fixed".
+    ("table_communal",
+     lambda A, s: A.table(4.0, 2.0, 0.58, round_top=False, seed=s),
+     5.5, None, ""),
     ("chair", lambda A, s: A.chair(seed=s), 1.4, None, ""),
     ("plant_large", lambda A, s: A.plant_large(seed=s), 1.7, None, ""),
     ("plant_small", lambda A, s: A.plant_small(seed=s), 1.1, None, ""),
@@ -591,6 +716,19 @@ GENERATORS = (
      "do something, not a lot. Calibrated under a measured 7%, the same way "
      "the occlusion thresholds were -- a floor set looser than the scan that "
      "found the defect is a floor that is blind"),
+    ("counter_front_x", lambda A, s: A.counter(seed=s, front="x"), 1.5, 0.04,
+     "the same fitted module as `counter` above, but with `front=\"x\"` -- the "
+     "configuration `render_room.py`'s window bar run actually ships, tiled "
+     "along y so its own +y face is a joint between modules. Not the same "
+     "test as `counter`: that entry only ever calls the default `front=\"y\"`, "
+     "and the two are not interchangeable geometry -- `front=\"x\"`'s detail "
+     "quad used to be drawn inside the carcass's own solid wood (the carcass "
+     "is inset on y but spans the full x range, and one shared proud-of-"
+     "surface offset only cleared the y boundary), fully buried and pixel-"
+     "invariant across every seed but one, measured at 0.25% screen spread "
+     "against this same 4% floor. Fixed in `assetlib.counter`; this entry "
+     "exists so a regression here fails loudly instead of only in a room a "
+     "human happens to look at"),
     # The nine widened onto this list in the same pass that fixed fridge_under
     # and tip_jar (both had a `seed` parameter their body never touched --
     # ART_CRITIQUE.md, "fridge_under and tip_jar: a seed parameter that did
@@ -767,7 +905,8 @@ def check_spread_floor_regression() -> list[str]:
 
 def check_generator_range(seeds: int = 8, azimuth: float = 45.0,
                           floor: float = DEFAULT_SPREAD_FLOOR,
-                          pair_floor: float = CLOSEST_PAIR_FLOOR) -> list[str]:
+                          pair_floor: float = CLOSEST_PAIR_FLOOR,
+                          pair_azimuths=(45.0,)) -> list[str]:
     """Do the seeded generators actually generate different shapes?
 
     A generator can rot in a way nothing else here notices. Add a base style
@@ -783,6 +922,22 @@ def check_generator_range(seeds: int = 8, azimuth: float = 45.0,
     reported 8 of 8 for every generator in the library including the ones the
     eye read as a single object. That was `check_buried_detail`'s first metric
     exactly -- a measure of whether anything moved, standing in for how much.
+
+    The closest-pair floor is checked at every azimuth in `pair_azimuths`, not
+    only the mean spread's single `azimuth`. `furnish.py.build_one` renders
+    every one of these generators as an 8-direction rotating sprite, the same
+    fact Hour 15's `check_buried_detail` fix was about -- and a corner-on
+    default (45 degrees) turned out to be this check's OWN best case, not a
+    representative one: an axis-aligned view (90/180/270/360) shows only one
+    face of a boxy leg/post base, occluding whatever the far side changed, so
+    two seeds a corner view tells apart collapse to the identical silhouette
+    face-on. Measured directly: `table_4top` (5.2% at 45, floor 4.5%, a clean
+    pass) drops to 2.6% at 90; `bookshelf` and `bench` drop to 0.0% -- PIXEL-
+    IDENTICAL -- at 180. Five of nineteen generators fail this way, all at an
+    axis-aligned angle, none from a diagonal one -- a physically consistent
+    pattern (per this file's own convention, a `+ 'why'` note on the specific
+    GENERATORS entry if the mechanism needs restating there), not sensor
+    noise.
     """
     import sys
     from pathlib import Path
@@ -807,15 +962,28 @@ def check_generator_range(seeds: int = 8, azimuth: float = 45.0,
         # spread while two of its eight seeds rendered PIXEL-IDENTICAL, and
         # `table_4top` averaged 30% with a closest pair of 0.3%. Those are the
         # instances a player actually compares, because four chairs round one
-        # table come from four consecutive seeds.
+        # table come from four consecutive seeds. Checked across every azimuth
+        # in `pair_azimuths`, not just the mean's one, for the reason in this
+        # function's own docstring: a corner-on default hides collisions that
+        # only appear face-on, and furniture ships rotating through both.
         if pair_floor > 0.0 and own is None:
-            lo = min(_pair_disagreement(frames[i], frames[j])
-                     for i in range(len(frames))
-                     for j in range(i + 1, len(frames)))
-            if lo < pair_floor:
+            worst_az, worst_lo = None, None
+            for az in pair_azimuths:
+                az_frames = (frames if az == azimuth else
+                             [screen_materials(factory(A, s + 1), az, span)
+                              for s in range(seeds)])
+                lo = min(_pair_disagreement(az_frames[i], az_frames[j])
+                         for i in range(len(az_frames))
+                         for j in range(i + 1, len(az_frames)))
+                if worst_lo is None or lo < worst_lo:
+                    worst_az, worst_lo = az, lo
+            if worst_lo < pair_floor:
+                at = (f" at azimuth {worst_az:.0f}" if worst_az != azimuth
+                      else "")
                 out.append(f"{name}: closest pair of {seeds} seeds differs by "
-                           f"only {lo:.1%} (floor {pair_floor:.0%}) -- the "
-                           f"generator moves on average and repeats itself")
+                           f"only {worst_lo:.1%}{at} (floor {pair_floor:.0%}) "
+                           f"-- the generator moves on average and repeats "
+                           f"itself")
     return out
 
 
@@ -823,6 +991,16 @@ def review_library(floor_px=MIN_MEMBER_PX):
     """Run the mesh checks across every asset the blockout library exposes."""
     import inspect
     import assetlib
+    from isorender import AZIMUTH_STEP
+    from render_batch import frame_all
+    # `furnish.build_one` renders every one of these assets at all 8 of these
+    # exact azimuths, unconditionally -- `assets.yaml`'s `sym` only trims the
+    # render BUDGET (fewer frames staged as distinct), never which raw angles
+    # furnish.py actually generates a PNG for. A real edge-on collapse ships
+    # a real file even for a declared symmetric asset, and this check needs
+    # to see it -- same set `check_buried_detail`'s own docstring names for
+    # the identical reason.
+    ship_azimuths = tuple(45.0 + k * AZIMUTH_STEP for k in range(8))
     out, assets = [], {}
     for fn_name, fn in sorted(vars(assetlib).items()):
         if not callable(fn) or fn_name.startswith("_"):
@@ -839,8 +1017,22 @@ def review_library(floor_px=MIN_MEMBER_PX):
         if not hasattr(mesh, "verts"):
             continue
         assets[fn_name] = mesh
-        out += check_member_thickness(mesh, fn_name, floor_px=floor_px)
-    out += check_buried_detail(assets)
+        # Real ship scale, not the fixed room camera -- `furnish.py`'s
+        # per-object frame-filled sprite is what `package_godot.py` actually
+        # ships, and it is not the same scale for most of this library. See
+        # `check_member_thickness`'s own docstring for the measured gap.
+        span, centre = frame_all(mesh)
+        out += check_member_thickness(mesh, fn_name, floor_px=floor_px,
+                                      span=span, centre=centre,
+                                      azimuths=ship_azimuths)
+    # Same reasoning as check_member_thickness above, and check_buried_
+    # detail's own docstring already names it: "pass all eight for anything
+    # that ships as a rotating sprite," which every one of these assets
+    # does. The default single view is sized for the room composite these
+    # assets do not actually ship through (see check_member_thickness's
+    # docstring for why that path was confirmed to be a QA tool, not the
+    # shipped one).
+    out += check_buried_detail(assets, azimuths=ship_azimuths)
     return out
 
 
@@ -904,8 +1096,22 @@ def measured_symmetry(mesh, res=48, factor=3, tol=0.005, ramps=None):
     return 8
 
 
-def check_symmetry_claims(declared: dict, meshes: dict):
-    """Cross-check every declared symmetry class against measured geometry."""
+def check_symmetry_claims(declared: dict, meshes: dict, ramps=None):
+    """Cross-check every declared symmetry class against measured geometry.
+
+    `ramps=None`, threaded to `measured_symmetry` below, closes the same
+    coverage gap PR #88/#92 closed for `check_direction_stability`/
+    `check_roundtrip`: `manifest.py`'s own call site never passed it, so
+    `measured_symmetry` always compared COZY_GHIBLI's quantized sprites
+    regardless of `--style`. It compares the full quantized sprite, colour
+    included, not just silhouette -- so a palette-dependent quantization tie
+    is structurally possible even though today's 8 FX meshes never hit one
+    (`fx_steam_cup`/`fx_pour_coffee`/`fx_pour_milk`/`fx_order_ready` all read
+    1, `fx_door_swing` 4, `fx_ceiling_fan` 2, `fx_steam_machine`/
+    `fx_rain_window` 8, identically under both `cozy_ghibli` and `snes_rpg`'s
+    own real palettes). No live casualty today -- same shape as PR #88, a
+    blind spot closed before anything fell in it, not a defect found.
+    """
     from manifest import DISTINCT_AZIMUTHS
     out = []
     for aid, mesh in meshes.items():
@@ -913,7 +1119,7 @@ def check_symmetry_claims(declared: dict, meshes: dict):
             continue
         claim = declared[aid]
         want = DISTINCT_AZIMUTHS.get(claim)
-        got = measured_symmetry(mesh)
+        got = measured_symmetry(mesh, ramps=ramps)
         if want is None:
             continue
         if got > want:
