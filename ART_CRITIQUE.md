@@ -5447,6 +5447,67 @@ accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
 
+## `check_buried_detail` was checking the one angle furniture doesn't ship as
+
+The check's own docstring already says it: `azimuths` defaults to the single
+view the room composite uses, and to "pass all eight for anything that ships
+as a rotating sprite." Its only real caller, `review_library()` (run from
+`manifest.py --check`), never did -- `check_buried_detail(assets)`, no
+`azimuths` argument, every call since the check was promoted. Every asset in
+that `assets` dict comes from `assetlib.py`, and every `assetlib.py` prop
+`furnish.py` builds *is* exactly what the docstring is warning about:
+`build_one` renders each one at `45 + k*AZIMUTH_STEP` for `k` in `0..7` and
+ships all eight as the sprite sheet ("these sprites are rendered at all 8
+azimuths, so the reservation has to hold with the object turned" -- the
+comment sits four lines from that loop). The check that exists specifically
+to catch detail modelled where the camera can't reach it was only ever
+looking at one of the eight cameras that actually reach it.
+
+Confirmed before touching anything: ran `check_buried_detail` on the current
+`review_library()` asset set two ways. At the single default azimuth (today's
+behaviour) it flags 6 props. Swept across all eight of `furnish.py`'s own
+azimuths, it flags 10 -- the same 6, at higher and more accurate shares
+(`bean_hopper` 41% -> 42%, `drip_brewer` 39% -> 55%, matching the worst angle
+rather than one arbitrary one), plus four never flagged at all before:
+`bookshelf` 38%, `chair` 31%, `menu_board` 52%, `wall_art_framed` 32%.
+
+`bookshelf` is not a new defect -- it is the *original* one this check was
+promoted for ("shelves and books modelled inside a solid carcass box... a
+plain wooden slab standing where a bookcase was meant to be", two sections
+up). That fix was real at the one angle anyone looked at. Rendered all eight
+of its own shipped directions fresh (`out/bookshelf_8dir.png`, 8x
+nearest-neighbour) to check by eye, not just by number: directions 0-2 show
+a real bookshelf, visible shelves and books, exactly as the earlier fix
+intended. Directions 3, 4, 6, 7 are flat, featureless slabs -- the identical
+"plain wooden slab" defect the original finding described, on the five-eighths
+of the object nobody was looking at when that fix shipped. The fix closed the
+complaint at the one camera angle that generated it and left the other seven
+untouched, because nothing that ran afterward ever checked them.
+
+**The fix here is the wiring, not the geometry.** `review_library()` now
+passes `[45.0 + k*AZIMUTH_STEP for k in range(8)]` -- `furnish.py`'s own
+azimuth list, imported from the same `isorender.AZIMUTH_STEP` constant
+rather than re-typing `45.0` a second, divergeable way -- instead of relying
+on the single-view default. This is a check-coverage fix, not a mesh fix, in
+the same spirit as `check_contrast` never being run against the fixed
+`CUSTOMERS` roster (manifest.py, PR #78) and `check_ui` validating the
+wrong style's font path (PR #86): a check with a real, documented blind
+spot that nothing had ever closed.
+
+**Verified zero regression on the blocking gate:** `manifest.py --check`
+still reports exactly 3 errors, same messages, same numbers, byte-identical
+to the documented baseline -- `check_buried_detail`'s findings feed `warns`,
+not `errs`, so widening its coverage cannot flip the gate this repo's own
+doctrine treats as "must be clean before any commit." What changes is the
+warning count: 8 -> 12. Four of those are new, real, and not fixed here --
+`bookshelf`, `chair`, `menu_board`, and `wall_art_framed` each have genuine
+buried geometry on the majority of their shipped rotations, the same class
+of defect the original three (`bookshelf`, `register`, `pastry_case`) were,
+and closing them is per-asset modelling work, not a check change --
+deliberately left failing rather than quietly widening `ACCEPTED_BURIAL` to
+make the new warnings disappear, the same discipline `table_communal` (PR
+#83) was left under for the same reason.
+
 ## `check_ui` was still checking the wrong style's font, ten minutes after the fix that made it possible to
 
 Not the "prompt-vs-pixel lever" pattern this file's UI-icon sections have
