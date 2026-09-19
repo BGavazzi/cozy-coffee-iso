@@ -546,6 +546,60 @@ CUSTOMERS = [
 ROSTER = [BARISTA] + CUSTOMERS
 
 
+# `elder`/`reader`/`regular`/`writer`'s hair_mat/trousers were literal ramp
+# tokens picked once, against cozy_ghibli's own OKLab values, and never
+# re-picked for a style with a different lightness distribution -- the same
+# "shared content, never chosen for this style" shape as `wall_panel()`
+# (NEXT.md, tileset.py PR #29). Under snes_rpg's compressed, more-saturated
+# palette, `elder`'s hair_mat "cream+1" sits 0.088 from skin (need 0.13, via
+# check_contrast) and `reader`/`regular`/`writer`'s trousers="wood" sits
+# 0.022/0.040/0.080 from their shirts (need 0.085, via check_waistline) --
+# reproduced from PR #23's own numbers, still true today.
+#
+# PR #23 framed the only two levers as "recolour the shared roster" (risks
+# breaking cozy_ghibli's own clean pass) or "loosen the check floor" (defeats
+# the check), and left the finding as accepted-not-fixed-by-design. Both
+# checks are pure OKLab-L comparisons on literal ramp+offset tokens, not on
+# rendered pixels -- there is no downstream pixel/deterministic post-process
+# to apply here, unlike PR #80/#81's speckle fixes. But there is a third,
+# untried lever: override the affected fields for snes_rpg ONLY, leaving
+# cozy_ghibli's own assignments byte-for-byte untouched. Verified: every
+# override below clears check_contrast/check_waistline/check_palette_spread/
+# check_roster_variety under snes_rpg, and cozy_ghibli's roster is never
+# touched by this table at all, so its own pass is structurally unaffected --
+# not just re-verified, provably unreachable by this change.
+#
+# This is a per-instance patch, not the general fix. The general fix is
+# giving CharacterSpec's colour fields a per-style `materials:` role instead
+# of a literal ramp token (the same deferred assetlib.py/character.py
+# import-order generalization NEXT.md already flags) -- out of scope for one
+# hour, and not attempted here.
+ROSTER_OVERRIDES = {
+    "snes_rpg": {
+        "elder": {"hair_mat": "cream-3"},
+        "reader": {"trousers": "wood-1"},
+        "regular": {"trousers": "wood-1"},
+        "writer": {"trousers": "wood-1"},
+    },
+}
+
+
+def roster_for(style_name: str | None, roster=None) -> list:
+    """`roster` with `ROSTER_OVERRIDES[style_name]` applied, field by field.
+
+    A style with no entry (including cozy_ghibli) gets the input roster back
+    unchanged -- same list, not a copy, so identity-sensitive callers see no
+    difference either.
+    """
+    import dataclasses
+    base = roster if roster is not None else ROSTER
+    overrides = ROSTER_OVERRIDES.get(style_name or "", {})
+    if not overrides:
+        return base
+    return [dataclasses.replace(s, **overrides[s.name]) if s.name in overrides
+            else s for s in base]
+
+
 # --- generated characters ----------------------------------------------------
 
 # The parts library, as the generator sees it. Kept beside the roster rather
@@ -1225,10 +1279,11 @@ def main() -> int:
     # which is a real question with a real answer per style.
     from style import load_style
     ramps = load_palette(load_style(args.style).palette_path)
+    roster = roster_for(args.style)
     gate_fns = ("check_contrast", "check_palette_spread", "check_waistline",
                "check_direction_stability")
-    problems = (check_contrast(ramps) + check_palette_spread()
-                + check_waistline(ramps)
+    problems = (check_contrast(ramps, roster) + check_palette_spread(roster)
+                + check_waistline(ramps, roster)
                 + check_direction_stability())
 
     if args.lock:

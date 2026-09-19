@@ -285,7 +285,13 @@ def main() -> int:
                      ("sip", 4), ("wait_impatient", 4), ("talk", 4),
                      ("leave", 8)],
     }
-    roster = [(C.BARISTA, "barista")] + [(s, "customer") for s in C.CUSTOMERS]
+    # `C.ROSTER_OVERRIDES` patches the handful of CharacterSpec fields that
+    # were picked against cozy_ghibli's own OKLab values and don't clear
+    # check_contrast/check_waistline under a style with a different lightness
+    # distribution (see character.py's own docstring above ROSTER_OVERRIDES
+    # for the numbers). A no-op for cozy_ghibli and any style with no entry.
+    base_roster = C.roster_for(args.style, [C.BARISTA] + C.CUSTOMERS)
+    roster = [(base_roster[0], "barista")] + [(s, "customer") for s in base_roster[1:]]
     if args.extras:
         roster += [(s, "customer") for s in
                    C.generate_roster(args.extras, args.extras_seed, ramps)]
