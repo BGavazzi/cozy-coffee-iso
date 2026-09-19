@@ -339,7 +339,10 @@ ROSTER = [
     # `check_eyes_visible` below). `check_contrast`/`check_waistline` never
     # caught it -- neither tests hair-vs-eye-colour, only hair-vs-skin and
     # shirt-vs-trousers -- which is exactly the gap `check_eyes_visible`
-    # exists to close.
+    # exists to close. `EYE` moved off `neutral` entirely since (a
+    # dedicated flat `eye` spot colour, see `character.py`), so this
+    # specific collision can no longer recur -- `wood-4` was still the
+    # right call for `bob`'s own silhouette and stays.
     C.CharacterSpec("archivist", shirt="sky-2", trousers="neutral+1",
                     hair_style="bob", hair_mat="wood-4", skin="skin-1"),
     C.CharacterSpec("drifter", shirt="rose-2", trousers="wood-3",
@@ -383,7 +386,12 @@ def check_eyes_visible(style_name: str = "snes_rpg", roster=None,
     tests this -- `check_contrast`/`check_waistline` only compare
     hair-vs-skin and shirt-vs-trousers -- which is exactly how `archivist`
     shipped with invisible eyes: `hair_mat="neutral-3"` sat one step from
-    `C.EYE`'s own `neutral-2` on this style's compressed neutral ramp.
+    `C.EYE`'s own `neutral-2` on this style's compressed neutral ramp. `EYE`
+    is a dedicated flat `eye` spot colour now, not a step of `neutral`
+    (see `character.py`'s own comment on `EYE`), so this specific collision
+    is structurally closed -- kept here as a real, historical defect this
+    check exists to catch a fresh instance of, on whatever material a
+    future roster edit picks.
 
     Same isolation technique as `portrait.py`'s own `check_eyes_visible`:
     build the figure with hair but WITHOUT eyes, then WITH one eye added,

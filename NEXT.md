@@ -1115,6 +1115,36 @@ Running both for real found more of the same honest picture:
   `ART_CRITIQUE.md`, "`check_eye_legibility` only ever rendered azimuth
   45".)
 
+**Closed 2026-09-19: both eye-legibility gaps above, plus the `reader`
+collision two paragraphs up, from one fix.** All three share the same root
+cause -- `character.EYE` was `neutral-2`, still lambert-shaded, so it could
+land on the same clamped step as the shaded skin/hair around it depending
+on tone and viewing angle. Moved `EYE` to a dedicated flat `"eye"` spot
+ramp (the same always-index-0 mechanism `lamp_glow`/`gold_coin` already
+use) instead of another shaded offset, so the eye's rendered colour no
+longer depends on azimuth or tone at all. Verified on real renders, both
+styles, the same full-azimuth-sweep table format the entry above used:
+`cozy_ghibli`'s `skin-4`/azimuth-225 line moves 0.103 (fail) to 0.165
+(pass); `snes_rpg`'s `skin-4`/`skin-3`/`skin-2` near-miss moves 0.147
+(fail) to 0.154 (pass) at every checked azimuth. `manifest.py --check`
+before/after, isolated with `git stash` on this exact branch:
+`cozy_ghibli` 3 errors to 2 (removing exactly the one eye line), `snes_rpg`
+byte-identical (4 errors, all pre-existing galley/contrast, confirming its
+0.147 near-miss never tripped the *default* single-azimuth check, only
+the wider sweep). `portrait.py`'s own `check_eyes_visible` and
+`organic_rig.check_eyes_visible('snes_rpg')`: 0 failures both styles,
+confirming `reader` and `archivist` are both closed structurally, not by
+coincidence -- neither collision can recur once `EYE` no longer shares a
+ramp step with anything else a character might pick. One residual left
+open honestly, not swept under the fix: `cozy_ghibli`'s `skin-4` at
+azimuth 180 (never part of the checked default -- see the "ambiguous"
+angles this entry's own linked section already excluded) moved from no
+measurable eye pixels to a real but sub-floor 0.103. See
+`ART_CRITIQUE.md`, "The eye was still lambert-shaded, and every attempt to
+fix it moved the same lever." New branch
+(`character-eyes-were-lambert-shaded-like-any-other-surface`), left
+unmerged per standing practice.
+
 None of these threaten either style's approval: `style_approve.py` doesn't
 require `portrait.py` or `manifest.py` to pass, only `character.py` OR
 `portrait.py` OR `organic_rig.py` for the character-roster requirement, and

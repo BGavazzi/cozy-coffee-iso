@@ -8446,6 +8446,129 @@ renders for one check out of dozens in the suite).
 New branch (`eye-legibility-single-azimuth`), unrelated to any other
 currently open PR's subject. Left unmerged per standing practice.
 
+## The eye was still lambert-shaded, and every attempt to fix it moved the same lever
+
+The `skin-4`/azimuth-225 failure the sweep above found (0.103 against the
+0.15 floor) was recorded as an open defect, not fixed -- widening
+`check_eye_legibility`'s azimuth coverage is a measurement fix, not a
+content fix. It sat next to `NEXT.md`'s existing `snes_rpg` entry
+(`skin-4`/`skin-3`/`skin-2` all measuring 0.147, also unfixed) as two
+instances of the same accepted limitation. Both share a root cause once
+the fix history is read straight through:
+
+- `skin+"-4"` (original) failed because it was a **skin offset** -- an eye
+  drawn as a step down the face's own ramp is, by construction, the same
+  colour as the face at the tones where that step clamps.
+- `neutral-2` (the fix two sections up) failed at `skin-4`/azimuth-225
+  because it is **also lambert-shaded**. Moving the eye to a different
+  ramp fixed every tone where the *face's* shaded value stayed far from
+  `neutral-2`'s own shaded value, but the eye box sits on the same shaded
+  front facet as the cheek around it, so both continued to move together
+  as azimuth changed the lambert term. Two different ramps, one lever:
+  pick a static offset and hope the *shading* keeps them apart. Azimuth
+  225 is exactly the angle where it stopped hoping correctly.
+
+`pixelize.py` already has the downstream lever this needed and has had it
+since `lamp_glow`/`accent_read`/`gold_coin` shipped: `MATERIAL_RAMPS` lets
+a material name resolve to a ramp with a single entry, and `shade_toon`'s
+own index clamp (`max(0, min(n-1, idx))`) forces index 0 whenever `n == 1`
+regardless of what the lambert term computes. That mechanism exists
+precisely to make a surface's rendered colour independent of viewing
+angle. It has never been used for anything that isn't emissive, but
+"immune to shading angle" is the literal requirement here too, just for a
+different reason -- not glowing, but never allowed to blend into
+whatever's behind it.
+
+**First attempt, tested and rejected.** Tried each style's own
+`neutral-0` (`cozy_ghibli` `#23232c`/L=0.26, `snes_rpg` `#09121f`/L=0.18)
+on a flat ramp. Flatness alone was not enough:
+
+    neutral0 (near-black, per style)   -> 3 failures on cozy_ghibli
+        skin-4:              0.076 (need 0.15)
+        skin-4 at azimuth 225: 0.103 (need 0.15, unchanged from before)
+        skin-3:              0.076 (need 0.15)
+
+Worse than the single failure it was meant to fix. Flatness removes the
+azimuth dependence, but `neutral-0`'s absolute lightness (0.26) sits too
+close to `skin-4`/`skin-3`'s own darkest *rendered* values regardless of
+angle -- the lever moved in the right direction (static colour) but not
+far enough (still not dark enough to clear the darkest skin). Not shipped;
+recorded here rather than discarded silently, the same as the frog-knight
+finding.
+
+**Swept flat candidates against both styles' full `check_eye_legibility`**
+(all seven skin tones, all four checked azimuths) before picking one:
+
+    sky-dark (index0)     rgb=(63, 91, 115)    -> 0 failures (cozy_ghibli)
+    foliage-dark (index0) rgb=(34, 88, 78)     -> 0 failures
+    rose-dark (index0)    rgb=(140, 78, 90)    -> 0 failures
+    near-black (10,10,14)                      -> 0 failures
+    pure white (245,245,245)                   -> 0 failures
+
+Several colours clear the floor -- flatness, not hue, is what does the
+work once the lightness is far enough from every skin tone's own range.
+Picked near-black `(10, 10, 14)` over the others for the reason
+`character.py`'s own comment already gives for preferring `neutral-2` over
+`neutral-1`: "a mid-grey eye on a pale face is a weaker mark than a
+near-black one." A new `"eye"` entry was added to both palettes'
+`spot` ramp (same near-black RGB in both -- a fixed mark, not
+palette-derived, which is the point) and `MATERIAL_RAMPS["eye"] = "eye"`
+wires it in; `character.EYE` changes from `"neutral-2"` to `"eye"`.
+
+**Verified against real renders, both styles, full azimuth sweep** (not
+just the four the check runs by default -- the same table format the
+azimuth-widening section above used):
+
+    cozy_ghibli, skin-4        0    45    90   135   180   225   270  315
+      before (neutral-2)      --  .196  .161  .196   --   .103*  --   --
+      after  (eye, flat)      --  .165  .265  .265  .103* .165   --   --
+
+    snes_rpg, skin-4/skin-3    0    45    90   135   180   225   270  315
+      before (neutral-2)      --  .147  .147  .147   --   .147   --   --
+      after  (eye, flat)      --  .154  .154  .154   --   .154   --   --
+
+At every one of the four *checked* azimuths (45/90/135/225), every skin
+tone, both styles: the fix clears 0.15. `snes_rpg`'s previously-documented
+`skin-4`/`skin-3`/`skin-2` near-miss (0.147, PR #24) is resolved as a side
+effect -- same lever, same root cause, one fix instead of two.
+
+**Left honestly open, not swept under the fix.** Azimuth 180 for
+`cozy_ghibli`'s `skin-4` moved from `--` (no differing pixels at all
+under the old material) to a real but sub-floor `0.103*` under the new
+one. This is not a regression in the shipped check -- 180 is one of the
+three azimuths (`0`, `180`, `315`) the widening section above already
+excluded from `EYE_LEGIBILITY_AZIMUTHS` as ambiguous, and for the same
+reason given there: a coincidental colour match under the old material
+can look identical to true occlusion, and a flat colour that no longer
+coincidentally matches the skin at a grazing angle can turn that
+coincidence into a small measured gap. It does not newly fail anything the
+check runs by default. Recorded here rather than assumed away, the same
+standard the earlier section held itself to.
+
+**Zero-regression, measured, not assumed.** `git stash` isolated a true
+before/after on this exact branch: `manifest.py --check` on the
+unmodified tree reports 3 errors for `cozy_ghibli` (the existing 2 galley
+errors plus exactly the `skin-4`/azimuth-225 eye line) and is
+byte-identical to the fixed tree for `snes_rpg` (4 errors, all galley/
+contrast, none eye-related -- confirming `snes_rpg`'s 0.147 near-miss
+never actually tripped the *default* check, only the wider sweep). With
+the fix: `cozy_ghibli` drops to 2 errors, removing exactly the one eye
+line and nothing else; `snes_rpg`'s output is unchanged byte-for-byte.
+`organic_rig.check_eyes_visible('snes_rpg')` and `portrait.py`'s own
+`check_eyes_visible` for both styles: 0 failures, no change. Full 40-test
+suite: unchanged, 40 passed.
+
+**Visually confirmed**, not just measured: `proof/eye_skin4_225_before.png`
+and `proof/eye_skin4_225_after.png` render `skin-4`'s head at azimuth 225
+under the old and new material side by side. The eye reads darker and
+more solidly defined in the "after" frame -- consistent with the number
+(0.103 to 0.165, a real but not dramatic gap at this specific angle,
+matching the check's own wording that this was a near-miss rather than a
+fully blank face).
+
+New branch (`character-eyes-were-lambert-shaded-like-any-other-surface`).
+Left unmerged per standing practice.
+
 ## `check_direction_stability` was never in `manifest.py --check`, and checked one archetype when it did run
 
 Hour 20's `check_generator_range` fix (this file, "the 45-degree default was
