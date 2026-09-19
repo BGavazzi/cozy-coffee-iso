@@ -1061,8 +1061,22 @@ def measured_symmetry(mesh, res=48, factor=3, tol=0.005, ramps=None):
     return 8
 
 
-def check_symmetry_claims(declared: dict, meshes: dict):
-    """Cross-check every declared symmetry class against measured geometry."""
+def check_symmetry_claims(declared: dict, meshes: dict, ramps=None):
+    """Cross-check every declared symmetry class against measured geometry.
+
+    `ramps=None`, threaded to `measured_symmetry` below, closes the same
+    coverage gap PR #88/#92 closed for `check_direction_stability`/
+    `check_roundtrip`: `manifest.py`'s own call site never passed it, so
+    `measured_symmetry` always compared COZY_GHIBLI's quantized sprites
+    regardless of `--style`. It compares the full quantized sprite, colour
+    included, not just silhouette -- so a palette-dependent quantization tie
+    is structurally possible even though today's 8 FX meshes never hit one
+    (`fx_steam_cup`/`fx_pour_coffee`/`fx_pour_milk`/`fx_order_ready` all read
+    1, `fx_door_swing` 4, `fx_ceiling_fan` 2, `fx_steam_machine`/
+    `fx_rain_window` 8, identically under both `cozy_ghibli` and `snes_rpg`'s
+    own real palettes). No live casualty today -- same shape as PR #88, a
+    blind spot closed before anything fell in it, not a defect found.
+    """
     from manifest import DISTINCT_AZIMUTHS
     out = []
     for aid, mesh in meshes.items():
@@ -1070,7 +1084,7 @@ def check_symmetry_claims(declared: dict, meshes: dict):
             continue
         claim = declared[aid]
         want = DISTINCT_AZIMUTHS.get(claim)
-        got = measured_symmetry(mesh)
+        got = measured_symmetry(mesh, ramps=ramps)
         if want is None:
             continue
         if got > want:
