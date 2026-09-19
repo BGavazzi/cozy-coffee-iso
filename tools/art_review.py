@@ -305,6 +305,16 @@ def check_speckle(px, w, h) -> list[Finding]:
     This is deliberately not `check_grid` run backwards. `check_grid` asks
     whether the art is secretly upscaled, which is a question about block
     structure; this asks whether any structure survived at all.
+
+    `render_batch.render_sprite` now runs `pixelize.despeckle` on every
+    sprite before this check ever sees it (see that function's docstring for
+    the full mechanism and measurements: 59 of 750 cached frames across every
+    asset category failed this exact check before the pass existed, 0 after,
+    0 regressions). A Finding from this function today means a *narrow*
+    miss survived that conservative pass -- typically a single pixel with no
+    2-of-8-neighbour majority, i.e. a genuine thin silhouette point or corner,
+    not the wide cross-ramp static this check was written against. Treat it
+    as a close call worth a look, not proof the mesh is unusable.
     """
     tot = iso = 0
     for y in range(h):
@@ -331,13 +341,19 @@ def check_speckle(px, w, h) -> list[Finding]:
         BLOCKER, "speckle",
         f"{share:.1%} of opaque pixels match none of their four neighbours "
         f"(authored art measures under 6.2% on its busiest frame)",
-        "Nothing at this resolution is legible as single scattered pixels. "
-        "The cause is sub-pixel detail in the source -- a reconstructor turns "
-        "a woven or grained surface into displaced geometry and noisy "
-        "per-vertex colour, and one 64px pixel covers hundreds of triangles "
-        "of it. There is no render setting that fixes this: three were "
-        "measured and none moved the number. Reject the mesh, or ask stage 1 "
-        "for a subject whose surface is smooth at this scale.",
+        "This frame already went through `despeckle` and still misses, which "
+        "means the surviving isolated pixels have no local colour majority -- "
+        "usually a handful of pixels on a thin silhouette point (a spoon "
+        "handle, a chair leg) rather than the wide cross-ramp static this "
+        "check was originally written against. Measure how far over the "
+        "floor it is (`iso - MAX_ISOLATED*tot` pixels) before deciding: a "
+        "one- or two-pixel miss is a narrow call, not evidence the mesh needs "
+        "rejecting. If it is wide, the cause is still sub-pixel detail in the "
+        "source -- a reconstructor turning a woven or grained surface into "
+        "displaced geometry and noisy per-vertex colour that one 64px pixel "
+        "covers hundreds of triangles of -- and rejecting the mesh or asking "
+        "stage 1 for a smoother-surfaced subject is still the right call "
+        "for that case.",
     )]
 
 
@@ -440,7 +456,8 @@ MAX_THIN_SHARE = 0.20         # how much of an asset may be thin before it wires
 
 
 def check_member_thickness(mesh, name="asset", ppu=ROOM_PX_PER_UNIT,
-                           floor_px=MIN_MEMBER_PX):
+                           floor_px=MIN_MEMBER_PX, span=None, centre=None,
+                           azimuths=(45.0,)):
     """Thinnest drawn member, measured rather than modelled.
 
     Pixel-art convention is to exaggerate small members precisely because
@@ -460,32 +477,94 @@ def check_member_thickness(mesh, name="asset", ppu=ROOM_PX_PER_UNIT,
     built from zero-thickness quads measured 3 px because a standing plane seen
     near edge-on collapses to a line. Quads are right for floor overlays and
     wrong for anything vertical.
+
+    `span`/`centre`, when given, override `ppu`/`cam.span`/the fixed look-at
+    point with the asset's own real per-object ship scale --
+    `render_batch.frame_all(mesh)`'s return values, at the same 64px canvas
+    `furnish.py` actually renders every shipped sprite at -- instead of a
+    fixed room-embedded camera. `review_library()` passes both, because
+    `furnish.py`'s per-object frame-filled sprite, not a room composite, is
+    what `package_godot.py` actually ships: `frame_all` fits each asset to
+    fill its own canvas, so a small object's real ship-scale ppu runs
+    1.2x-4.9x the fixed room value (measured across 16 real props;
+    `succulent` alone is 4.9x). Every member reads WIDER at the real scale
+    than at the fixed one, never narrower, so this can only relax a finding,
+    not hide a genuine one -- confirmed on the one live case this check had:
+    `plant_hanging` flagged 35% thin mass at the fixed room scale, 0% at its
+    own real span (0.466 vs the fixed camera's 1.15), because the fixed
+    camera renders it as a small object adrift in mostly-empty space rather
+    than filling its own sprite the way it actually ships.
+
+    `centre` matters as much as `span` here, not just as a companion value:
+    the fixed room-scale path's `target=(0.5, 0.5, 0.5)` assumes every asset
+    sits centred in its own tile, which is only ever approximately true.
+    Passing `span` alone and keeping that fixed point produced two assets
+    that rendered fully empty (`cup_and_saucer`, `cup_espresso` -- a span
+    tight enough to fill their own real sprite missed their actual geometry
+    entirely under the wrong look-at point) and one spurious 100% finding
+    (`wall_sign`, clipped rather than genuinely thin) before `centre` was
+    wired through too.
+
+    `azimuths` defaults to the single view this check has always used --
+    matching what `check_buried_detail`'s own docstring documents for the
+    identical reason, and what a second, independently-opened fix on this
+    same function (`member-thickness-single-azimuth`, discovered while
+    reconciling this one) found and fixed in isolation: `furnish.py` ships
+    every one of these assets at 8 real azimuths, unconditionally, and a
+    flat member that goes edge-on at some other angle can collapse to a
+    stray line there without ever showing it at 45 degrees. Each azimuth is
+    measured and judged SEPARATELY, worst one reported, not pooled into one
+    combined share -- pooling dilutes a genuine edge-on collapse below the
+    floor by averaging it against the other seven mostly-solid views, which
+    is exactly the frame this check exists to catch. That fix used the fixed
+    room camera for all 8 views; combined with `span`/`centre` here, all 8
+    are now measured at the REAL per-object ship scale too, not just the
+    real angle set -- neither fix alone was a complete picture of what
+    `furnish.py` actually renders.
     """
     from isorender import DimetricCamera
     from mesh import rasterize
-    cam = DimetricCamera(45.0)
-    cam.span = 1.15
-    res = max(16, int(2 * cam.span * ppu))
-    mat, _, _ = rasterize(mesh, cam, res, target=(0.5, 0.5, 0.5))
-    runs = []
-    for y in range(res):
-        cur = 0
-        for x in range(res):
-            if mat[y * res + x] is not None:
-                cur += 1
-            elif cur:
+
+    def share_at(az):
+        cam = DimetricCamera(az)
+        if span is not None:
+            cam.span = span
+            res = 64
+        else:
+            cam.span = 1.15
+            res = max(16, int(2 * cam.span * ppu))
+        target = centre if centre is not None else (0.5, 0.5, 0.5)
+        mat, _, _ = rasterize(mesh, cam, res, target=target)
+        runs = []
+        for y in range(res):
+            cur = 0
+            for x in range(res):
+                if mat[y * res + x] is not None:
+                    cur += 1
+                elif cur:
+                    runs.append(cur)
+                    cur = 0
+            if cur:
                 runs.append(cur)
-                cur = 0
-        if cur:
-            runs.append(cur)
-    if not runs:
-        return [f"{name}: renders empty at room scale"]
-    total = sum(runs)
-    thin = sum(r for r in runs if r < floor_px)
-    share = thin / total
-    if share > MAX_THIN_SHARE:
-        return [f"{name}: {share:.0%} of its mass is in runs under {floor_px} px "
-                f"at room scale (limit {MAX_THIN_SHARE:.0%}) -- reads as wire"]
+        if not runs:
+            return None
+        total = sum(runs)
+        thin = sum(r for r in runs if r < floor_px)
+        return thin / total
+
+    scale_label = "ship scale" if span is not None else "room scale"
+    worst_az, worst_share = None, -1.0
+    for az in azimuths:
+        share = share_at(az)
+        if share is None:
+            return [f"{name}: renders empty at {scale_label}"]
+        if share > worst_share:
+            worst_az, worst_share = az, share
+    if worst_share > MAX_THIN_SHARE:
+        at = "" if len(azimuths) == 1 else f" at azimuth {worst_az:g}"
+        return [f"{name}: {worst_share:.0%} of its mass is in runs under "
+                f"{floor_px} px at {scale_label}{at} "
+                f"(limit {MAX_THIN_SHARE:.0%}) -- reads as wire"]
     return []
 
 
@@ -877,6 +956,16 @@ def review_library(floor_px=MIN_MEMBER_PX):
     """Run the mesh checks across every asset the blockout library exposes."""
     import inspect
     import assetlib
+    from isorender import AZIMUTH_STEP
+    from render_batch import frame_all
+    # `furnish.build_one` renders every one of these assets at all 8 of these
+    # exact azimuths, unconditionally -- `assets.yaml`'s `sym` only trims the
+    # render BUDGET (fewer frames staged as distinct), never which raw angles
+    # furnish.py actually generates a PNG for. A real edge-on collapse ships
+    # a real file even for a declared symmetric asset, and this check needs
+    # to see it -- same set `check_buried_detail`'s own docstring names for
+    # the identical reason.
+    ship_azimuths = tuple(45.0 + k * AZIMUTH_STEP for k in range(8))
     out, assets = [], {}
     for fn_name, fn in sorted(vars(assetlib).items()):
         if not callable(fn) or fn_name.startswith("_"):
@@ -893,8 +982,22 @@ def review_library(floor_px=MIN_MEMBER_PX):
         if not hasattr(mesh, "verts"):
             continue
         assets[fn_name] = mesh
-        out += check_member_thickness(mesh, fn_name, floor_px=floor_px)
-    out += check_buried_detail(assets)
+        # Real ship scale, not the fixed room camera -- `furnish.py`'s
+        # per-object frame-filled sprite is what `package_godot.py` actually
+        # ships, and it is not the same scale for most of this library. See
+        # `check_member_thickness`'s own docstring for the measured gap.
+        span, centre = frame_all(mesh)
+        out += check_member_thickness(mesh, fn_name, floor_px=floor_px,
+                                      span=span, centre=centre,
+                                      azimuths=ship_azimuths)
+    # Same reasoning as check_member_thickness above, and check_buried_
+    # detail's own docstring already names it: "pass all eight for anything
+    # that ships as a rotating sprite," which every one of these assets
+    # does. The default single view is sized for the room composite these
+    # assets do not actually ship through (see check_member_thickness's
+    # docstring for why that path was confirmed to be a QA tool, not the
+    # shipped one).
+    out += check_buried_detail(assets, azimuths=ship_azimuths)
     return out
 
 
