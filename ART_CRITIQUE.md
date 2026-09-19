@@ -5447,6 +5447,65 @@ accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
 
+## `furnish.py`'s `check_distinct`, rebuilt from scratch for the whole real library, both styles -- clean, and by a structure that can't have the `counter`-shaped bug
+
+Started this hour on `ingest.py`'s `check_roundtrip` -- `manifest.py:458`
+calls it bare (`check_roundtrip()`, no `ramps`) on `main`, which looked like
+exactly the style-threading gap Hour 52 fixed for its two neighbours in the
+same import line. It already isn't: read the still-open, unmerged
+`ingest-checks-style-blind` branch (PR #92) directly rather than trusting
+memory's summary, and its own manifest.py already threads
+`check_roundtrip(ramps=ramps)` and `check_transform(ramps=ramps,
+checks=active.checks)`, with a comment explaining `check_albedo_regression`
+is deliberately left bare. Nothing new here -- re-confirmed already-done
+work, not re-shipped.
+
+Moved to `furnish.py`'s `check_distinct`, untouched by this session so far.
+Its own docstring records a real historical bug: `saucer` and `cup_latte`
+both resolved to `cup_and_saucer`, and because every prop is framed to fill
+its 64px box, the declared-height difference between them vanished in the
+rendered pixels -- two ids, one asset, nothing else in the per-asset-checked
+pipeline could see it. The check hashes all 8 directions of every real
+report and flags any two ids whose full sprite sets are byte-identical.
+
+**Structurally the right shape already -- checked, not assumed.** Unlike
+`art_review.py`'s old `GENERATORS` table (the source of the `counter`
+`front="x"` bug, Hour 53), `check_distinct` takes `reports` built directly
+from `RECIPES` and `assets.yaml`'s own declared parameters
+(`furnish.py:446`, `build_one(asset_id, declared[asset_id],
+RECIPES[asset_id], ...)`) -- there is no separate, shadow parameter table
+for it to fall out of sync with the real one. The 7 props that hit the
+footprint cap (`espresso_machine_2group`, `pastry_case`, `table_2top_round`,
+`table_4top`, `table_communal`, `plant_monstera`, `crate_stack` -- exactly
+the class the docstring's own historical bug came from, scale clamped away)
+are the real, live candidates for a repeat of that collision, not a
+synthetic worst case.
+
+**Ran the real, full 56-recipe library fresh, both styles, not from cache**
+(`out/sprites/`'s existing PNGs predate this session and can't prove
+`check_distinct` still passes on the CURRENT code):
+
+```
+python tools/furnish.py --style cozy_ghibli   # 2m10s, 448 sprites
+  56 distinct sprite sets -- no two ids render the same eight images
+
+python tools/furnish.py --style snes_rpg      # 2m12s, 448 sprites
+  56 distinct sprite sets -- no two ids render the same eight images
+```
+
+896 real sprite renders total (56 assets x 8 directions x 2 styles), zero
+collisions, including among the 7 footprint-capped props -- the exact
+scenario `check_distinct` exists to catch. `ramps` is threaded correctly per
+`--style` (`furnish.py:441-442`, resolved from `load_style(args.style)`, not
+a module constant). `git status` after both runs: nothing tracked changed
+(`out/sprites/` is gitignored build output).
+
+**Finding: no live bug.** `check_distinct` is real, correctly wired, tests
+the actual declared recipe parameters rather than a copy of them, and passes
+clean on a genuine from-scratch rebuild of the entire prop library for both
+styles. Honest null result -- the saucer/cup_latte failure mode this check
+exists for has not recurred.
+
 ## Ran the real Godot round-trip export, both styles, real binary -- clean, and one near-miss chased down to already-correct architecture
 
 `export_godot.py`'s three round-trip checks (`check_nine_slice_roundtrip`,
