@@ -43,7 +43,12 @@ def render_one(mesh, azimuth, ramps, seated=False):
     sm = ShadowMap(mesh, camera_light(cam), res=256)
     # Grain, matching `animate.render_frame`. A preview sheet whose render path
     # has drifted from the shipping one is worse than no sheet, because every
-    # judgement made from it is about a picture the game will never show.
+    # judgement made from it is about a picture the game will never show. One
+    # deliberate exception: despeckle, which lives only in `render_sprite` --
+    # this always rasterizes `character.build()`'s authored geometry, which
+    # carries no TripoSR/SDXL per-vertex noise, so there is nothing here for
+    # despeckle to remove (see ART_CRITIQUE.md, "Despeckle's own scope claim,
+    # checked").
     mat, lam, _ = rasterize(mesh, cam, size, target=centre, shadows=sm, fill=0.20, bounce=0.26,
                             ambient=0.05, key_gain=0.60, grain=1.0, ramps=ramps)
     px = downsample_modal(shade_toon(mat, lam, size, ramps, dither=True), size, FACTOR)
