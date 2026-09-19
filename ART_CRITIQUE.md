@@ -5447,6 +5447,125 @@ accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
 
+## `check_focal_contrast` was grading every style's room against cozy_ghibli's palette
+
+The L-run detail-floor investigation above ("The detail floor at 40 plans")
+tried two levers on the same rendered pixels -- back-wall dressing
+structure, shelf count -- and closed both without explaining the L-run
+concentration, concluding "the floor is real... the failing rooms are a
+consistent, repeatable topology-skewed population." That conclusion was
+correct for what it tested, but everything it tested shared a lever neither
+version of the check ever varied: which palette the room was rendered in.
+
+`manifest.py --check --style <name>` resolves `ramps` once from the active
+style (`tools/manifest.py`, the block starting "Resolved once against the
+active style, not cozy_ghibli always") and threads it through
+`check_contrast`, `check_waistline`, `check_eye_legibility`,
+`check_spec_coverage` and `generate_roster` -- the fix for the PR #23/#24/#25
+bug class. `check_built_rooms`, `check_focal_contrast` and
+`check_stool_occupancy`, three call sites lower in the same `try` block,
+were still called bare. Two of those three don't care --
+`check_built_rooms` reads `collisions()`/`grounded()`/
+`seating_faces_tables()`/`screen_occlusion()`, and `check_stool_occupancy`
+counts items by name prefix; neither reads a pixel, confirmed by
+fingerprinting `build()`'s own output (vert/face/item counts and every
+item's position) across three repeated calls on the same plan before ruling
+this out rather than assuming it from the function names -- fully
+deterministic, so palette genuinely cannot move either verdict.
+
+`check_focal_contrast` is the one that does read pixels -- it renders the
+whole frame and measures brightness/contrast/detail lead over the counter --
+and its own `render()` call, inside a nested `read_room()`, never received
+`ramps` either. `render()` has the identical `ramps or load_palette()`
+fallback that `character.py`'s `_palette()` has, so every focal-contrast
+reading this check has ever produced, under any `--style`, was against
+cozy_ghibli's colours. `tools/build_plan.py --focal-scan`, the manual sibling
+of this same instrument, had the same gap for a more direct reason: its
+`main()` already resolves `ramps` from `--style` for every other mode on
+that parser, but `--focal-scan` returns before that block runs, so the flag
+existed on the parser and was simply never read on that path.
+
+**Real before/after**, from `manifest.py --check --style snes_rpg` itself,
+not a standalone script (a standalone script threading `ramps` only into
+`render()` and not into `build()` gives a THIRD, wrong, answer -- see the
+methodology note below):
+
+Before (bug present, cozy_ghibli's render used for both styles):
+```
+ERROR  composition: plan 1 (L run): counter carries -0.001 detail against
+       its room (floor +0.000) -- the busiest thing in frame is not the
+       counter
+ERROR  composition: plan 8 (galley): counter is only -0.012 brighter than
+       its room (floor +0.015) -- no centre
+ERROR  composition: plan 8 (galley): counter carries -0.019 detail against
+       its room (floor +0.000) -- the busiest thing in frame is not the
+       counter
+10 errors, 8 warnings
+```
+
+After (fixed, snes_rpg's own palette used):
+```
+ERROR  composition: plan 1 (L run): counter is +0.001 in contrast against
+       its room (floor +0.030) -- the periphery has as much to look at
+ERROR  composition: plan 3 (island): counter is +0.000 in contrast against
+       its room (floor +0.030) -- the periphery has as much to look at
+ERROR  composition: plan 8 (galley): counter is only -0.008 brighter than
+       its room (floor +0.015) -- no centre
+ERROR  composition: plan 8 (galley): counter carries -0.017 detail against
+       its room (floor +0.000) -- the busiest thing in frame is not the
+       counter
+11 errors, 8 warnings
+```
+
+`cozy_ghibli`'s own `manifest.py --check` output is byte-identical before
+and after (the fix only changes what a NON-default `--style` sees), and the
+40-test unittest suite passes unchanged.
+
+Three distinct shapes in one fix, not one:
+
+- **Plan 1 (L run) changed failure reason, not verdict.** Under
+  cozy_ghibli's own render it fails DETAIL (-0.001, resolution-confirmed at
+  -0.005 @480). Under snes_rpg's own render, properly built with
+  `ramps=snes_rpg` (not just re-coloured), it passes detail (+0.004) but
+  fails CONTRAST instead (+0.001 against a 0.030 floor). Before the fix,
+  `--style snes_rpg` reported cozy_ghibli's detail failure text and numbers
+  for this room -- a real error, for the wrong reason, in a room whose own
+  actual defect is a different one.
+- **Plan 3 (island) was entirely invisible under snes_rpg before the fix.**
+  It renders cleanly under cozy_ghibli's own palette (no error, any style,
+  before or after), so the bug's cozy_ghibli-blind render also happened to
+  pass for this room, and the check reported nothing. snes_rpg's own render
+  fails contrast (+0.000 against 0.030) -- a real, previously entirely
+  unmeasured defect specific to that style's palette on this room.
+- **Plan 8 (galley) is a real defect under both palettes, numbers only.** It
+  fails brightness and detail under cozy_ghibli's own render (-0.012/-0.019)
+  and under snes_rpg's own render (-0.008/-0.017, both less severe but both
+  still below floor, both resolution-confirmed). The bug didn't hide this
+  one or invent it -- cozy_ghibli's numbers were reported for `--style
+  snes_rpg` too, close enough in sign and rough magnitude that nothing here
+  looked obviously wrong from the error text alone.
+
+**Methodology note, caught before it shipped a wrong finding:** an initial
+standalone verification script called `build(plan)` bare and threaded
+`ramps` only into the `render()` call, i.e. re-coloured a cozy_ghibli-BUILT
+room instead of building a genuine snes_rpg one. `_people()` ->
+`generate_roster(n, seed, ramps)` uses the palette during generation, not
+just for final colour, so a different `ramps` at `build()` time can change
+which roster gets placed and where -- a re-coloured cozy_ghibli room is not
+the same room as an actually-built snes_rpg one. That script reported plan
+1 passing cleanly under snes_rpg (+0.078 contrast, comfortably over floor);
+the real, properly-threaded check reports +0.001, failing. `render()` itself
+was confirmed deterministic (three repeated calls on one `Layout`, identical
+to the millipixel) before trusting either number, which is what surfaced the
+`build()`-argument difference as the actual cause rather than leaving
+render-randomness as an open, unresolved doubt. The shipped fix threads
+`ramps` into both `build()` and `render()`, matching `main()`'s own already-
+correct pattern for its default render path.
+
+Fixed in `tools/build_plan.py` (`check_focal_contrast`, `_focal_scan`,
+`main`) and `tools/manifest.py` (the `check_focal_contrast` call site) --
+branch `focal-contrast-style-blind`, left unmerged.
+
 ## `organic_rig.py`'s own `check_eyes_visible` had the same single-azimuth shape as `character.py`'s
 
 Third and fourth hour running this same audit against a `check_*` function
