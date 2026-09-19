@@ -1091,7 +1091,15 @@ Running both for real found more of the same honest picture:
   same roster against the same palette), plus three new near-misses:
   `check_eye_legibility` measures eyes 0.147 from the face at skin tones
   `skin-4`/`skin-3`/`skin-2` against a 0.15 floor -- close, not a wide miss,
-  but a real one specific to this palette's darker skin steps.
+  but a real one specific to this palette's darker skin steps. (Hour 22 of
+  the recurring audit swept this check across the other azimuths a
+  character actually ships at and found `skin-4`/`skin-3` read at the
+  identical 0.147 gap on every one checked -- a palette-proximity fact, not
+  a shading-angle artifact -- while `skin-2` only fails at 45; the same
+  sweep found cozy_ghibli's own version of this check, previously clean at
+  its one checked angle, actually fails for `skin-4` at azimuth 225. See
+  `ART_CRITIQUE.md`, "`check_eye_legibility` only ever rendered azimuth
+  45".)
 
 None of these threaten either style's approval: `style_approve.py` doesn't
 require `portrait.py` or `manifest.py` to pass, only `character.py` OR
