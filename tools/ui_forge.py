@@ -16,7 +16,7 @@ So UI art takes the short path: generate, matte, quantize, outline. Stages
 2 through 5 are skipped because they have nothing to contribute, not because
 they were too slow.
 
-    python tools/ui_forge.py                    # every ui entry in assets.yaml
+    python tools/ui_forge.py                    # every ui entry ui_chrome.py doesn't own
     python tools/ui_forge.py --only ui_icon_espresso,ui_icon_latte
     python tools/ui_forge.py --target 32        # icons are small by nature
 
@@ -39,6 +39,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from oklab import srgb_to_oklab  # noqa: E402
 from style import DEFAULT_STYLE, load_style  # noqa: E402
+import ui_chrome  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 UI_DIR = ROOT / "out" / "ui"
