@@ -1023,16 +1023,32 @@ MIN_EYE_GAP = 0.15
 #     a comfortable 0.196 for the same tone) -- visually confirmed too, an
 #     upscaled render at 225 shows only a bare sliver where 45/90 show two
 #     legible eye squares.
-#   - 0, 180, 315 are AMBIGUOUS: whether they show differing pixels at all
-#     depends on which skin tone is asked, which a pure occlusion angle
-#     cannot do (occlusion is geometry, not colour) -- meaning these are
-#     likely additional "eyes render pixel-identical to skin" cases for the
-#     darker tones specifically, not clean back-of-head shots. Left OUT of
-#     `EYE_LEGIBILITY_AZIMUTHS` deliberately: folding them in with the
-#     existing "no gaps = fail" rule would also flag whichever of them are
-#     genuine grazing-profile occlusion, and nothing here can yet tell those
-#     two cases apart. Recorded as open, not guessed at.
-EYE_LEGIBILITY_AZIMUTHS = (45.0, 90.0, 135.0, 225.0)
+#   - 0, 180, 315 were left open as AMBIGUOUS: whether they showed differing
+#     pixels depended on which skin tone was asked, and a pure occlusion
+#     angle cannot do that (occlusion is geometry, not colour) -- but
+#     nothing at the time could tell "genuine grazing-profile occlusion"
+#     apart from "eyes render pixel-identical to skin at this tone", so both
+#     were left out rather than guessed at.
+#
+#     Resolved by asking a genuinely different question than the colour
+#     check does: swap `EYE` for a canary material no skin ramp could ever
+#     match, then read raw z-buffer material tokens (`art_review.
+#     screen_materials`, no lighting/dithering/supersampling in the path at
+#     all) instead of rendered, quantized colour. If the canary's tokens
+#     never appear at a pixel, that pixel is genuinely occluded; if they do,
+#     colour is the only thing hiding the eyes there. Ran it at all 8
+#     azimuths across all 7 tones: 270 reads 0 canary pixels for every tone,
+#     confirming it as the one genuine back-of-head occlusion angle. Every
+#     other azimuth, 0/45/90/135/180/225/315 alike, reads a consistent,
+#     tone-INVARIANT nonzero canary pixel count (10-12px) for all 7 tones --
+#     proof the eyes are geometrically on screen everywhere but 270,
+#     including all three azimuths this comment used to call ambiguous.
+#     That makes every zero-differing-pixel result the colour check reports
+#     at 0, 180 or 315 a confirmed colour collision, the exact defect this
+#     check exists to catch, not an unresolvable occlusion guess. See
+#     ART_CRITIQUE.md, "`check_eye_legibility`'s three 'ambiguous' azimuths
+#     weren't ambiguous, they just needed a check that doesn't use colour".
+EYE_LEGIBILITY_AZIMUTHS = (0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 315.0)
 
 
 def check_eye_legibility(ramps=None, azimuths=EYE_LEGIBILITY_AZIMUTHS) -> list[str]:
