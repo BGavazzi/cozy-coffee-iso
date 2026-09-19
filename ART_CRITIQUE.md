@@ -5447,6 +5447,26 @@ accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
 
+## Closing the last gap in the PR-reconciliation sweep: every multi-PR file cluster in the open pile is now directly verified, not just trusted
+
+This session's own PR-conflict reconciliation habit (Hours 44/47/48/55/63/64/70/71) has, each time, checked a specific slice of the open pile -- a named list of PRs sharing a file, or a newly-added PR against an older cluster. What hadn't been done, until this hour: a full, from-scratch inventory of every `tools/*.py` file touched by two or more of the 46 currently-open PRs, cross-checked against what this session's own memory already claims was reconciled -- because that memory record is itself a claim that can drift, same as any other doc in this repo, and the standing lesson from Hour 63/69 is to verify claims rather than carry them forward.
+
+Built the inventory directly: diffed every open PR's branch against `main` (`git diff --name-only main...origin/<branch> -- tools/`), grouped by file, kept files touched by 2+ PRs. Result: seven files, `manifest.py` (8 PRs), `art_review.py` (8), `character.py` (4), `ui_forge.py` (2), `render_batch.py` (2), `assetlib.py` (2), `animate.py` (2). Checked each against memory's own record of what had already been reconciled:
+
+- `manifest.py`'s 8 PRs (#83/86/88/91/92/93/94/101) -- exactly Hour 48's own 7-way sequential-merge list plus the ART_CRITIQUE.md/NEXT.md doc-append routine; matches.
+- `art_review.py`'s 8 PRs (#81/83/87/93/95/102/103/109) -- exactly Hour 55's "art_review.py/assetlib.py-touching pile" list; matches.
+- `character.py`'s 4 PRs (#88/89/94/117) -- Hour 48's 7-way sweep covers 88/89/94 pairwise, Hour 63 added 94x117, Hour 64 added 88x117 and 89x117; fully covered.
+- `render_batch.py`'s 2 PRs (#81/#100) -- Hour 64, direct.
+- `ui_forge.py`'s 2 PRs (#80/#121) -- Hour 69, direct (this is the one pair that WAS a real conflict, already corrected).
+
+Two pairs had never been named as checked anywhere in memory, so they were the actual news this hour:
+
+**`animate.py` (#81 vs #94).** `git merge-tree` flagged it "changed in both," which past hours (see the routine-vs-real distinction established since Hour 44) have learned not to trust without reading the actual hunks or running a real merge. Read first: #94's hunk changes the `roster` line in `demo()` to call `C.roster_for(args.style, ...)`; #81's change is 60 lines away, a docstring-only edit to `render_frame()` explaining why despeckle deliberately doesn't apply there. Confirmed with a real scratch-branch merge (`git checkout -b`, merge #81, commit, merge #94) rather than trusting the diff read: `Auto-merging tools/animate.py` -- clean, no conflict markers, only the routine `ART_CRITIQUE.md` tail-append needed resolving. Branch discarded after.
+
+**`assetlib.py` (#83 vs #109).** Same story -- bundled into Hour 55's prose as part of the "art_review.py/assetlib.py-touching pile" but never verified as its own pair with its own evidence. Real scratch merge: `Auto-merging tools/art_review.py`, `Auto-merging tools/assetlib.py`, both clean; again only `ART_CRITIQUE.md`.
+
+**Result: every file this session's own multi-PR-overlap inventory finds is now directly, individually verified clean** -- not inferred from a bundled description, not carried forward from an earlier hour's summary. No code changes; this is reconciliation bookkeeping, the same shape as Hours 44/47/48/55/63/64/70/71, closing the one part of that habit (a from-scratch file-overlap inventory, rather than checking a hand-picked list) that hadn't been done yet this session.
+
 ## Continuing the pre-Hour-58 pile sweep: PR #90's eye-visibility fix, re-verified fresh rather than trusted, and it retroactively strengthens Hour 62's own finding
 
 Hour 70 spot-checked three early branches for conflicts; this hour picked
