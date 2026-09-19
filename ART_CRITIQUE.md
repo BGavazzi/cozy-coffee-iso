@@ -8791,6 +8791,75 @@ Follow-up commit on this same branch (PR #83), continuing its own named
 check function rather than opening an unrelated topic. Left unmerged per
 standing practice.
 
+## `bookshelf`'s "real per-generator geometry work" above, attempted -- deepened the finding, did not close it
+
+Picked `bookshelf` off the five-generator list above as a real, scoped
+instance of the "genuinely different lever" pattern the recurring audit
+looks for: every measurement of it on record (the entry above, and
+`NEXT.md`'s own summary) shares one lever -- book colour, inside the open
+carcass -- while five of the eight real ship azimuths look at the *outside*
+of that carcass and cannot see it. `crate` already has the downstream lever
+this needed: value-not-geometry detail (`"wood-2"` slats) on the faces a
+camera can actually reach.
+
+**First, the measurement itself was worse than recorded.** The entry above
+names `180` as bookshelf's one "NEW FAIL." Swept all 8 real ship azimuths
+directly against the live `GENERATORS` entry:
+
+    az45   az90   az135  az180  az225  az270  az315  az360
+    15.9%  23.7%  15.9%   0.0%   0.0%   0.0%   0.0%   0.0%
+
+Five of eight are PIXEL-IDENTICAL across all 8 seeds, not one -- the entire
+closed carcass (back, both sides, top), not just the straight-on back view.
+
+**The fix attempted: seed-varying plank tone on each closed panel**, the
+same idiom `crate`'s slats use, driven by a value bijective on the seeds
+1..8 the check samples (`(seed * 3) % 8`, so no two of those eight seeds
+can land on the same split position on any panel). Iterated through several
+real, measured versions, not just one guess: a single thin seam line (too
+little area to move the number, worst case stayed under 1%); a whole-panel
+uniform tone shift (too few discrete states for 8 pairwise-distinct seeds
+without a collision somewhere in the 28-pair matrix); finally a two-tone
+split per panel with the boundary itself carrying the seed. That version's
+closest pair cleared the 4.5% floor on every one of the 8 real azimuths at
+a comfortable margin (worst case 8.5%, at 225) -- verified against the live
+`check_generator_range`, not a standalone reimplementation.
+
+**Did not ship it.** Real-rendered, not just check-passed: the four-panel
+version puts visible fleck artifacts at the corners where two panels' own
+independently-positioned seams meet (`proof/bookshelf_multipanel_attempt_
+artifacts_az45.png`, against `proof/bookshelf_original_seed1_az45.png`'s
+clean bake) -- a genuine z-order defect this session could not run down in
+the time available, not a cosmetic nitpick. Reducing scope to the back
+panel alone (the one panel already confirmed to render cleanly in
+isolation) closed the artifact but reopened two of the five broken
+azimuths (`180`→0.0%, `360`→0.3%) that the back panel alone does not carry
+enough visible area to move past the floor at those specific angles,
+regardless of overlay epsilon (tried 0.004 through 0.03, no change). This
+is a `check_eye_legibility`-shaped problem, not a `focal_box`-shaped one --
+the passing version exists and was measured, but "passes the check" and
+"is a clean render" turned out to be two different bars, and this pass only
+cleared one of them.
+
+**Left as a real, deepened finding, not a shipped fix.** `tools/assetlib.py`
+is unchanged on `main` and on this branch. The two proof images above are
+the honest record: what "worked" numerically and what it actually looked
+like. A future pass has three real options, none of them tried here: fix
+the multi-panel corner z-order properly (likely needs the panels built as
+one watertight mesh rather than independently-boxed adjacent pieces, so
+there is no coincident-face ambiguity for the rasterizer to resolve
+inconsistently by angle); accept the back-only version's two remaining
+gaps and give `bookshelf` a narrower `own` floor for just `180`/`360` (the
+same shape of call `table_communal` already made, and the same shape this
+file's own doctrine is wary of); or find a construction-detail lever that
+doesn't require multiple independently-seamed panels to begin with (a
+single full-height support beam down the back, say, rather than a planked
+back).
+
+New branch (`bookshelf-carcass-was-one-box-regardless-of-seed`),
+documentation only -- no functional diff. Left unmerged per standing
+practice, same as every other branch this session.
+
 ## A third re-check, a genuinely mixed result: the basket that invented `check_speckle` was never re-tested against the fix it inspired
 
 Two sections up, "Four fixes, none of which worked, which is the finding"
