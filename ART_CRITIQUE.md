@@ -2673,6 +2673,74 @@ it argues the floor was already close to correctly placed on three objects,
 which the original bracket's honesty (`ART_CRITIQUE.md`'s prior entry) rather
 undersold.
 
+## Reopened: the seven-object speckle floor above was also only one lever tried
+
+The entry above, and `check_speckle`'s own Finding message, said "there is no
+render setting that fixes this: three were measured and none moved the
+number" and concluded the fix was to reject the mesh or ask stage 1 for a
+smoother subject. That is true of render settings and was never the whole
+answer -- render settings are a generation-stage lever, and the defect
+survives all the way to the rendered pixels regardless of which
+generation-stage lever gets pulled. A post-process aimed at the pixels
+themselves had never been tried: `render_batch.py`, `pixelize.py`, and
+`art_review.py` had zero mentions of despeckling anywhere in their history.
+
+This is the exact shape of the UI icon speckle case two entries up (see "The
+UI icon roster grew to 20, one PR fixed one, and four still fail" and its
+own reopening) -- two rounds of attempted fixes shared one lever (there,
+the prompt; here, render settings) while the check itself measures a
+downstream property (rendered pixel adjacency) neither lever touches
+directly.
+
+`pixelize.py` gained a `despeckle(px, target, min_agree=2, max_passes=5)`
+function -- the same conservative two-rule design proven on UI icons,
+generalized: only reassign a pixel that is isolated by the exact 4-neighbour
+rule the check gates on, and only reassign it to a colour that at least 2 of
+its up to 8 neighbours (4 orthogonal + 4 diagonal) already agree on. Wired
+into `render_batch.render_sprite` -- the core rendering function shared by
+every asset type in the factory, not just lifted props -- right after
+`downsample_modal` and before the outline pass, so outline pixels (which are
+deliberately different from their fill neighbours) are never mistaken for
+speckle.
+
+Measured against every cached `evening`-variant render already on disk (750
+frames spanning props, tiles, UI, and characters) at the exact
+`check_speckle` isolated-pixel ratio:
+
+    fails before despeckle: 59 / 750 frames
+    fails after despeckle:   0 / 750 frames
+    regressions:              0 (no already-passing frame moved closer to
+                                  the floor, let alone across it)
+
+basket, the worst known offender, went from 12.7-16.3% across all 8 azimuths
+to 0.0-0.2%. Fourteen objects had at least one failing frame in this cache --
+more than the seven named above (also bicycle, bottle, cake_slice, fern, and
+an unrelated stress-test render) -- and all fourteen clear the gate after the
+pass, 0 frames failing across all of them. Spot-checked by eye, not just by
+the numbers: a failing frame goes from illegible cross-ramp static to a
+shape with a legible shaded/lit region split; an already-passing frame
+(candle, french_press) is visually unchanged apart from a handful of stray
+pixels -- nothing that was contributing to legible detail was touched.
+
+Re-verified end to end, not just on the cache: re-rendered basket fresh from
+its cached mesh (`out/mesh/basket.obj`) through the real, now-patched
+`render_batch.py`, and `art_review.py` reports nothing to flag on all 8
+frames. Re-rendered all 32 cached meshes fresh the same way (256 frames) --
+255 clean, one narrow miss (`wooden_spoon`, one azimuth, 10.6% against a
+10.5% floor, exactly one pixel over). That pixel has no 2-of-8-neighbour
+colour majority -- a genuine point on the spoon handle's thin silhouette,
+which is precisely the case the conservative reassignment rule is designed
+to leave alone rather than paint over. Documented honestly rather than
+declared closed: this is a real, narrow, unfixed residual, not evidence the
+approach doesn't work.
+
+**Not a full retraction.** The render-settings conclusion still holds --
+three were measured and none moved the number, and that finding is
+unchanged. What was wrong was stopping there. `check_speckle`'s own Finding
+message is updated to match: a Finding today means a narrow miss survived a
+pass that already closed the wide cases, not that the mesh needs rejecting
+outright.
+
 ## Parameter-coverage audit for assetlib: no dead draws found, one design note
 
 NEXT.md D3 asked whether `assetlib`'s seeded generators have the character
@@ -4346,6 +4414,138 @@ through the new Continue button both came out auto-clean with no blockers at
 all. The honest scope line is object-shaped things without articulation,
 and it should be written down as such rather than discovered per-subject.
 
+## Re-checked after the despeckle fix: the gate clears, the knight still doesn't look like one
+
+Both remedies tried above (coarser marching cubes, a simplified prompt) were
+generation-stage levers, same category as the 3D lifted-object speckle
+case's "three render settings, none moved the number" (see "Reopened: the
+seven-object speckle floor above was also only one lever tried") -- worth
+checking whether this ceiling was the same mistake a third time, now that
+`render_batch.render_sprite` runs every sprite through `pixelize.despeckle`.
+
+It is not, and the distinction is worth recording precisely. Re-rendered the
+frog knight fresh from its cached mesh (`out/mesh/the_frog_knight_from_
+chrono_trigger.obj`) through the now-patched pipeline: `art_review.py`
+reports **nothing to flag on all 8 frames** -- the 11-12% speckle blocker and
+the 17-25% cross-ramp adjacency warning both clear, the latter apparently as
+a side effect of the same fix (adjacent-but-different-ramp noise was
+speckle's cross-ramp case, and cleaning the noise cleaned both checks at
+once).
+
+Looked at the actual sprites (`out/knight_grid.png`, all 8 azimuths, 8x
+upscaled) before calling anything closed. They do not read as a knight.
+They read as a hunched, monochrome frog-creature -- single skin-ramp
+throughout, no cape, no armour, no rapier as a separate legible object (a
+thin same-coloured line in two frames is the closest thing to a weapon
+silhouette). This is exactly what the original entry predicted a passing
+gate would not fix: **the mesh itself has no cape, no separable limbs, no
+rapier** -- geometry that was never reconstructed, not colour noise sitting
+on top of geometry that was. A pixel-level despeckle pass cannot invent
+missing topology; it can only clean the colour of topology that exists.
+
+**The honest conclusion is two findings, not one retraction:**
+- The character ceiling itself -- TripoSR cannot reconstruct articulated,
+  accessorized subjects at this fidelity -- is unchanged and still correctly
+  scoped as "needs a better reconstructor" (TRELLIS 2, still blocked on this
+  workstation's toolchain). Nothing in this pass argues otherwise.
+- But the *checks* that were standing in as an imperfect proxy for "does
+  this look like the intended subject" are now a measurably weaker proxy
+  than before: a mesh this visibly wrong now sails through `art_review.py`
+  with zero findings. That was already possible in principle (the checks
+  never claimed to verify subject identity), but this is the first measured
+  case of it actually happening, and it means a human look at character-kind
+  output stays necessary even after the pipeline reports clean -- the gate
+  passing is no longer even weak evidence that a character-kind asset reads
+  as its subject.
+
+## A second re-check, opposite result: `bread_loaf`'s "genuinely bad" 5/8 was speckle after all
+
+The frog knight (previous section) was a warning not to assume the despeckle
+fix generalizes. `bread_loaf` is the other side of the same check:
+`concept.py`'s `MIN_FILL` rationale and `factory.py`'s `RETRY_SEEDS` comment
+both cite it as the sharpest counter-example to "reseeding helps" -- "gated
+on seed 1, passed on seed 2, reached stage 5 -- and its sprites are still
+5-of-8 blocked, identical to before," attributed to the mesh itself: "a loaf
+is an amorphous form TripoSR cannot resolve, not because it was small." That
+5/8 number predates `pixelize.despeckle` (this same branch).
+
+**Correction, same day, before this section's first draft had even been
+committed:** the paragraph here originally claimed `bread_loaf` "fell
+outside" the 32-mesh batch the speckle fix's own coverage check re-rendered
+two sections up ("Reopened: the seven-object speckle floor... 255 clean, one
+narrow miss (`wooden_spoon`)") and so had never actually been re-checked
+against the new lever. That claim was never verified before being written,
+and it does not hold up: `out/mesh/bread_loaf.obj` is one of exactly 32
+cached mesh files on disk, all dated 2026-08-23 through 2026-08-26 --- days
+before the despeckle commit (`6ce3604`, 2026-09-16) that says "all 32 cached
+meshes re-rendered fresh (256 frames), 255 clean, one honest narrow miss
+(`wooden_spoon`)." Arithmetic alone rules out `bread_loaf` sitting outside
+that count and still failing: one miss total, across all 256 frames, means
+every other mesh in the batch -- `bread_loaf` included -- already came back
+clean at that commit. The fix's own coverage check had already covered this
+case in aggregate; nobody had just written it down by name. This is the
+exact stale-unverified-claim mistake this file's "29%" entry describes
+catching once already, repeated in miniature by the paragraph that was
+citing that entry as precedent -- corrected here rather than quietly amended,
+per this file's own practice.
+
+What survives the correction: the concrete re-render below is still real,
+independent confirmation for this specific named subject (the original
+32-mesh result was an aggregate count, never broken out per-mesh in any
+doc), and the `concept.py`/`factory.py` comments it corrects were still
+citing a stale number regardless of whether that number had technically
+already been superseded upstream. What does not survive: any claim that this
+was newly-discovered coverage, or that the fix needed anything further to
+reach `bread_loaf`.
+
+Re-ran it directly. `main` (pre-despeckle), fresh render from the cached mesh
+(`out/mesh/bread_loaf_bound.obj`): `art_review.py` reports 5 of 8 frames
+blocked on `speckle`, 11.4-13.5% against the 10.5% floor -- reproduces the
+recorded number exactly. Same mesh, same render, this branch (post-despeckle):
+**0 of 8 blocked.** Confirmed by eye, not just the count -- upscaled
+before/after contact sheet (`out/bread_loaf_before_after.png`, all 8
+azimuths, 6x): the crust's mottled light/dark pattern and the sliced-loaf
+silhouette read identically in both rows; nothing that made it legible as
+bread got smoothed away, matching the "stray pixels only" pattern already
+confirmed for `candle`/`french_press` in the original despeckle measurement.
+
+So the mechanism `factory.py`'s own comment names for `bread_loaf` --
+"amorphous form TripoSR cannot resolve" -- was the wrong explanation for the
+specific 5/8 number, even though it may still be true of the mesh's
+geometry in some other respect this pass did not measure. What was actually
+failing those 5 frames was the identical fine-grained-surface speckle named
+for basket's weave and cutting_board's wood grain two sections up, on a
+grainy crust instead of a woven basket -- the same cause, the same fix. Per
+the correction above, that fix had already reached this subject at the
+original despeckle commit; this pass names it and shows it, rather than
+being the thing that closes it.
+
+**What this does and does not change:**
+- `bread_loaf`'s stage-1 gate story is untouched -- reseeding still does not
+  fix it, for the reason already given (reseeding hunts a concept image that
+  satisfies stage-1 heuristics; despeckle operates three stages later, on
+  rendered pixels, and neither lever touches what the other measures).
+  `factory.py`'s `RETRY_SEEDS` conclusion stands.
+- The specific claim that `bread_loaf` is a *counter-example* to reseeding
+  because its reconstruction is "genuinely bad" does not stand as stated --
+  the sprites that made it look bad are now clean. Whether the underlying
+  mesh geometry is *also* fine or also flawed in some way despeckle can't
+  touch is a question this pass did not answer either way, and is left
+  explicitly open rather than guessed at.
+- `concept.py`'s `MIN_FILL` argument (fill share does not predict blocked-
+  frame count) does not depend on this specific number -- but the two
+  examples it leads with, `basket` 8/8 and `cutting_board` 7/8, are the same
+  pre-despeckle blocked-frame counts as `bread_loaf`'s, both already
+  independently confirmed clean by the original despeckle pass. The
+  qualitative point (fill is not predictive) is not contradicted by fixing a
+  downstream artifact that was orthogonal to fill either way, but the exact
+  numbers quoted next to `basket`/`cutting_board`/`bread_loaf` in that
+  comment are now stale and worth a maintenance pass, not re-derived here --
+  re-deriving the full twenty/thirty-two-subject sweep behind that argument
+  is a larger undertaking than one hour's check, and doing it partially
+  would risk the exact stale-transcription mistake the "29%" entry above
+  already caught and corrected once.
+
 ## The 29% that was being thrown away, and the one kind that stays thrown away
 
 If the scope line is "props," then the number that matters for throughput is
@@ -5246,6 +5446,221 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## A third re-check, a genuinely mixed result: the basket that invented `check_speckle` was never re-tested against the fix it inspired
+
+Two sections up, "Four fixes, none of which worked, which is the finding"
+still reads, unedited since before this branch existed: *"There is no render
+setting. The remedy is upstream -- a subject whose surface is smooth at this
+scale, or a better reconstructor."* That basket -- the diagnostic subject
+whose 0.127-0.163 isolated-pixel share fixed `MAX_ISOLATED` at 0.105 in the
+first place -- was never part of either despeckle verification pass, this
+branch's own 32-cached-mesh sweep or the bread_loaf and character-ceiling
+follow-ups above: it isn't a shipped asset (no `basket`/`wicker_basket` id
+anywhere in `assets.yaml` or `subjects.yaml`), so nothing that iterates the
+real library would ever touch it. It sat in this file as a citation, not a
+render, while everything around it got re-tested.
+
+Re-ran it directly, the same way as `bread_loaf`. `main` (pre-despeckle),
+fresh render from `out/mesh/basket_bound.obj`: `art_review.py` reports 8 of 8
+frames blocked at **12.7%-16.3%** -- reproduces the recorded range in this
+file exactly, direction for direction. This branch (post-despeckle), same
+mesh, same render: **7 of 8 blocked, 11.1%-13.2%** -- one frame (`dir1`, the
+thinnest silhouette of the set) now clears; every other frame is lower than
+its `main` counterpart by 2-4 points but still above the 10.5% floor.
+Confirmed by eye, not just the count: an upscaled 8x before/after contact
+sheet (`out/basket_recheck/before_after.png`, all 8 azimuths) shows the two
+rows are close to indistinguishable -- the same dense cream/wood/neutral
+salt-and-pepper mix survives in both, unlike `bread_loaf`'s crust or the
+character-ceiling gate, where despeckle's effect was either total or a side
+effect large enough to see.
+
+So this is a third outcome, not a repeat of either prior re-check. `bread_loaf`
+(two sections up) fully generalized: despeckle was the untried lever and it
+closed the gate outright, 5/8 blocked to 0/8. The frog knight (three sections
+up) did not generalize at all: the gate cleared but the sprite still didn't
+read as its subject, a topology problem no pixel pass can touch. The basket
+is neither -- despeckle **measurably helps** (worst frame 16.3% -> 13.2%,
+average isolated-pixel share down about a quarter) **without closing the
+gate**, because its speckle is wider than the single-pixel-with-no-majority
+case the conservative two-rule pass is designed to remove: a woven surface's
+fine detail survives as small multi-pixel clusters, not lone dots, on a mesh
+this coarse at 64px. That is the literal mechanism the four original fixes
+already diagnosed -- "sub-pixel detail in the source... one 64px pixel covers
+hundreds of triangles of it" -- and despeckle, a real fifth lever the
+original four attempts never included, still runs into the same wall for
+*this specific subject*. The two-sections-up passage's "there is no render
+setting" is narrowly accurate as written (despeckle is not a render setting,
+it is exactly the downstream pixel lever this file elsewhere credits with
+fixing UI icons, lifted objects generally, and bread_loaf specifically) but
+its confident tone reads, after this check, as broader than the evidence
+now supports for the one subject it was built on. Left as the historical
+record with this section as the honest update, not rewritten in place --
+same practice as the frog-knight and bread_loaf follow-ups.
+
+**What this does and does not change:** `check_speckle`'s floor and mechanism
+are untouched -- this was a re-verification of an old, non-shipped diagnostic
+case, not a new fix, and nothing here argues for loosening `MAX_ISOLATED` or
+special-casing `basket` to pass. The basket was never going to ship regardless
+of this result; its only role is as the number that calibrated the floor, and
+that calibration is unaffected by whether despeckle later helps it. What
+changes is confidence in generalizing from any single re-checked case to "the
+speckle floor is now solved everywhere despeckle runs" -- `bread_loaf`
+supported that reading, this doesn't, and the honest position is that
+despeckle's coverage is measured per-subject, not assumed.
+
+## Despeckle's own scope claim, checked: three render paths never got the fix, and none of them needed it
+
+This branch's own commit message and the addendum above describe despeckle
+as wired into "the shared rendering path for every asset type in the
+factory, not just lifted props" (`render_batch.render_sprite`). That is a
+testable claim about the code, not just about visual results, and it does
+not hold literally: `render_room.py`, `animate.py`, and
+`preview_characters.py` each call `rasterize`/`shade_toon`/
+`downsample_modal`/`apply_outline` directly, and none of the three goes
+through `render_sprite` at all -- `grep -n "despeckle(" tools/*.py` shows
+exactly one call site, inside `render_sprite` itself. Two of the three even
+say, in their own code, that they match the "real" path: `animate.
+render_frame`'s docstring called itself "exactly the path a static asset
+takes," and `preview_characters.render_one`'s comment said its grain setting
+was "matching `animate.render_frame`" specifically so the preview sheet
+would not drift from the shipping render. Neither statement has been true,
+in the despeckle sense, since the commit two sections up.
+
+Checked whether this is a live gap or a documentation-precision issue only,
+the same way `check_generator_range`'s azimuth blindness (Hour 20) and
+`check_collapse`'s width blindness (Hour 34) were checked before deciding
+whether anything needed fixing: despeckle exists to remove one specific
+noise pattern -- the per-vertex/per-pixel colour left behind by TripoSR mesh
+reconstruction or SDXL concept art. `grep -rn "load_obj|ingest" tools/
+render_room.py tools/animate.py tools/preview_characters.py tools/layout.py
+tools/assetlib.py` returns nothing: none of those five files ever load an
+ingested OBJ. `render_room.build_room()` -- and `build_plan.build()`, the
+generator that file's own composition checks (`check_focal_contrast` and
+friends) render through the same `render_room.render()` -- places every
+piece of furniture exclusively through `assetlib.py`'s own procedural
+generators (`counter`, `chair`, `table_round`, `grinder`, `plant_small`,
+...). `animate.py` and `preview_characters.py` rasterize exclusively
+`character.build()` output. Neither source has ever passed through TripoSR
+or the SDXL matte pipeline, so there is no noisy per-vertex colour for
+despeckle to remove in the first place, regardless of which branch renders
+it.
+
+Confirmed empirically, not just by absence of a code path: rendered the real
+demo room fresh (`python tools/render_room.py`, this branch, unmodified) and
+ran `check_speckle` directly against the output -- 0 findings, clean, the
+same result it would give on `main` before despeckle existed, because
+nothing in the room's geometry carries the defect either way.
+
+**Conclusion: the coverage gap is real as a fact about the code -- three
+render paths bypass despeckle entirely -- but has no live casualty, because
+none of the three ever renders content that could speckle. No functional fix
+ships here; wiring despeckle into `render_room.py`/`animate.py`/
+`preview_characters.py` defensively, with no measured defect for it to
+catch, would be exactly the "tuning the instrument to an answer nobody
+asked" this repo's own doctrine argues against.** What is worth fixing is
+the record: the commit message's "every asset type in the factory"
+overstates `render_sprite`'s actual reach, and the two docstrings quoted
+above were stale in this one specific respect. Corrected in place, same
+branch: `animate.render_frame` and `preview_characters.render_one` now say
+which parts of the path are actually shared (camera, quantization, palette,
+outline) and name despeckle as the one deliberate, harmless exception, with
+a pointer back to this section.
+
+## `MAX_ISOLATED`'s own calibration was cozy_ghibli-only, and it doesn't fully hold under `snes_rpg` -- despeckle already covers the gap anyway
+
+`check_speckle`'s floor comment (`tools/art_review.py`) is explicit about what
+it was measured against: "Over ten authored props at eight directions each...
+Three props lifted through TripoSR read 0.045 (kettle, good), 0.078 (teapot,
+acceptable) and 0.153 (basket, rejected)." Every one of those renders,
+checked, was `cozy_ghibli` -- `snes_rpg` didn't exist yet when this floor was
+set. Whether 0.105 is the right cut for a style with a genuinely different
+palette (fewer, more saturated ramps, per `snes_rpg`'s own bible) was never
+tested. Checked it directly, on this branch, re-rendering real meshes under
+both styles' real palettes:
+
+**Authored/procedural geometry (`assetlib.py`, what the entire real
+`furnish.py` catalog is built from) is unaffected or slightly safer under
+`snes_rpg`** -- `pastry_case` (the worst authored case in the original
+calibration, ~0.062) measures 0.062 under `cozy_ghibli` and 0.067 under
+`snes_rpg` here; `espresso_machine`, `grinder`, `table_round` all read flat
+or lower. No risk on this side, consistent with the floor's own margin
+("authored art is an order of magnitude below it and cannot trip it" --
+still true under both styles).
+
+**TripoSR-lifted geometry drifts upward under `snes_rpg`, consistently,
+across every mesh tested** (`out/mesh/*_bound.obj`, max isolated share per
+8-frame set):
+
+    mesh            cozy_ghibli   snes_rpg
+    kettle          0.057         0.073
+    teapot          0.080         0.076
+    coffee_cup      0.099         0.099
+    wine_glass      0.072         0.096
+    cheese_wheel    0.092         0.110  <- crosses the 0.105 floor
+    candle          0.090         0.121  <- crosses the 0.105 floor
+    cutting_board   0.148         0.188  (already failing under cozy_ghibli)
+    newspaper       0.129         0.167  (already failing under cozy_ghibli)
+    basket          0.163         0.221  (already failing under cozy_ghibli)
+
+Two meshes that pass cleanly under `cozy_ghibli` fail under `snes_rpg` on
+the identical geometry -- the same directional drift the four already-
+failing meshes show, just crossing the line rather than moving inside it.
+Mechanism, not coincidence: `snes_rpg`'s fewer, more saturated ramps mean
+coarser quantization steps, so the same per-vertex reconstruction noise is
+more likely to land two adjacent samples on opposite sides of a ramp
+boundary -- sharper cross-ramp adjacency, same underlying noise, worse
+isolated-pixel score.
+
+**Checked whether this is currently a live defect, not just a risk.**
+`grep -c "Recipe(" tools/furnish.py` -- 56 recipes, every one a `lambda s:
+A.xxx(...)` call into `assetlib.py`'s procedural generators (confirmed by
+`grep -n "load_obj|ingest\.load" tools/furnish.py`: zero hits beyond the
+`ingest.fit`/`mesh_geometry` import, which normalizes ANY mesh's scale and
+is not itself a load path). The one declared exception is real:
+`assets.yaml`'s `teapot` entry has no `Recipe`, and `furnish.py`'s own
+`UNMAPPED_REASON["teapot"]` says why -- `"already built on the SDXL path"`.
+Checked what that path actually shipped: `out/variants/{evening,golden_hour,
+night,overcast}/props/teapot_dir*.png` are real, committed sprites --
+measured directly against those files (not a reproduction), max isolated
+share **0.080** across all four lighting variants, comfortably under the
+floor, matching the reproduction above almost exactly. But
+`out/sprites_snes_rpg/` -- the one place `snes_rpg`'s own prop library would
+live -- contains no lifted content at all, `teapot` included (`ls
+out/sprites_snes_rpg/*.png`: `crate_cup` and `barista` only, the analytic
+demo scene and the animate.py sheet). `snes_rpg`'s real prop library, lifted
+or procedural, has never actually been rendered to completion. So: a real,
+measured, directional gap in the floor's own generality, and **no live
+casualty today**, because there is nothing currently shipped under
+`snes_rpg` for it to misjudge -- the same shape as this file's `check_
+collapse` and `render_room`/`animate` findings elsewhere in this session,
+not the shape of PR #100's grain finding.
+
+**Checked whether this branch's own fix already covers it, rather than
+assuming.** `despeckle(px, target, min_agree=2, max_passes=5)` takes no
+`ramps`/`style` argument -- it operates purely on already-quantized pixel
+adjacency, so nothing about its own logic should care which palette produced
+the input. Confirmed directly: ran the two crossing meshes, plus `teapot`
+and `kettle`, back through `despeckle()` under `snes_rpg`:
+
+    mesh            before (snes_rpg)   after despeckle
+    cheese_wheel    0.110                0.001
+    candle          0.121                0.000
+    teapot          0.076                0.001
+    kettle          0.073                0.001
+
+Closed completely, at the same conservative margin this branch's other
+verifications show, with zero additional code -- the fix already shipped on
+this branch is general across styles because nothing about it is
+style-specific, not because anyone tested it that way at the time. **No
+functional change ships from this section either** -- `MAX_ISOLATED` stays
+at 0.105 (loosening it would be exactly the "tune the instrument to the
+answer" move this repo's doctrine rejects, and it doesn't need loosening:
+despeckle already keeps every case tested inside it). The value here is
+confidence, recorded rather than assumed: the day someone actually renders
+`snes_rpg`'s prop library against real TripoSR-lifted meshes, this branch's
+fix is already the reason `check_speckle` won't need a second, style-specific
+fix on top of the first one.
 
 ## Reopened: the "left open" call above was wrong about which lever was untried
 
