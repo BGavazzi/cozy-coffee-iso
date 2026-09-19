@@ -9467,3 +9467,92 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## The galley composition failure ("A real, already-measured galley finding was never folded out of its own commit message") had an untried lever after all -- the box, not the floor
+
+That earlier entry traced the galley's 3-of-3 `check_focal_contrast` failures
+to commit `71451c3`'s own reasoning: "a structural consequence of the box's
+size... not fixed here because loosening `MIN_FOCAL_L`/`MIN_FOCAL_DETAIL` to
+admit it would be tuning the instrument to the answer" -- and left it there,
+correctly refusing to move the floor. But the lever that commit considered
+and the lever it actually had were not the same thing. It reasoned about the
+box's *size*; the fix that was never tried was the box's *shape*.
+
+`focal_box(plan)` unions every `service`/`backbar`/`service_return` zone into
+ONE axis-aligned rectangle. For every topology except galley that is exactly
+right -- one counter, one box. A galley has two counters, backed against
+OPPOSITE walls (`SERVICE_RUNS = {"galley": 2}`, `floorplan.py`), separated by
+at least `GALLEY_AISLE` (1.6) of open floor. Unioning their bounding boxes
+into one rectangle does not make a bigger counter; it makes a rectangle whose
+middle third is the walkway between two counters -- real floor, exactly the
+kind of "elsewhere" the convex-hull fix immediately above this section in
+`render_room.focal_report` was written to exclude from a SINGLE box. That fix
+was never wrong; it was just never applied a level up, to the case where the
+"one focal region" premise itself doesn't hold.
+
+**The fix: `focal_box()` returns a box per counter, not one box for the
+plan.** Zones are clustered by proximity -- any two zones closer than 0.5
+world units merge into the same counter, any two farther apart (a galley's
+two runs are always >= `GALLEY_AISLE` = 1.6 apart, by the generator's own
+reject condition) stay separate. `render_room.focal_report` now takes a LIST
+of boxes and treats a pixel as "inside" the focal zone if it falls in ANY
+counter's projected hull, so a multi-run plan grades on the union of its real
+counters instead of the rectangle that happens to contain them all.
+
+**Verified byte-identical for every non-galley topology.** Every topology but
+galley produces zones that are already mutually adjacent (a run's queue
+overhangs it by 0.3-0.4), so clustering collapses them back into the exact
+same single box as before -- confirmed by comparing the old union-box formula
+against the new clustered one across 59 generated plans (seeds 1-59,
+excluding galley): zero mismatches, every wall-run/L-run/peninsula/island box
+identical to the coordinate.
+
+**Verified on the actual galley plans, box-level, before the check's own
+confirm-render step:**
+
+```
+seed  8: OLD L=-0.012 C=+0.045 D=-0.019   NEW L=+0.046 C=+0.146 D=+0.021
+seed 10: OLD L=-0.019 C=+0.054 D=-0.042   NEW L=+0.050 C=+0.146 D=-0.002
+seed 12: OLD L=+0.026 C=+0.054 D=-0.012   NEW L=+0.108 C=+0.146 D=+0.081
+```
+
+Every one of the three moved sharply in the right direction on all three
+metrics. Two of three (seeds 8, 12) now clear every floor outright. Seed 10's
+detail reading crosses from a clear failure (-0.042) to -0.002 against a
+floor of 0.000 -- inside noise of the floor, not zero. **Not claiming that
+one clean: it still fails, narrowly, even after the check's own 480px
+confirm-render.** Looked at it by eye (`proof/galley_seed10_probe.png`)
+rather than trusting the number either way -- both counters clearly read as
+the room's anchors, more so than the pre-fix box ever measured, and the
+reason the detail metric still sits at -0.002 is visible in the render: the
+wood floor between the two counters carries a lot of plank-seam edges of its
+own, which is genuine competing detail, not an instrument error. A real,
+partially-resolved case, not a fully closed one.
+
+**Verified end to end, both styles, real `manifest.py --check` run, not just
+the box-level numbers above.** Baseline (this branch's parent commit,
+`git stash` used to isolate the diff): `--style cozy_ghibli` reported 3
+errors (1 skin + 2 galley composition, brightness and detail), `--style
+snes_rpg` reported 4 (the same 2 galley + 2 unrelated: `plan 1 (L run)` and
+`plan 3 (island)` contrast, both already-known, already-accepted findings
+untouched by this fix). After: `cozy_ghibli` -> 1 error (both galley lines
+gone, only the pre-existing skin-4 eye-visibility finding remains);
+`snes_rpg` -> 2 errors (both galley lines gone, `L run` and `island` contrast
+untouched, exactly as expected since this fix does not change their boxes).
+The suite check samples one room per topology, first-found scanning from
+seed 1 -- its galley pick is seed 8, which clears completely, which is why
+neither style's `manifest.py --check` output shows a galley line anymore
+despite seed 10's wider-scan case remaining open. 40-test suite: 40 passed,
+unaffected (this fix touches only `focal_box`/`focal_report`, neither under
+test).
+
+**Left open, honestly, and not to be closed by loosening a floor:** the
+seed-10 case is the same shape of question the box-size reasoning above
+already answered once -- a floor moved to admit a -0.002 would be tuning the
+instrument, not fixing the room. If it is worth closing, the lever is
+whatever makes the counter carry more relative edge density against a floor
+this detailed (dressing, a runner, a change in plank direction under the
+counter specifically) -- a room-content lever, not a measurement lever. This
+entry is the honest record that the two are different problems: the box was
+wrong and is fixed; the floor pattern winning a close detail contest in one
+of three seeds is real and still open.

@@ -989,11 +989,52 @@ def _people(L: Layout, plan: F.Plan, n: int = 7, seed: int = 1,
 
 
 
-def focal_box(plan: F.Plan) -> tuple:
-    """The service area, as the run and the back bar together."""
+def focal_box(plan: F.Plan) -> list:
+    """The service area, as the run and the back bar together.
+
+    Returns one box per COUNTER, not one box for the whole plan. A single
+    bounding rectangle is exactly right when every service/backbar/
+    service_return zone belongs to one run -- but a galley has two, backed
+    against opposite walls (`SERVICE_RUNS = {"galley": 2}`), and unioning
+    their bounding boxes into one sweeps the entire aisle between them into
+    the "focal" region: real floor, on the wrong side of both counters, by
+    construction at least `GALLEY_AISLE` (1.6) wide. That is the identical
+    "51-64% counter, the rest elsewhere" bug the convex-hull fix above this
+    function already caught once, just reintroduced a level up by treating
+    two disjoint counters as one box instead of as two.
+
+    Clustered by proximity rather than by topology name or `facing`, so any
+    future multi-run topology gets this for free: zones belonging to the
+    same run touch or overlap by construction (a queue overhangs its run by
+    0.3-0.4), while two different runs are always separated by at least
+    `GALLEY_AISLE`. A gap threshold of 0.5 sits cleanly between the two and
+    is the same margin already used elsewhere in this file for "adjacent."
+    """
     zs = plan.of("service") + plan.of("backbar") + plan.of("service_return")
-    return ((min(z.x0 for z in zs), max(z.x1 for z in zs)),
-            (min(z.y0 for z in zs), max(z.y1 for z in zs)), (0.0, 1.50))
+    if not zs:
+        return []
+
+    def gap(a, b):
+        dx = max(a.x0 - b.x1, b.x0 - a.x1, 0.0)
+        dy = max(a.y0 - b.y1, b.y0 - a.y1, 0.0)
+        return max(dx, dy)
+
+    clusters = [[z] for z in zs]
+    merged = True
+    while merged:
+        merged = False
+        for i in range(len(clusters)):
+            for j in range(i + 1, len(clusters)):
+                if any(gap(a, b) < 0.5 for a in clusters[i] for b in clusters[j]):
+                    clusters[i].extend(clusters.pop(j))
+                    merged = True
+                    break
+            if merged:
+                break
+
+    return [((min(z.x0 for z in c), max(z.x1 for z in c)),
+             (min(z.y0 for z in c), max(z.y1 for z in c)), (0.0, 1.50))
+            for c in clusters]
 
 
 # How tall the island's back bar stands, and the reasoning that got there is
