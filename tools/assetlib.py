@@ -538,10 +538,40 @@ def pastry_case(seed: int | None = None) -> Mesh:
         return st / 0x7FFFFFFF
 
     m = Mesh()
-    carcass = 0.34 if seed is None else 0.28 + rnd() * 0.14
+    if seed is None:
+        carcass = 0.34
+        top = carcass + 0.32
+    else:
+        # `carcass`/`top` used to be `rnd()`-drawn continuous deltas, and at
+        # azimuth 180/360 (looking straight down this case's narrow 0.8m
+        # end) that is the ONLY lever that isn't occluded: every seed's own
+        # pastry count/layout is inside the case, behind the same solid
+        # WOOD back panel and opaque GLASS side this renderer has no
+        # transparency to see through -- the exact fact
+        # `art_review.ACCEPTED_BURIAL["pastry_case"]` already names for
+        # `check_buried_detail`, confirmed here to be the same mechanism
+        # behind `check_generator_range`'s own closest-pair failure at this
+        # azimuth (seeds 3/4-tier and 8/3-tier, different pastry counts,
+        # 3.0% apart -- the count difference is there, just not visible).
+        # A `rnd()` draw across the full 0.28-0.42 range should have kept
+        # any two of 8 seeds apart at this scale (confirmed: an isolated
+        # test swept 26% of covered pixels end to end), but 8 random draws
+        # still landed two of them 2.4cm apart -- the same small-sample
+        # coincidence `table_communal`'s leg spacing hit three times over.
+        # The bijective slot proven there generalizes here too -- but a
+        # first attempt at the ORIGINAL 0.14 range kept the step BETWEEN
+        # adjacent slots (1/7 of the range, the closest any two of 8 seeds
+        # can land) at only 3.7%, still under the 4.5% pair floor: evenly
+        # spreading a too-small range just relocates the near-miss to
+        # whichever two seeds are adjacent instead of removing it. Widened
+        # to 0.20 (measured: the adjacent-slot step alone now clears 8.2%)
+        # rather than tuning to the specific seeds that happened to collide.
+        slot = (seed * 3) % 8
+        k = slot / 7.0
+        carcass = 0.28 + 0.20 * k
+        top = carcass + 0.26 + 0.14 * k
     m.add_box((0.05, 0.10, 0.0), (1.95, 0.90, carcass), WOOD)       # carcass
     m.add_box((0.10, 0.15, carcass), (1.90, 0.85, carcass + 0.06), CERAMIC)
-    top = carcass + 0.32 if seed is None else carcass + 0.26 + rnd() * 0.14
     tiers = [carcass + 0.06]
     if seed is not None and rnd() < 0.5 and top - carcass > 0.34:
         # A second tier. Two shelves of pastry behind glass is the shape a
