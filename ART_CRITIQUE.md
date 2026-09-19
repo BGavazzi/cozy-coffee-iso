@@ -5224,3 +5224,188 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## `check_member_thickness` was checking a scale nothing ships at, and it was wrong about the one thing it currently flags
+
+"New promoted check: member thickness" (this file, much earlier) describes
+`art_review.check_member_thickness` as rasterizing "at the scale it is
+actually seen (27.2 px/unit)." That was true when it was written. It is not
+true today: `furnish.py`'s per-object sprite -- `frame_all(mesh)` fitting
+each asset to fill its own 64px canvas -- is what `package_godot.py` actually
+packages and ships, not a fixed room-embedded camera. `render_room.py`, the
+thing that DOES use a fixed camera, writes to `proof/shop.png` and is never
+referenced by the export tooling; its own docstring calls it an integration
+test, not a shipped path.
+
+**Measured the gap rather than assumed it.** `frame_all`'s span, converted to
+an effective px/unit at the real 64px target, against the check's fixed
+27.2, across 16 real `assetlib.py` props:
+
+```
+prop            real ppu   room ppu   ratio
+counter          41.3        27.2      1.5x
+table_round       60.4        27.2      2.2x
+register          80.6        27.2      3.0x
+tip_jar          124.3        27.2      4.6x
+succulent        132.5        27.2      4.9x
+```
+
+Every one of the 16 sampled ran higher, never lower -- small objects most of
+all, because `frame_all` fills a small object's own canvas the same as a
+large one's, where the fixed camera renders a small object as a small shape
+adrift in mostly-empty space. Since the same floor (4px) is being compared
+against a systematically UNDER-estimated real scale, the fixed-scale check
+can only ever be too strict, never too lax -- it cannot hide a genuinely thin
+member from a player, but it can flag one that reads fine in its real,
+shipped form.
+
+**It was already doing that.** `review_library()`'s entire live output before
+this pass was one `check_member_thickness` finding: `plant_hanging: 35% of
+its mass is in runs under 4 px at room scale (limit 20%) -- reads as wire`.
+Re-measured at `plant_hanging`'s own real span (0.466, vs the fixed camera's
+1.15): **0%, clean pass.** The fixed camera renders `plant_hanging` small and
+adrift; its real per-object sprite fills the frame the way every shipped
+sprite does, and the same geometry reads fine.
+
+**The fix:** `check_member_thickness` gained optional `span`/`centre`
+parameters that, when given, replace the fixed camera with `frame_all`'s real
+values and render at the real 64px target instead of a `ppu`-derived
+resolution. `review_library()` now computes and passes both per asset. Kept
+the old `ppu`-based path as the default for any other caller, since nothing
+else in the codebase calls this function directly.
+
+**Wiring `span` alone was not enough, and this file's own words about
+verifying in both directions applied here too.** The fixed path's
+`target=(0.5, 0.5, 0.5)` assumes every asset sits centred in its own tile,
+which is only ever approximately true. Passing the tighter real `span`
+against that same wrong look-at point produced two assets that rendered
+**fully empty** (`cup_and_saucer`, `cup_espresso` -- a span tight enough to
+fill their real sprite missed their actual off-centre geometry entirely) and
+one spurious **100%** finding (`wall_sign`, clipped rather than genuinely
+thin) -- caught by re-running immediately after the first version of this
+fix, before it was called done. Wiring `frame_all`'s `centre` through as well
+(the same value `furnish.py` already passes to `render_sprite`) cleared all
+three.
+
+**Verified the check still has teeth, not just that it goes quiet.** A
+synthetic 0.02-unit rod (thinner than any real prop's structural member, at a
+plausible coffee-shop scale) still flags 100% thin mass at its own real ship
+span; a 0.12-unit post of the same height, rendered the same way, passes
+clean. The relaxation only removes a false positive; it does not remove the
+check's ability to catch a true one.
+
+**Zero regression, checked both styles.** `check_buried_detail` (the other
+half of `review_library()`, untouched by this change) reports the same 6
+findings before and after. `manifest.py --check` warning count drops by
+exactly 1 under both `--style cozy_ghibli` and `--style snes_rpg` -- the
+`plant_hanging` line disappearing, nothing else moving -- consistent with a
+style-agnostic geometry check whose one live finding was a false positive,
+not a style-specific one.
+
+## The scale fix above was still an incomplete picture -- a second, independently-opened fix on the same function needed folding in
+
+Auditing what else touches `check_member_thickness` before calling the scale
+fix done found `member-thickness-single-azimuth`, an open PR against the SAME
+function, opened independently and reaching a structurally identical insight
+from the other axis: the check has always rasterized a single fixed 45 degree
+view, but `furnish.build_one` ships every asset at all 8 real azimuths
+unconditionally, and a flat member that goes edge-on at some other angle can
+collapse to a stray line there without ever showing at 45. That fix already
+measured worst-of-8 (not pooled -- pooling dilutes a genuine edge-on collapse
+below the floor by averaging it against seven mostly-solid views) and
+verified it against this file's own recorded edge-on-collapse cases.
+
+Neither fix alone is a complete account of what `furnish.py` renders: the
+scale fix (above) still only looked at one azimuth; the azimuth fix still
+measured all 8 through the fixed room camera. Combined them on this branch --
+`check_member_thickness` now takes both `span`/`centre` (real per-object
+scale) and `azimuths` (worst-of-N, not pooled), and `review_library()` passes
+the real 8-azimuth ship set alongside the real span/centre it already
+computed.
+
+**Verified together, not just merged together.** Re-ran `review_library()`:
+still 6 findings, all `check_buried_detail`, `check_member_thickness`
+contributing zero -- the real library has no member that is thin at its real
+scale from ANY of its 8 real ship angles, not just the one this check used to
+look at. That is new information, not an assumption: printed the raw
+per-azimuth share for four real flat-panel props (`wall_sign`, `menu_board`,
+`sandwich_board`, `coat_rack`) to confirm the machinery produces real,
+varying numbers rather than trivially returning zero everywhere --
+`sandwich_board` measures 0% at six azimuths and 3% at the two it goes most
+edge-on, `coat_rack` 0-1%, both nowhere near the 20% floor but genuinely
+different by angle.
+
+**Positive control, since the real library currently has nothing to catch:**
+built a synthetic 0.01-thick flat panel that is normal-looking from most
+angles and goes fully edge-on at two of the eight. At azimuth 45 alone (the
+old default) it measures 0% and passes clean -- the exact blind spot the
+azimuth fix exists for. Across all 8 real azimuths at its own real span, it
+measures 100% thin mass at azimuths 180 and 360, correctly flagged: `thin_
+panel: 100% of its mass is in runs under 4px at ship scale at azimuth 180
+(limit 20%) -- reads as wire`.
+
+**Cost, measured rather than waved away:** `manifest.py --check` now runs in
+~2m55s for `cozy_ghibli` (member thickness alone went from ~24 rasterizes to
+~192, one per asset per real azimuth). Correct and still fast enough to run
+by hand or in CI; not free.
+
+**Left for him to reconcile, not resolved here:** `member-thickness-single-
+azimuth` remains open as its own PR with its own history and is NOT closed by
+this commit -- this branch folds its insight in and supersedes it
+functionally, but closing someone else's open PR is a call for him to make,
+not this pass. Flagging directly: merging both `member-thickness-ship-scale`
+and `member-thickness-single-azimuth` as separate PRs will conflict, since
+both rewrite the same function body differently. This branch is the version
+that has both fixes verified together; the standalone azimuth PR is now
+redundant with it but is left standing for him to close or not.
+
+## `review_library()`'s other half had the same unfinished reconciliation, and finishing it found 4 real defects
+
+Auditing what else touches `review_library()` (the function both fixes above
+edited) before calling this branch done found the same shape of loose end
+one function over: `buried-detail-azimuth-coverage`, another already-open PR
+against this exact function, adds `azimuths=all_azimuths` to the
+`check_buried_detail(assets)` call at the bottom of `review_library()` --
+`check_buried_detail`'s own docstring already says "pass all eight for
+anything that ships as a rotating sprite," the identical lesson this
+branch's `check_member_thickness` fix just re-derived independently for its
+neighbour in the same function. This branch's `review_library()` still
+called `check_buried_detail(assets)` bare, so it would conflict with that
+PR the same way it conflicted with `member-thickness-single-azimuth` --
+completed it here rather than leaving a second half-reconciled function.
+
+`review_library()` already computes `ship_azimuths` for the member-thickness
+call (added this branch, this session); reused it for `check_buried_detail`
+rather than recomputing a second local list.
+
+**This one was not cosmetic.** Before: 6 `check_buried_detail` findings
+(`bean_hopper`, `drip_brewer`, `lamp_table`, `pourover_stand`,
+`sandwich_board`, `tip_jar`), all still present after. After: 10 -- 4 new,
+real defects invisible at the single azimuth this check has always run at:
+`bookshelf`, `chair`, `menu_board`, `wall_art_framed`. Spot-verified `chair`
+by hand (`front_facing` per azimuth, not trusted from the aggregate number):
+25.0% buried at azimuth 45 alone (the check's old default, passes clean
+against the 30% floor) but the geometry the check pools across all 8 real
+ship azimuths lands at 30.6%, rounding to the 31% the check now reports --
+a real object whose occluded-detail share crosses the floor only once every
+angle it actually ships at is counted, not at the one angle it used to be
+judged by.
+
+**Verified end to end, both styles.** `manifest.py --check` warnings rise by
+exactly 4 under both `--style cozy_ghibli` (8->12) and `--style snes_rpg`
+(7->11), error counts unchanged in both -- matching the 4 new `check_buried_
+detail` lines precisely, nothing else moving.
+
+**Cost, updated honestly:** `manifest.py --check` now runs ~4m10s per style
+(`check_buried_detail` went from checking each asset at 1 azimuth to 8, on
+top of `check_member_thickness`'s own 8x from the prior commit). Slower, and
+still a command meant to be run by hand or in CI, not per-request -- the
+same tradeoff already accepted for the scale/azimuth fix above, now paid
+twice in the same function for a check that was genuinely missing real
+coverage both times.
+
+**Same reconciliation note as above, not repeated in full:**
+`buried-detail-azimuth-coverage` remains open and is NOT closed by this
+commit. Merging it separately against this branch will conflict on the same
+line this branch already rewrote; this branch's version has both fixes
+verified together.
