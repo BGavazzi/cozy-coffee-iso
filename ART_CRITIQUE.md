@@ -5447,6 +5447,84 @@ accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
 
+## `check_light_direction`'s 4% floor is also cozy_ghibli-calibrated -- and it fails the opposite way `check_speckle` did
+
+An earlier pass here found `check_speckle`'s `MAX_ISOLATED` floor was
+calibrated against cozy_ghibli's rendered output alone and drifted under
+snes_rpg (two meshes crossed the floor under snes_rpg that passed under
+cozy_ghibli on identical geometry). The next pass tested three sibling
+`art_review.py` checks for the same vulnerability (`check_ramp_coherence`,
+`check_extremes`, `check_grid`) and found none of them shared it, leaving
+`check_light_direction` untested on the theory that light direction is "a
+rendering-stage constant shared by both styles, not a palette property." That
+theory was wrong. Tested directly, on real renders:
+
+Nine real `assetlib.py` props (`counter`, `chair`, `bookshelf`,
+`espresso_machine`, `table_round`, `pastry_case`, `grinder`, `register`,
+`stool`), each rendered at all 8 azimuths under both styles via the real
+`furnish.py` call convention (`frame_all` then `render_sprite`), run directly
+through `check_light_direction`:
+
+```
+cozy_ghibli: 8/72 frames flagged
+snes_rpg:    5/72 frames flagged
+```
+
+Most of that gap is one mesh. `table_round` (a real, shipped generator --
+`furnish.py`'s `table_2top_round` recipe) flags 4 of 8 azimuths under
+cozy_ghibli and 0 of 8 under the byte-identical mesh, camera, and light under
+snes_rpg:
+
+```
+azimuth   cozy_ghibli dy   snes_rpg dy   floor
+ 90       +4.06 FLAG       +1.24         2.56px (h*0.04 @ 64px)
+180       +4.96 FLAG       +1.90
+270       +4.06 FLAG       +1.24
+360       +4.96 FLAG       +1.90
+ 45/135/225/315  (all under floor, both styles)
+```
+
+**Mechanism, confirmed by counting bands, not guessed:** at azimuth 90,
+cozy_ghibli's ramp gives the render 6 distinct OKLab-L steps; snes_rpg's
+gives it 4 (the style's own "fewer shading bands" design intent, working as
+designed). The check picks its "lit" set as the top 20% of pixels by L. Under
+cozy_ghibli, the brightest step is narrow -- 5.8% of all lit pixels, tightly
+isolating the tabletop rim + pedestal-front highlight, which sits low and
+left on screen (+dy, -dx). Under snes_rpg, that same brightest step is wide
+enough (11.9% of lit pixels) to also absorb the tabletop's whole flat top
+face, which is spread evenly across the top half of the sprite -- diluting
+the "top 20%" selection toward the object's vertical centre and pulling dy
+under the floor. Visually confirmed at 8x scale
+(`table_round_dir1_cozy_ghibli.png` / `_snes_rpg.png`, this pass): the same
+highlight is visibly present and in the same place in both renders: it is
+the *measurement*, not the light, that moves.
+
+**No live casualty, this time by construction rather than by luck:**
+`check_light_direction` is the one check in this file whose own docstring
+already says "a rough check, hence only a note" -- `NOTE` severity, the
+lowest of the three. Confirmed directly: `art_review.py`'s own CLI returns 0
+regardless of findings at any severity (`main()`, no exit-code branch on
+`BLOCKER`/`WARNING`/`NOTE`), and grepping `gates.py`/`manifest.py` finds
+`check_light_direction` cataloged in `gates.py`'s deterministic-check list
+with its own docstring as rationale, but never invoked from `manifest.py
+--check` or any other gate that turns findings into a build failure. Nothing
+currently blocks, silently passes-when-it-shouldn't, or fails-when-it-
+shouldn't at a level that stops a build either way -- the only real effect is
+that a human running `art_review.py` directly on a cozy_ghibli render gets an
+advisory note a snes_rpg render of the same object would not.
+
+Documented rather than redesigned, same discipline as `MAX_ISOLATED`: a
+comment above `check_light_direction()` in `art_review.py` now carries this
+measurement and names the real fix (weight by the OKLab gap between adjacent
+bands instead of a fixed pixel-count percentile) without attempting it in
+this pass. **Confirms the bug class from the `check_speckle` finding
+generalizes past a single check** -- and shows it can cut in either
+direction: `check_speckle`'s floor became *more* likely to fire under
+snes_rpg's coarser palette, `check_light_direction`'s became *less* likely
+to, because the two checks route the same "fewer bands" property through
+different math (colour-identity adjacency vs. percentile-of-lightness
+spatial centroid).
+
 ## `manifest.py --check` never once called the rig that actually ships for `snes_rpg`
 
 NEXT.md's own PR #23/#24 writeups record, honestly, that `character.py`'s
