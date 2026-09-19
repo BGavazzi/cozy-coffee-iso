@@ -5224,3 +5224,60 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## A real fix instead of a claim to re-check: `ui_forge.py`'s default run silently un-fixed `ui_chrome.py`'s own fix
+
+Not an accepted-limitation audit this hour -- a live footgun, found while
+chasing this session's own project-memory note that `ui_coin`'s SDXL result
+"doesn't read well as a coin, a gate-vs-eye gap, not fixed." That note is
+itself stale (`tools/ui_chrome.py` replaced the generated coin with a drawn
+one a while ago, and it reads instantly -- see `coin()`'s own docstring),
+but chasing why the note was ever true surfaced something still real.
+
+`ui_chrome.py`'s own module docstring says its output "lands in `out/ui/`
+beside the generated icons and **deliberately overwrites** the chrome ids
+`ui_forge` produced badly." That sentence is only true if `ui_chrome.py`
+runs *after* `ui_forge.py`, every time. Nothing enforces that order.
+
+Checked the actual overlap rather than assuming: `set(ui_forge.UI_PROMPTS) &
+set(ui_chrome.CHROME)` is six ids -- `ui_coin`, `ui_dialogue_frame`,
+`ui_nameplate`, `ui_star_rating`, `ui_ticket`, `ui_upgrade_frame` -- and for
+the *default* style both tools resolve to the exact same output path
+(`out/ui/<id>.png`; `check_ui`'s own docstring already documents that the
+two producers' directory conventions "collapse to the same single `out/ui/`"
+for the default style, though it never draws the ownership-collision
+conclusion from that fact). `ui_forge.py`'s own module docstring's first
+example command was, until this hour, literally
+`python tools/ui_forge.py  # every ui entry in assets.yaml` -- the plain,
+no-flags, "regenerate everything" invocation anyone would reach for first,
+and it silently regenerates all six chrome ids through SDXL again.
+
+**No check would catch the regression.** `ui_chrome.coin()`'s own docstring
+already records that the SDXL coin "passed every check... both times" it
+was tried, despite reading as a muddy blob by eye -- the isolated-pixel/
+coverage gates `ui_forge.py` uses are exactly the checks this session
+hunts for measuring the wrong thing, here not because a fix used the wrong
+lever but because the *provenance* of which tool last wrote the file was
+never something any check looked at.
+
+**Fixed at the source rather than with a provenance check**: `ui_forge.py`
+now imports `ui_chrome.CHROME` and excludes its six keys from the *default*
+run entirely (`CHROME_OWNED`, `tools/ui_forge.py`) -- nothing to regenerate
+means nothing to silently regress. An explicit `--only ui_coin` still works
+for deliberate comparison, with a printed warning naming the risk and
+pointing at re-running `ui_chrome.py` afterward. The module docstring's own
+example command changed from the six-id-colliding `--only ui_coin,ui_ticket`
+to a genuinely `ui_forge`-owned pair (`ui_icon_espresso,ui_icon_latte`).
+
+Verified without SDXL (unavailable this session, same as every other hour):
+the filtering logic lives entirely above the `import concept`/SDXL-load
+line, so it was exercised directly -- default run: 14 `UI_PROMPTS` entries
+in, exactly the 6 chrome ids skipped with a printed message, `ui_coin`
+confirmed absent from `wanted`. Forced run (`--only ui_coin,
+ui_icon_espresso`): both ids present, warning printed for the chrome one
+only. `python tools/ui_forge.py --help` still parses cleanly (argparse
+alone, no SDXL needed). Zero-regression: `manifest.py`'s `check_ui` doesn't
+reference `UI_PROMPTS` at all (grepped, confirmed) so it's untouched by
+this change; the 40-test suite passes unchanged. No visual re-render needed
+-- this fix touches which ids `ui_forge.py` is willing to *attempt*, not
+what any producer draws.

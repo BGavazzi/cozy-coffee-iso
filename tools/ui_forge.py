@@ -16,8 +16,8 @@ So UI art takes the short path: generate, matte, quantize, outline. Stages
 2 through 5 are skipped because they have nothing to contribute, not because
 they were too slow.
 
-    python tools/ui_forge.py                    # every ui entry in assets.yaml
-    python tools/ui_forge.py --only ui_coin,ui_ticket
+    python tools/ui_forge.py                    # every ui entry ui_chrome.py doesn't own
+    python tools/ui_forge.py --only ui_icon_espresso,ui_icon_latte
     python tools/ui_forge.py --target 32        # icons are small by nature
 
 Nothing here is a new generation path. Every image comes from
@@ -39,6 +39,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from oklab import srgb_to_oklab  # noqa: E402
 from style import DEFAULT_STYLE, load_style  # noqa: E402
+import ui_chrome  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 UI_DIR = ROOT / "out" / "ui"
@@ -95,6 +96,18 @@ UI_PROMPTS = {
     "ui_star_rating": "a five pointed star",
     "ui_heart_mood": "a heart symbol",
 }
+
+# Six of the ids above are also in `ui_chrome.CHROME` -- ui_chrome.py's own
+# docstring says it "deliberately overwrites the chrome ids `ui_forge`
+# produced badly," which only holds if ui_chrome.py is the thing that runs
+# LAST. Nothing enforced that order: a plain `python tools/ui_forge.py` (the
+# first example above, historically) regenerates all six through SDXL again,
+# silently putting the bad version back, and no check here would catch it --
+# `ui_chrome.coin()`'s own docstring records that the SDXL coin "passed
+# every check... both times" despite reading as a muddy blob. Excluded from
+# the *default* run for that reason; still buildable by explicit `--only`
+# for comparison, with a warning, since that already requires typing the id.
+CHROME_OWNED = set(ui_chrome.CHROME)
 
 # An icon that fills too little of its own frame has been drawn small inside
 # a lot of whitespace, and downsampling will hand back a few dozen pixels of
@@ -285,6 +298,19 @@ def main() -> int:
             print(f"unknown ui ids: {sorted(unknown)}", file=sys.stderr)
             return 1
         wanted = {k: v for k, v in wanted.items() if k in keep}
+        forced_chrome = sorted(keep & CHROME_OWNED)
+        if forced_chrome:
+            print(f"warning: {forced_chrome} are drawn by ui_chrome.py now -- "
+                  f"this regenerates the SDXL version ui_chrome.py's own "
+                  f"docstring calls 'produced badly'; re-run ui_chrome.py "
+                  f"afterward to restore the shipped one", file=sys.stderr)
+    else:
+        skipped = sorted(CHROME_OWNED & set(wanted))
+        wanted = {k: v for k, v in wanted.items() if k not in CHROME_OWNED}
+        if skipped:
+            print(f"skipping {len(skipped)} ids ui_chrome.py draws instead: "
+                  f"{skipped} (run tools/ui_chrome.py for these; pass "
+                  f"--only to force one here anyway)")
 
     print(f"{len(wanted)} icons. Loading SDXL once...")
     import concept as C

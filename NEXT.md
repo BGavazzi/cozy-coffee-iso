@@ -162,6 +162,10 @@ done.** They landed as two separate PRs against roughly the same base, so:
   at 32 / 64 / 128 px (worst isolated ratio 6.1% / 3.6% / 1.6% against the
   6.2% cap), so the category is now **14 usable of 15 declared** —
   `ui_icon_pastry` still gated and `ui_coin`'s generated version retired.
+  **`ui_forge.py`'s plain default run used to silently regenerate `ui_coin`
+  and five other chrome ids through SDXL again, unregistering this fix with
+  no check able to notice** — closed; see `ART_CRITIQUE.md`, "A real fix
+  instead of a claim to re-check".
   The pastry was chased and deliberately not shipped: at `--retry-seeds 6`
   it passed on seed 4 with an image that is not a croissant, while seeds 2
   and 3 were recognisable croissants that failed. Deleted rather than
