@@ -405,9 +405,15 @@ def main() -> int:
     # snes_rpg's colours rather than silently checking cozy_ghibli's.
     from style import load_style
     ramps = load_palette(load_style(args.style).palette_path)
+    # Same fields character.py's own ROSTER_OVERRIDES patches for snes_rpg
+    # (hair_mat/trousers picked against cozy_ghibli's OKLab values) -- a
+    # portrait bust is a dead-on closeup, so a hair/skin collision like
+    # elder's is at least as visible here as on the full sprite. No-op for
+    # cozy_ghibli and any style with no entry.
+    roster = C.roster_for(args.style)
 
     if args.check:
-        problems = check(ramps=ramps)
+        problems = check(roster=roster, ramps=ramps)
         if args.lock:
             from gates import by_producer
             import lockfile
@@ -421,15 +427,15 @@ def main() -> int:
                 print(f"  BLOCKER  {p}", file=sys.stderr)
             print(f"\n{len(problems)} problem(s)")
             return 1
-        print(f"{len(C.ROSTER)} portraits: palette-exact, distinct, both eyes "
+        print(f"{len(roster)} portraits: palette-exact, distinct, both eyes "
               f"visible on every one, deterministic")
         return 0
 
     if args.demo:
-        print(demo(ramps=ramps))
+        print(demo(roster=roster, ramps=ramps))
         return 0
 
-    manifest = build(target=args.target, ramps=ramps)
+    manifest = build(roster=roster, target=args.target, ramps=ramps)
     print(f"{len(manifest)} portraits -> {OUT_DIR}")
     return 0
 
