@@ -2889,7 +2889,13 @@ detail, not lower).
   surface patches, not artifacts, meaning single-view reconstructions can
   have two comparably-flat sides (the true base and an invented flat back)
   that the objective cannot distinguish. Left undone; don't re-attempt
-  without a different objective, not just a wider search.
+  without a different objective, not just a wider search. **Checked: a
+  stability objective (centroid-over-footprint) was tried on all three named
+  meshes and doesn't help either** — see `ART_CRITIQUE.md`, "Auto-uprighting:
+  tried the 'genuinely different objective' the earlier finding invited --
+  it doesn't help either". Doing nothing beats both objectives by eye on
+  every object tested; corroborates leaving this undone rather than
+  reopening it.
 - **A style LoRA is real future work, not a task-sized item.** D2's
   before-baseline (mean 0.111, worst 0.306 of albedo L) is measured; training
   or sourcing a matched LoRA needs a curated reference set and its own

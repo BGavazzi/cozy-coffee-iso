@@ -5447,6 +5447,82 @@ accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
 
+## Auto-uprighting: tried the "genuinely different objective" the earlier finding invited -- it doesn't help either
+
+"Auto-uprighting: the objective is not well-defined, not just object-specific"
+(above) tried one lever repeatedly -- widening the pitch/roll search box
+around the same flatness-spread objective (minimize the XY spread of the
+lowest-1%-by-height vertices) -- found a second, distant optimum outside the
+original box on the teapot, and closed with: "Left undone... don't
+re-attempt without a different objective, not just a wider search." That is
+exactly this session's own untried-lever question, stated in the file's own
+words, so it was worth actually trying rather than re-reading as settled.
+
+**The different objective:** stability, not flatness. A real resting object's
+centre of mass sits over its base's footprint; a spurious flat patch
+invented on the unseen side of a single-view reconstruction has no reason to
+satisfy that. Implemented independently (not a reproduction of the original, unsaved
+script -- a fresh one-off, same convention as every other proof image in
+this file: the render is committed, the throwaway generator isn't): for a
+candidate rotation, take
+the lowest-1% slab as before, build its 2D convex hull in XY, and score how
+far the whole-mesh centroid sits inside that hull (positive = stable,
+negative = centroid hangs outside the footprint). A 21x21 pitch/roll grid
+(-60 to +60 degrees, step 6) on the same three real meshes the original
+finding named (`out/mesh/teapot_bound.obj`, `basket_bound.obj`,
+`kettle_bound.obj`):
+
+| mesh | baseline (0,0) flat / stab | best-by-flatness | best-by-stability | objectives agree? |
+|---|---|---|---|---|
+| teapot | 0.1273 / 0.0013 | (-36,-30) 0.1071 / 0.0040 | (-48,6) 0.1152 / 0.0253 | no |
+| basket | 0.1513 / -0.0014 | (-12,-48) 0.1203 / 0.0236 | (6,-60) 0.1461 / 0.0311 | no |
+| kettle | 0.1775 / 0.0083 | (-60,42) 0.1087 / -0.0053 | (-54,-18) 0.2019 / 0.0248 | no |
+
+(Absolute numbers aren't comparable to the original finding's -- different
+metric definition, same real meshes -- the shape of the result is what
+matters.) Two things already argue against stability being the fix: it
+disagrees with the flatness objective's own pick on all three objects, and
+the grid itself is rough for *both* objectives -- 28 to 68 local optima out
+of 441 grid points, not two or three well-separated candidates. A search
+that bumpy isn't converging on "the true base" under either objective; it's
+finding whichever nearby dent the 6-degree grid happened to land near.
+
+**Settled by rendering all three candidates and looking, the same standard
+this file holds every other finding to** (`proof/upright_stability_probe.png`,
+18 real renders -- baseline, best-flat, best-stability, two azimuths each,
+three meshes, real `render_sprite` output through the shipped rasterizer and
+`cozy_ghibli` palette, not a mockup). The result is the opposite of what the
+stability hypothesis predicted: **the untouched baseline -- zero rotation,
+exactly what ships today -- reads better by eye than either "corrected"
+orientation, on all three objects.** The kettle's baseline is clearly
+legible as a kettle (spout, handle, lid, resting flat); both correction
+attempts turn it into an unreadable tilted lump. The teapot's baseline shows
+a recognisable spout and body; both corrections make it read worse, not
+better. The basket's best-by-stability pick is the most telling failure
+specifically: it rotates the object to foreground the concave scoop this
+file's own earlier pass ("the basket's crescent frames... an honest crescent,
+a scooped shell shape, present in the geometry itself") already identified
+as the reconstructor's invented unseen side -- stability scored that
+scooped face as a *more* stable base than the real one, which is the
+objective being actively fooled by the same artifact flatness was fooled by,
+not a fix for it.
+
+**Verdict: the different objective was tried, and it doesn't generalize
+either.** Both flatness and stability chase whichever locally-convincing
+patch a single-view reconstruction happened to invent on the side it never
+saw; neither has any way to know that patch is fake, because -- as the
+"far side... cannot be verified by machine" bullet already says two sections
+up -- the information needed to tell real base from invented artifact isn't
+in the mesh at all. The strongest evidence for leaving this undone isn't
+"we didn't find the right search box," it's that *doing nothing* already
+beats both searches on every object tested. No code changes ship from this
+finding -- there is no auto-upright tool in the pipeline to change, and this
+result argues against ever building one on top of either objective, not for
+tuning one further. `NEXT.md`'s "Auto-uprighting is not a well-posed search"
+bullet gets a pointer to this section rather than a rewrite, since nothing
+here contradicts it -- it corroborates it from a direction the original
+bullet explicitly invited someone to check.
+
 ## PR-conflict reconciliation, re-run at the pile's largest size yet (39 open PRs) -- the two clusters never cross-checked before both come back clean
 
 This file's own reconciliation habit (Hours 44, 47, 48, 55, 63) checks
