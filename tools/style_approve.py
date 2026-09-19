@@ -39,11 +39,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 from lockfile import load_lock, style_hash  # noqa: E402
 from style import load_style  # noqa: E402
 
-# producer -> what evidence it's meant to stand for, for the printed report.
-REQUIRED_PRODUCERS = {
-    "character.py": "a character roster was built and checked",
-    "palette_forge.py": "the palette was forged and validated",
-}
 # At least one of these producers must have an approved, current entry --
 # any is real evidence a character reads correctly in this style.
 # `organic_rig.py` added alongside its own first style (`snes_rpg`): for a

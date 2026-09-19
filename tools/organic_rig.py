@@ -365,8 +365,19 @@ def check_roster(style_name: str = "snes_rpg", roster=None) -> list[str]:
 
 MIN_EYE_PIXELS = 3  # same floor portrait.py's own check_eyes_visible uses
 
+# Swept all 8 azimuths x the 4-member ROSTER (Hour 23 of the recurring
+# audit): 45/90/135 show a real, comfortably-nonzero eye-pixel count for
+# every member, no exceptions; 0/180/225/270/315 read 0-2px for every member,
+# consistently -- a side/back view genuinely does not show the face on this
+# rig, correctly, not a defect. Unlike `character.py`'s equivalent sweep
+# (see ART_CRITIQUE.md, "`check_eye_legibility` only ever rendered azimuth
+# 45"), that occlusion split is clean and member-independent here, not
+# tone-dependent, so there is no ambiguous middle set to leave out.
+EYES_VISIBLE_AZIMUTHS = (45.0, 90.0, 135.0)
 
-def check_eyes_visible(style_name: str = "snes_rpg", roster=None) -> list[str]:
+
+def check_eyes_visible(style_name: str = "snes_rpg", roster=None,
+                       azimuths=EYES_VISIBLE_AZIMUTHS) -> list[str]:
     """Does EACH eye render enough pixels to read as an eye, once hair and
     head geometry are actually in the frame? `check_roster` above never
     tests this -- `check_contrast`/`check_waistline` only compare
@@ -379,6 +390,13 @@ def check_eyes_visible(style_name: str = "snes_rpg", roster=None) -> list[str]:
     render both, count differing pixels. No other feature's contrast to
     hide behind, no assumption about which half of the frame is which eye --
     just "did adding this eye change any pixels at all."
+
+    Checked at every azimuth in `azimuths`, not only 90 -- 90 turned out to
+    be this check's own best case by a wide margin (18-20px for every
+    roster member) while 45, an equally real angle the figure ships at,
+    drops as low as 4px (`drifter`'s near eye) against the 3px floor. See
+    `EYES_VISIBLE_AZIMUTHS`'s own comment for which angles are safe to
+    include and why.
     """
     style = load_style(style_name)
     ramps = load_palette(style.palette_path)
@@ -394,19 +412,22 @@ def check_eyes_visible(style_name: str = "snes_rpg", roster=None) -> list[str]:
             arms(spec.shirt, spec.skin, rig, spec.bulk),
         )
         span, centre = frame_all(bare)
-        _, plain = render_sprite(bare, 90.0, TARGET, FACTOR, ramps,
-                                 span=span, centre=centre)
-        for side, sx in (("left", -0.072), ("right", 0.072)):
-            one_eye = merge(bare, _eye_box(sx, head_cz, head_r))
-            _, eyed = render_sprite(one_eye, 90.0, TARGET, FACTOR, ramps,
-                                    span=span, centre=centre)
-            n = sum(1 for a, b in zip(plain, eyed)
-                   if a is not None and b is not None and a != b)
-            if n < MIN_EYE_PIXELS:
-                out.append(f"{spec.name}: {side} eye renders {n}px against bare "
-                          f"head+hair (need {MIN_EYE_PIXELS}) -- occluded by "
-                          f"hair, or indistinguishable from {C.EYE!r} against "
-                          f"this style's own palette")
+        for az in azimuths:
+            _, plain = render_sprite(bare, az, TARGET, FACTOR, ramps,
+                                     span=span, centre=centre)
+            for side, sx in (("left", -0.072), ("right", 0.072)):
+                one_eye = merge(bare, _eye_box(sx, head_cz, head_r))
+                _, eyed = render_sprite(one_eye, az, TARGET, FACTOR, ramps,
+                                        span=span, centre=centre)
+                n = sum(1 for a, b in zip(plain, eyed)
+                       if a is not None and b is not None and a != b)
+                if n < MIN_EYE_PIXELS:
+                    at = "" if az == 90.0 else f" at azimuth {az:.0f}"
+                    out.append(f"{spec.name}: {side} eye renders {n}px{at} "
+                              f"against bare head+hair (need {MIN_EYE_PIXELS}"
+                              f") -- occluded by hair, or indistinguishable "
+                              f"from {C.EYE!r} against this style's own "
+                              f"palette")
     return out
 
 
