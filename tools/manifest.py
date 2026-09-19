@@ -176,11 +176,17 @@ def check_ui(man: dict, active) -> list[str]:
     collapse to the same single `out/ui/`, which is why this is a strict
     generalisation of the old behaviour and not a change to it.
 
-    `ui_font` is left pointed at the one location `bitmap_font.py` can ever
-    write to (`out/ui/font/font.json`) regardless of `active`, because
-    `bitmap_font.py` has no `--style` flag at all yet -- a separate,
-    not-yet-started gap, the same category PR #24 left `check_ui` itself in
-    before #25/#36 closed it for the other two producers.
+    `ui_font` follows `ui_forge.py`'s own nested convention
+    (`out/ui/font/font.json`, or `out/ui/<style>/font/font.json` for a
+    non-default style) -- `bitmap_font.py` gained its own `--style` flag
+    the same day this function was first written, ten minutes after in the
+    same branch's history, and this one path was the one place that change
+    never reached: it stayed pointed at the default location regardless of
+    `active`, so `check_ui --style snes_rpg` was silently reading
+    `cozy_ghibli`'s own `font.json` (whichever one happened to exist) and
+    never once could report a missing or stale non-default font. See
+    ART_CRITIQUE.md, "`check_ui` was still checking the wrong style's font,
+    ten minutes after the fix that made it possible to".
     """
     from style import DEFAULT_STYLE
     base_ui_dir = ROOT / "out" / "ui"
@@ -211,16 +217,25 @@ def check_ui(man: dict, active) -> list[str]:
     # against its own index rather than against `out/ui/ui_font.png`, which
     # will never exist -- a glyph sheet is not an icon and does not live beside
     # them.
-    font_index = base_ui_dir / "font" / "font.json"
+    #
+    # Per-style, matching `bitmap_font.py`'s own `--out` default
+    # (`out/ui/font` for `cozy_ghibli`, `out/ui/<style>/font` otherwise) --
+    # `forge_dir` already resolves to exactly that directory for either
+    # case, so this reuses it rather than re-deriving the same path a
+    # second, divergeable way.
+    font_index = forge_dir / "font" / "font.json"
     if "ui_font" in declared:
         declared = [d for d in declared if d != "ui_font"]
         if not font_index.exists():
-            out.append("ui_font declared and no out/ui/font/font.json -- run "
-                       "tools/bitmap_font.py")
+            rel = font_index.relative_to(ROOT).as_posix()
+            style_flag = ("" if active.name == DEFAULT_STYLE
+                          else f" --style {active.name}")
+            out.append(f"ui_font declared and no {rel} -- run "
+                       f"tools/bitmap_font.py{style_flag}")
         else:
             meta = json.loads(font_index.read_text(encoding="utf-8"))
             gone = [e["file"] for e in meta.get("sizes", {}).values()
-                    if not (base_ui_dir / "font" / e["file"]).exists()]
+                    if not (forge_dir / "font" / e["file"]).exists()]
             if gone:
                 out.append(f"ui_font: font.json lists {len(gone)} sheet(s) "
                            f"with no PNG on disk: {', '.join(sorted(gone))}")
@@ -329,6 +344,15 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         # measured cozy_ghibli's colours the whole time. Same bug class as
         # character.py's and portrait.py's own --style (see NEXT.md).
         ramps = _lp(active.palette_path)
+        # `elder`/`reader`/`regular`/`writer`'s hair_mat/trousers were picked
+        # against cozy_ghibli's own OKLab values and fail check_contrast/
+        # check_waistline under snes_rpg's compressed palette (NEXT.md PR
+        # #23). `character.ROSTER_OVERRIDES` patches those fields for the
+        # styles that need it and is a no-op for cozy_ghibli -- threaded in
+        # below so this command's own check_contrast/check_waistline calls
+        # measure what the shipped roster (via animate.py's own roster_for
+        # call) will actually render, not the un-patched literals.
+        _roster = _c.roster_for(active.name)
         posable = set(_c.CLIPS)
         declared = set()
         fx_clips = 0
@@ -346,13 +370,16 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
                          f"budgeted - no asset declares it")
         # Declared symmetry drives the entire render budget, so verify it
         # against the geometry rather than trusting the yaml. Every effect has a
-        # generator, so this is cheap and exact.
+        # generator, so this is cheap and exact. Threaded `ramps` here too --
+        # was bare, same bug class as the checks above; see
+        # `check_symmetry_claims`'s own docstring for the measured (empty)
+        # before/after.
         import fx as _fx
         from art_review import check_symmetry_claims
         fx_declared = {a["id"]: a.get("sym", "none")
                        for a in (man.get("fx") or [])}
         fx_meshes = {n: fn(0.25) for n, (fn, _) in _fx.FX.items()}
-        for msg in check_symmetry_claims(fx_declared, fx_meshes):
+        for msg in check_symmetry_claims(fx_declared, fx_meshes, ramps=ramps):
             (errs if "WRONG" in msg else warns).append(msg)
         for msg in _fx.check_loops():
             errs.append(msg)
@@ -361,72 +388,129 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         # facts the manifest cannot state, so they are measured here rather than
         # declared: a spec that passes every stated rule and still renders as a
         # brown smear has only proved the rules were incomplete.
-        for msg in _c.check_palette_spread():
-            errs.append(msg)
-        # `check_palette_spread` counts ramps, not the colours those ramps
-        # resolve to under the active style, so a roster tuned against
-        # cozy_ghibli's palette can still land two materials on the same
-        # rendered step once a different, more compressed palette is
-        # substituted in. `check_contrast` is what actually measures that:
-        # `character.py`'s own `main()` has always run it against the fixed
-        # `CUSTOMERS` roster (it's how `elder`'s hair-vs-skin failure under
-        # `snes_rpg`, 0.088 against a 0.13 floor, was originally found -- see
-        # NEXT.md PR #23), but `manifest.py --check` never called it here,
-        # only against the generated extras below -- so the same roster's
-        # same failure was invisible to this command specifically.
-        for msg in _c.check_contrast(ramps):
-            errs.append(msg)
-        # And a figure needs a waist. `check_palette_spread` counts ramps, not
-        # values, so two different ramps landing on the same step slip past it:
-        # `elder` shipped with a wood shirt 0.004 in value from neutral
-        # trousers and rendered as one column.
-        for msg in _c.check_waistline(ramps):
-            errs.append(msg)
-        # And a face needs eyes at every skin tone the generator may draw, not
-        # only at the one the roster happens to use. This is the check that
-        # made `SKIN_TONES` possible: the eyes were a tone offset on skin and
-        # vanished entirely below the middle of the range, so seven of the
-        # seven tones were unusable and nobody had looked, because the roster
-        # only ever asked for one.
-        for msg in _c.check_eye_legibility(ramps):
-            errs.append(msg)
-        # And every dimension of the generator has to be drawn from. The two
-        # that were not sat unremarked for eight passes beside five that were
-        # producing seventeen to twenty-four values each, because a dimension
-        # nobody varies is invisible in every downstream metric -- a cast can
-        # differ in shirt and trousers and hair and still be one face.
-        for msg in _c.check_spec_coverage(ramps=ramps):
-            errs.append(msg)
-        # The generated extras have to pass everything the hand-written roster
-        # does. They are proposed against exactly these predicates, so a failure
-        # here means the solver has stopped consulting one of them -- which is
-        # invisible on the sheet, because the sheet only shows what was
-        # accepted.
-        _extras = _c.generate_roster(12, seed=1, ramps=ramps)
-        for msg in (_c.check_contrast(ramps, _extras)
-                    + _c.check_palette_spread(_extras)
-                    + _c.check_waistline(ramps, _extras)):
-            errs.append(f"generated: {msg}")
-        # And no two members of a cast may be the same person. The three checks
-        # above are predicates on ONE spec; a generator can satisfy all three
-        # forty times and return forty variations of one person, each
-        # individually legal and collectively a crowd with one extra in it.
-        for msg in _c.check_roster_variety() + [
-                f"generated: {m}" for m in _c.check_roster_variety(_extras)]:
-            errs.append(msg)
-        # Same question asked of the shape alone. Variety compares materials
-        # too, so two identical figures in different shirts clear it easily --
-        # and did, while the cast contained a pair whose outlines matched to
-        # the pixel. Colour is noticed first; shape is what survives being one
-        # of eight figures at 46 px.
-        for msg in _c.check_cast_silhouette() + [
-                f"generated: {m}" for m in _c.check_cast_silhouette(_extras)]:
-            errs.append(msg)
-        # And the accessories on their own. The cast check holds whole people
-        # apart, which lets an accessory that changes nothing ride along behind
-        # whatever else separates the pair wearing it.
-        for msg in _c.check_accessory_distinct():
-            errs.append(f"accessory: {msg}")
+        #
+        # All nine checks in this block measure `character.py`'s own
+        # `ROSTER`/`CUSTOMERS`/`generate_roster` -- the box/prism cast. That
+        # roster is a SEPARATE, independently-authored cast from
+        # `organic_rig.ROSTER` below (confirmed: zero shared names --
+        # `elder`/`reader`/`regular`/`writer`/... here, `scout`/`archivist`/
+        # `drifter`/`smith`/... there), and for a `cylinder_sphere` style it is
+        # the same non-shipping producer the comment below this block already
+        # names: `style_approve.py` draws that style's real character evidence
+        # from `organic_rig.py` alone. Before this fix, that distinction was
+        # only honoured for the checks being ADDED (the `organic_rig` block
+        # below); the box/prism checks above kept running -- and blocking --
+        # unconditionally, so `manifest.py --check --style snes_rpg` reported
+        # elder/reader/regular/writer as build-blocking ERRORs every time, for
+        # a cast that has never shipped as `snes_rpg` art and never will while
+        # this style stays on `organic_rig.py`. That is exactly the
+        # NEXT.md-documented "accepted limitation" (PR #23/#24) -- the roster
+        # difference was accepted, the manifest command reporting it as a
+        # blocker every run was not. Gated so `box_prism` styles (today:
+        # `cozy_ghibli`) keep every one of these checks exactly as before.
+        if active.rig.get("primitive") != "cylinder_sphere":
+            for msg in _c.check_palette_spread(_roster):
+                errs.append(msg)
+            # `check_palette_spread` counts ramps, not the colours those ramps
+            # resolve to under the active style, so a roster tuned against
+            # cozy_ghibli's palette can still land two materials on the same
+            # rendered step once a different, more compressed palette is
+            # substituted in. `check_contrast` is what actually measures that:
+            # `character.py`'s own `main()` has always run it against the fixed
+            # `CUSTOMERS` roster (it's how `elder`'s hair-vs-skin failure under
+            # `snes_rpg`, 0.088 against a 0.13 floor, was originally found -- see
+            # NEXT.md PR #23), but `manifest.py --check` never called it here,
+            # only against the generated extras below -- so the same roster's
+            # same failure was invisible to this command specifically.
+            for msg in _c.check_contrast(ramps, _roster):
+                errs.append(msg)
+            # And a figure needs a waist. `check_palette_spread` counts ramps, not
+            # values, so two different ramps landing on the same step slip past it:
+            # `elder` shipped with a wood shirt 0.004 in value from neutral
+            # trousers and rendered as one column.
+            for msg in _c.check_waistline(ramps, _roster):
+                errs.append(msg)
+            # And a face needs eyes at every skin tone the generator may draw, not
+            # only at the one the roster happens to use. This is the check that
+            # made `SKIN_TONES` possible: the eyes were a tone offset on skin and
+            # vanished entirely below the middle of the range, so seven of the
+            # seven tones were unusable and nobody had looked, because the roster
+            # only ever asked for one.
+            for msg in _c.check_eye_legibility(ramps):
+                errs.append(msg)
+            # And every dimension of the generator has to be drawn from. The two
+            # that were not sat unremarked for eight passes beside five that were
+            # producing seventeen to twenty-four values each, because a dimension
+            # nobody varies is invisible in every downstream metric -- a cast can
+            # differ in shirt and trousers and hair and still be one face.
+            for msg in _c.check_spec_coverage(ramps=ramps):
+                errs.append(msg)
+            # And every direction a figure ships in has to stay a figure, not
+            # thin to a sliver. `character.py`'s own `main()` has always run this
+            # (it's how a two-pixel side view would be caught) but only against
+            # one hardcoded roster member, and `manifest.py --check` never called
+            # it at all -- the same "invisible to this command specifically" gap
+            # `check_contrast`'s comment above already names for a sibling check,
+            # just never closed for this one.
+            for msg in _c.check_direction_stability():
+                errs.append(msg)
+            # The generated extras have to pass everything the hand-written roster
+            # does. They are proposed against exactly these predicates, so a failure
+            # here means the solver has stopped consulting one of them -- which is
+            # invisible on the sheet, because the sheet only shows what was
+            # accepted.
+            _extras = _c.generate_roster(12, seed=1, ramps=ramps)
+            for msg in (_c.check_contrast(ramps, _extras)
+                        + _c.check_palette_spread(_extras)
+                        + _c.check_waistline(ramps, _extras)
+                        + _c.check_direction_stability(_extras)):
+                errs.append(f"generated: {msg}")
+            # And no two members of a cast may be the same person. The three checks
+            # above are predicates on ONE spec; a generator can satisfy all three
+            # forty times and return forty variations of one person, each
+            # individually legal and collectively a crowd with one extra in it.
+            for msg in _c.check_roster_variety() + [
+                    f"generated: {m}" for m in _c.check_roster_variety(_extras)]:
+                errs.append(msg)
+            # Same question asked of the shape alone. Variety compares materials
+            # too, so two identical figures in different shirts clear it easily --
+            # and did, while the cast contained a pair whose outlines matched to
+            # the pixel. Colour is noticed first; shape is what survives being one
+            # of eight figures at 46 px.
+            for msg in _c.check_cast_silhouette() + [
+                    f"generated: {m}" for m in _c.check_cast_silhouette(_extras)]:
+                errs.append(msg)
+            # And the accessories on their own. The cast check holds whole people
+            # apart, which lets an accessory that changes nothing ride along behind
+            # whatever else separates the pair wearing it.
+            for msg in _c.check_accessory_distinct():
+                errs.append(f"accessory: {msg}")
+        # `character.py`'s box/prism rig above is not the geometry every style
+        # ships. For a `rig.primitive: cylinder_sphere` style (today: only
+        # `snes_rpg`), `organic_rig.py` is the ONE character producer
+        # `style_approve.py`'s `REQUIRED_PRODUCERS_ANY_OF` actually draws its
+        # evidence from (NEXT.md's own PR #23/#24 writeups say so explicitly:
+        # "this specific roster is cozy_ghibli-specific... style_approve.py
+        # already derives snes_rpg's character-roster evidence from
+        # organic_rig.py instead"). That sentence describes what
+        # `style_approve.py` does; it was never true of THIS command --
+        # `manifest.py --check` has called `organic_rig.check_roster`/
+        # `check_eyes_visible`/`check_direction_stability` exactly zero times,
+        # for any style, ever. Under `snes_rpg` that means the one rig that
+        # actually ships had no coverage here at all, while the box/prism
+        # checks above kept reporting on a roster real output never uses.
+        # `organic_rig.py`'s own build() indexes rig dict keys
+        # (`head_radius`, ...) that only a `cylinder_sphere` bible defines --
+        # calling it under `cozy_ghibli` raises a bare KeyError, confirmed
+        # directly, so this has to be conditional, not just added.
+        if active.rig.get("primitive") == "cylinder_sphere":
+            import organic_rig as _o
+            for msg in _o.check_roster(active.name):
+                errs.append(msg)
+            for msg in _o.check_eyes_visible(active.name):
+                errs.append(msg)
+            for msg in _o.check_direction_stability(active.name):
+                errs.append(msg)
         from animate import check_direction_labels
         for msg in check_direction_labels():
             errs.append(msg)
@@ -440,8 +524,14 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
             warns.append(msg)
         # A generator that has quietly become a fixed mesh renders a room that
         # looks entirely fine, which is why this needs to be a check and not an
-        # eye on a contact sheet.
-        for msg in check_generator_range():
+        # eye on a contact sheet. Swept across all 8 azimuths furniture actually
+        # ships at -- the default single 45-degree pair check was its own best
+        # case (an axis-aligned face-on view hides a boxy base's far-side
+        # variety that a corner-on view shows), the same wiring gap Hour 15's
+        # `check_buried_detail` fix closed for a different check.
+        from isorender import AZIMUTH_STEP
+        all_azimuths = tuple(45.0 + k * AZIMUTH_STEP for k in range(8))
+        for msg in check_generator_range(pair_azimuths=all_azimuths):
             warns.append(msg)
         # Neither spread floor has ever fired on the current library, which
         # says the library is healthy and says nothing about whether the mean
@@ -452,12 +542,21 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
             errs.append(msg)
         # The stage 1-3 seam. Nothing feeds it yet, which is exactly why it
         # needs a check: an adapter that is never exercised is an adapter that
-        # is wrong by the time something arrives.
+        # is wrong by the time something arrives. All three were bare here --
+        # same bug class as `check_focal_contrast` two sections down, caught
+        # by the same sweep. `check_roundtrip` currently reads empty either
+        # way (both styles' own ramps round-trip clean today), so threading
+        # `ramps` through closes a real coverage gap with no live casualty --
+        # it exhaustively walks the ACTIVE palette's own ramp steps, so a
+        # future snes_rpg-specific binder defect couldn't have shown up here
+        # before this fix no matter which `--style` was passed. `check_transform`
+        # needed a real fix, not just threading, before `ramps` could reach it
+        # safely -- see its own docstring in `tools/ingest.py`.
         from ingest import (check_albedo_regression, check_roundtrip,
                            check_transform)
-        for msg in check_roundtrip():
+        for msg in check_roundtrip(ramps=ramps):
             errs.append(f"ingest: {msg}")
-        for msg in check_transform():
+        for msg in check_transform(ramps=ramps, checks=active.checks):
             errs.append(f"ingest: {msg}")
         # check_albedo_centre runs inside ingest() on every real call and
         # nothing here had ever driven it into failing -- check_roundtrip and
@@ -465,7 +564,24 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         # correctly exposed. This is the fixture that actually breaks it, on
         # both of ingest's two paths, since delight makes the vertex-colour
         # path near-unbreakable and the MTL path has no such protection.
-        for msg in check_albedo_regression():
+        #
+        # Was deliberately left bare here, unlike its two neighbours above --
+        # `ALBEDO_L_FLOOR`/`ALBEDO_L_CEIL`/`ALBEDO_L_TARGET` (`tools/
+        # ingest.py`) were measured once, empirically, against cozy_ghibli's
+        # own authored meshes, and never re-derived for snes_rpg. Measured
+        # that pass: 8 of 10 sampled assetlib meshes read BELOW
+        # `ALBEDO_L_FLOOR` under snes_rpg's own real palette, and a
+        # follow-up pass found `check_transform`'s own chair fixture already
+        # failing live because of it (see that function's docstring).
+        # Recalibrated the same way the cozy_ghibli numbers were originally
+        # derived -- all three constants are exact ramp-middle values
+        # (`neutral`/`wood`/`cream`), so the same three ramps' middle steps
+        # under snes_rpg give its own floor/target/ceiling. Per-style, via
+        # each style's `checks:` block (`active.checks`, empty for
+        # cozy_ghibli so its behaviour is unchanged) rather than a new global
+        # guess -- see `tools/ingest.py` for the full derivation and ART_
+        # CRITIQUE.md for the write-up.
+        for msg in check_albedo_regression(ramps=ramps, checks=active.checks):
             errs.append(f"ingest: {msg}")
         # Floor plans. The room itself was the last authored asset in the
         # pipeline, and these are the two questions asked of every other
@@ -478,7 +594,13 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
             errs.append(f"floorplan: {msg}")
         # And the rooms built from those plans. A plan is rectangles and a room
         # is meshes; the plan checks say nothing about whether filling one
-        # produces chairs that face their tables.
+        # produces chairs that face their tables. Left bare (no `ramps`) on
+        # purpose: `collisions()`/`grounded()`/`seating_faces_tables()`/
+        # `screen_occlusion()` are all mesh-position geometry, never a pixel
+        # read, so which palette `build()` used to colour the roster cannot
+        # change any of their verdicts -- confirmed by fingerprinting
+        # `build()`'s own output across repeated calls before ruling this out
+        # rather than assuming it from the check names.
         from build_plan import check_built_rooms, check_focal_contrast
         for msg in check_built_rooms():
             errs.append(f"plan room: {msg}")
@@ -487,11 +609,21 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         # object or a pair of them; this one renders the whole frame and asks
         # whether the eye has anywhere to land. It is the slowest check in the
         # suite by a wide margin, and it is the only one that looks at the
-        # picture instead of the geometry.
-        for msg in check_focal_contrast():
+        # picture instead of the geometry -- which is exactly why, unlike its
+        # two neighbours here, it DOES need `ramps`: it was bare until this
+        # pass, so `--check --style snes_rpg` reported this section's errors
+        # against cozy_ghibli's render regardless of the flag. See
+        # `check_focal_contrast()`'s own docstring and ART_CRITIQUE.md for
+        # the measured before/after -- a real error reported for the wrong
+        # reason on one room, a real defect invisible under cozy_ghibli's
+        # palette surfaced on another, and correct numbers on a third that
+        # already failed under both.
+        for msg in check_focal_contrast(ramps=ramps):
             errs.append(f"composition: {msg}")
         # And whether the furniture is used. Everything above asks whether the
-        # room is correct; this asks whether it is inhabited.
+        # room is correct; this asks whether it is inhabited. Bare for the
+        # same geometry-only reason as `check_built_rooms()` above: this
+        # counts occupied stools by name prefix, never reads a pixel.
         from build_plan import check_stool_occupancy
         for msg in check_stool_occupancy():
             errs.append(f"occupancy: {msg}")
