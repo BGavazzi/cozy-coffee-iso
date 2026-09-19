@@ -510,8 +510,20 @@ BARISTA = CharacterSpec("barista", shirt="cream", trousers="neutral",
 
 # Eight archetypes, all combinations of the same parts library.
 CUSTOMERS = [
+    # hair_mat was `neutral-2` -- literally `EYE`'s own material (see `EYE`
+    # above). Under `cozy_ghibli` this still passed `portrait.check_eyes_visible`
+    # by a hair (30px): the left eye sits mostly behind `bob`'s facet at this
+    # azimuth, and the sliver that peeks through only reads as an edge because
+    # each face's own lambert shading lands on a different step of a
+    # long-enough neutral ramp. `snes_rpg`'s shorter neutral ramp rounds both
+    # faces to the same step, so the sliver disappears: 0px against the 3px
+    # floor, real and reproducible (`portrait.py --check --style snes_rpg`).
+    # Same mechanism `organic_rig.py`'s `archivist` fix already named and
+    # fixed for its own roster (NEXT.md), applied the same way here: move the
+    # hair off `EYE`'s own material entirely rather than rely on lighting to
+    # keep them apart.
     CharacterSpec("reader",   shirt="foliage", trousers="wood",    hair_style="bob",
-                  hair_mat="neutral-2", accessory_kind="scarf",  accessory_mat="rose"),
+                  hair_mat="wood-4", accessory_kind="scarf",  accessory_mat="rose"),
     CharacterSpec("student",  shirt="sky",     trousers="neutral", hair_style="short",
                   hair_mat="wood-3",  accessory_kind="bag",    accessory_mat="wood"),
     CharacterSpec("regular",  shirt="rose",    trousers="wood",    hair_style="long",

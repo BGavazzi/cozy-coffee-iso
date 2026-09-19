@@ -5447,6 +5447,142 @@ accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
 
+## `portrait.py`'s `reader` shipped with an invisible left eye under `snes_rpg` -- a live, currently-failing check, not a documented limitation
+
+Ran `portrait.py`'s own three deterministic checks (`check_distinct`,
+`check_determinism`, `check_palette_exact`) plus `check_eyes_visible` for
+real, both styles, rather than reading them cold -- no SDXL dependency here,
+unlike `ui_forge.py`'s icons. `--style cozy_ghibli`: clean, 9/9. `--style
+snes_rpg`:
+
+```
+BLOCKER  reader: left eye renders 0 px against bare skin (need 3) -- occluded or off-frame
+```
+
+Real, reproducible, currently on `main` -- not a cached or historical
+failure. `manifest.py --check` never calls `portrait.py`'s checks at all
+(confirmed by grep, consistent with Hour 51's finding that portraits aren't
+wired into the export pipeline for either style), so this failure is
+invisible to the aggregate gate; it is not invisible to the tool's own
+`--check`, which is what actually caught it.
+
+**Root cause, found by isolating the two renders rather than guessing.**
+`reader`'s `hair_mat` was `"neutral-2"` -- literally `character.EYE`'s own
+material, not merely close to it. Comparing `plain` (bare head+hair) against
+`eyed` (bare + one eye box) pixel-for-pixel: `cozy_ghibli` left eye 30px
+different, `snes_rpg` left eye 0px, right eye clean at 31px/109px in both --
+so this is not off-frame (zero pixels landed where `plain` was `None`, ruled
+out directly) and not a whole-render collapse, just this one eye, this one
+style. `bob` hair sits mostly in front of the left eye at this azimuth; the
+narrow sliver of eye that still peeks through only read as an edge in
+`cozy_ghibli` because each face's own lambert shading happened to land on a
+different step of a long-enough neutral ramp -- same material, different
+final pixel, by luck of the lighting. `snes_rpg`'s shorter neutral ramp
+rounds both faces' shading to the identical step, and the "different
+pixel" that made the eye visible disappears entirely.
+
+**Same mechanism this repo has already named twice**, in two different
+functions: `organic_rig.py`'s own `check_eyes_visible` caught the identical
+shape of bug for `archivist` (`hair_mat="neutral-3"`, one step from `EYE`'s
+`neutral-2`) and fixed it by moving the hair material away from `EYE`
+entirely (NEXT.md, `hair_mat` -> `wood-4`) rather than relying on lighting
+to keep them apart. `reader`'s case is more extreme -- exact material match,
+not one step off -- and lived in a different rig (`character.py`'s box/prism,
+not `organic_rig.py`'s cylinder/sphere) and a different check function
+(`portrait.py`'s bust render, not the full-body one). Two other roster
+members share the same `hair_mat="neutral-2"` (`barista`, `artist`) and pass
+clean under both styles -- their hairstyles (`bun`, `curly`) don't overlap
+the eye position the way `bob` does at this azimuth, so the collision alone
+isn't sufficient; it took this specific hairstyle for it to bite.
+
+**Fix: `reader.hair_mat` -> `"wood-4"`**, the exact value the `archivist`
+precedent already validated. `tools/character.py`'s `CUSTOMERS` list.
+
+**Verification:**
+- `portrait.py --check --style snes_rpg`: 1 BLOCKER -> 0, `9 portraits:
+  palette-exact, distinct, both eyes visible on every one, deterministic`.
+- `portrait.py --check --style cozy_ghibli`: stayed clean, and the margin
+  improved -- left eye 30px -> 110px, right eye 31px -> 125px (both now on
+  the same distinct-material footing right eye always had).
+- `snes_rpg` after the fix: left eye 0px -> 110px, right eye 109px.
+- `character.py`'s own `--style snes_rpg` run: identical 4-blocker list
+  before and after (`elder`/`reader`/`regular`/`writer` contrast/waistline
+  -- the already-known, already-accepted-as-not-fixed-by-design findings,
+  confirmed via `git stash` A/B on the exact same command) -- `reader`'s own
+  waistline blocker is a shirt/trousers value gap, unrelated to hair, and is
+  untouched by this fix. `check_palette_spread`'s "no more than half a
+  figure on one ramp" rule stays clear: `wood-4` hair alongside `wood`
+  trousers is exactly 2 of 4 parts (50%, the limit, not over it).
+- `manifest.py --check`, both styles: byte-identical error/warning counts
+  before and after (`cozy_ghibli` 3/8, `snes_rpg` 10/8) -- expected, since
+  `manifest.py` never calls `portrait.py` at all; this confirms the fix is
+  isolated, not that it was exercised there.
+- 40-test suite: 40 passed.
+- Visual, not just metric: rendered `reader`'s portrait at 8x nearest-
+  neighbour under both styles and looked at it. Both eyes clearly legible in
+  both -- hair reads as a warm brown/maroon instead of a near-black that
+  happened to double as the eye's own colour.
+
+## Correction to the section above: this was not a fresh discovery, and the record should say so
+
+Doing this hour's usual PR-reconciliation sweep (the pattern Hours 44/47/48/
+55 established) against the newest PRs turned up something the sweep isn't
+usually for: a provenance problem in the section directly above, on this
+same branch. `git merge-tree` against PR #94 (`roster-fields-style-blind`,
+Hour 27, unmerged) surfaced its own `ART_CRITIQUE.md` text quoting `portrait.py
+--check --style snes_rpg` reporting the exact same `reader` failure --
+already fixed on `main` at merge time? No: reading it in full showed PR #94
+was explicitly describing it as a "separate, pre-existing `reader`
+eye-occlusion blocker from PR #24 ... left exactly as-is." Pulled PR #24
+directly (`gh pr view 24`) rather than trusting the cross-reference: it is
+**merged**, on `main` today, titled "Fix the same --style-ignored-by-the-check
+bug in portrait.py and manifest.py," and its own body already contains this:
+
+```
+python tools/portrait.py --check --style snes_rpg
+BLOCKER  reader: left eye renders 0 px against bare skin (need 3)
+
+`reader`'s `hair_mat` (`neutral-2`) and `character.EYE` (also `neutral-2`)
+are literally the same ramp+offset -- that pair separates enough under
+`cozy_ghibli`'s specific RGB values to read as two things; under
+`snes_rpg`'s darker, more compressed `neutral` ramp it doesn't.
+```
+
+Same defect, same numbers, same root-cause explanation, word for word the
+mechanism the section above worked out independently -- written by an
+earlier hour of this same session, merged into `main` already. PR #24 judged
+it "fine, not a blocker" (`style_approve.py`'s OR-logic already lets
+`organic_rig.py` satisfy `snes_rpg`'s character-roster requirement) and
+recorded it honestly rather than suppressing it: `styles/snes_rpg/lock.json`
+carries a real `portrait.py:roster` entry with `approved: false`. PR #94
+re-ran the same check an unknown number of hours later, found the blocker
+still there, and deliberately left it alone as out of that PR's own scope.
+
+**So the section above's own framing -- "a live, currently-failing check,
+not a documented limitation" -- has it backwards.** It *was* a documented,
+already-explained, twice-independently-reconfirmed limitation, explicitly
+accepted as non-blocking by two earlier passes. What was genuinely new this
+hour was not the finding, it was the FIX: nobody had actually applied
+`archivist`'s own already-proven lever (move the hair off `EYE`'s literal
+material) to this specific case before, despite two separate hours writing
+down exactly why it would work. The verification above (real before/after
+numbers, zero-regression checks, visual inspection) is unaffected by this
+correction and stands as written -- only the "this is new" claim in the
+heading and opening paragraphs was wrong, and this section exists so a
+future hour reads the accurate provenance instead of re-trusting the
+original framing.
+
+**Reconciliation, checked rather than assumed.** PR #24 is already merged,
+so there's nothing to reconcile there. PR #94 is still open: `tools/character.py`
+merges clean against it (PR #94's fix lives entirely in a separate
+`ROSTER_OVERRIDES` table added later in the file and never touches
+`reader`'s `hair_mat`, only `reader`'s `trousers` under `snes_rpg`
+specifically -- the two changes are on non-overlapping fields and
+non-overlapping lines, confirmed via `git merge-tree`, not assumed from the
+prose). Only `ART_CRITIQUE.md` conflicts, at the routine tail-append point
+every open PR on this file conflicts at -- not a real problem, the same
+shape Hours 44/47/48/55 already established for this file specifically.
+
 ## Four more candidates checked this hour -- one already fixed on an open branch, three genuinely clean
 
 **`character.py`'s `check_waistline`/`check_spec_coverage`.** Both looked
