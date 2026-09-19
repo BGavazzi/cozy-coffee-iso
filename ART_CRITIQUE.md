@@ -8791,6 +8791,66 @@ Follow-up commit on this same branch (PR #83), continuing its own named
 check function rather than opening an unrelated topic. Left unmerged per
 standing practice.
 
+## `bench`'s axis-aligned collision was a coin-flip, not an occlusion problem
+
+Picked `bench` off the same five-generator list `bookshelf` came from
+(this file, "`check_generator_range`'s own corner-view default was hiding
+five more collisions") for a fresh, from-scratch check -- assuming the
+same mechanism as `bookshelf` (content invisible from a closed face) would
+have been reusing a conclusion rather than checking one.
+
+**It wasn't the same mechanism.** `bench`'s closest pair at azimuths
+180/360 was 0.92%/1.48% (floor 4.5%) -- close to the floor, not
+pixel-identical the way `bookshelf`'s five broken azimuths were. Traced
+the actual closest pair (seeds 1 and 3): both drew the *same* base shape
+(`rnd() < 0.5` picks one of two, `"solid"` or `"post"`) and the *same*
+back style (`BENCH_BACKS[int(rnd() * 4) % 4]`, one of four) by chance,
+leaving only their small continuous height jitter (`sz`/`bh`) to
+distinguish them -- not enough at a straight-on view. Printed every seed's
+draw to confirm: seeds 1/2/3 all drew `"solid"`, and 1/3 additionally
+matched on back style 2 -- a genuine coincidence in an 8-seed sample
+against `2 * 4 = 8` combinatorial states, not a defect in either
+dimension's own logic.
+
+**Fix: the same seeds the closest-pair check samples now visit every
+(base, back) combination exactly once**, instead of leaving it to
+`rnd()`. Both discrete choices are now a function of `(seed * 3) % 8`
+(bijective on 1..8): the low bit of that split picks the base shape (4
+seeds each), the value mod 4 picks the back style, so the 8-seed sample
+the check draws from can no longer land two seeds on the same pair. The
+continuous jitter (`sz`, `bh`) is untouched and still drawn from the
+seed's own stream, so it keeps adding variation on top of the
+now-guaranteed-distinct discrete pair.
+
+**Verified against the live check.**
+`check_generator_range(pair_azimuths=<all 8 real ship azimuths>)`:
+`bench` no longer appears (6 findings instead of 7, exactly that line
+gone). Worst case across all 8 azimuths: 6.0% (still at 180/360, the
+angle where the back style is what mainly distinguishes seeds, but no
+longer the *same* style for any pair).
+
+**Verified by eye**, since a passing number alone was exactly the wrong
+lesson to trust after `bookshelf`'s `add_box` attempt: seeds 3 and 6
+(different back styles under the new assignment) render visibly different
+backrests at azimuth 180 -- `proof/bench_seed3_az180.png` shows a support
+brace low on the back panel, `proof/bench_seed6_az180.png` the same brace
+higher up, against a different base height. The faint pixel noise near
+the base/cushion seam in both is pre-existing: confirmed present in the
+unmodified generator too (`bench(seed=4)`, a `"post"`-base seed under the
+old assignment, shows the identical antialiasing pattern at the same
+seam) -- unrelated to this change, not introduced by it. Unlike the
+`bookshelf` `add_box` attempt, no new geometry primitive or technique was
+introduced here at all -- only which of the existing, already-rendered
+code paths a given seed selects -- so there was no z-fighting risk to
+begin with.
+
+**Zero regression.** `review_library()`: 10 findings before and after,
+unchanged (`bench` was never one of them). Full 40-test suite: unchanged,
+40 passed.
+
+New branch (`bench-base-and-back-were-a-probabilistic-collision`). Left
+unmerged per standing practice.
+
 ## A third re-check, a genuinely mixed result: the basket that invented `check_speckle` was never re-tested against the fix it inspired
 
 Two sections up, "Four fixes, none of which worked, which is the finding"
