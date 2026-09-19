@@ -5224,3 +5224,67 @@ pass with a genuinely different lever (a different icon-generation model, or
 accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
+
+## Self-correction: "organic_rig.py is what actually ships" doesn't mean what this session's own memory took it to mean
+
+Not a bug in the repo -- a precision failure in how this hourly loop's own
+persistent notes read an already-accurate but genuinely ambiguous sentence
+in this file's sibling doc, worth correcting honestly rather than letting it
+keep compounding (same standard as the Hour 63 PR #117 provenance
+correction, applied here to this session's memory instead of a PR body).
+
+NEXT.md's own text (the `character.CUSTOMERS`-under-`snes_rpg` finding)
+says: "`organic_rig.py` is what actually ships for a `cylinder_sphere`
+style." True in the sense it was written for -- `style_approve.py`'s
+`REQUIRED_PRODUCERS_ANY_OF` gate treats `organic_rig.py` as `snes_rpg`'s
+real character-roster *evidence*, because its geometry is the one that
+actually matches the style's declared `rig.primitive: cylinder_sphere`.
+This session's own project memory read that sentence more literally, twice
+(Hour 50: "organic_rig.py is what ships"; Hour 60: "REAL shipped characters
+use organic_rig.py not character.py's box/prism rig"), and both times used
+it as settled fact rather than re-checking it against the code.
+
+**Checked directly rather than continuing to assume.** `grep -rn "import
+character\|import organic_rig" tools/*.py`: `character` is imported by
+`animate.py`, `build_plan.py`, `manifest.py`, `portrait.py`,
+`preview_characters.py`, `preview_clips.py`, and `render_room.py`.
+`organic_rig` is imported by none of them -- only by its own test/lock
+tooling. `render_room.py` -- the tool that composes the actual shop scene
+for both styles, including the `--style snes_rpg` render that fed
+`style_approve.py`'s `llm:focal_hierarchy` evidence -- calls
+`C.build(C.BARISTA)` and `C.build(C.CUSTOMERS[who], ...)` unconditionally,
+with no branch on `args.style` or `rig.primitive` anywhere near those call
+sites. `grep -n "rig.primitive" tools/*.py` returns exactly two files:
+`organic_rig.py` (its own docstring) and `style_approve.py` (the gate's
+comment explaining why the "any of" set exists) -- no content producer
+reads it at all.
+
+**Settled by looking, not just grepping**: `proof/shop_snes_rpg.png` (the
+real, current, `--style snes_rpg` shop render) shows flat-topped, angular
+characters -- box/prism silhouettes, the same rig shape `cozy_ghibli`'s
+scene uses. `proof/organic_rig.png` (`organic_rig.py`'s own demo sheet, a
+*different* four-person roster -- `scout`/`archivist`/`drifter`/`smith`,
+not `character.CUSTOMERS`' `barista`/`reader`/`elder`/... at all) shows
+round-headed, rounder-bodied characters. The two do not match, because the
+first was never built with the second's code.
+
+**What this actually means, stated precisely instead of compressed into
+"ships":** `organic_rig.py`'s cylinder/sphere geometry has never appeared in
+any real rendered room, animation, or portrait this repo has shipped, for
+either style, including in the snes_rpg approval evidence that cites it. Its
+entire footprint is its own `--check`/`--lock`/`--demo` output. It satisfies
+`style_approve.py`'s gate honestly -- the gate only ever claimed to check
+that *some* producer's declared-correct geometry passes its own checks, not
+that the producer is wired into content generation -- and NEXT.md's
+`character.py:roster` / `approved: false` lock entry for `snes_rpg` already
+says this plainly if read carefully. But "is what actually ships" is the
+kind of phrase that reads as stronger than that on a fast pass, and this
+session's own memory is the proof: it produced a wrong belief twice without
+ever being corrected by re-reading the code, until this hour's check.
+
+**No code changes.** This is an existing, already-deliberate architecture
+gap (`[[project_cozy_coffee_iso_multigenre_pivot_review]]`'s own "two
+character rigs, never unified, deferred" line already names it correctly)
+-- nothing here argues for wiring `organic_rig.py` into `render_room.py`
+this hour, only for stating what is and isn't true about what already
+ships. This session's own persistent memory has been corrected to match.

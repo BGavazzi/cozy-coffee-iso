@@ -1013,6 +1013,16 @@ already derives `snes_rpg`'s character-roster evidence from
 exactly why `REQUIRED_PRODUCERS_ANY_OF` is an "any of" set rather than
 requiring `character.py` specifically.
 
+**Read precisely, not compressed:** "what actually ships" means what
+`style_approve.py`'s gate treats as this style's real evidence, not that
+`organic_rig.py`'s geometry appears in a rendered scene -- it doesn't yet.
+`render_room.py`/`animate.py`/`portrait.py`/`build_plan.py` all still call
+`character.build()` unconditionally for every style; `organic_rig.py` is
+imported by none of them. See `ART_CRITIQUE.md`, "Self-correction:
+'organic_rig.py is what actually ships' doesn't mean what this session's
+own memory took it to mean" -- a later pass over this exact sentence found
+it had been read the stronger way and acted on as if it were.
+
 **Landed (PR #24, stacked on #23): the same `--style`-ignored-by-the-actual-
 check bug, found and fixed in `portrait.py` and `manifest.py` too.** Having
 just found it once in `character.py`, checked every other producer
