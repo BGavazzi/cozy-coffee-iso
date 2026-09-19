@@ -9467,3 +9467,82 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## `check_eye_legibility`'s three "ambiguous" azimuths weren't ambiguous, they just needed a check that doesn't use colour
+
+Hour 22's own sweep of `check_eye_legibility` (see "`check_eye_legibility`
+only ever rendered azimuth 45" above) left three azimuths -- 0, 180, 315 --
+explicitly unresolved: whether they showed any eye-vs-skin colour
+difference depended on which of the 7 skin tones was asked, which a pure
+occlusion angle cannot do (occlusion is geometry, not colour), but nothing
+at the time could tell "genuine grazing-profile occlusion" apart from
+"eyes render pixel-identical to skin at this tone" using only the colour
+check's own signal. Recorded as open rather than guessed at.
+
+**Resolved by asking a genuinely different question than the colour check
+does.** The colour check compares two full renders (with/without the eye
+boxes) through the entire lighting -> toon-quantization -> dithering ->
+supersample-downsample pipeline, so a "no differing pixels" result
+conflates two causes into one signal. Swapped `character.EYE` for a canary
+material (`sky-4`) no skin ramp could plausibly quantize to the same final
+colour as, then read raw z-buffer material tokens directly
+(`art_review.screen_materials`) instead of rendering -- no lighting, no
+dithering, no supersampling, just "which triangle wins this pixel." That
+question has nothing to do with colour, so it isolates geometry cleanly.
+
+Swept the four previously-open azimuths across all 7 tones with the canary
+in place (`az45/90/135/225` were already known-safe from Hour 22's sweep
+and weren't re-probed):
+
+    azimuth        0     180    270    315
+    canary px     12      12      0     10   (identical across all 7 tones)
+
+Every tone produced the *exact same* canary pixel count at each azimuth --
+proving the
+eye geometry's screen footprint does not depend on skin tone at all, as
+geometry shouldn't. `az270` is the one genuine occlusion angle (0 canary
+pixels for every tone, confirming the back-of-head read Hour 22 already
+established). Azimuths 0, 180, and 315 all show real, nonzero, tone-
+invariant eye geometry -- meaning every zero-differing-pixel result the
+*colour* check reports there is a confirmed colour collision, the exact
+defect this check exists to catch, not an unresolvable occlusion guess.
+
+**Fix.** `EYE_LEGIBILITY_AZIMUTHS` widened from `(45.0, 90.0, 135.0,
+225.0)` to `(0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 315.0)` -- every azimuth
+but the one now-confirmed occlusion angle. `manifest.py --check` needed no
+change; it already calls `check_eye_legibility(ramps)` bare, so the new
+default reaches it directly, the same wiring shape as Hour 22's own fix.
+
+**Real, substantial findings, not a coverage-only change.** `cozy_ghibli`:
+1 pre-existing eye-legibility error (`skin-4` at az225, from Hour 22) grew
+to 14. The 13 new ones: `skin-4` blank at az0/180/315, `skin-3`/`skin-2`/
+`skin-1` blank at az0/315, `skin` blank at az0 (0.103, same near-miss shape
+as `skin-4`'s az225 finding) and az315, `skin+1`/`skin+2` blank at az315
+only. Visually confirmed two of them directly: `skin-4` at az180
+(`proof/eye_legibility_skin-4_az180_blank.png`) is a genuinely faceless
+render, next to the same tone at az90
+(`proof/eye_legibility_skin-4_az90_legible.png`) showing two clear eye
+squares; `skin+2` at az315
+(`proof/eye_legibility_skin+2_az315_blank.png`) is equally blank next to
+the same tone at az45 (`proof/eye_legibility_skin+2_az45_legible.png`).
+Notably, az315 fails for *every* tone from `skin-4` through `skin+2` --
+the widest single-azimuth blank-face spread this check has found, worse
+than az225's one-tone near-miss or az0's four-tone spread.
+
+**`snes_rpg` output is byte-identical before and after, not just "no new
+errors."** `manifest.py --check --style snes_rpg` reports the same 4
+errors (all pre-existing galley/L-run/island composition findings,
+unrelated) and the same 18 warnings, verified with a literal `diff` on the
+full command output, not just an error count. `character.py`'s rig is
+box/prism regardless of style, but its checks run against whichever
+style's ramps are bound -- `snes_rpg`'s `neutral`/skin ramps evidently keep
+enough separation at every one of these azimuths that this particular
+defect doesn't reach them, the same kind of real per-style divergence
+already on record for the counter cross-style calibration entries.
+`cozy_ghibli`'s own diff is equally clean: exactly the 13 new eye-
+legibility lines added, the pre-existing 2 unrelated galley errors and all
+18 warnings byte-identical to before. Full 40-test suite passes unchanged.
+
+Fixed in `tools/character.py` (`EYE_LEGIBILITY_AZIMUTHS`, its docstring
+comment, and `check_eye_legibility`'s own default). Branch
+`eye-legibility-ambiguous-azimuths-werent-ambiguous`, left unmerged.
