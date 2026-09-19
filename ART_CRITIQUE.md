@@ -9467,3 +9467,130 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## `table_communal`'s carcass fixed for real -- three different levers for three different reasons, and one lever that measured wrong before it measured right
+
+The section above, "`table_communal`: a coverage gap that was hiding a real
+defect, half-fixed", closed the `_base_pedestal`-on-a-4m-top collision
+(0.48% -> 4.62%) and left the generator failing on both floors, deliberately,
+rather than given a custom `own` floor low enough to pass by definition. That
+call still stands. This closes the rest of it, for real, verified against
+real renders -- not by loosening the floor.
+
+**Re-measured fresh rather than assumed.** `bookshelf`'s carcass fix (this
+file, "bookshelf's carcass fixed for real") and `bench`'s (this file,
+"bench's axis-aligned collision was a coin-flip, not an occlusion problem")
+each found a DIFFERENT root cause behind the same symptom -- z-fighting for
+one, a probabilistic discrete-choice collision for the other. `table_communal`
+turned out to be neither. Traced directly: `table()`'s style draw
+(`BASE_STYLES[int(rnd() * 4) % 4]`, with `_base_pedestal` already routed to
+`_base_trestle` above `max(w, d) >= 2.5`) leaves only THREE styles for eight
+seeds. By the pigeonhole principle at least one style must repeat -- and the
+probabilistic draw repeated one THREE times (seeds 1/3/8 all
+`_base_trestle`), worse than the unavoidable minimum of two.
+
+That alone was not the whole story. Two same-style seeds, once found, still
+had to differ -- and `_base_posts`/`_base_trestle` put their whole
+distinguishing shape (the legs) almost entirely behind the top's own front
+overhang at a face-on view, the same fact `art_review.ACCEPTED_BURIAL
+["table_4top"]` already names: "the far pair of legs sits behind the
+tabletop's own near edge". Measured directly at azimuth 90: seeds 1 and 8
+(both `_base_trestle`) and seeds 2 and 6 (both `_base_posts`), PIXEL-
+IDENTICAL, 0.0% apart, regardless of the few centimetres `leg_r`/`thick`/
+`over` the seed drew -- invisible at this span and resolution, the exact
+mechanism the original half-fix already named for `_base_pedestal` but that
+turned out to apply to the OTHER two styles too, just less severely (hidden
+behind the pedestal's worse collision until that one was fixed).
+
+**Three things were tried and measured as NOT working before the one that
+did**, each ruled out by rendering it, not by the check:
+
+1. A shared `_shelf_span` helper (a low plank between the legs, sized in
+   discrete steps by seed) fixed same-style collisions but put IDENTICAL
+   extra pixels on `_base_posts` and `_base_trestle` alike --
+   `_pair_disagreement` divides by the union of covered pixels, so matching
+   shelves diluted the two styles' own remaining cross-style difference
+   instead of adding to it. Seeds 6/8 (one of each style, both with a
+   shelf), still 0.0% apart at azimuth 90.
+2. Giving `_base_trestle` its own feature instead -- scaling or repositioning
+   its existing foot/stretcher -- measured 0.0% at ANY height or thickness.
+   Isolating the foot alone (rendered at 2.5x its normal height, against a
+   single-material base) changed zero pixels: with one colour for the whole
+   base and a flat, unshaded material map, only what crosses the OUTER
+   silhouette boundary registers to this check at all, and neither the foot
+   nor the stretcher ever reaches past the corner legs' own edge from a
+   face-on view.
+3. Scaling the corner legs' own RADIUS by a per-seed multiplier worked --
+   the legs are the one part of any of these styles that DOES reach the
+   silhouette boundary, confirmed by doubling an isolated leg's radius
+   (15% of covered pixels changed) -- but tuning the multiplier large enough
+   to clear both the 15% mean-spread and 4.5% pair floors made `_base_splay`
+   visibly break: a raked `strut` has a square, axis-aligned cross-section
+   even though the member leans (`strut`'s own docstring), so a large radius
+   there ballooned into a lopsided wedge that swallowed the rake and stopped
+   reading as a leg. Caught by rendering it -- the check had no way to know
+   the silhouette it was measuring had stopped looking like a table.
+
+**What shipped: leg POSITION, not leg size, as the primary lever, with a
+small radius scale riding along.** Each of the three eligible styles keeps
+its own corner legs at their normal proportions, but `table()`'s bijective
+seed slot (`(seed * 3) % 8`, proven for `bookshelf`'s seam position and
+`bench`'s discrete choice, now shown to generalize a third way) pulls the
+whole end frame -- legs, and for `_base_trestle` its foot and stretcher too
+-- inward or outward by a seed-determined amount, plus a mild
+(1.0x-1.3x) radius scale. Moving a leg's screen POSITION sweeps a much
+larger share of the covered-pixel union than resizing it -- both where the
+leg used to project and where it now does -- for the same discrete slot,
+and unlike resizing it, cannot distort a single leg's own shape. `_base_
+splay`'s own equivalent lever narrows the rake's reach fractions (0.44/0.28
+at rest) instead of the strut's cross-section, and is capped at 72% of the
+seed slot's own 0-1 range -- at the full range the rake pulled in far enough
+to look asymmetric (one side's two legs nearly coincident), confirmed by
+rendering an isolated `_base_splay` at every step until the break point was
+visible. `_base_pedestal`/`_base_tripod` are untouched; `_base_pedestal` is
+already excluded above `max(w, d) >= 2.5`, and `_base_tripod` is round-top
+only, never reached by this code path.
+
+**Verified, not assumed:**
+- `check_generator_range()` run live: `table_communal` had two failures
+  (mean spread 9.3%, floor 15%; closest pair 3.9%, floor 4.5%, at the
+  default single azimuth). Both now clear: mean 16.6%, closest pair 5.4%.
+  `check_generator_range()`'s full run across all 24 `GENERATORS` entries
+  now reports **zero** failures, not just this one closed.
+- The full 8-real-azimuth sweep (`pair_azimuths=tuple(45+k*45 for k in
+  range(8))`, the same widened check `bookshelf`/`bench` were verified
+  against): the four diagonal azimuths (45/135/225/315, what the live,
+  currently-wired check actually measures) now pass with real margin
+  (mean 16-18%, pair 5.1-6.4% depending on azimuth). The four axis-aligned
+  azimuths (90/180/270/360) improved substantially but did not fully clear
+  the widened floor -- 0.0% before this fix at all four, now 1.6-3.1% at
+  90/270 and 1.6-1.8% at 180/360. Azimuth 180/360 (looking straight down the
+  table's 4m length, at its narrow 2m end) has a real, physical ceiling this
+  fix could not move past: isolated tests confirmed that from directly in
+  front of the near end, changes to the middle of the table register only
+  faintly regardless of the lever, because the near end's own silhouette
+  occupies nearly the same screen footprint as everything behind it --
+  the SAME fact `ACCEPTED_BURIAL["table_4top"]` already names, now
+  confirmed to generalize to a whole table's interior, not just its far leg
+  pair. This is not currently checked live (the widened sweep is
+  `pair-azimuths-widened`'s own separate, still-unmerged work, per this
+  file's earlier note on `manifest.py`'s real call site), so it is recorded
+  here honestly rather than left to be rediscovered.
+- Zero regression: `table_round`, `table_4top`, `table_2top_square` (the
+  three other callers of the same `table()`) render byte-for-byte identical
+  across all 8 seeds and all 8 azimuths before and after this change --
+  every touched code path is gated on `max(w, d) >= 2.5`, which none of the
+  three short tables ever reach.
+- Full test suite (40 tests) passes unchanged.
+- Visual inspection by eye, all three styles at multiple seeds, at the
+  camera's default corner view: every rendered table still reads as a table
+  -- proof images `table_communal_before_seed1_az45.png` /
+  `table_communal_before_seed6_az45.png` (stock, pre-fix) against `table_
+  communal_after_seed1_posts_az45.png` / `_after_seed5_splay_az45.png` /
+  `_after_seed7_trestle_az45.png` (post-fix, one per style). `_base_splay`'s
+  asymmetric-looking stance at high seed values was confirmed, by rendering
+  `_base_splay` in isolation at `extra=0` on this same 4x2m table, to be the
+  STOCK style's own look on a table this elongated -- not something this
+  fix introduced, just something this fix's own visual-inspection pass
+  happened to notice for the first time because `table_communal` had never
+  been rendered and looked at before.

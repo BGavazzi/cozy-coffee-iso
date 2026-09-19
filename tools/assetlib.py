@@ -632,31 +632,84 @@ def strut(m: Mesh, a: tuple, b: tuple, r: float, mat: str) -> None:
 # Table base styles, on the same argument as the chair backs: vary the
 # silhouette, because at room scale that is the whole of what a viewer reads.
 # Each takes the footprint the top occupies and the height to reach.
-def _base_posts(m, f, x0, x1, y0, y1, h, r):
+def _extra_t(extra: int) -> float:
+    """Normalised 0-1 position for the per-SEED variety `extra` asks for.
+
+    `extra` == 0 for every caller except a long `table()` and returns 0.0 --
+    the unchanged legacy stance every other table keeps. In play it is
+    `table()`'s bijective `(seed * 3) % 8` slot, unmodified, divided down to
+    0-1: keying it to the seed's full 0-7 slot instead of a per-style
+    counter (`slot // 3`, tried first) gives every one of the eight seeds
+    its own tier regardless of which style it drew -- a per-style counter
+    left two DIFFERENT styles free to land on the same tier and collide
+    anyway, since a style's own fixed leg factor is not guaranteed to clear
+    the *`rnd()`-drawn* leg radius's own ~30% range (seeds 6 `_base_trestle`
+    leg_r 0.073, 8 `_base_posts` leg_r 0.087, landed within a pixel of each
+    other regardless -- 0.0% apart at azimuth 90).
+
+    What this `t` MOVES is leg spacing/reach, not leg RADIUS -- a second
+    thing that was tried first. Scaling `r` directly separated seeds fine
+    at moderate multipliers but was chaotic to tune (non-monotonic against
+    both floors as the multiplier grew, because the covered-pixel union
+    itself keeps changing) and broke visually at the multiplier `table_
+    communal`'s mean-spread floor actually needed: `_base_splay`'s raked
+    `strut` has a square, axis-aligned cross-section even though the member
+    leans (see `strut`'s own docstring), so a large radius there ballooned
+    into a lopsided wedge that swallowed the rake and stopped reading as a
+    leg -- caught by rendering it, not by the check, which had no way to
+    know the silhouette it was measuring had stopped looking like a table.
+    Moving legs (a position, already a few centimetres of the exact same
+    `over`/`leg_r` draws that turned out to be invisible) instead of resizing
+    them keeps every leg's own proportions intact at any `t`, and swept
+    18% of covered pixels in an isolated test versus doubling the radius's
+    15% -- a bigger, safer lever for the same discrete `extra`.
+    """
+    return extra / 7.0 if extra > 0 else 0.0
+
+
+def _base_posts(m, f, x0, x1, y0, y1, h, r, extra: int = 0):
     """Four square legs, inset from the top's edge. The plain one."""
-    for cx in (x0 + r * 2.2, x1 - r * 2.2):
+    t = _extra_t(extra)
+    r *= 1.0 + 0.30 * t
+    inset = 2.2 + 8.5 * t
+    for cx in (x0 + r * inset, x1 - r * inset):
         for cy in (y0 + r * 2.2, y1 - r * 2.2):
             m.add_box((cx - r, cy - r, 0.0), (cx + r, cy + r, h), f)
 
 
-def _base_splay(m, f, x0, x1, y0, y1, h, r):
-    """Four legs raked outward. Reads instantly and cannot be mistaken for a box."""
+def _base_splay(m, f, x0, x1, y0, y1, h, r, extra: int = 0):
+    """Four legs raked outward. Reads instantly and cannot be mistaken for a box.
+
+    `extra` narrows the rake's own reach (see `_extra_t`) instead of resizing
+    the strut -- this style's stance already reads as distinct from the two
+    boxy styles without any `extra` in play at all, so it needs less push,
+    and a position change cannot distort the leg's own proportions the way
+    scaling its cross-section did.
+    """
+    # Capped below the full 0-1 `_extra_t` range: at t=1.0 the rake pulled in
+    # far enough to put both struts of one side almost directly under each
+    # other, an asymmetric-looking silhouette that no longer read as four
+    # raked legs -- caught by rendering it.
+    t = min(0.72, _extra_t(extra))
+    r *= 1.0 + 0.18 * t
+    reach_lo = 0.44 - 0.16 * t
+    reach_hi = 0.28 - 0.10 * t
     mx, my = (x0 + x1) / 2, (y0 + y1) / 2
     for sx in (-1, 1):
         for sy in (-1, 1):
-            strut(m, (mx + sx * (x1 - x0) * 0.44, my + sy * (y1 - y0) * 0.44, 0.0),
-                  (mx + sx * (x1 - x0) * 0.28, my + sy * (y1 - y0) * 0.28, h),
+            strut(m, (mx + sx * (x1 - x0) * reach_lo, my + sy * (y1 - y0) * reach_lo, 0.0),
+                  (mx + sx * (x1 - x0) * reach_hi, my + sy * (y1 - y0) * reach_hi, h),
                   r * 1.35, f)
 
 
-def _base_pedestal(m, f, x0, x1, y0, y1, h, r):
+def _base_pedestal(m, f, x0, x1, y0, y1, h, r, extra: int = 0):
     """Column on a splayed foot. The cafe two-top."""
     mx, my = (x0 + x1) / 2, (y0 + y1) / 2
     m.add_cylinder((mx, my, 0.0), r * 1.7, h, f, 12)
     m.add_cylinder((mx, my, 0.0), min(x1 - x0, y1 - y0) * 0.30, 0.055, f, 14)
 
 
-def _base_tripod(m, f, x0, x1, y0, y1, h, r):
+def _base_tripod(m, f, x0, x1, y0, y1, h, r, extra: int = 0):
     """Three raked legs to a small hub. The other round-table base.
 
     Round tops used to send the trestle style to the pedestal, which meant a
@@ -683,10 +736,27 @@ def _base_tripod(m, f, x0, x1, y0, y1, h, r):
                    r * 0.95), f)
 
 
-def _base_trestle(m, f, x0, x1, y0, y1, h, r):
-    """Two end frames joined by a spine. The long communal table."""
-    r *= 1.25
-    for cx in (x0 + r * 2.6, x1 - r * 2.6):
+def _base_trestle(m, f, x0, x1, y0, y1, h, r, extra: int = 0):
+    """Two end frames joined by a spine. The long communal table.
+
+    See `_extra_t` for why `extra` mostly pulls the two end frames inward
+    rather than, as tried first, only scaling the legs' own radius, or a
+    shared shelf, or this style's foot/stretcher at any height or thickness
+    -- the last two measured as contributing zero pixels at a face-on view,
+    for the same reason `art_review.ACCEPTED_BURIAL["table_4top"]` already
+    names: with a flat, single-material base, only what crosses the OUTER
+    silhouette boundary registers at all, and neither piece reaches past the
+    corner legs' own edge from that view. Pulling the whole end frame --
+    legs, foot, and the stretcher that spans between them -- moves that
+    boundary itself. A SMALL amount of radius scaling rides along too,
+    because relying on inset alone to clear the mean-spread floor pulled the
+    legs in far enough to visually cluster near the table's centreline
+    instead of reading as four corners -- caught by rendering it, the same
+    way the radius-only attempt's visual break was caught.
+    """
+    r *= 1.25 * (1.0 + 0.30 * _extra_t(extra))
+    inset = 2.6 + 8.5 * _extra_t(extra)
+    for cx in (x0 + r * inset, x1 - r * inset):
         for cy in (y0 + r * 2.2, y1 - r * 2.2):
             m.add_box((cx - r, cy - r, 0.0), (cx + r, cy + r, h), f)
         # The foot, which is the whole reason a trestle looks like a trestle.
@@ -694,8 +764,8 @@ def _base_trestle(m, f, x0, x1, y0, y1, h, r):
     # The stretcher runs down the long axis at shin height, where it is visible
     # under the top rather than hidden behind an apron.
     my = (y0 + y1) / 2
-    m.add_box((x0 + r * 2.6, my - r * 0.8, h * 0.42),
-              (x1 - r * 2.6, my + r * 0.8, h * 0.42 + r * 1.4), f)
+    m.add_box((x0 + r * inset, my - r * 0.8, h * 0.42),
+              (x1 - r * inset, my + r * 0.8, h * 0.42 + r * 1.4), f)
 
 
 BASE_STYLES = (_base_posts, _base_splay, _base_pedestal, _base_trestle)
@@ -759,20 +829,55 @@ def table(w: float = 1.0, d: float = 1.0, h: float = 0.58, top=WOOD,
         # disc with three bases one of which was drawn twice, and the closest
         # pair of eight round tables measured 2.9%.
         style = _base_tripod
-    if not round_top and style is _base_pedestal and max(w, d) >= 2.5:
-        # A single central column is "the cafe two-top" by its own docstring,
-        # and stops making sense once the top is long enough to need someone
-        # sitting at each end to reach the middle. It also stops making
-        # variety: `leg_r`/`thick`/`over` are the same few-centimetre draw
-        # regardless of table size, so on a 4m communal top that draw is a
-        # rounding error against the silhouette -- seeds 1 and 3 both landed
-        # on `_base_pedestal` here and rendered 0.48% apart, under the 4.5%
-        # closest-pair floor, invisible only because `table_communal` (the
-        # `table()` caller this size belongs to) was never added to
-        # `check_generator_range`'s `GENERATORS`. `_base_trestle`'s own
-        # docstring already names the size this style belongs to instead:
-        # "the long communal table."
-        style = _base_trestle
+    extra = 0
+    if not round_top and seed is not None and max(w, d) >= 2.5:
+        # A communal-scale top overrides the probabilistic draw entirely,
+        # for two compounding reasons found by tracing (not assuming) why
+        # `table_communal` was still failing after the pedestal fix below
+        # (superseded -- see ART_CRITIQUE.md, "`table_communal`'s carcass
+        # fixed for real -- three different levers for three different
+        # reasons, and one lever that measured wrong before it measured
+        # right").
+        #
+        # First: a single central column is "the cafe two-top" by its own
+        # docstring, and stops making sense once the top is long enough to
+        # need someone sitting at each end to reach the middle -- so
+        # `_base_pedestal` is off the table here, leaving only three styles
+        # for eight seeds. By the pigeonhole principle at least one style
+        # must repeat, and `rnd()`'s probabilistic draw repeated one THREE
+        # times (seeds 1/3/8 all landing on `_base_trestle`), not the
+        # unavoidable minimum of two.
+        #
+        # Second, and the part the pedestal fix didn't reach: on a table
+        # this long, `_base_posts` and `_base_trestle` both put their whole
+        # distinguishing shape -- the legs -- almost entirely behind the
+        # top's own front overhang at a face-on view (the same fact
+        # `ACCEPTED_BURIAL["table_4top"]` already names in `art_review.py`:
+        # "the far pair of legs sits behind the tabletop's own near edge").
+        # Two seeds sharing a style there differ only by the few centimetres
+        # `leg_r`/`thick`/`over` draw regardless of table size -- invisible
+        # at this span and resolution. Measured directly: seeds 1 and 8
+        # (both `_base_trestle`) and seeds 2 and 6 (both `_base_posts`)
+        # rendered PIXEL-IDENTICAL at azimuth 90.
+        #
+        # A deterministic slot fixes the style repeat. `slot` bijects seed
+        # to 0-7 (3 is coprime to 8, so `seed * 3 % 8` visits every residue
+        # once); `slot % 3` spreads the three eligible styles 3/3/2 instead
+        # of whatever `rnd()` happened to draw.
+        #
+        # That alone was not enough: two seeds sharing a style still differ
+        # only by the few centimetres `leg_r`/`over` draw regardless of
+        # table size, invisible at this span and resolution. `slot` also
+        # sets each style function's own leg spacing (see `_extra_t`) --
+        # every one of the eight seeds gets its own tier, which is what
+        # actually separates two same-style seeds AND (after a first
+        # attempt keyed the tier to `slot // 3`, a per-STYLE counter, and
+        # left two different styles free to share a tier and collide
+        # anyway -- see `_extra_t`'s own note) two seeds on different
+        # styles too.
+        slot = (seed * 3) % 8
+        style = (_base_posts, _base_splay, _base_trestle)[slot % 3]
+        extra = slot
     # 0.085 read as tree trunks under a disc; 0.052 read as wire. Each base
     # style scales this itself, because a lone raked leg carries more load --
     # and looks like it should -- than one of four posts.
@@ -788,7 +893,7 @@ def table(w: float = 1.0, d: float = 1.0, h: float = 0.58, top=WOOD,
         by0, by1 = d / 2 - half, d / 2 + half
     else:
         bx0, bx1, by0, by1 = over, w - over, over, d - over
-    style(m, frame, bx0, bx1, by0, by1, h, leg_r)
+    style(m, frame, bx0, bx1, by0, by1, h, leg_r, extra)
     if round_top:
         m.add_cylinder((w / 2, d / 2, h), min(w, d) / 2, thick, top, 20)
     else:
