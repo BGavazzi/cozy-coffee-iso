@@ -5447,6 +5447,68 @@ accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
 
+## PR-conflict reconciliation, re-run at the pile's largest size yet (39 open PRs) -- the two clusters never cross-checked before both come back clean
+
+This file's own reconciliation habit (Hours 44, 47, 48, 55, 63) checks
+whether open PRs that touch the same file actually merge cleanly against
+each other, not just against `main` individually -- `git merge-tree` shows
+every real conflict, and this file's own tail-append pattern (every hourly
+section lands at the same position on a `main`-based branch) produces one
+`changed in both` block on ART_CRITIQUE.md for nearly every pair, which is
+routine and harmless, not a real conflict. The risk that actually matters is
+a second `changed in both` block, inside a *code* file, with its own
+`<<<<<<<`/`>>>>>>>` markers.
+
+The pile is now 39 open PRs (up from 26 at Hour 48's sweep), and two file
+clusters had never been checked pairwise before: `tools/character.py` (4
+PRs touch it: #88, #89, #94, #117) and `tools/render_batch.py` (2 PRs: #81,
+#100). #94 vs #117 was already checked at Hour 63 (clean); #88 vs #89 vs #94
+were checked as part of Hour 48's original sweep (clean). The genuinely new
+pairs this hour: #88 vs #117, #89 vs #117 (both new since #117 shipped at
+Hour 61), and #81 vs #100 (never checked against each other at all).
+
+```
+git merge-tree main origin/direction-stability-not-wired origin/reader-hair-eye-collision-snes-rpg   # #88 vs #117
+git merge-tree main origin/eye-legibility-single-azimuth origin/reader-hair-eye-collision-snes-rpg    # #89 vs #117
+git merge-tree main origin/render-sprite-grain-wear-unwired origin/despeckle-lifted-objects           # #100 vs #81
+```
+
+First two: exactly one `<<<<<<<`/`>>>>>>>` pair each, both confined to
+`ART_CRITIQUE.md`'s tail (`git show <branch>:tools/character.py` for both
+sides diffs clean against the merge base -- neither #88 nor #89 touches
+`character.py`'s `CUSTOMERS`/`hair_mat` fields at all, only `organic_rig.py`
+and `portrait.py`'s check wiring). Routine, not a finding.
+
+Third pair looked ambiguous at first glance -- `grep -c "<<<<<<<"` on the
+raw output returned 1, which could in principle land inside either of the
+two `changed in both` blocks the diff contains (one for `ART_CRITIQUE.md`
+starting at line 1 of the output, one for `NEXT.md`/`tools/render_batch.py`
+starting later). Resolved by reading the actual conflicting text rather than
+trusting the line-number heuristic: the `<<<<<<< .our` marker sits
+immediately after PR #100's own last ART_CRITIQUE.md paragraph
+("...left unmerged."), and the content between it and `>>>>>>> .their` is
+entirely PR #81's own prose additions to this same file (three full
+sections, "third re-check"/"despeckle's own scope claim"/"`MAX_ISOLATED`'s
+own calibration" -- all ART_CRITIQUE.md text, zero lines of Python). No
+`tools/render_batch.py` content appears between the markers anywhere.
+Confirmed independently via a direct diff extraction
+(`sed -n '/tools\/render_batch.py/,/^$/p'` on the same merge-tree output):
+PR #81 adds one `from ... import despeckle` line and one
+`px = despeckle(px, target)` call; PR #100 changes unrelated `grain`/
+`key_gain`/`ambient` default-parameter lines elsewhere in the same
+function. The two diffs sit near each other in the file but never touch the
+same line -- `render_batch.py` merges clean between #100 and #81.
+
+**Result: all three previously-unchecked pairs, including the two file
+clusters that had never been cross-checked at this pile size, merge clean.**
+No real code conflict found anywhere in this sweep. Left as a documented
+negative result, same as Hours 48 and 55's re-runs -- the pile growing from
+26 to 39 open PRs hasn't introduced a cross-PR conflict in either of the two
+clusters most likely to carry one (the file four PRs touch, and the file
+two PRs both add a line to near each other in the same function). Branch
+`character-py-render-batch-reconciliation-checked`, new, unrelated to any
+other open PR's subject -- left unmerged.
+
 ## Checked whether Hour 61's eye-collision bug generalizes further -- it doesn't; `concept.py`'s `check_concept_fitness` run live against real cached data -- clean
 
 **Does the `hair_mat == EYE` collision reach further than `reader`?** Two
