@@ -483,12 +483,21 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
             errs.append(msg)
         # The stage 1-3 seam. Nothing feeds it yet, which is exactly why it
         # needs a check: an adapter that is never exercised is an adapter that
-        # is wrong by the time something arrives.
+        # is wrong by the time something arrives. All three were bare here --
+        # same bug class as `check_focal_contrast` two sections down, caught
+        # by the same sweep. `check_roundtrip` currently reads empty either
+        # way (both styles' own ramps round-trip clean today), so threading
+        # `ramps` through closes a real coverage gap with no live casualty --
+        # it exhaustively walks the ACTIVE palette's own ramp steps, so a
+        # future snes_rpg-specific binder defect couldn't have shown up here
+        # before this fix no matter which `--style` was passed. `check_transform`
+        # needed a real fix, not just threading, before `ramps` could reach it
+        # safely -- see its own docstring in `tools/ingest.py`.
         from ingest import (check_albedo_regression, check_roundtrip,
                            check_transform)
-        for msg in check_roundtrip():
+        for msg in check_roundtrip(ramps=ramps):
             errs.append(f"ingest: {msg}")
-        for msg in check_transform():
+        for msg in check_transform(ramps=ramps, checks=active.checks):
             errs.append(f"ingest: {msg}")
         # check_albedo_centre runs inside ingest() on every real call and
         # nothing here had ever driven it into failing -- check_roundtrip and
@@ -496,7 +505,24 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         # correctly exposed. This is the fixture that actually breaks it, on
         # both of ingest's two paths, since delight makes the vertex-colour
         # path near-unbreakable and the MTL path has no such protection.
-        for msg in check_albedo_regression():
+        #
+        # Was deliberately left bare here, unlike its two neighbours above --
+        # `ALBEDO_L_FLOOR`/`ALBEDO_L_CEIL`/`ALBEDO_L_TARGET` (`tools/
+        # ingest.py`) were measured once, empirically, against cozy_ghibli's
+        # own authored meshes, and never re-derived for snes_rpg. Measured
+        # that pass: 8 of 10 sampled assetlib meshes read BELOW
+        # `ALBEDO_L_FLOOR` under snes_rpg's own real palette, and a
+        # follow-up pass found `check_transform`'s own chair fixture already
+        # failing live because of it (see that function's docstring).
+        # Recalibrated the same way the cozy_ghibli numbers were originally
+        # derived -- all three constants are exact ramp-middle values
+        # (`neutral`/`wood`/`cream`), so the same three ramps' middle steps
+        # under snes_rpg give its own floor/target/ceiling. Per-style, via
+        # each style's `checks:` block (`active.checks`, empty for
+        # cozy_ghibli so its behaviour is unchanged) rather than a new global
+        # guess -- see `tools/ingest.py` for the full derivation and ART_
+        # CRITIQUE.md for the write-up.
+        for msg in check_albedo_regression(ramps=ramps, checks=active.checks):
             errs.append(f"ingest: {msg}")
         # Floor plans. The room itself was the last authored asset in the
         # pipeline, and these are the two questions asked of every other
