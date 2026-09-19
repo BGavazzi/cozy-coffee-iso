@@ -510,8 +510,20 @@ BARISTA = CharacterSpec("barista", shirt="cream", trousers="neutral",
 
 # Eight archetypes, all combinations of the same parts library.
 CUSTOMERS = [
+    # hair_mat was `neutral-2` -- literally `EYE`'s own material (see `EYE`
+    # above). Under `cozy_ghibli` this still passed `portrait.check_eyes_visible`
+    # by a hair (30px): the left eye sits mostly behind `bob`'s facet at this
+    # azimuth, and the sliver that peeks through only reads as an edge because
+    # each face's own lambert shading lands on a different step of a
+    # long-enough neutral ramp. `snes_rpg`'s shorter neutral ramp rounds both
+    # faces to the same step, so the sliver disappears: 0px against the 3px
+    # floor, real and reproducible (`portrait.py --check --style snes_rpg`).
+    # Same mechanism `organic_rig.py`'s `archivist` fix already named and
+    # fixed for its own roster (NEXT.md), applied the same way here: move the
+    # hair off `EYE`'s own material entirely rather than rely on lighting to
+    # keep them apart.
     CharacterSpec("reader",   shirt="foliage", trousers="wood",    hair_style="bob",
-                  hair_mat="neutral-2", accessory_kind="scarf",  accessory_mat="rose"),
+                  hair_mat="wood-4", accessory_kind="scarf",  accessory_mat="rose"),
     CharacterSpec("student",  shirt="sky",     trousers="neutral", hair_style="short",
                   hair_mat="wood-3",  accessory_kind="bag",    accessory_mat="wood"),
     CharacterSpec("regular",  shirt="rose",    trousers="wood",    hair_style="long",
@@ -544,6 +556,60 @@ CUSTOMERS = [
 ]
 
 ROSTER = [BARISTA] + CUSTOMERS
+
+
+# `elder`/`reader`/`regular`/`writer`'s hair_mat/trousers were literal ramp
+# tokens picked once, against cozy_ghibli's own OKLab values, and never
+# re-picked for a style with a different lightness distribution -- the same
+# "shared content, never chosen for this style" shape as `wall_panel()`
+# (NEXT.md, tileset.py PR #29). Under snes_rpg's compressed, more-saturated
+# palette, `elder`'s hair_mat "cream+1" sits 0.088 from skin (need 0.13, via
+# check_contrast) and `reader`/`regular`/`writer`'s trousers="wood" sits
+# 0.022/0.040/0.080 from their shirts (need 0.085, via check_waistline) --
+# reproduced from PR #23's own numbers, still true today.
+#
+# PR #23 framed the only two levers as "recolour the shared roster" (risks
+# breaking cozy_ghibli's own clean pass) or "loosen the check floor" (defeats
+# the check), and left the finding as accepted-not-fixed-by-design. Both
+# checks are pure OKLab-L comparisons on literal ramp+offset tokens, not on
+# rendered pixels -- there is no downstream pixel/deterministic post-process
+# to apply here, unlike PR #80/#81's speckle fixes. But there is a third,
+# untried lever: override the affected fields for snes_rpg ONLY, leaving
+# cozy_ghibli's own assignments byte-for-byte untouched. Verified: every
+# override below clears check_contrast/check_waistline/check_palette_spread/
+# check_roster_variety under snes_rpg, and cozy_ghibli's roster is never
+# touched by this table at all, so its own pass is structurally unaffected --
+# not just re-verified, provably unreachable by this change.
+#
+# This is a per-instance patch, not the general fix. The general fix is
+# giving CharacterSpec's colour fields a per-style `materials:` role instead
+# of a literal ramp token (the same deferred assetlib.py/character.py
+# import-order generalization NEXT.md already flags) -- out of scope for one
+# hour, and not attempted here.
+ROSTER_OVERRIDES = {
+    "snes_rpg": {
+        "elder": {"hair_mat": "cream-3"},
+        "reader": {"trousers": "wood-1"},
+        "regular": {"trousers": "wood-1"},
+        "writer": {"trousers": "wood-1"},
+    },
+}
+
+
+def roster_for(style_name: str | None, roster=None) -> list:
+    """`roster` with `ROSTER_OVERRIDES[style_name]` applied, field by field.
+
+    A style with no entry (including cozy_ghibli) gets the input roster back
+    unchanged -- same list, not a copy, so identity-sensitive callers see no
+    difference either.
+    """
+    import dataclasses
+    base = roster if roster is not None else ROSTER
+    overrides = ROSTER_OVERRIDES.get(style_name or "", {})
+    if not overrides:
+        return base
+    return [dataclasses.replace(s, **overrides[s.name]) if s.name in overrides
+            else s for s in base]
 
 
 # --- generated characters ----------------------------------------------------
@@ -940,7 +1006,36 @@ def check_cast_silhouette(roster=None,
 MIN_EYE_GAP = 0.15
 
 
-def check_eye_legibility(ramps=None) -> list[str]:
+# The character rig ships every figure as an 8-direction rotating sprite
+# (`SPRITE_AZIMUTHS`, exercised for real in `animate.py`/`preview_characters.
+# py`), and the lambert-quantization mechanism this check exists for is
+# azimuth-dependent by construction -- yet the check itself only ever
+# rendered azimuth 45. Swept all 8 directions across all 7 skin tones (Hour
+# 22 of the recurring audit) and found a clean three-way split, not a simple
+# "more angles always helps":
+#
+#   - 270 is fully occluded for EVERY tone (no differing pixels at all,
+#     consistently) -- the back of the head, correctly showing no face.
+#   - 45, 90, 135, 225 show real, non-zero eye-vs-skin pixels for EVERY
+#     tone, no exceptions -- genuinely face-on angles the geometry supports
+#     unambiguously. One of these was failing and nothing had ever looked:
+#     `skin-4` at 225 measures 0.103 against the 0.15 floor (45 alone reads
+#     a comfortable 0.196 for the same tone) -- visually confirmed too, an
+#     upscaled render at 225 shows only a bare sliver where 45/90 show two
+#     legible eye squares.
+#   - 0, 180, 315 are AMBIGUOUS: whether they show differing pixels at all
+#     depends on which skin tone is asked, which a pure occlusion angle
+#     cannot do (occlusion is geometry, not colour) -- meaning these are
+#     likely additional "eyes render pixel-identical to skin" cases for the
+#     darker tones specifically, not clean back-of-head shots. Left OUT of
+#     `EYE_LEGIBILITY_AZIMUTHS` deliberately: folding them in with the
+#     existing "no gaps = fail" rule would also flag whichever of them are
+#     genuine grazing-profile occlusion, and nothing here can yet tell those
+#     two cases apart. Recorded as open, not guessed at.
+EYE_LEGIBILITY_AZIMUTHS = (45.0, 90.0, 135.0, 225.0)
+
+
+def check_eye_legibility(ramps=None, azimuths=EYE_LEGIBILITY_AZIMUTHS) -> list[str]:
     """Can the eyes be seen, at every skin tone the generator may draw?
 
     Rendered rather than computed, because the failure this was written for is
@@ -956,6 +1051,10 @@ def check_eye_legibility(ramps=None) -> list[str]:
 
     It can fail. Restore `EYE` to a skin offset and it fires on four of the
     seven tones, which is how it was verified.
+
+    Checked at every azimuth in `azimuths`, not only the canonical 45 -- see
+    `EYE_LEGIBILITY_AZIMUTHS`'s own comment for which angles are safe to
+    include and why three are deliberately left out.
     """
     from render_batch import frame_all, render_sprite
     from oklab import srgb_to_oklab
@@ -965,24 +1064,28 @@ def check_eye_legibility(ramps=None) -> list[str]:
     for tone in SKIN_TONES:
         bare = merge(head(tone))
         span, centre = frame_all(bare)
-        _, plain = render_sprite(bare, 45.0, 48, 4, ramps,
-                                 span=span, centre=centre)
-        _, eyed = render_sprite(merge(head(tone), face(tone, blush=False)),
-                                45.0, 48, 4, ramps, span=span, centre=centre)
-        gaps = [math.dist(srgb_to_oklab(a[:3]), srgb_to_oklab(b[:3]))
-                for a, b in zip(plain, eyed)
-                if a is not None and b is not None and a != b]
-        if not gaps:
-            out.append(f"skin '{tone}': the eyes render no pixels at all")
-            continue
-        # The strongest pixel, not the mean: two dark marks on a face is a
-        # peak-contrast read, and averaging in the antialiased rim of each eye
-        # would report a failure the eye does not see.
-        gap = max(gaps)
-        if gap < MIN_EYE_GAP:
-            out.append(f"skin '{tone}': eyes are {gap:.3f} from the face "
-                       f"(need {MIN_EYE_GAP}) -- at this tone the head reads "
-                       f"as blank")
+        eyed_mesh = merge(head(tone), face(tone, blush=False))
+        for az in azimuths:
+            _, plain = render_sprite(bare, az, 48, 4, ramps,
+                                     span=span, centre=centre)
+            _, eyed = render_sprite(eyed_mesh, az, 48, 4, ramps,
+                                    span=span, centre=centre)
+            gaps = [math.dist(srgb_to_oklab(a[:3]), srgb_to_oklab(b[:3]))
+                    for a, b in zip(plain, eyed)
+                    if a is not None and b is not None and a != b]
+            at = "" if az == 45.0 else f" at azimuth {az:.0f}"
+            if not gaps:
+                out.append(f"skin '{tone}'{at}: the eyes render no pixels "
+                           f"at all")
+                continue
+            # The strongest pixel, not the mean: two dark marks on a face is a
+            # peak-contrast read, and averaging in the antialiased rim of each
+            # eye would report a failure the eye does not see.
+            gap = max(gaps)
+            if gap < MIN_EYE_GAP:
+                out.append(f"skin '{tone}'{at}: eyes are {gap:.3f} from the "
+                           f"face (need {MIN_EYE_GAP}) -- at this tone the "
+                           f"head reads as blank")
     return out
 
 
@@ -1105,7 +1208,7 @@ GAME_PX_PER_UNIT = 27.2
 MIN_SILHOUETTE_PX = 9
 
 
-def check_direction_stability(spec=None, min_px: int = MIN_SILHOUETTE_PX) -> list[str]:
+def check_direction_stability(roster=None, min_px: int = MIN_SILHOUETTE_PX) -> list[str]:
     """Every direction must stay above a readable pixel width at game scale.
 
     The first version of this check compared the *widest* direction to the
@@ -1117,23 +1220,36 @@ def check_direction_stability(spec=None, min_px: int = MIN_SILHOUETTE_PX) -> lis
     What actually broke in review was absolute, not relative -- the side views
     fell to a couple of pixels of body and the arms disappeared entirely. So the
     constraint is a floor in pixels at the scale the sprite is actually seen.
+
+    Checked against every member of `roster` (the full cast by default), not
+    one fixed spec. The original version took a single hardcoded `spec`
+    (`CUSTOMERS[2]`, "regular") -- not the roster's tightest case (`student`
+    sits at 10.2px, "regular" at 15.9px, both against a 9px floor), and not
+    swept by `manifest.py --check` at all: every other roster-shaped check
+    here (`check_contrast`, `check_waistline`, `check_palette_spread`) already
+    iterates `roster or ROSTER` for the exact reason `check_contrast`'s own
+    comment in `manifest.py` names for a sibling check -- "a spec that passes
+    every stated rule... has only proved the rules were incomplete" if nothing
+    ever asks the question of the rest of the cast.
     """
     from isorender import DimetricCamera
     from mesh import rasterize
     res, span = 192, 0.95
-    out, widths = [], []
-    for k in range(8):
-        cam = DimetricCamera(45.0 + k * 45.0)
-        cam.span = span
-        mat, _, _ = rasterize(build(spec or CUSTOMERS[2]), cam, res,
-                              target=(0.0, 0.0, 0.70))
-        cols = [i % res for i, m in enumerate(mat) if m is not None]
-        world = (max(cols) - min(cols)) * (2 * span) / res
-        widths.append(world * GAME_PX_PER_UNIT)
-    for k, w in enumerate(widths):
-        if w < min_px:
-            out.append(f"dir{k}: silhouette is {w:.1f} px wide at game scale "
-                       f"(floor {min_px}) -- reads as a sliver, not a figure")
+    out = []
+    for s in roster or ROSTER:
+        widths = []
+        for k in range(8):
+            cam = DimetricCamera(45.0 + k * 45.0)
+            cam.span = span
+            mat, _, _ = rasterize(build(s), cam, res, target=(0.0, 0.0, 0.70))
+            cols = [i % res for i, m in enumerate(mat) if m is not None]
+            world = (max(cols) - min(cols)) * (2 * span) / res
+            widths.append(world * GAME_PX_PER_UNIT)
+        for k, w in enumerate(widths):
+            if w < min_px:
+                out.append(f"{s.name} dir{k}: silhouette is {w:.1f} px wide "
+                           f"at game scale (floor {min_px}) -- reads as a "
+                           f"sliver, not a figure")
     return out
 
 
@@ -1175,10 +1291,11 @@ def main() -> int:
     # which is a real question with a real answer per style.
     from style import load_style
     ramps = load_palette(load_style(args.style).palette_path)
+    roster = roster_for(args.style)
     gate_fns = ("check_contrast", "check_palette_spread", "check_waistline",
                "check_direction_stability")
-    problems = (check_contrast(ramps) + check_palette_spread()
-                + check_waistline(ramps)
+    problems = (check_contrast(ramps, roster) + check_palette_spread(roster)
+                + check_waistline(ramps, roster)
                 + check_direction_stability())
 
     if args.lock:

@@ -2673,6 +2673,74 @@ it argues the floor was already close to correctly placed on three objects,
 which the original bracket's honesty (`ART_CRITIQUE.md`'s prior entry) rather
 undersold.
 
+## Reopened: the seven-object speckle floor above was also only one lever tried
+
+The entry above, and `check_speckle`'s own Finding message, said "there is no
+render setting that fixes this: three were measured and none moved the
+number" and concluded the fix was to reject the mesh or ask stage 1 for a
+smoother subject. That is true of render settings and was never the whole
+answer -- render settings are a generation-stage lever, and the defect
+survives all the way to the rendered pixels regardless of which
+generation-stage lever gets pulled. A post-process aimed at the pixels
+themselves had never been tried: `render_batch.py`, `pixelize.py`, and
+`art_review.py` had zero mentions of despeckling anywhere in their history.
+
+This is the exact shape of the UI icon speckle case two entries up (see "The
+UI icon roster grew to 20, one PR fixed one, and four still fail" and its
+own reopening) -- two rounds of attempted fixes shared one lever (there,
+the prompt; here, render settings) while the check itself measures a
+downstream property (rendered pixel adjacency) neither lever touches
+directly.
+
+`pixelize.py` gained a `despeckle(px, target, min_agree=2, max_passes=5)`
+function -- the same conservative two-rule design proven on UI icons,
+generalized: only reassign a pixel that is isolated by the exact 4-neighbour
+rule the check gates on, and only reassign it to a colour that at least 2 of
+its up to 8 neighbours (4 orthogonal + 4 diagonal) already agree on. Wired
+into `render_batch.render_sprite` -- the core rendering function shared by
+every asset type in the factory, not just lifted props -- right after
+`downsample_modal` and before the outline pass, so outline pixels (which are
+deliberately different from their fill neighbours) are never mistaken for
+speckle.
+
+Measured against every cached `evening`-variant render already on disk (750
+frames spanning props, tiles, UI, and characters) at the exact
+`check_speckle` isolated-pixel ratio:
+
+    fails before despeckle: 59 / 750 frames
+    fails after despeckle:   0 / 750 frames
+    regressions:              0 (no already-passing frame moved closer to
+                                  the floor, let alone across it)
+
+basket, the worst known offender, went from 12.7-16.3% across all 8 azimuths
+to 0.0-0.2%. Fourteen objects had at least one failing frame in this cache --
+more than the seven named above (also bicycle, bottle, cake_slice, fern, and
+an unrelated stress-test render) -- and all fourteen clear the gate after the
+pass, 0 frames failing across all of them. Spot-checked by eye, not just by
+the numbers: a failing frame goes from illegible cross-ramp static to a
+shape with a legible shaded/lit region split; an already-passing frame
+(candle, french_press) is visually unchanged apart from a handful of stray
+pixels -- nothing that was contributing to legible detail was touched.
+
+Re-verified end to end, not just on the cache: re-rendered basket fresh from
+its cached mesh (`out/mesh/basket.obj`) through the real, now-patched
+`render_batch.py`, and `art_review.py` reports nothing to flag on all 8
+frames. Re-rendered all 32 cached meshes fresh the same way (256 frames) --
+255 clean, one narrow miss (`wooden_spoon`, one azimuth, 10.6% against a
+10.5% floor, exactly one pixel over). That pixel has no 2-of-8-neighbour
+colour majority -- a genuine point on the spoon handle's thin silhouette,
+which is precisely the case the conservative reassignment rule is designed
+to leave alone rather than paint over. Documented honestly rather than
+declared closed: this is a real, narrow, unfixed residual, not evidence the
+approach doesn't work.
+
+**Not a full retraction.** The render-settings conclusion still holds --
+three were measured and none moved the number, and that finding is
+unchanged. What was wrong was stopping there. `check_speckle`'s own Finding
+message is updated to match: a Finding today means a narrow miss survived a
+pass that already closed the wide cases, not that the mesh needs rejecting
+outright.
+
 ## Parameter-coverage audit for assetlib: no dead draws found, one design note
 
 NEXT.md D3 asked whether `assetlib`'s seeded generators have the character
@@ -3536,16 +3604,15 @@ through two separate implementations.
   folded out of its own commit message" below. Do not loosen either floor to
   admit galley; the mechanism (its focal box spans the full room depth, not
   a strip near one wall) is understood and accepted, not a bug.
-- **Added 2026-09-13, still real: 4 of 20 `cat: ui` icons (`ui_coin`,
-  `ui_icon_bagel`, `ui_icon_pastry`, `ui_icon_sandwich`) fail the speckle gate
-  under BOTH styles**, not "2 of 14 under snes_rpg only" as an earlier note
-  here claimed -- see "The UI icon roster grew to 20, and the speckle gate now
-  fails 5 of them under both styles, not 2 under one" below for the full
-  measurement, two real fix attempts, and the one (`ui_icon_muffin`) that
-  actually worked. Left open the same way TripoSR speckle is: a measured,
-  cross-style limitation of the 2D icon path for subjects with a strong
-  fine-detail SDXL prior, not something `--retry-seeds` or more negation
-  words fixed on this evidence.
+- ~~**Added 2026-09-13: 4 of 20 `cat: ui` icons (`ui_coin`, `ui_icon_bagel`,
+  `ui_icon_pastry`, `ui_icon_sandwich`) fail the speckle gate under BOTH
+  styles.**~~ Closed 2026-09-15: not by a better prompt (two attempts, still
+  correctly rejected), but by a downstream despeckle pass on the rendered
+  pixels -- see "Reopened: the 'left open' call above was wrong about which
+  lever was untried" below. `python tools/ui_forge.py` now builds 20/20 under
+  both styles. One caveat carried forward, not closed: passing the gate is
+  not the same as reading well -- `ui_coin`'s default-seed result still reads
+  poorly despite passing clean; see that section's own last paragraph.
 
 ---
 
@@ -4153,6 +4220,29 @@ universal fix. Some collage failures are seed-specific, not prompt-specific,
 and the honest remedy there is "change the seed," which `factory.py`
 already supports per-subject.
 
+**Re-checked 2026-09-17, could not be reproduced.** Auditing this file's
+other "accepted limitation" claims for the same untried-lever pattern that
+closed the two speckle floors (PR #80, #81), this one looked like a natural
+next candidate for `--reference` (the multi-image IP-Adapter conditioning
+that shipped later in this same section, never actually tested against a
+still-failing collage case). Before spending GPU time on that, tried to
+reproduce today's baseline first -- and couldn't. `"a woven wicker basket"`
+at seeds 1 through 10 (seed 4 fails on an unrelated frame-fill/crowding
+finding, not collage) all pass `check_concept_fitness` cleanly: soft-alpha
+ratio 2.3-7.7% against the same 10% cap, two orders of magnitude under the
+54584% recorded above, and visually confirmed by eye across all nine --
+every one a single, clean, isolated basket, zero tiling. `NEGATIVE` is
+byte-identical to what it was when this entry was written (still exactly
+"... + collage, grid, tiled", per its own comment in `concept.py`), so this
+is not a prompt change closing the gap. Left unexplained rather than
+guessed at: the most likely cause is drift in a downloaded model weight
+(SDXL checkpoint, matte model, or both) between whenever this entry's run
+happened and today, which this repo's own code has no way to pin down after
+the fact. Recorded as the honest current state -- passing, today, on this
+machine, for this prompt -- not as a fix, since nothing in this repo
+changed to cause it. `--reference` remains genuinely untested against a
+live collage failure; there wasn't one to test it against this pass.
+
 Frog's specific case -- a small, non-photoreal creature described by name --
 also raised a question the repo hadn't answered yet: `character.py` is
 fully procedural and part-based, built for original café-cast archetypes
@@ -4323,6 +4413,138 @@ took 22 of 31 café props to clean sprites, and the teapot and mug taken
 through the new Continue button both came out auto-clean with no blockers at
 all. The honest scope line is object-shaped things without articulation,
 and it should be written down as such rather than discovered per-subject.
+
+## Re-checked after the despeckle fix: the gate clears, the knight still doesn't look like one
+
+Both remedies tried above (coarser marching cubes, a simplified prompt) were
+generation-stage levers, same category as the 3D lifted-object speckle
+case's "three render settings, none moved the number" (see "Reopened: the
+seven-object speckle floor above was also only one lever tried") -- worth
+checking whether this ceiling was the same mistake a third time, now that
+`render_batch.render_sprite` runs every sprite through `pixelize.despeckle`.
+
+It is not, and the distinction is worth recording precisely. Re-rendered the
+frog knight fresh from its cached mesh (`out/mesh/the_frog_knight_from_
+chrono_trigger.obj`) through the now-patched pipeline: `art_review.py`
+reports **nothing to flag on all 8 frames** -- the 11-12% speckle blocker and
+the 17-25% cross-ramp adjacency warning both clear, the latter apparently as
+a side effect of the same fix (adjacent-but-different-ramp noise was
+speckle's cross-ramp case, and cleaning the noise cleaned both checks at
+once).
+
+Looked at the actual sprites (`out/knight_grid.png`, all 8 azimuths, 8x
+upscaled) before calling anything closed. They do not read as a knight.
+They read as a hunched, monochrome frog-creature -- single skin-ramp
+throughout, no cape, no armour, no rapier as a separate legible object (a
+thin same-coloured line in two frames is the closest thing to a weapon
+silhouette). This is exactly what the original entry predicted a passing
+gate would not fix: **the mesh itself has no cape, no separable limbs, no
+rapier** -- geometry that was never reconstructed, not colour noise sitting
+on top of geometry that was. A pixel-level despeckle pass cannot invent
+missing topology; it can only clean the colour of topology that exists.
+
+**The honest conclusion is two findings, not one retraction:**
+- The character ceiling itself -- TripoSR cannot reconstruct articulated,
+  accessorized subjects at this fidelity -- is unchanged and still correctly
+  scoped as "needs a better reconstructor" (TRELLIS 2, still blocked on this
+  workstation's toolchain). Nothing in this pass argues otherwise.
+- But the *checks* that were standing in as an imperfect proxy for "does
+  this look like the intended subject" are now a measurably weaker proxy
+  than before: a mesh this visibly wrong now sails through `art_review.py`
+  with zero findings. That was already possible in principle (the checks
+  never claimed to verify subject identity), but this is the first measured
+  case of it actually happening, and it means a human look at character-kind
+  output stays necessary even after the pipeline reports clean -- the gate
+  passing is no longer even weak evidence that a character-kind asset reads
+  as its subject.
+
+## A second re-check, opposite result: `bread_loaf`'s "genuinely bad" 5/8 was speckle after all
+
+The frog knight (previous section) was a warning not to assume the despeckle
+fix generalizes. `bread_loaf` is the other side of the same check:
+`concept.py`'s `MIN_FILL` rationale and `factory.py`'s `RETRY_SEEDS` comment
+both cite it as the sharpest counter-example to "reseeding helps" -- "gated
+on seed 1, passed on seed 2, reached stage 5 -- and its sprites are still
+5-of-8 blocked, identical to before," attributed to the mesh itself: "a loaf
+is an amorphous form TripoSR cannot resolve, not because it was small." That
+5/8 number predates `pixelize.despeckle` (this same branch).
+
+**Correction, same day, before this section's first draft had even been
+committed:** the paragraph here originally claimed `bread_loaf` "fell
+outside" the 32-mesh batch the speckle fix's own coverage check re-rendered
+two sections up ("Reopened: the seven-object speckle floor... 255 clean, one
+narrow miss (`wooden_spoon`)") and so had never actually been re-checked
+against the new lever. That claim was never verified before being written,
+and it does not hold up: `out/mesh/bread_loaf.obj` is one of exactly 32
+cached mesh files on disk, all dated 2026-08-23 through 2026-08-26 --- days
+before the despeckle commit (`6ce3604`, 2026-09-16) that says "all 32 cached
+meshes re-rendered fresh (256 frames), 255 clean, one honest narrow miss
+(`wooden_spoon`)." Arithmetic alone rules out `bread_loaf` sitting outside
+that count and still failing: one miss total, across all 256 frames, means
+every other mesh in the batch -- `bread_loaf` included -- already came back
+clean at that commit. The fix's own coverage check had already covered this
+case in aggregate; nobody had just written it down by name. This is the
+exact stale-unverified-claim mistake this file's "29%" entry describes
+catching once already, repeated in miniature by the paragraph that was
+citing that entry as precedent -- corrected here rather than quietly amended,
+per this file's own practice.
+
+What survives the correction: the concrete re-render below is still real,
+independent confirmation for this specific named subject (the original
+32-mesh result was an aggregate count, never broken out per-mesh in any
+doc), and the `concept.py`/`factory.py` comments it corrects were still
+citing a stale number regardless of whether that number had technically
+already been superseded upstream. What does not survive: any claim that this
+was newly-discovered coverage, or that the fix needed anything further to
+reach `bread_loaf`.
+
+Re-ran it directly. `main` (pre-despeckle), fresh render from the cached mesh
+(`out/mesh/bread_loaf_bound.obj`): `art_review.py` reports 5 of 8 frames
+blocked on `speckle`, 11.4-13.5% against the 10.5% floor -- reproduces the
+recorded number exactly. Same mesh, same render, this branch (post-despeckle):
+**0 of 8 blocked.** Confirmed by eye, not just the count -- upscaled
+before/after contact sheet (`out/bread_loaf_before_after.png`, all 8
+azimuths, 6x): the crust's mottled light/dark pattern and the sliced-loaf
+silhouette read identically in both rows; nothing that made it legible as
+bread got smoothed away, matching the "stray pixels only" pattern already
+confirmed for `candle`/`french_press` in the original despeckle measurement.
+
+So the mechanism `factory.py`'s own comment names for `bread_loaf` --
+"amorphous form TripoSR cannot resolve" -- was the wrong explanation for the
+specific 5/8 number, even though it may still be true of the mesh's
+geometry in some other respect this pass did not measure. What was actually
+failing those 5 frames was the identical fine-grained-surface speckle named
+for basket's weave and cutting_board's wood grain two sections up, on a
+grainy crust instead of a woven basket -- the same cause, the same fix. Per
+the correction above, that fix had already reached this subject at the
+original despeckle commit; this pass names it and shows it, rather than
+being the thing that closes it.
+
+**What this does and does not change:**
+- `bread_loaf`'s stage-1 gate story is untouched -- reseeding still does not
+  fix it, for the reason already given (reseeding hunts a concept image that
+  satisfies stage-1 heuristics; despeckle operates three stages later, on
+  rendered pixels, and neither lever touches what the other measures).
+  `factory.py`'s `RETRY_SEEDS` conclusion stands.
+- The specific claim that `bread_loaf` is a *counter-example* to reseeding
+  because its reconstruction is "genuinely bad" does not stand as stated --
+  the sprites that made it look bad are now clean. Whether the underlying
+  mesh geometry is *also* fine or also flawed in some way despeckle can't
+  touch is a question this pass did not answer either way, and is left
+  explicitly open rather than guessed at.
+- `concept.py`'s `MIN_FILL` argument (fill share does not predict blocked-
+  frame count) does not depend on this specific number -- but the two
+  examples it leads with, `basket` 8/8 and `cutting_board` 7/8, are the same
+  pre-despeckle blocked-frame counts as `bread_loaf`'s, both already
+  independently confirmed clean by the original despeckle pass. The
+  qualitative point (fill is not predictive) is not contradicted by fixing a
+  downstream artifact that was orthogonal to fill either way, but the exact
+  numbers quoted next to `basket`/`cutting_board`/`bread_loaf` in that
+  comment are now stale and worth a maintenance pass, not re-derived here --
+  re-deriving the full twenty/thirty-two-subject sweep behind that argument
+  is a larger undertaking than one hour's check, and doing it partially
+  would risk the exact stale-transcription mistake the "29%" entry above
+  already caught and corrected once.
 
 ## The 29% that was being thrown away, and the one kind that stays thrown away
 
@@ -5288,3 +5510,3710 @@ character rigs, never unified, deferred" line already names it correctly)
 -- nothing here argues for wiring `organic_rig.py` into `render_room.py`
 this hour, only for stating what is and isn't true about what already
 ships. This session's own persistent memory has been corrected to match.
+
+## A real fix instead of a claim to re-check: `ui_forge.py`'s default run silently un-fixed `ui_chrome.py`'s own fix
+
+Not an accepted-limitation audit this hour -- a live footgun, found while
+chasing this session's own project-memory note that `ui_coin`'s SDXL result
+"doesn't read well as a coin, a gate-vs-eye gap, not fixed." That note is
+itself stale (`tools/ui_chrome.py` replaced the generated coin with a drawn
+one a while ago, and it reads instantly -- see `coin()`'s own docstring),
+but chasing why the note was ever true surfaced something still real.
+
+`ui_chrome.py`'s own module docstring says its output "lands in `out/ui/`
+beside the generated icons and **deliberately overwrites** the chrome ids
+`ui_forge` produced badly." That sentence is only true if `ui_chrome.py`
+runs *after* `ui_forge.py`, every time. Nothing enforces that order.
+
+Checked the actual overlap rather than assuming: `set(ui_forge.UI_PROMPTS) &
+set(ui_chrome.CHROME)` is six ids -- `ui_coin`, `ui_dialogue_frame`,
+`ui_nameplate`, `ui_star_rating`, `ui_ticket`, `ui_upgrade_frame` -- and for
+the *default* style both tools resolve to the exact same output path
+(`out/ui/<id>.png`; `check_ui`'s own docstring already documents that the
+two producers' directory conventions "collapse to the same single `out/ui/`"
+for the default style, though it never draws the ownership-collision
+conclusion from that fact). `ui_forge.py`'s own module docstring's first
+example command was, until this hour, literally
+`python tools/ui_forge.py  # every ui entry in assets.yaml` -- the plain,
+no-flags, "regenerate everything" invocation anyone would reach for first,
+and it silently regenerates all six chrome ids through SDXL again.
+
+**No check would catch the regression.** `ui_chrome.coin()`'s own docstring
+already records that the SDXL coin "passed every check... both times" it
+was tried, despite reading as a muddy blob by eye -- the isolated-pixel/
+coverage gates `ui_forge.py` uses are exactly the checks this session
+hunts for measuring the wrong thing, here not because a fix used the wrong
+lever but because the *provenance* of which tool last wrote the file was
+never something any check looked at.
+
+**Fixed at the source rather than with a provenance check**: `ui_forge.py`
+now imports `ui_chrome.CHROME` and excludes its six keys from the *default*
+run entirely (`CHROME_OWNED`, `tools/ui_forge.py`) -- nothing to regenerate
+means nothing to silently regress. An explicit `--only ui_coin` still works
+for deliberate comparison, with a printed warning naming the risk and
+pointing at re-running `ui_chrome.py` afterward. The module docstring's own
+example command changed from the six-id-colliding `--only ui_coin,ui_ticket`
+to a genuinely `ui_forge`-owned pair (`ui_icon_espresso,ui_icon_latte`).
+
+Verified without SDXL (unavailable this session, same as every other hour):
+the filtering logic lives entirely above the `import concept`/SDXL-load
+line, so it was exercised directly -- default run: 14 `UI_PROMPTS` entries
+in, exactly the 6 chrome ids skipped with a printed message, `ui_coin`
+confirmed absent from `wanted`. Forced run (`--only ui_coin,
+ui_icon_espresso`): both ids present, warning printed for the chrome one
+only. `python tools/ui_forge.py --help` still parses cleanly (argparse
+alone, no SDXL needed). Zero-regression: `manifest.py`'s `check_ui` doesn't
+reference `UI_PROMPTS` at all (grepped, confirmed) so it's untouched by
+this change; the 40-test suite passes unchanged. No visual re-render needed
+-- this fix touches which ids `ui_forge.py` is willing to *attempt*, not
+what any producer draws.
+
+## Correction: this was not a fresh discovery, and PR #80 already fixed it, more completely, two days earlier
+
+Found doing this hour's PR-reconciliation sweep against `tools/ui_forge.py`,
+the same practice that caught the Hour 61/63 provenance error on
+`character.py`'s `reader`/`EYE` collision. `git merge-tree main
+origin/despeckle-icon-pipeline origin/ui-forge-chrome-ownership-collision`
+returns three real conflict blocks in `tools/ui_forge.py` itself, not just
+the routine `ART_CRITIQUE.md` tail-append -- both branches independently
+edit the exact same region of `UI_PROMPTS` and the module docstring's
+`--only` example, in the same direction.
+
+PR #80's third commit (`ae13323`, dated 2026-09-17, titled "remove the six
+chrome-owned ids from `UI_PROMPTS`, generated for nothing") is the same
+finding this branch's own section above claims: `set(UI_PROMPTS) &
+set(CHROME)` is the identical six ids, both write to the identical
+`out/ui/<id>.png` path, and a plain `python tools/ui_forge.py` silently
+regenerated all six through SDXL. Its own message even changed the module
+docstring's `--only` example to the identical replacement pair
+(`ui_icon_espresso,ui_icon_latte`) this branch picked independently.
+
+**PR #80's fix is more complete than this branch's.** Two differences:
+
+- **Scope**: PR #80 deletes the six ids from `UI_PROMPTS` outright, so
+  `--only ui_coin` now hits the "unknown ui ids" error path -- no path back
+  to generating a chrome-owned id via SDXL at all. This branch instead kept
+  a soft default-exclude with an explicit-`--only` override. `ui_chrome.py`'s
+  own docstring ("It is not a prompt to tune. It is the wrong tool.") argues
+  for PR #80's harder stance, and it matches this repo's own established
+  precedent (`ui_icon_pastry`'s generative path was deleted outright when
+  rejected, not left reachable behind a flag) more closely than this
+  branch's softer one did.
+- **Depth**: PR #80 also found and removed a second, related piece of dead
+  code this branch never looked for -- `UI_SEED_OVERRIDE["ui_coin"] = 3`
+  (added in PR #80's own second commit, tuning which SDXL seed `ui_coin`
+  used) became unreachable the moment `ui_coin` left `UI_PROMPTS`, and PR
+  #80 removed it with a comment explaining why the tuning was correct at
+  the time but the artifact it improved was already dead. This branch's fix
+  left that entry untouched because it never knew to look for it.
+
+**Same shape as the Hour 63 correction, applied to this branch instead of a
+different one**: a real fix, independently re-derived and independently
+verified (both branches confirm the same six-id overlap, the same shared
+output path, the same zero-regression result), that turns out to already
+exist, earlier and more complete, on a PR this session hadn't cross-checked
+against before publishing. The underlying diagnosis in both cases was
+correct -- this is not a "the finding was wrong" correction, it is a
+"the finding was not new, and a better version of the fix already existed"
+correction, the second time this exact shape has happened this session
+(the first being `character.py`'s `reader` collision vs PR #24/#94).
+
+**No new code change here.** The honest recommendation for whoever
+reconciles the open PR pile: prefer PR #80's version of this fix over this
+branch's -- it is earlier, stricter (matches `ui_chrome.py`'s own stated
+doctrine), and catches a second dead-code consequence this branch missed.
+This branch's own fix is not wrong, just redundant and slightly softer;
+left open rather than closed, per standing practice, for him to reconcile
+directly.
+
+## Auto-uprighting: tried the "genuinely different objective" the earlier finding invited -- it doesn't help either
+
+"Auto-uprighting: the objective is not well-defined, not just object-specific"
+(above) tried one lever repeatedly -- widening the pitch/roll search box
+around the same flatness-spread objective (minimize the XY spread of the
+lowest-1%-by-height vertices) -- found a second, distant optimum outside the
+original box on the teapot, and closed with: "Left undone... don't
+re-attempt without a different objective, not just a wider search." That is
+exactly this session's own untried-lever question, stated in the file's own
+words, so it was worth actually trying rather than re-reading as settled.
+
+**The different objective:** stability, not flatness. A real resting object's
+centre of mass sits over its base's footprint; a spurious flat patch
+invented on the unseen side of a single-view reconstruction has no reason to
+satisfy that. Implemented independently (not a reproduction of the original, unsaved
+script -- a fresh one-off, same convention as every other proof image in
+this file: the render is committed, the throwaway generator isn't): for a
+candidate rotation, take
+the lowest-1% slab as before, build its 2D convex hull in XY, and score how
+far the whole-mesh centroid sits inside that hull (positive = stable,
+negative = centroid hangs outside the footprint). A 21x21 pitch/roll grid
+(-60 to +60 degrees, step 6) on the same three real meshes the original
+finding named (`out/mesh/teapot_bound.obj`, `basket_bound.obj`,
+`kettle_bound.obj`):
+
+| mesh | baseline (0,0) flat / stab | best-by-flatness | best-by-stability | objectives agree? |
+|---|---|---|---|---|
+| teapot | 0.1273 / 0.0013 | (-36,-30) 0.1071 / 0.0040 | (-48,6) 0.1152 / 0.0253 | no |
+| basket | 0.1513 / -0.0014 | (-12,-48) 0.1203 / 0.0236 | (6,-60) 0.1461 / 0.0311 | no |
+| kettle | 0.1775 / 0.0083 | (-60,42) 0.1087 / -0.0053 | (-54,-18) 0.2019 / 0.0248 | no |
+
+(Absolute numbers aren't comparable to the original finding's -- different
+metric definition, same real meshes -- the shape of the result is what
+matters.) Two things already argue against stability being the fix: it
+disagrees with the flatness objective's own pick on all three objects, and
+the grid itself is rough for *both* objectives -- 28 to 68 local optima out
+of 441 grid points, not two or three well-separated candidates. A search
+that bumpy isn't converging on "the true base" under either objective; it's
+finding whichever nearby dent the 6-degree grid happened to land near.
+
+**Settled by rendering all three candidates and looking, the same standard
+this file holds every other finding to** (`proof/upright_stability_probe.png`,
+18 real renders -- baseline, best-flat, best-stability, two azimuths each,
+three meshes, real `render_sprite` output through the shipped rasterizer and
+`cozy_ghibli` palette, not a mockup). The result is the opposite of what the
+stability hypothesis predicted: **the untouched baseline -- zero rotation,
+exactly what ships today -- reads better by eye than either "corrected"
+orientation, on all three objects.** The kettle's baseline is clearly
+legible as a kettle (spout, handle, lid, resting flat); both correction
+attempts turn it into an unreadable tilted lump. The teapot's baseline shows
+a recognisable spout and body; both corrections make it read worse, not
+better. The basket's best-by-stability pick is the most telling failure
+specifically: it rotates the object to foreground the concave scoop this
+file's own earlier pass ("the basket's crescent frames... an honest crescent,
+a scooped shell shape, present in the geometry itself") already identified
+as the reconstructor's invented unseen side -- stability scored that
+scooped face as a *more* stable base than the real one, which is the
+objective being actively fooled by the same artifact flatness was fooled by,
+not a fix for it.
+
+**Verdict: the different objective was tried, and it doesn't generalize
+either.** Both flatness and stability chase whichever locally-convincing
+patch a single-view reconstruction happened to invent on the side it never
+saw; neither has any way to know that patch is fake, because -- as the
+"far side... cannot be verified by machine" bullet already says two sections
+up -- the information needed to tell real base from invented artifact isn't
+in the mesh at all. The strongest evidence for leaving this undone isn't
+"we didn't find the right search box," it's that *doing nothing* already
+beats both searches on every object tested. No code changes ship from this
+finding -- there is no auto-upright tool in the pipeline to change, and this
+result argues against ever building one on top of either objective, not for
+tuning one further. `NEXT.md`'s "Auto-uprighting is not a well-posed search"
+bullet gets a pointer to this section rather than a rewrite, since nothing
+here contradicts it -- it corroborates it from a direction the original
+bullet explicitly invited someone to check.
+
+## PR-conflict reconciliation, re-run at the pile's largest size yet (39 open PRs) -- the two clusters never cross-checked before both come back clean
+
+This file's own reconciliation habit (Hours 44, 47, 48, 55, 63) checks
+whether open PRs that touch the same file actually merge cleanly against
+each other, not just against `main` individually -- `git merge-tree` shows
+every real conflict, and this file's own tail-append pattern (every hourly
+section lands at the same position on a `main`-based branch) produces one
+`changed in both` block on ART_CRITIQUE.md for nearly every pair, which is
+routine and harmless, not a real conflict. The risk that actually matters is
+a second `changed in both` block, inside a *code* file, with its own
+`<<<<<<<`/`>>>>>>>` markers.
+
+The pile is now 39 open PRs (up from 26 at Hour 48's sweep), and two file
+clusters had never been checked pairwise before: `tools/character.py` (4
+PRs touch it: #88, #89, #94, #117) and `tools/render_batch.py` (2 PRs: #81,
+#100). #94 vs #117 was already checked at Hour 63 (clean); #88 vs #89 vs #94
+were checked as part of Hour 48's original sweep (clean). The genuinely new
+pairs this hour: #88 vs #117, #89 vs #117 (both new since #117 shipped at
+Hour 61), and #81 vs #100 (never checked against each other at all).
+
+```
+git merge-tree main origin/direction-stability-not-wired origin/reader-hair-eye-collision-snes-rpg   # #88 vs #117
+git merge-tree main origin/eye-legibility-single-azimuth origin/reader-hair-eye-collision-snes-rpg    # #89 vs #117
+git merge-tree main origin/render-sprite-grain-wear-unwired origin/despeckle-lifted-objects           # #100 vs #81
+```
+
+First two: exactly one `<<<<<<<`/`>>>>>>>` pair each, both confined to
+`ART_CRITIQUE.md`'s tail (`git show <branch>:tools/character.py` for both
+sides diffs clean against the merge base -- neither #88 nor #89 touches
+`character.py`'s `CUSTOMERS`/`hair_mat` fields at all, only `organic_rig.py`
+and `portrait.py`'s check wiring). Routine, not a finding.
+
+Third pair looked ambiguous at first glance -- `grep -c "<<<<<<<"` on the
+raw output returned 1, which could in principle land inside either of the
+two `changed in both` blocks the diff contains (one for `ART_CRITIQUE.md`
+starting at line 1 of the output, one for `NEXT.md`/`tools/render_batch.py`
+starting later). Resolved by reading the actual conflicting text rather than
+trusting the line-number heuristic: the `<<<<<<< .our` marker sits
+immediately after PR #100's own last ART_CRITIQUE.md paragraph
+("...left unmerged."), and the content between it and `>>>>>>> .their` is
+entirely PR #81's own prose additions to this same file (three full
+sections, "third re-check"/"despeckle's own scope claim"/"`MAX_ISOLATED`'s
+own calibration" -- all ART_CRITIQUE.md text, zero lines of Python). No
+`tools/render_batch.py` content appears between the markers anywhere.
+Confirmed independently via a direct diff extraction
+(`sed -n '/tools\/render_batch.py/,/^$/p'` on the same merge-tree output):
+PR #81 adds one `from ... import despeckle` line and one
+`px = despeckle(px, target)` call; PR #100 changes unrelated `grain`/
+`key_gain`/`ambient` default-parameter lines elsewhere in the same
+function. The two diffs sit near each other in the file but never touch the
+same line -- `render_batch.py` merges clean between #100 and #81.
+
+**Result: all three previously-unchecked pairs, including the two file
+clusters that had never been cross-checked at this pile size, merge clean.**
+No real code conflict found anywhere in this sweep. Left as a documented
+negative result, same as Hours 48 and 55's re-runs -- the pile growing from
+26 to 39 open PRs hasn't introduced a cross-PR conflict in either of the two
+clusters most likely to carry one (the file four PRs touch, and the file
+two PRs both add a line to near each other in the same function). Branch
+`character-py-render-batch-reconciliation-checked`, new, unrelated to any
+other open PR's subject -- left unmerged.
+
+## Checked whether Hour 61's eye-collision bug generalizes further -- it doesn't; `concept.py`'s `check_concept_fitness` run live against real cached data -- clean
+
+**Does the `hair_mat == EYE` collision reach further than `reader`?** Two
+angles, both closed. First: does `portrait.py` ever build a bust for a
+GENERATED character (where the proposal loop could draw the same collision
+by chance, same as `check_spec_coverage`'s own generated-extras concern)?
+Grepped every caller in the repo -- nothing outside `portrait.py` itself
+calls `build()`/`check()`, and neither of those ever calls
+`generate_roster`/`generate_spec`. Portraits are only ever built for the 9
+named `ROSTER` members; there's no generated population for this collision
+to hide in. Second: does `organic_rig.py`'s own roster (the one whose
+`check_eyes_visible` originally caught `archivist`) have another live
+instance? Ran all three of its checks fresh: `check_roster`,
+`check_eyes_visible`, `check_direction_stability` -- all `[]`. All four of
+its roster members (`scout`, `archivist`, `drifter`, `smith`) already carry
+`hair_mat="wood-4"`, not `EYE`'s own material. Nothing left to fix on either
+rig for this bug shape.
+
+**Pivoted to `concept.py`'s `check_concept_fitness`, untouched this session.**
+Unlike `ui_forge.py`'s icon gate, this one doesn't need SDXL to evaluate --
+it grades an already-matted PNG on disk (alpha-band width, fill fraction,
+edge-crop, second-blob size), so the 32 real cached, non-adversarial
+concept images in `out/concept/` (confirmed real production output, not a
+test fixture) are genuine testable ground. Ran it fresh against all of them
+(one, `teapot_1.png`, has no alpha channel and would need `rembg` to re-matte
+-- not installed in this environment, skipped, same shape of gap as
+`torch`/SDXL elsewhere):
+
+```
+32 testable images -> 0 problems
+```
+
+Also swept `out/kind_test/`, `out/neg_test/`, `out/probe_style/`,
+`out/final_test/` (26 more testable images) for completeness -- 19 problems
+surfaced there, but every one is a deliberately adversarial fixture by its
+own filename (`mario_plus_NEG_BASE`, `basket_plus_anti-collage`,
+`style_probe_basket_dir2` cropped at the frame edge on purpose) left over
+from the check's own development, described in its own docstring as the
+"C1 31-subject set" calibration study -- these are expected failures that
+prove the check still correctly rejects bad input, not live defects.
+
+`check_concept_fitness` also has no `ramps`/style parameter at all (pure
+alpha-channel and blob geometry on a 2D image) and no azimuth -- structurally
+immune to both of this session's two established bug shapes by construction,
+the same way `check_direction_labels` (Hour 60) and `check_distinct`
+(Hour 59) are. Called from three real production sites (`concept.py`'s own
+`main()`, `concept_ui.py`'s GUI, and `factory.py`'s actual generation loop,
+`factory.py:188/198`) -- genuinely load-bearing, not dead code.
+
+**Finding: no new live bug this hour.** Both follow-ups to Hour 61's fix
+closed cleanly (no generalization, nothing left on either rig), and
+`check_concept_fitness` -- heavily used, never individually audited before
+this session -- passes clean against every real, non-adversarial cached
+image available to test it with. Honest null result.
+
+## `portrait.py`'s `reader` shipped with an invisible left eye under `snes_rpg` -- a live, currently-failing check, not a documented limitation
+
+Ran `portrait.py`'s own three deterministic checks (`check_distinct`,
+`check_determinism`, `check_palette_exact`) plus `check_eyes_visible` for
+real, both styles, rather than reading them cold -- no SDXL dependency here,
+unlike `ui_forge.py`'s icons. `--style cozy_ghibli`: clean, 9/9. `--style
+snes_rpg`:
+
+```
+BLOCKER  reader: left eye renders 0 px against bare skin (need 3) -- occluded or off-frame
+```
+
+Real, reproducible, currently on `main` -- not a cached or historical
+failure. `manifest.py --check` never calls `portrait.py`'s checks at all
+(confirmed by grep, consistent with Hour 51's finding that portraits aren't
+wired into the export pipeline for either style), so this failure is
+invisible to the aggregate gate; it is not invisible to the tool's own
+`--check`, which is what actually caught it.
+
+**Root cause, found by isolating the two renders rather than guessing.**
+`reader`'s `hair_mat` was `"neutral-2"` -- literally `character.EYE`'s own
+material, not merely close to it. Comparing `plain` (bare head+hair) against
+`eyed` (bare + one eye box) pixel-for-pixel: `cozy_ghibli` left eye 30px
+different, `snes_rpg` left eye 0px, right eye clean at 31px/109px in both --
+so this is not off-frame (zero pixels landed where `plain` was `None`, ruled
+out directly) and not a whole-render collapse, just this one eye, this one
+style. `bob` hair sits mostly in front of the left eye at this azimuth; the
+narrow sliver of eye that still peeks through only read as an edge in
+`cozy_ghibli` because each face's own lambert shading happened to land on a
+different step of a long-enough neutral ramp -- same material, different
+final pixel, by luck of the lighting. `snes_rpg`'s shorter neutral ramp
+rounds both faces' shading to the identical step, and the "different
+pixel" that made the eye visible disappears entirely.
+
+**Same mechanism this repo has already named twice**, in two different
+functions: `organic_rig.py`'s own `check_eyes_visible` caught the identical
+shape of bug for `archivist` (`hair_mat="neutral-3"`, one step from `EYE`'s
+`neutral-2`) and fixed it by moving the hair material away from `EYE`
+entirely (NEXT.md, `hair_mat` -> `wood-4`) rather than relying on lighting
+to keep them apart. `reader`'s case is more extreme -- exact material match,
+not one step off -- and lived in a different rig (`character.py`'s box/prism,
+not `organic_rig.py`'s cylinder/sphere) and a different check function
+(`portrait.py`'s bust render, not the full-body one). Two other roster
+members share the same `hair_mat="neutral-2"` (`barista`, `artist`) and pass
+clean under both styles -- their hairstyles (`bun`, `curly`) don't overlap
+the eye position the way `bob` does at this azimuth, so the collision alone
+isn't sufficient; it took this specific hairstyle for it to bite.
+
+**Fix: `reader.hair_mat` -> `"wood-4"`**, the exact value the `archivist`
+precedent already validated. `tools/character.py`'s `CUSTOMERS` list.
+
+**Verification:**
+- `portrait.py --check --style snes_rpg`: 1 BLOCKER -> 0, `9 portraits:
+  palette-exact, distinct, both eyes visible on every one, deterministic`.
+- `portrait.py --check --style cozy_ghibli`: stayed clean, and the margin
+  improved -- left eye 30px -> 110px, right eye 31px -> 125px (both now on
+  the same distinct-material footing right eye always had).
+- `snes_rpg` after the fix: left eye 0px -> 110px, right eye 109px.
+- `character.py`'s own `--style snes_rpg` run: identical 4-blocker list
+  before and after (`elder`/`reader`/`regular`/`writer` contrast/waistline
+  -- the already-known, already-accepted-as-not-fixed-by-design findings,
+  confirmed via `git stash` A/B on the exact same command) -- `reader`'s own
+  waistline blocker is a shirt/trousers value gap, unrelated to hair, and is
+  untouched by this fix. `check_palette_spread`'s "no more than half a
+  figure on one ramp" rule stays clear: `wood-4` hair alongside `wood`
+  trousers is exactly 2 of 4 parts (50%, the limit, not over it).
+- `manifest.py --check`, both styles: byte-identical error/warning counts
+  before and after (`cozy_ghibli` 3/8, `snes_rpg` 10/8) -- expected, since
+  `manifest.py` never calls `portrait.py` at all; this confirms the fix is
+  isolated, not that it was exercised there.
+- 40-test suite: 40 passed.
+- Visual, not just metric: rendered `reader`'s portrait at 8x nearest-
+  neighbour under both styles and looked at it. Both eyes clearly legible in
+  both -- hair reads as a warm brown/maroon instead of a near-black that
+  happened to double as the eye's own colour.
+
+## Correction to the section above: this was not a fresh discovery, and the record should say so
+
+Doing this hour's usual PR-reconciliation sweep (the pattern Hours 44/47/48/
+55 established) against the newest PRs turned up something the sweep isn't
+usually for: a provenance problem in the section directly above, on this
+same branch. `git merge-tree` against PR #94 (`roster-fields-style-blind`,
+Hour 27, unmerged) surfaced its own `ART_CRITIQUE.md` text quoting `portrait.py
+--check --style snes_rpg` reporting the exact same `reader` failure --
+already fixed on `main` at merge time? No: reading it in full showed PR #94
+was explicitly describing it as a "separate, pre-existing `reader`
+eye-occlusion blocker from PR #24 ... left exactly as-is." Pulled PR #24
+directly (`gh pr view 24`) rather than trusting the cross-reference: it is
+**merged**, on `main` today, titled "Fix the same --style-ignored-by-the-check
+bug in portrait.py and manifest.py," and its own body already contains this:
+
+```
+python tools/portrait.py --check --style snes_rpg
+BLOCKER  reader: left eye renders 0 px against bare skin (need 3)
+
+`reader`'s `hair_mat` (`neutral-2`) and `character.EYE` (also `neutral-2`)
+are literally the same ramp+offset -- that pair separates enough under
+`cozy_ghibli`'s specific RGB values to read as two things; under
+`snes_rpg`'s darker, more compressed `neutral` ramp it doesn't.
+```
+
+Same defect, same numbers, same root-cause explanation, word for word the
+mechanism the section above worked out independently -- written by an
+earlier hour of this same session, merged into `main` already. PR #24 judged
+it "fine, not a blocker" (`style_approve.py`'s OR-logic already lets
+`organic_rig.py` satisfy `snes_rpg`'s character-roster requirement) and
+recorded it honestly rather than suppressing it: `styles/snes_rpg/lock.json`
+carries a real `portrait.py:roster` entry with `approved: false`. PR #94
+re-ran the same check an unknown number of hours later, found the blocker
+still there, and deliberately left it alone as out of that PR's own scope.
+
+**So the section above's own framing -- "a live, currently-failing check,
+not a documented limitation" -- has it backwards.** It *was* a documented,
+already-explained, twice-independently-reconfirmed limitation, explicitly
+accepted as non-blocking by two earlier passes. What was genuinely new this
+hour was not the finding, it was the FIX: nobody had actually applied
+`archivist`'s own already-proven lever (move the hair off `EYE`'s literal
+material) to this specific case before, despite two separate hours writing
+down exactly why it would work. The verification above (real before/after
+numbers, zero-regression checks, visual inspection) is unaffected by this
+correction and stands as written -- only the "this is new" claim in the
+heading and opening paragraphs was wrong, and this section exists so a
+future hour reads the accurate provenance instead of re-trusting the
+original framing.
+
+**Reconciliation, checked rather than assumed.** PR #24 is already merged,
+so there's nothing to reconcile there. PR #94 is still open: `tools/character.py`
+merges clean against it (PR #94's fix lives entirely in a separate
+`ROSTER_OVERRIDES` table added later in the file and never touches
+`reader`'s `hair_mat`, only `reader`'s `trousers` under `snes_rpg`
+specifically -- the two changes are on non-overlapping fields and
+non-overlapping lines, confirmed via `git merge-tree`, not assumed from the
+prose). Only `ART_CRITIQUE.md` conflicts, at the routine tail-append point
+every open PR on this file conflicts at -- not a real problem, the same
+shape Hours 44/47/48/55 already established for this file specifically.
+
+## Four more candidates checked this hour -- one already fixed on an open branch, three genuinely clean
+
+**`character.py`'s `check_waistline`/`check_spec_coverage`.** Both looked
+like plausible single-config-blindness candidates going in. Neither is:
+`check_waistline(ramps, roster=None)` takes `ramps` as a required positional
+(cannot be called bare) and `manifest.py` runs it twice -- once against the
+fixed `ROSTER` (`manifest.py:383`) and once against a 12-seed generated
+extras cast (`manifest.py:405-408`, `_c.check_waistline(ramps, _extras)`) --
+so the generated population this session's other bugs have hidden behind
+(`check_generator_range`'s `counter`, `check_spec_coverage`'s own `skin`/
+`blush` history) is already inside this check's real coverage, not outside
+it. `check_spec_coverage` is correctly `ramps=ramps` threaded at its own
+call site (`manifest.py:398`). Read, not run -- no new numbers, no fix.
+
+**`organic_rig.py`'s `check_roster`/`check_eyes_visible`/
+`check_direction_stability` wiring into `manifest.py --check`.** This is
+exactly the shape of gap this session hunts -- `snes_rpg`'s real shipped
+characters come from `organic_rig.py`, not `character.py`'s box/prism rig,
+so if `manifest.py --check --style snes_rpg` never called the former, its
+own character-roster gate would be checking a non-shipping producer while
+the real one went unverified. Checked whether that's still true on `main`:
+it isn't, on a branch already in flight. `gh pr view 101` names its own
+branch `manifest-check-missing-organic-rig`, and `git show` on it confirms
+`organic_rig.check_roster`/`check_eyes_visible`/`check_direction_stability`
+are already wired in, gated on `rig.primitive == cylinder_sphere`. Hour 50's
+own memory entry undersold this PR as "gated the box/prism checks off" --
+it did that too, but the organic-rig wiring is the larger, already-complete
+half. Nothing new to ship; re-confirmed via the actual diff, not the
+one-line summary.
+
+**`palette_forge.py`'s `check_separation`, run live, both styles.**
+Unconditional in `palette_forge.py main()` (`palette_forge.py:465`) --
+every real palette build already self-checks this, no `--proof`-style gate.
+Ran fresh for real numbers rather than trusting that:
+
+```
+python tools/palette_forge.py --style cozy_ghibli
+  closest palettes base/golden_hour at 0.0358 (floor 0.035)
+  all constraints pass; 4 variants
+
+python tools/palette_forge.py --style snes_rpg
+  closest palettes evening/overcast at 0.0471 (floor 0.035)
+  all constraints pass; 4 variants
+```
+
+`cozy_ghibli`'s base/golden_hour pair sits 0.0008 above the floor -- a real
+near-miss, but not a new one: the check's own docstring already names this
+exact case and value ("`golden_hour` sits just over it at 0.0358 by design,
+because late afternoon is meant to be a warm reading of the base palette
+rather than a different world"). Measured value matches the documented one
+exactly; nothing drifted.
+
+**`animate.py`'s `check_direction_labels`.** Self-verifying by
+construction -- re-derives the `DIRECTIONS` tuple from the camera basis and
+compares, no seed or style axis to under-test. Ran it directly: `[]`, clean.
+
+**Finding: no new live bug this hour.** One candidate (`organic_rig.py`
+wiring) turned out to already be fixed on an open, unmerged PR rather than
+still-open ground; the other three are correctly built and currently
+passing with real numbers behind them. Honest null result.
+
+## `furnish.py`'s `check_distinct`, rebuilt from scratch for the whole real library, both styles -- clean, and by a structure that can't have the `counter`-shaped bug
+
+Started this hour on `ingest.py`'s `check_roundtrip` -- `manifest.py:458`
+calls it bare (`check_roundtrip()`, no `ramps`) on `main`, which looked like
+exactly the style-threading gap Hour 52 fixed for its two neighbours in the
+same import line. It already isn't: read the still-open, unmerged
+`ingest-checks-style-blind` branch (PR #92) directly rather than trusting
+memory's summary, and its own manifest.py already threads
+`check_roundtrip(ramps=ramps)` and `check_transform(ramps=ramps,
+checks=active.checks)`, with a comment explaining `check_albedo_regression`
+is deliberately left bare. Nothing new here -- re-confirmed already-done
+work, not re-shipped.
+
+Moved to `furnish.py`'s `check_distinct`, untouched by this session so far.
+Its own docstring records a real historical bug: `saucer` and `cup_latte`
+both resolved to `cup_and_saucer`, and because every prop is framed to fill
+its 64px box, the declared-height difference between them vanished in the
+rendered pixels -- two ids, one asset, nothing else in the per-asset-checked
+pipeline could see it. The check hashes all 8 directions of every real
+report and flags any two ids whose full sprite sets are byte-identical.
+
+**Structurally the right shape already -- checked, not assumed.** Unlike
+`art_review.py`'s old `GENERATORS` table (the source of the `counter`
+`front="x"` bug, Hour 53), `check_distinct` takes `reports` built directly
+from `RECIPES` and `assets.yaml`'s own declared parameters
+(`furnish.py:446`, `build_one(asset_id, declared[asset_id],
+RECIPES[asset_id], ...)`) -- there is no separate, shadow parameter table
+for it to fall out of sync with the real one. The 7 props that hit the
+footprint cap (`espresso_machine_2group`, `pastry_case`, `table_2top_round`,
+`table_4top`, `table_communal`, `plant_monstera`, `crate_stack` -- exactly
+the class the docstring's own historical bug came from, scale clamped away)
+are the real, live candidates for a repeat of that collision, not a
+synthetic worst case.
+
+**Ran the real, full 56-recipe library fresh, both styles, not from cache**
+(`out/sprites/`'s existing PNGs predate this session and can't prove
+`check_distinct` still passes on the CURRENT code):
+
+```
+python tools/furnish.py --style cozy_ghibli   # 2m10s, 448 sprites
+  56 distinct sprite sets -- no two ids render the same eight images
+
+python tools/furnish.py --style snes_rpg      # 2m12s, 448 sprites
+  56 distinct sprite sets -- no two ids render the same eight images
+```
+
+896 real sprite renders total (56 assets x 8 directions x 2 styles), zero
+collisions, including among the 7 footprint-capped props -- the exact
+scenario `check_distinct` exists to catch. `ramps` is threaded correctly per
+`--style` (`furnish.py:441-442`, resolved from `load_style(args.style)`, not
+a module constant). `git status` after both runs: nothing tracked changed
+(`out/sprites/` is gitignored build output).
+
+**Finding: no live bug.** `check_distinct` is real, correctly wired, tests
+the actual declared recipe parameters rather than a copy of them, and passes
+clean on a genuine from-scratch rebuild of the entire prop library for both
+styles. Honest null result -- the saucer/cup_latte failure mode this check
+exists for has not recurred.
+
+## Ran the real Godot round-trip export, both styles, real binary -- clean, and one near-miss chased down to already-correct architecture
+
+`export_godot.py`'s three round-trip checks (`check_nine_slice_roundtrip`,
+`check_palette_lut_godot`, `check_font_layout`) need an actual Godot 4.3
+binary -- unlike the SDXL/TripoSR stages, this one turned out to be genuinely
+available in this environment (`D:/vibes/.godot-tool/Godot_v4.3-stable_win64_console.exe`
+resolves and exists), so this is real, testable ground this hourly loop
+hadn't exercised end-to-end before.
+
+**First run, `--style cozy_ghibli`, came back with `0 fonts` and no
+`check_font_layout` output at all** -- looked, for a moment, like the same
+"declared but not built" shape as `out/ui/`'s empty icon library or
+`tileset.py`'s `--proof`-gated `check_manifest_placement` (Hour 57). Traced
+it: `out/ui/font/font.json` genuinely didn't exist in this environment --
+nothing in this session had run `bitmap_font.py` yet, and `check_font_layout`
+silently returns `[]` when `build.get("font", {}).get("sizes")` is empty,
+same as `check_nine_slice_roundtrip` does for an empty icon set. Built the
+font for real (`python tools/bitmap_font.py --style cozy_ghibli`, 4 sheets,
+90 glyphs) and re-ran the export -- `check_font_layout` then genuinely fired.
+
+**Chased whether the silent-skip itself is the bug, and it isn't.**
+`package_godot.py`'s `stage()` follows the identical `if dir.exists(): stage;
+if content: include` shape for every category -- sprites, anim, UI, tiles,
+font, all four other categories, not just this one -- so treating fonts as a
+special case would have been inventing an inconsistency, not fixing one.
+The real question is whether anything upstream is responsible for catching
+"declared but not built" before export, the way `manifest.py --check`
+already does for the UI icon library. Grepped `manifest.py` directly rather
+than assuming: `check_ui` already contains exactly this gate --
+`"ui_font declared and no out/ui/font/font.json -- run tools/bitmap_font.py"`
+(`manifest.py:217-219`) -- so `export_godot.py` silently trusting that an
+earlier, already-correct gate ran first is the intended layering, not a gap.
+No code change here; a real hypothesis, checked against the actual code, and
+retired.
+
+**With the real prerequisite built, ran the full pipeline for both styles,
+for real, not from cache:**
+
+```
+python tools/bitmap_font.py --style cozy_ghibli   # 4 sheets, 90 glyphs
+python tools/ui_chrome.py  --style cozy_ghibli    # (already on disk)
+python tools/export_godot.py --style cozy_ghibli  # exit 0
+  3 nine-slice margins match the drawn insets
+  Godot reads all 5 palettes x 40 colours exactly, at nearest filtering
+  32 string widths match between Godot and bitmap_font
+
+python tools/bitmap_font.py --style snes_rpg      # 4 sheets, 90 glyphs
+python tools/ui_chrome.py  --style snes_rpg       # 10/10 chrome pieces
+python tools/export_godot.py --style snes_rpg     # exit 0
+  3 nine-slice margins match the drawn insets
+  Godot reads all 5 palettes x 32 colours exactly, at nearest filtering
+  32 string widths match between Godot and bitmap_font
+```
+
+Zero BLOCKER lines, either style. Both runs used the real Godot 4.3 binary
+(`--headless --import`, then `--script build_all.gd`), not a mock or a
+Python-side approximation -- `check_palette_lut_godot` specifically reads the
+palette texture back through Godot's own resource loader and TextServer,
+which is the whole point of the check (a compression artifact or a filter
+setting that Pillow-side checks can't see). `git status` after both runs:
+nothing tracked changed (`godot_export/project*/`, `out/ui/font/`, and
+`out/ui_snes_rpg/` are all gitignored build/export output, as expected).
+
+**One already-known finding reconfirmed, not rediscovered.** `main` (this
+branch's base) still carries `check_font_layout`'s pre-fix, weight-blind
+`bitmap_font.measure(text, cap)` call (no `weight=` argument) -- exactly the
+bug the still-open, unmerged `font-layout-weight-blind` branch (PR #97)
+already found and fixed. It didn't fire in either run above because both
+`bitmap_font.py` runs used weight=1, the only weight this codebase's own
+shipped pipeline ever builds (Hour 56's own grep confirmed this) -- so
+`measure()`'s implicit weight=1 happens to agree with Godot's real, actually-
+weight-1 layout. Consistent with PR #97's own description ("never fired in
+practice, reproducibly wrong at any non-default font weight"), not a new
+data point, and not re-litigated further here.
+
+**Finding: no new live bug.** This is the first time this hourly loop has
+run the real Godot round-trip end to end for both styles rather than reading
+the check functions or testing a narrower slice of them. All three checks
+are correctly style-threaded (ramps/bible/font sizes all resolved per
+`--style`, confirmed by the different palette color counts -- 40 for
+`cozy_ghibli`, 32 for `snes_rpg` -- both read back correctly through Godot)
+and all pass clean against the real, freshly-built, real-Godot-verified
+export for both styles. Honest null result; the one real hypothesis chased
+this hour (silent-skip as a masked gap) checked out as already-correct
+layering once verified against `manifest.py`'s own code, not assumed.
+
+## `tileset.py`'s three checks, run against the real shipped tile atlases -- clean, correctly threaded, no gap
+
+`ui_forge.py`'s `check_icon` was the first candidate this hour: deterministic,
+needs no GPU to re-evaluate once a PNG exists. Dead end before it started --
+`out/ui/` has zero PNGs on disk in this environment (`manifest.py --check`'s
+own "24 declared but not built" warning already says so), and Torch/SDXL are
+confirmed unavailable in this session's Python env (Hour 47, reconfirmed
+Hour 57), so there is no way to produce fresh ones either. Nothing to test
+against; abandoned rather than forced.
+
+`tileset.py` is different: `out/tiles/` (`cozy_ghibli`) and
+`out/tiles_snes_rpg/` (`snes_rpg`) both hold real, already-built tile atlases
+and `tileset.json` manifests -- genuine, non-GPU-dependent shipped data, a
+good candidate for the same "was the real configuration ever tested" audit
+`counter`'s `front="x"` bug (Hour 53) came from.
+
+**The three checks, and how they're wired.** `check_lattice(width)` is pure
+integer arithmetic (is the lattice step on whole pixels) -- no style
+dependency, correctly bare. `check_collapse(fn, variants, width, ramps, ...)`
+and `check_manifest_placement(meta, width, ramps, ..., wall_patterns=...)`
+both take `ramps` and (for placement) `wall_patterns`, both resolved inside
+`build()` from `style.materials`/`style.palette_path` for whichever
+`--style` was passed (`tileset.py:901-906`) -- not module-level constants,
+not a default bound at import time. This is the style-threading shape Hours
+52/55 spent real effort confirming or fixing elsewhere in this codebase; here
+it was already correct.
+
+**The one real gap: `check_manifest_placement` only runs behind `--proof`.**
+`build()` gates it (`tileset.py:993-1006`) along with the 3x3 tiling proofs
+and the room-corner composite -- a plain `tileset.py --style X` (no flag)
+never calls it. Grepping every caller in the repo, exactly one place passes
+`proof=True`: `concept_ui.py`'s `run_procedural`, wired to a button in a
+Gradio-style dev preview app (`concept_ui.py:289`, its own comment explains
+why -- "the half of the library that always works" was terminal-only until
+this tab existed). `manifest.py --check` never touches `tileset.py` at all
+(confirmed: zero references outside a docstring mention), and no pytest file
+references `check_manifest_placement`. So in this repo's actual automated
+surface (the test suite, `manifest.py --check`), this check never runs --
+only a human clicking a specific dev-tool button exercises it.
+
+**That's a real coverage gap, but not the `counter`-shaped bug.** The
+`counter` bug was a check silently validating a configuration
+(`front="y"`) the real pipeline doesn't ship, while the one it does ship
+(`front="x"`) was never touched by any check at any azimuth. Here the
+question is different and testable directly: does `check_manifest_placement`
+still pass when actually run, today, against the real on-disk atlases, at
+the one width (`64px`, `tileset.py`'s own default) this codebase has ever
+shipped tiles at -- nothing else calls `tileset.py` with a `--width`
+override, so 64px is not an undertested value, it's the only one that
+exists.
+
+Ran it directly, both styles, matching exactly what `concept_ui.py`'s button
+does:
+
+```
+python tools/tileset.py --proof --style cozy_ghibli   # exit 0
+python tools/tileset.py --proof --style snes_rpg       # exit 0
+```
+
+Both printed `manifest placement: rebuilt from tileset.json alone,
+pixel-identical` alongside clean `check_lattice`/`check_collapse` output and
+clean 3x3/3-tile tiling proofs for every floor and wall type. No BLOCKER
+lines, either style. `git status` after both runs shows nothing tracked
+changed (`out/` is gitignored, as expected for build output).
+
+**Finding: no live casualty.** The check is real, correctly threaded, and
+currently passing against the actual shipped tile atlases for both styles --
+unlike the icon-speckle and `counter` cases, there is no discrepancy between
+what's tested and what's shipped to point a fix at. The only defect is
+process: a real correctness check (`gates.py` itself lists it as a
+deterministic gate, "can a consumer rebuild the room from the published
+numbers alone?") is reachable only by manually running `--proof` or clicking
+through a dev-tool tab, not by anything CI or the test suite would run. That
+is worth naming so a future regression in this specific check doesn't sit
+silently unnoticed the way `out/ui/`'s absence sits unnoticed until someone
+greps for it -- but it is a coverage note, not a bug to fix, and this hour
+ships no code change against it.
+
+## A sweep of the checks this session hadn't touched yet -- one already fixed, the rest genuinely clean
+
+Five files' check suites had never been looked at this session:
+`bitmap_font.py` (5 checks), `package_godot.py` (`check_anim_layout`,
+`check_palette_lut`), `floorplan.py` (`check_plan`), `palette_swap.py` (4
+checks), `fx.py` (`check_loops`). Read each for the two shapes this session
+keeps finding -- a hardcoded single azimuth/config tested when the real
+pipeline ships several, and a bare call where a real style/palette should
+be threaded -- and ran what could be run for real.
+
+**`bitmap_font.py`'s `weight` parameter is not the counter-`front` bug.**
+`check()`'s `weight=1` default looked like the same shape as `check_generator_
+range`'s untested-parameter gap two hours ago. It isn't: `grep` across
+`ui_chrome.py`, `manifest.py` and `package_godot.py` finds no call anywhere
+in the shipped pipeline that ever passes a non-default weight -- the game
+only ever sets type at weight 1, so testing weight 1 is testing what ships,
+not missing a variant. (The genuinely weight-blind bug in this file's own
+*layout* functions, `measure`/`wrap`/`fit_cap`, was already found and fixed
+on PR #98 -- a different bug, in different functions, correctly scoped
+there and not re-litigated here.) `check_render`'s `style` parameter is
+already threaded from its own caller, not bare.
+
+**`package_godot.py`'s two checks are pure structure, by construction.**
+`check_anim_layout` compares declared rect geometry against a sheet size,
+`check_palette_lut` already takes and correctly receives `style_name` from
+its caller. Neither has a hardcoded single-config gap.
+
+**`floorplan.py`'s `check_plan` is pure zone-overlap geometry** -- tile
+coordinates, window positions, service-run counts. No palette, no camera,
+nothing a style or azimuth sweep could expose.
+
+**`fx.py`'s `check_loops` compares a clip's phase-0 and phase-1 vertex
+positions** -- motion-loop correctness, not appearance. Same category.
+
+**`palette_swap.py` had already found and fixed the exact bug class this
+session hunts, before this session started** -- its own module docstring
+records it: every one of the file's four directory traversals inherited a
+"default-only blindness" even though `main()` had already threaded
+`--style` through the palette math, exactly the bare-call/hardcoded-default
+shape this session keeps finding elsewhere, already caught and fixed with
+a `sources_for(style)` resolver. Re-verified live rather than trusted:
+`python tools/palette_swap.py --all --check --style snes_rpg` -- 468 PNGs,
+29 distinct colours, all resolve to a base-palette identity, all 4 variant
+tables injective, all 12 sampled assets survive base -> variant -> base
+byte-identically. Clean, for real, today.
+
+**Not a task.** No code changed. One already-shipped fix confirmed still
+correct under `--style snes_rpg`, five otherwise-untouched check suites
+confirmed free of the two bug shapes this session targets.
+
+## A pass over `manifest.py --check`'s remaining bare calls, and `portrait.py`'s fixed azimuth -- both confirmed correct as they are
+
+Two threads this hour, neither turning up a fix, both worth recording so a
+future pass does not re-open either.
+
+**Every bare (no-`ramps`) call left in `manifest.py`'s `check()` is bare for
+a real reason, not a missed spot.** This session has repeatedly found bare
+calls that should have carried `ramps`/`checks` (`check_focal_contrast`,
+`check_roundtrip`/`check_transform`/`check_albedo_regression`,
+`check_symmetry_claims`'s `measured_symmetry`), all still open on their own
+PRs on `main` today. Read every OTHER bare call still in `check()` looking
+for one more of the same shape:
+
+- `_c.check_palette_spread()` -- counts *ramp names* (`material(p)[0]` on
+  each part's material token) and their share of a roster's parts. Never
+  touches an actual RGB value or the `ramps` dict at all -- "neutral" is the
+  same string and the same problem whichever style's palette resolves it.
+- `_c.check_roster_variety()`, `_c.check_cast_silhouette()`,
+  `_c.check_accessory_distinct()` -- all silhouette/shape-only by their own
+  docstrings ("the shape-only half of `check_roster_variety`"), comparing
+  covered-pixel sets, not colours. `check_accessory_distinct` hardcodes
+  `accessory_mat="rose"` for every comparison, which looks like a style leak
+  at first read -- it isn't, because the measurement is alpha coverage, not
+  hue, and any bindable ramp produces the same silhouette.
+- `check_built_rooms()`, `check_stool_occupancy()` (`build_plan.py`) --
+  pure geometry: collisions, grounding, seating rotation, occlusion,
+  perch-rate. No material lookup anywhere in either function's body.
+
+All five are correctly parameter-free. Confirmed by reading each function's
+own body for a `ramps`/palette/colour touch point, not by pattern-matching
+the call site -- this is the same distinction "geometry-only, not
+style-specific" drew for `check_generator_range`'s `counter` fix two hours
+ago, applied here as a check rather than an assumption.
+
+**`portrait.py`'s `check_eyes_visible` uses a fixed `PORTRAIT_AZIMUTH = 90`,
+which looked at first glance like the single-azimuth bug class this session
+has found repeatedly (`check_buried_detail`, `check_member_thickness`,
+`check_eye_legibility`, ...). It isn't, and the module says so directly:**
+"A portrait never rotates, so `PORTRAIT_AZIMUTH = 90`: dead [on]" -- a
+portrait is a single fixed-angle UI headshot, architecturally never
+rendered at a second azimuth, the same category `screen_occlusion`'s fixed
+45 deg camera fell into (Hour 49). Confirmed rather than taken on faith:
+`grep` for any second call to `render_sprite`/`DimetricCamera` in
+`portrait.py` with a different azimuth turns up none -- every portrait
+render in this file uses the one constant.
+
+**Also checked, mechanically: does the pile of open PRs need reconciling
+again now that #109/#110 exist?** `git merge-tree` against every other open
+PR touching `tools/art_review.py`/`tools/assetlib.py` (#83, #87, #93, #95,
+#102, #103, #81) -- eight pairwise merges, all clean except the routine
+`ART_CRITIQUE.md` doc-append conflict every pair in this pile has. Matches
+Hour 48's finding that this pile's PRs insert independent blocks rather than
+rewrite shared lines; no new reconciliation burden from this hour's own two
+PRs.
+
+**Not a task.** No code changed, nothing to fix -- three separate checks,
+three confirmations that the code already does the right thing.
+
+## Checked whether `counter`'s buried-detail bug is a pattern, not a one-off -- it isn't
+
+`counter(front="x")`'s bug (a separate PR, `counter-front-x-buried-detail`)
+was `check_generator_range` never exercising a non-default parameter that a
+real shipped call site uses. Several other `GENERATORS` entries share that
+same shape -- `check_generator_range`'s factory always calls the generator
+with only `seed` set, and a handful of these generators take a second
+parameter that real code overrides. Worth checking whether front="x" was
+one instance of a broader coverage gap or a true one-off.
+
+Found three real, non-default configurations `check_generator_range` never
+tests: `basket(fill=...)` (`render_room.py`/`build_plan.py` ship both
+`"foliage"` and `"rose"`, never the default `FABRIC`), `chair(cushion=...,
+frame=...)` (`furnish.py`'s `chair_metal`/`chair_cushioned` catalog entries,
+and `render_room.py`'s cushioned window-bar chairs), and `table_round(top=
+...)` (`render_room.py`'s three cafe tables, `"cream"` and `"wood"`, never
+the default `WOOD` passed positionally as a no-op). `bench`'s own
+`cushion`/`frame` parameters, by contrast, are never overridden anywhere in
+this repo's real call sites -- not a candidate, same conclusion either way
+without needing to test it.
+
+Measured all three at their real shipped values, at `check_generator_range`'s
+own exact span/floor for each generator (15% floor throughout):
+
+```
+table_round  top=wood (default)    23.45%
+table_round  top=cream (real)      27.23%
+chair        cushion=None,frame=wood (default)      40.48%
+chair        cushion=None,frame=metal (chair_metal)  40.48%
+chair        cushion=rose,frame=wood (real, window)  48.47%
+basket       fill=fabric (default)  29.82%
+basket       fill=foliage (real)    29.82%
+basket       fill=rose (real)       29.82%
+```
+
+All eight comfortably clear the 15% floor. **Does not generalize, and the
+reason is mechanical, not luck.** `front` in `counter()` changes WHICH AXIS
+the detail geometry sits on -- a placement bug, wrong by construction for
+one of its two branches. `fill`/`cushion`/`frame`/`top` in `basket`/`chair`/
+`table_round` only ever swap one material NAME for another at screen
+positions the geometry already varies by seed regardless of which material
+is bound there -- `screen_materials` measures whether the resolved material
+differs pixel-to-pixel between seeds, and a global material-role swap moves
+every seed's output the same way, so it cannot by itself collapse spread the
+way a buried, always-identical face can. The bug class the front="x" fix
+closed is specifically "an untested parameter changes GEOMETRY," not
+"an untested parameter exists" -- confirmed by finding several of the
+second kind and none of them mattering.
+
+**Not a task.** No code changed. Doc-only, same branch convention as the
+other confirmed-non-generalizing findings this session (`screen_occlusion`,
+`check_roster_variety`, `portrait.py`'s accepted limitation). 40-test suite
+unaffected (nothing here touches code).
+
+## `check_generator_range`'s single azimuth wasn't the bug; the untested configuration was
+
+This session has repeatedly found generator/asset checks blind to one fixed
+`azimuth=45.0` while a real prop ships at all 8. `check_generator_range`
+(`art_review.py`) has that exact same default, so it was the obvious next
+thing to sweep -- and an 8-azimuth pass over all 24 seeded generators did
+flip 5 of them (`bookshelf`, `pastry_case`, `counter`, `fridge_under`,
+`wall_art_framed`) from passing at 45 deg to failing at others.
+
+**That result doesn't survive contact with how this pipeline actually
+uses azimuth, though.** Every prop here is rendered by `furnish.py` at all
+8 real camera azimuths regardless of declared `sym` (`sym` is purely a
+`manifest.py` render-*budget* accounting concept -- confirmed by reading
+`furnish.py`'s own placement loop, which never consults it), so the naive
+"sweep the raw camera azimuth around an unrotated mesh" test looked like
+the right shape of question. But the architecture doctrine this session
+already established for `screen_occlusion` (azimuth check, Hour 49) applies
+here too: **the camera is fixed at 45 deg and objects rotate**, not the
+other way round. Re-tested the 5 flips at the one real camera azimuth
+(45) crossed with the only rotations this codebase's own placement code
+ever actually uses (0/90/180/270, `Layout.scatter`'s `rot_choices`, and the
+specific hand-authored rotations in `build_plan.py`): `bookshelf` at its
+two real shipped rotations (0, 270, `build_plan.py`'s back-bar shelving)
+reads 21.6%/21.4% against its 15% floor -- clean. `pastry_case` and
+`fridge_under` are clean at every rotation. `wall_art_framed` isn't placed
+anywhere in this repo's real room compositions at all (catalog-only, in
+`furnish.py`'s `Recipe` table, never called from `build_plan.py` or
+`render_room.py`) -- no live casualty regardless. **Four of five: does not
+generalize**, same conclusion as `screen_occlusion` and `check_roster_variety`
+before it, for the same architectural reason.
+
+**The fifth, `counter`, is a real, live, currently-shipping bug -- but not
+the azimuth-blindness one.** `counter()` takes a `front` parameter ("y" or
+"x", which face carries the seed-driven style detail) that `check_generator_range`
+never varies -- its `GENERATORS` entry is `lambda A, s: A.counter(seed=s)`,
+always the default `front="y"`. `render_room.py`'s window bar run (line 170)
+places the real, shipped counter with `front="x"` explicitly -- "the window
+bar tiles along y, so its +y face is a joint between two modules and its
+front is +x," per the generator's own docstring. That configuration was
+never exercised by the check at any azimuth, single or swept.
+
+Measured directly: `front="x"`, 8 seeds, real camera (45 deg), 0.25% screen
+spread against the shared 4% floor -- 7 of 8 seeds produce byte-identical
+on-screen materials, only seed 8 differs by one pixel's worth. `front="y"`,
+same seeds, same azimuth: 7.47%, clean, genuinely varying (drawers, shelf,
+beaded styles all show up). Confirmed by eye, not just by the metric --
+rendered `screen_materials`' own colour-mapped output at 4x for both
+`front="y"` seeds 1/2 (clearly different: plain vs. two drawer lines) and
+`front="x"` seeds 1/2 (visually identical, both plain, no drawer lines on
+the right face at all).
+
+**Root cause, found by reading `counter()`'s own geometry, not guessed:**
+the carcass box is `add_box((0.0, 0.06, base), (1.0, 0.94, top), WOOD)` --
+inset on y (0.06-0.94, "so two neighbours never share a reveal," per its own
+comment) but spanning the FULL x range (0.0-1.0, "so a run tiles
+seamlessly"). The style-detail quad is drawn a fixed 0.9412 proud of
+whichever axis is the "front," and 0.9412 sits just past the carcass's own
+y1=0.94 boundary -- correct, visible, for `front="y"`. For `front="x"` the
+same 0.9412 sits *inside* the carcass's own x-range (which runs to 1.0), not
+past it -- the detail quad is drawn 0.06 units inside solid wood, fully
+buried by the carcass's own geometry from every camera angle. One shared
+constant, two different boundaries it was supposed to clear, correct for
+one and silently wrong for the other -- the same shape of bug
+`check_buried_detail` exists to catch, just never exercised on this asset's
+non-default configuration.
+
+**Fixed at the source, in `assetlib.counter()`:** `face` is now
+`0.9412` for `front="y"` and `1.0012` for `front="x"` (the carcass's own
+x1=1.0, plus the identical 0.0012 proud-of-surface margin the y case
+already used). Verified: `front="x"` spread goes from 0.25% to 8.56% (now
+comparable to `front="y"`'s 7.47%, same seeds, same randomly-chosen styles,
+now actually visible on screen); rendered and eyeballed the fix directly --
+seed 2's drawer lines now show on the right (+x) face exactly as they
+already did on the left (+y) face for the equivalent `front="y"` case.
+`front="y"`'s own mesh is confirmed byte-identical before/after (hashed
+every seed's vertex+material data) -- this is a `front="x"`-only fix.
+
+**Closed the coverage gap too, not just the bug**, matching this session's
+own established convention (`check_roundtrip`, `check_albedo_regression`,
+and others all got a check-side fix alongside the code-side one): added
+`counter_front_x` as its own `GENERATORS` entry, `lambda A, s:
+A.counter(seed=s, front="x")`, same 4% floor. Confirmed it actually catches
+what it's meant to -- reverted just the `assetlib.py` fix with the new
+entry still in place, and it fires exactly as expected (`counter_front_x:
+screen spread 0% over 8 seeds`); restored the fix, clean again.
+
+**Geometry-only, not style-specific** -- `counter()`'s mesh construction has
+no palette/ramp dependency, so this affects `cozy_ghibli` and `snes_rpg`
+identically (verified: 7.47%/8.56% either way, independent of which
+style's ramps get bound downstream). Unlike most of this session's findings,
+there was no cross-style calibration question to ask here at all.
+
+**Verified end to end.** `manifest.py --check --style cozy_ghibli`: 3 errors
+before this branch's own baseline, 2 after -- not from anything this fix
+targeted directly, but the already-known, already-documented noise-floor
+case (`check_focal_contrast`'s "plan 1, L run," sitting at D -0.001 against
+a 0.000 floor, see "Focal detail: resolution-confirmed, not
+resolution-invariant" and "A real, already-measured galley finding..."
+above) flipped to a pass once the counter's front carried real detail pixels
+again -- consistent with that section's own finding that a defect sitting
+exactly on a zero floor can flip either way on an unrelated change, not a
+deliberate fix, and not claimed as one. The two galley errors (`71451c3`'s
+own already-decided-against-fixing finding) are unchanged, as expected --
+unrelated topology. `--style snes_rpg`: 10 errors before, 9 after, same
+L-run flip, same unrelated 7 character-roster/eye-legibility errors and 2
+galley errors untouched. 40-test suite: 40 passed. `check_generator_range()`
+and `check_spread_floor_regression()`: both clean before and after.
+
+## Checked whether `manifest.py`'s "accepted limitation, still fires as a blocker" bug generalizes to `portrait.py`'s own accepted `snes_rpg` gap -- it doesn't
+
+`manifest.py --check --style snes_rpg` was, until the previous fix,
+reporting 7 findings against `character.py`'s box/prism roster as
+build-blocking errors even though NEXT.md's own accepted-limitation
+doctrine says that roster doesn't ship for `cylinder_sphere` styles --
+the "accepted" framing covered the roster difference, not the noise the
+command kept producing every run.
+
+`portrait.py --check --style snes_rpg` carries the identical-looking
+accepted-limitation shape: it also builds portraits from `character.py`'s
+box/prism `head()`/`hair()`, also fails under `snes_rpg` (`reader`'s left
+eye renders 0px against bare skin -- `hair_mat` and `character.EYE` collide
+on `snes_rpg`'s more compressed `neutral` ramp), and NEXT.md's own writeup
+(PR #24) explicitly accepts it the same way: *"`style_approve.py` doesn't
+require `portrait.py` or `manifest.py` to pass, only `character.py` OR
+`portrait.py` OR `organic_rig.py` for the character-roster requirement, and
+`organic_rig.py`'s entry already satisfies it."* Given the previous section
+found that exact style of claim understated in practice, checked whether
+this one is too, rather than trusting the prose a second time.
+
+**It holds up.** Three things verified directly, not assumed:
+
+1. `style_approve.py`'s `REQUIRED_PRODUCERS_ANY_OF = ("character.py",
+   "portrait.py", "organic_rig.py")` or-logic (`tools/style_approve.py:56-76`)
+   is genuinely implemented the way the comment claims -- `current_approved`
+   checks `lock.json` for *any* approved, current entry across the three
+   named producers, not all three, so `organic_rig.py`'s own passing entry
+   really does satisfy the requirement regardless of `portrait.py`'s
+   `approved: false` row. Read the code, not just the docstring.
+2. `gates.py` (the 62-check deterministic/llm/taste catalog this loop
+   already fully audited for wiring, Hour 47) has no aggregate pass/fail
+   mode at all -- `--help` shows only `--list` and `--producer`, informational
+   commands, so there is no second gate anywhere that could re-block on
+   `portrait.py`'s failure independently of `style_approve.py`'s already-
+   verified or-logic.
+3. `grep -n "portrait" tools/package_godot.py tools/export_godot.py` returns
+   nothing at all, for either file. Portraits are not part of the shipped
+   export pipeline yet, for ANY style -- not a `snes_rpg`-specific gap, a
+   not-yet-integrated feature that applies equally to `cozy_ghibli`. There is
+   no path by which a wrong-rig portrait could reach a real build today.
+
+So the two cases look identical from their NEXT.md/ART_CRITIQUE.md prose
+alone -- both "accepted because `organic_rig.py` covers it" -- but differ in
+one load-bearing way: `manifest.py`'s box/prism checks fed one unconditional
+`errs` list with no or-logic at all, so "accepted" was true of the roster
+and false of the command's actual behaviour. `portrait.py`'s failure feeds
+`style_approve.py`'s real or-gate, correctly implemented, and reaches no
+export path either way. The mechanism the "accepted" claim depends on is
+present and working here, not merely asserted.
+
+No functional fix shipped, no code changed -- this is a legitimate "checked
+whether the previous bug generalizes, and for this sibling case it doesn't,
+because the machinery the claim rests on was independently verified to
+exist and work" result, same discipline as the ramp-coherence, character-
+scale, roster-variety, and screen-occlusion null results already on record.
+
+## Checked whether `screen_occlusion`'s fixed `azimuth=45.0` is the same bug as the sprite checks -- it isn't, and the numbers show exactly why
+
+`Layout.screen_occlusion(azimuth: float = 45.0, share: float = 0.35, depth:
+float = 0.8)` has the identical signature shape as every check this loop has
+already found and fixed for single-azimuth blindness --
+`check_member_thickness`, `check_buried_detail`, `check_cast_silhouette`,
+`check_eye_legibility`, `organic_rig`'s eye check. All five of those measure
+a *sprite* that genuinely ships at all 8 real rotation azimuths, and were
+wrong to only ever check one. `screen_occlusion` looked, from the signature
+alone, like the same shape of gap: it is called from `manifest.py` and
+`build_plan.py` with no azimuth argument, defaulting to 45.0, and nothing
+in the codebase ever calls it at any other angle.
+
+**Tested it before assuming that pattern repeats.** Ran the hand-authored
+reference room (`render_room.build_room()`, "six passes of art direction
+live in its 48 coordinates" per its own module docstring) through
+`screen_occlusion` at all 8 real sprite azimuths:
+
+| azimuth | findings |
+|---|---|
+| 45 (the default) | **0** |
+| 0 | 16 |
+| 90 | 12 |
+| 135 | 17 |
+| 180 | 18 |
+| 225 | 9 |
+| 270 | 14 |
+| 315 | 15 |
+
+That is not a small or ambiguous gap -- the hand-tuned room is completely
+clean at exactly one angle and has real, named, double-digit overlaps
+(`decor#coats` hiding 99% of `decor#gbasket#0` at az=0, `prop#espresso`
+hiding 100% of two cups at az=135, and so on) at every other angle tested.
+Ran the same sweep against three `build_plan.generate()`-produced rooms
+(seeds 1/2/3, algorithmic placement, not hand-tuned) to check this wasn't an
+artifact of one hand-authored scene: all three show the identical shape --
+0 findings at 45, 5-13 findings at every other angle (seed 1: 6/7/9/8/12/9/9
+across 0/90/135/180/225/270/315; seed 2: 5/7/13/9/5/10/8; seed 3:
+6/9/10/7/8/6/13).
+
+**Traced why, rather than stopping at "the numbers look the same shape as a
+bug."** `screen_occlusion` is a pure geometry check -- it projects each
+placement's world-space bounding box through `DimetricCamera(azimuth)` and
+compares 2D screen-space overlap (`tools/layout.py:306-374`). It never
+rasterizes a pixel, never touches a ramp or a palette, so the cross-style-
+calibration bug class (the OTHER established shape this loop has found,
+`check_speckle`/`check_light_direction`) cannot apply to it at all --
+there's no rendered image for a style to bias. That leaves only the
+single-azimuth question, and the codebase's own architecture doctrine
+answers it directly (`README.md`, on the first time this exact mistake
+happened with a *different* check): "in an isometric game the camera is
+fixed and the *object* rotates." Props and characters rotate -- they ship
+sprite sheets covering all 8 real azimuths, which is why checking only one
+was a real bug for them. The room itself does not rotate; there is no
+camera-pan feature, no per-angle room export, and `build_plan.py`'s own
+placement algorithm calls `screen_occlusion(45.0)` internally as a
+constraint DURING generation (`tools/build_plan.py:1257`), actively placing
+objects to avoid occlusion at that one angle and no other. The three
+generated rooms above are clean at 45 not by luck but because the generator
+was optimizing for exactly that.
+
+So the sharp 0-vs-double-digit swing across azimuths, which would be
+alarming evidence of a coverage gap for a sprite check, is instead exactly
+what correct behaviour looks like for a check whose subject only ever
+exists at one camera angle: it proves the room was actually validated at
+the one view that matters, not that seven other views were silently
+skipped. No functional fix shipped, no code changed -- the default is
+correct as written. A legitimate "checked whether the pattern generalizes,
+and it doesn't, here is the mechanistic and numeric reason" result, same
+discipline as the ramp-coherence, character-scale, and roster-variety null
+results already on record.
+
+## Checked whether the open-PR pile has a hidden reconciliation burden beyond `check_member_thickness`/`check_buried_detail` -- it doesn't
+
+Two earlier fixes on `member-thickness-ship-scale` (PR #103) each had to be
+combined with an independently-opened sibling PR that rewrote the exact same
+function body (`check_member_thickness` vs `member-thickness-single-azimuth`,
+PR #95; `check_buried_detail` vs `buried-detail-azimuth-coverage`, PR #87).
+Both times, merging the two PRs separately would have produced a real git
+conflict, because both edited the same lines of the same function. With 26
+open PRs against this repo, worth checking whether that was two isolated
+incidents or the edge of something bigger waiting to bite whenever these get
+merged for real.
+
+**Where else are multiple open PRs touching the same file.** `gh pr diff
+<n> --name-only` across all 26 open PRs, excluding the two docs files every
+PR touches (`ART_CRITIQUE.md`, sometimes `NEXT.md`), surfaces two more
+clusters beyond the already-known `tools/art_review.py` one (which Hour 47
+already checked against #103's current diff and found clean):
+
+- `tools/manifest.py`'s `check(man, style)` function -- independently edited
+  by seven open PRs: #83 (table-communal-generator-coverage, lines
+  ~440-448), #88 (direction-stability-not-wired, ~397-414), #91
+  (focal-contrast-style-blind, ~478-507), #92 (ingest-checks-style-blind,
+  ~452-495), #93 (symmetry-claims-style-blind, ~346-361), #94
+  (roster-fields-style-blind, ~329-386), #101
+  (manifest-check-missing-organic-rig, ~427-458). Several of those ranges
+  overlap or sit within a few lines of each other -- on the strength of that
+  alone, this looked like the same shape of problem as the two already-fixed
+  cases.
+- `tools/character.py` -- independently edited by three open PRs: #88
+  (`check_direction_stability`), #89 (eye-legibility-single-azimuth,
+  `check_cast_silhouette`/`check_eye_legibility`), #94
+  (`place()`/`main()`).
+
+**Tested the hypothesis instead of trusting the line-number proximity.**
+`git merge-tree --write-tree <a> <b>` (read-only, no branch or working-tree
+change) against every pairwise combination: 21 pairs among the seven
+`manifest.py` branches, 3 pairs among the three `character.py` branches, all
+24 pairs run against `origin/<branch>` refs directly. Result: **every single
+pair merges `tools/manifest.py` and `tools/character.py` cleanly.** The only
+conflict `git merge-tree` reports for any pair is in `ART_CRITIQUE.md` --
+expected and uninteresting, since every one of these PRs appends its own
+prose section near that file's end; two independent appends to the same
+file always textually conflict and take ten seconds to resolve by hand,
+which is not the same class of problem as two PRs rewriting the same
+function body.
+
+Pairwise-clean doesn't prove a full N-way sequential merge stays clean (an
+early merge can shift line numbers under a later one), so went further:
+built a disposable local branch off `main` (`_scratch_conflict_test`, never
+pushed, deleted immediately after) and ran a real sequential `git merge` of
+all seven `manifest.py`-touching branches, one at a time, auto-resolving
+only the expected `ART_CRITIQUE.md` conflict at each step (content doesn't
+matter for this test) and otherwise letting git merge for real. At every one
+of the seven steps, `tools/manifest.py` (and, incidentally,
+`tools/art_review.py` and `tools/character.py` where a given branch also
+touched them) auto-merged with **zero conflicts**. The resulting file
+parses (`ast.parse`) and runs for real: `python tools/manifest.py --check
+--style cozy_ghibli` on the fully-combined tree completes in 6m10s, exit
+code 0, `3 errors, 16 warnings` -- error count unchanged from `main`'s
+baseline (3), warnings risen from `main`'s 8 to 16, consistent with seven
+independently-authored new checks each contributing roughly one new warning
+line, no crash, no `Finding`/message ever double-counted or malformed.
+
+**Why this differs from the two cases that DID need reconciling, stated
+mechanistically rather than just "checked, it's fine":** `check_member_
+thickness` and `check_buried_detail` each had two open PRs *rewriting the
+same existing lines* -- both changing what the function's body already did.
+These seven `manifest.py` PRs each *insert a new, independent block* into a
+long linear function without touching any line another PR also touches --
+git's three-way merge handles disjoint insertions landing within a few
+lines of each other just fine; it only requires manual resolution when two
+sides edit the identical lines. Line-range proximity in a diff header is not
+the same signal as an actual collision, and this hour's original hypothesis
+(guessed from proximity alone, before running `merge-tree`) would have been
+wrong if reported without the check.
+
+**No functional fix shipped, no branch touching `tools/manifest.py` or
+`tools/character.py` created** -- there was nothing to fix. This is a
+verified "checked whether the reconciliation-burden pattern generalizes to
+the rest of the open-PR pile, and for these ten PRs it doesn't" result, the
+same discipline as Hour 41's `check_speckle`-sibling check and Hour 45/46's
+non-generalization findings. Net effect for him: PRs #83, #88, #89, #91,
+#92, #93, #94, #101 can be merged in any order without the kind of manual
+code reconciliation #95 and #87 needed against #103 -- only the routine
+`ART_CRITIQUE.md` append conflict, same as merging any two PRs from this
+loop ever will.
+
+## Checked whether `check_cast_silhouette`'s single-azimuth fix generalizes to its material-based sibling `check_roster_variety` -- it doesn't
+
+`check_cast_silhouette`'s own docstring records a real, already-fixed defect:
+the shape-only cast-distinctness check used to compare a single fixed
+azimuth, and "a pair that separates at 45 and collapses at 0 is a pair that
+collapses one frame in eight" -- so it now runs over all 8 real sprite
+directions. Its sibling, `check_roster_variety` (the colour-and-shape,
+material-based half of the same "are any two characters the same person"
+question -- "the character version of `check_generator_range`") still
+declares `azimuth: float = 45.0` as a single default and has never been
+extended past it. Same file, same purpose family, same author's own lesson
+sitting three functions away -- worth checking whether it was ever applied
+here.
+
+**Measured directly rather than assumed.** Computed `check_roster_variety`'s
+pairwise material spread (`screen_materials` + `_screen_spread`, the same
+instrument the check itself uses) across all 8 real ship azimuths for the
+real roster (barista + 8 customers) and the real generated-extras call
+(`generate_roster(12, seed=1)`, exactly as `manifest.py --check` invokes it).
+Every pair, at every azimuth, cleared the 38% floor with room to spare --
+tightest real margin 41.9% (`barista`/`artist` at azimuth 270, floor 38%).
+Not satisfied with one population: stress-tested 60 generated extras across
+5 seeds (`C(60,2)` = 1,770 pairs x 8 azimuths = 14,160 measurements) for any
+pair that clears 45 degrees but drops under the floor at another azimuth.
+**Zero.**
+
+**Mechanistic reason this check resists the bug class its sibling had,** the
+same shape of explanation the ramp-coherence cross-style check earned
+earlier this session: `check_cast_silhouette` compares OUTLINE, a thin
+boundary that a hat or a limb can fully hide behind at the wrong angle.
+`check_roster_variety` compares MATERIAL COVERAGE -- large, mostly-
+uncontested blocks of shirt/trousers/hair colour that stay visible, just
+partially reshuffled by occlusion, across nearly every azimuth a humanoid
+figure is viewed from. The metric that is fragile to viewing angle is the
+one built on a thin, easily-occluded feature; the one built on broad colour
+regions is not, independent of which specific check it lives in.
+
+Not a bug, and not tuned to make it look that way: the floor (0.38) and the
+real margins (42-62%) both predate this check, and the azimuth sweep only
+added measurement, no threshold changes. Documented per this session's
+standing instruction to record a checked-and-doesn't-generalize result
+honestly, the same as the frog-knight case and `check_direction_stability`'s
+scale check earlier this session.
+
+## Checked whether `check_member_thickness`'s wrong-scale bug generalizes to `character.py`'s equivalent -- it doesn't
+
+`check_member_thickness`'s fix (this session) found `ROOM_PX_PER_UNIT`
+(27.2, "the room framing") was being used as if it were furniture's real
+ship scale when `furnish.py`'s per-object `frame_all` framing actually varies
+1.2x-4.9x from it. `character.py` has the exact same shape of constant --
+`GAME_PX_PER_UNIT = 27.2` ("Room framing resolves 27.2 px per world unit...
+a limb or a body narrower than this many pixels there stops reading as a
+shape") -- used by `check_direction_stability` with a hardcoded `span=0.95`,
+the same pattern that was wrong for furniture. Worth checking whether it is
+also wrong here.
+
+**It isn't, and the reason is structural, not luck.** Characters ship
+through `animate.build_sheet()`, which calls `fit(spec, clip_specs)` to get
+each character's own real per-character span across every pose in every
+clip -- `furnish.py`'s `frame_all` equivalent, confirmed by reading the
+production path (`build_sheet` is what `package_godot.py` packs, the same
+way `frame_all`'s sprite was confirmed to be furniture's real ship path).
+Unlike furniture, which ranges from a teacup to a bookshelf, every character
+is the same humanoid rig at the same declared height -- so the real per-
+character span has almost nowhere to drift.
+
+Measured directly rather than assumed: the real roster (barista + 8
+customers) all land within 1-3% of the assumed 0.95 (0.9410 to 0.9745), and
+12 generated extras (`generate_roster`, seed 1 -- deliberately the more
+parameter-varied population) land within 1-2% (0.9397 to 0.9667). Went one
+step further than a span comparison, since a small span difference could
+still flip a verdict near the floor: recomputed every character's actual
+per-direction pixel width at BOTH the assumed 0.95 and their own real `fit`
+span, and diffed the pass/fail call against `MIN_SILHOUETTE_PX` (9) for all
+21 characters x 8 directions = 168 checks. **Zero verdicts flip.** The
+closest real case to the floor, `student`, measures 10.23px at the assumed
+scale -- 1.23px of margin, comfortably wider than the largest span-driven
+error observed (about 0.3px).
+
+Not a bug: `check_direction_stability`'s comment already frames this as "the
+scale the sprite is actually seen," and for characters specifically, that
+claim holds up under measurement the same way it stopped holding up for
+furniture. The difference is the object population, not the check's design --
+a fixed camera assumption is only as wrong as the size variance of the
+things it's assumed for, and humanoid characters have almost none.
+
+## `check_light_direction`'s 4% floor is also cozy_ghibli-calibrated -- and it fails the opposite way `check_speckle` did
+
+An earlier pass here found `check_speckle`'s `MAX_ISOLATED` floor was
+calibrated against cozy_ghibli's rendered output alone and drifted under
+snes_rpg (two meshes crossed the floor under snes_rpg that passed under
+cozy_ghibli on identical geometry). The next pass tested three sibling
+`art_review.py` checks for the same vulnerability (`check_ramp_coherence`,
+`check_extremes`, `check_grid`) and found none of them shared it, leaving
+`check_light_direction` untested on the theory that light direction is "a
+rendering-stage constant shared by both styles, not a palette property." That
+theory was wrong. Tested directly, on real renders:
+
+Nine real `assetlib.py` props (`counter`, `chair`, `bookshelf`,
+`espresso_machine`, `table_round`, `pastry_case`, `grinder`, `register`,
+`stool`), each rendered at all 8 azimuths under both styles via the real
+`furnish.py` call convention (`frame_all` then `render_sprite`), run directly
+through `check_light_direction`:
+
+```
+cozy_ghibli: 8/72 frames flagged
+snes_rpg:    5/72 frames flagged
+```
+
+Most of that gap is one mesh. `table_round` (a real, shipped generator --
+`furnish.py`'s `table_2top_round` recipe) flags 4 of 8 azimuths under
+cozy_ghibli and 0 of 8 under the byte-identical mesh, camera, and light under
+snes_rpg:
+
+```
+azimuth   cozy_ghibli dy   snes_rpg dy   floor
+ 90       +4.06 FLAG       +1.24         2.56px (h*0.04 @ 64px)
+180       +4.96 FLAG       +1.90
+270       +4.06 FLAG       +1.24
+360       +4.96 FLAG       +1.90
+ 45/135/225/315  (all under floor, both styles)
+```
+
+**Mechanism, confirmed by counting bands, not guessed:** at azimuth 90,
+cozy_ghibli's ramp gives the render 6 distinct OKLab-L steps; snes_rpg's
+gives it 4 (the style's own "fewer shading bands" design intent, working as
+designed). The check picks its "lit" set as the top 20% of pixels by L. Under
+cozy_ghibli, the brightest step is narrow -- 5.8% of all lit pixels, tightly
+isolating the tabletop rim + pedestal-front highlight, which sits low and
+left on screen (+dy, -dx). Under snes_rpg, that same brightest step is wide
+enough (11.9% of lit pixels) to also absorb the tabletop's whole flat top
+face, which is spread evenly across the top half of the sprite -- diluting
+the "top 20%" selection toward the object's vertical centre and pulling dy
+under the floor. Visually confirmed at 8x scale
+(`table_round_dir1_cozy_ghibli.png` / `_snes_rpg.png`, this pass): the same
+highlight is visibly present and in the same place in both renders: it is
+the *measurement*, not the light, that moves.
+
+**No live casualty, this time by construction rather than by luck:**
+`check_light_direction` is the one check in this file whose own docstring
+already says "a rough check, hence only a note" -- `NOTE` severity, the
+lowest of the three. Confirmed directly: `art_review.py`'s own CLI returns 0
+regardless of findings at any severity (`main()`, no exit-code branch on
+`BLOCKER`/`WARNING`/`NOTE`), and grepping `gates.py`/`manifest.py` finds
+`check_light_direction` cataloged in `gates.py`'s deterministic-check list
+with its own docstring as rationale, but never invoked from `manifest.py
+--check` or any other gate that turns findings into a build failure. Nothing
+currently blocks, silently passes-when-it-shouldn't, or fails-when-it-
+shouldn't at a level that stops a build either way -- the only real effect is
+that a human running `art_review.py` directly on a cozy_ghibli render gets an
+advisory note a snes_rpg render of the same object would not.
+
+Documented rather than redesigned, same discipline as `MAX_ISOLATED`: a
+comment above `check_light_direction()` in `art_review.py` now carries this
+measurement and names the real fix (weight by the OKLab gap between adjacent
+bands instead of a fixed pixel-count percentile) without attempting it in
+this pass. **Confirms the bug class from the `check_speckle` finding
+generalizes past a single check** -- and shows it can cut in either
+direction: `check_speckle`'s floor became *more* likely to fire under
+snes_rpg's coarser palette, `check_light_direction`'s became *less* likely
+to, because the two checks route the same "fewer bands" property through
+different math (colour-identity adjacency vs. percentile-of-lightness
+spatial centroid).
+
+## `manifest.py --check` never once called the rig that actually ships for `snes_rpg`
+
+NEXT.md's own PR #23/#24 writeups record, honestly, that `character.py`'s
+`CUSTOMERS` roster fails `check_contrast`/`check_waistline` under `snes_rpg`
+(elder/reader/regular/writer, the same four names this file's own recent
+entries keep re-measuring) and conclude it doesn't matter: *"this specific
+roster is cozy_ghibli-specific, and that's fine, because `style_approve.py`
+already derives `snes_rpg`'s character-roster evidence from `organic_rig.py`
+instead."* That sentence is true of `style_approve.py`. It was never checked
+against `manifest.py --check` itself, the command a person actually runs to
+sanity the pipeline -- and it isn't true there.
+
+`grep -n "organic_rig" tools/manifest.py` on `main` returns nothing.
+`manifest.py`'s `check()` calls seven different `character.py` functions
+against the box/prism roster, unconditionally, for every style -- and never
+once calls `organic_rig.check_roster`, `check_eyes_visible`, or
+`check_direction_stability`, for any style, ever. Concretely, under
+`--style snes_rpg`: the four box/prism blockers above are real lines in this
+command's own output (confirmed, fresh run: `10 errors` total, includes all
+four by name), while `organic_rig.py` -- `style_approve.py`'s own required
+evidence for this style, the rig real output actually uses -- contributes
+zero lines, pass or fail, because it is never called. A person reading this
+command's output has exactly the picture the accepted-limitation note above
+warned against: informed in detail about a roster real output does not use,
+uninformed about the one it does.
+
+This is the same shape as PR #86 (`check_ui` validating the wrong style's
+font) and PR #91-93 (composition/binder/symmetry checks measuring
+`cozy_ghibli`'s numbers under every style) -- a check exercising the wrong
+asset for the active style -- except here the failure mode is not "wrong
+numbers," it's "zero numbers": nothing this command runs would notice if
+`organic_rig.py`'s own cast broke tomorrow.
+
+Checked whether `organic_rig.py`'s checks could just be added unconditionally,
+the way `character.py`'s already are: no. `organic_rig.build()` indexes rig
+dict keys (`head_radius`, `torso_radius`, ...) that only a
+`rig.primitive: cylinder_sphere` bible defines --
+`organic_rig.check_eyes_visible(style_name="cozy_ghibli")` raises a bare
+`KeyError: 'head_radius'`, confirmed directly by calling it. `cozy_ghibli`'s
+own `style_bible.yaml` declares `rig.primitive: box_prism`;
+`snes_rpg`'s declares `cylinder_sphere` (`grep -A2 "^rig:"` on both bibles).
+So the dispatch has to be conditional on that field, and nothing in the
+codebase reads it programmatically today -- `style_approve.py`'s own
+`REQUIRED_PRODUCERS_ANY_OF` comment explains the distinction in prose but the
+actual mechanism there is "any of three producers has an approved lock
+entry," which never needed to branch on `primitive` in code.
+
+Fixed: `manifest.py`'s `check()` now reads `active.rig.get("primitive")` and,
+only when it is `"cylinder_sphere"`, calls `organic_rig.check_roster`,
+`check_eyes_visible`, and `check_direction_stability` against `active.name`,
+folding their messages into the same `errs` list every other character check
+already uses. `cozy_ghibli` (`box_prism`) skips the block entirely, so the
+new code path never executes there and cannot regress it.
+
+Verified, not assumed: `manifest.py --check --style cozy_ghibli` before and
+after this change is line-for-line identical (`3 errors, 9 warnings`, same
+messages). `manifest.py --check --style snes_rpg` before and after is
+identical too (`10 errors, 8 warnings`, same messages) -- `organic_rig.py`'s
+own cast is currently clean (confirmed separately: `check_roster`,
+`check_eyes_visible`, and `check_direction_stability` each return zero
+findings against `snes_rpg` today), so the new block adds real coverage
+without adding noise. Proved the coverage is real, not cosmetic, by
+injecting a deliberate defect -- monkeypatched one `organic_rig.ROSTER`
+entry's hair colour to exactly match its skin colour (zero contrast by
+construction) and re-ran `check()`: a new line appeared,
+`ERROR scout: hair 'skin+1' is 0.000 from skin (need 0.13) -- head reads as
+one lump`, `10 errors` became `11`. `main`'s `manifest.py` would report
+`10 errors` either way -- silent to a real regression in the rig that ships.
+40-test suite passes.
+
+## Follow-up: the fix above added the coverage that was missing, but left the noise it had already diagnosed running
+
+The section above adds `organic_rig`'s three checks for `cylinder_sphere`
+styles and is careful to note, in its own words, that the pre-existing
+box/prism checks "kept reporting on a roster real output never uses." That
+sentence was left as an observation, not acted on: the nine checks above it
+in `manifest.py`'s `check()` (`check_palette_spread`, `check_contrast`,
+`check_waistline`, `check_eye_legibility`, `check_spec_coverage`, the three
+generated-extras checks, `check_roster_variety`, `check_cast_silhouette`,
+`check_accessory_distinct`) still ran unconditionally for every style,
+still fed `errs` (build-blocking), and still fired against `character.py`'s
+own `ROSTER`/`CUSTOMERS` -- a cast confirmed to share zero names with
+`organic_rig.ROSTER` (`elder`/`reader`/`regular`/`writer`/... vs
+`scout`/`archivist`/`drifter`/`smith`/...), the independently-authored roster
+that is the one this style actually ships.
+
+That is precisely NEXT.md's own PR #23/#24 "accepted limitation": *"this
+specific roster is cozy_ghibli-specific, and that's fine, because
+`style_approve.py` already derives `snes_rpg`'s character-roster evidence
+from `organic_rig.py` instead."* The word "accepted" describes the roster
+difference, not the noise -- and `manifest.py --check --style snes_rpg`
+reported that noise as build-blocking every single run, for a cast that has
+never shipped as `snes_rpg` art and, on the codebase's own current design,
+never will.
+
+**Measured before touching anything.** Fresh `manifest.py --check` on both
+styles, on this branch, before this commit:
+
+| style | errors | breakdown |
+|---|---|---|
+| cozy_ghibli | 3 | (unrelated to this section) |
+| snes_rpg | **10** | 4 already-documented box/prism blockers (elder hair/skin, reader/regular/writer waistline) **+ 3 not previously named in this file**: `check_eye_legibility` failing at skin tones `skin-2`/`skin-3`/`skin-4` (0.147 against a 0.15 floor) -- the box/prism block's own eye-visibility check, also firing on a cast that doesn't ship, also never mentioned as part of the "4 blockers" this repo's own memory of itself had settled on. Plus 3 unrelated composition errors (galley/L-run, PR #77's already-accepted finding). |
+
+The 3-skin-tone eye-legibility failures are a real addition to the record,
+not a restatement: every prior mention of this limitation (this file, NEXT.md,
+this session's own running notes) named exactly 4 box/prism blockers. There
+were 7.
+
+**Fix:** wrapped the nine box/prism checks in `if active.rig.get("primitive")
+!= "cylinder_sphere":`, the exact mirror of the `== "cylinder_sphere"` gate
+the section above already added for `organic_rig`. `box_prism` styles (today:
+`cozy_ghibli`) run every one of these checks exactly as before -- the branch
+is never taken for them, so there is no way for it to regress that style.
+
+**Verified, both directions, full runs, not `--only` slices:**
+
+| | cozy_ghibli | snes_rpg |
+|---|---|---|
+| before | 3 errors, 9 warnings | 10 errors, 8 warnings |
+| after | 3 errors, 9 warnings (byte-identical) | **3 errors**, 8 warnings |
+
+`snes_rpg` dropped by exactly the 7 box/prism findings named above; the 3
+composition errors and all 8 warnings (occlusion, `plant_hanging`, the
+`ui_snes_rpg` not-built notice) are untouched, character for character.
+`cozy_ghibli` is unchanged to the line. 40-test suite passes.
+
+This does not touch `organic_rig.py`'s own detection or its checks (both
+added by the section above, unmodified here) -- it only stops a second,
+non-shipping producer's failures from being reported as if they blocked the
+style that does ship. Left on this same branch/PR rather than a new one,
+since it directly completes the reconciliation that PR's own write-up had
+already diagnosed but not finished.
+
+## The entire prop library ships without the texture treatment rooms and characters get
+
+"Surface grain" (this file, above) is documented as "the largest single
+change" to this project's rendering -- world-space, anisotropic, per-material
+tonal noise that breaks up flat blockout surfaces, calibrated hardest on
+`wood` (0.85 of a ramp step, the largest amplitude in `GRAIN_BY_RAMP`) because
+wood holds the largest unbroken flat areas. `render_room.py`, `animate.py`
+and `preview_characters.py` all call `mesh.rasterize()` directly with
+`grain=1.0, ramps=ramps`. `render_batch.render_sprite()` -- the function
+`furnish.py` renders the *entire prop library* through, per that same
+function's own comment two paragraphs up about a different, already-fixed
+gap ("this call site was missed, which matters because `furnish.py` renders
+the entire prop library through it") -- never exposed `grain` or `wear` at
+all. Every chair, bookshelf, counter and shelf in this game ships with
+perfectly flat wood, while every room background and every character does
+not.
+
+Found by a second AST scan, complementary to the unused-parameter one that
+found the last two hours' fixes: this time scanning for a function that
+calls a sibling sharing a parameter name without forwarding it. Most of the
+18 hits were namesake collisions with unrelated meanings (`target` means
+"output resolution" in `render_sprite` and "world-space camera aim point" in
+`rasterize` -- a false positive, not a bug). This one wasn't a false
+positive in the usual sense either -- `render_sprite` didn't even expose
+`grain`, so there was no parameter to accidentally drop; it's the same
+"sibling call site missed" shape the function's own nearby comment already
+names, in a place nobody had looked for a second instance of it.
+
+**Measured, not assumed -- and the first surprise was the metric itself.**
+Comparing the *distinct colour count* of a `bookshelf`/`chair` render with
+`grain=0` vs `grain=1` at `furnish.py`'s real `--target 64 --factor 4`
+showed zero difference (13 vs 13, 7 vs 7) -- which would have wrongly closed
+this as a non-issue. Grain doesn't add new colours; it moves EXISTING ramp
+steps around spatially. Comparing per-pixel identity instead: 246 of 4096
+final pixels differ on `bookshelf` alone. The raw pre-quantization lambert
+buffer differs on 22,982 of 65,536 pixels (max deviation 0.11, comfortably
+under the one-ramp-step cap `GRAIN_BY_RAMP` documents). Visually confirmed
+at 8x scale across three real props (`bookshelf`, `chair`, `counter`, seed
+1, azimuth 45, real furnish.py resolution): every flat wood surface gains
+visible mottled texture with grain on, most clearly on the bookshelf's side
+panel and the counter's front face -- reading exactly like the "wood grain"
+effect this file already documents for rooms, because it *is* that effect,
+applied to a surface category that was never wired to receive it.
+
+**Fixed narrowly: the capability, not the default.** `render_sprite` gains
+`grain: float = 0.0, wear=None`, forwarded to `rasterize` (`ramps` only
+passed through when `grain > 0`, matching `rasterize`'s own gate). Default
+stays 0.0 -- `render_sprite` has callers `render_room.py`/`animate.py`/
+`preview_characters.py` don't: `character.py`, `organic_rig.py` and
+`portrait.py` all call it twice per eye-legibility check to diff a `plain`
+head against an `eyed` one pixel-for-pixel, and grain is world-space noise
+that would put false positives into that diff. A default flip belongs to
+whichever call site opts in deliberately, not to this shared function.
+
+**Zero regression, confirmed.** Hashed `render_sprite`'s real pixel output
+for 3 props x 2 azimuths, pre- and post-fix (`git stash`), byte-identical on
+every one -- no existing caller passes `grain`, so none of them moved.
+`character.py`'s own `main()` (0 blockers) and `organic_rig.py`'s (silhouette
+stability holds, roster clears contrast/waistline) both re-run clean.
+40-test suite passes.
+
+**Left open, deliberately: whether `furnish.py` should actually opt in.**
+That is a whole-prop-library visual change -- every already-shipped sprite
+would look different -- and this session's own standing discipline is not to
+make that call unilaterally (see the albedo-floor recalibration and the
+per-style roster-override scoping, both deferred for the same reason). The
+capability is real, measured, and visually positive on every sample tried;
+turning it on for the shipped library is a decision for a human looking at
+the images, not a line this PR changes. Branch
+`render-sprite-grain-wear-unwired`, new (unrelated to any other open PR's
+subject) -- left unmerged.
+
+## `isorender.py`'s own projection assertion ignored the tolerance it declared
+
+Same discovery method as last hour's `bitmap_font` finding (an AST scan for
+function parameters never read in their own body), a different hit:
+`verify_projection(tol: float = 1e-6)` -- the function `isorender.py`'s own
+module docstring points to as proof the 2:1 dimetric projection claim
+"asserts it rather than trusting the arithmetic" -- accepted a `tol`
+argument and then asserted against a hardcoded `1e-6` literal instead of the
+parameter with that name. Every real call (`prove_shading.py`; `tileset.py`,
+twice) uses the default, so this never diverged in the shipped pipeline --
+same "no live casualty" shape as this session's font-weight findings, not a
+hypothetical one.
+
+**Confirmed the bug directly, not just by reading it.** The camera's own
+trig currently measures a deviation of ~5.6e-17 from the true 0.5 ratio
+(floating-point precision, not a real defect). Calling
+`verify_projection(tol=1e-20)` -- deliberately far stricter than that real
+deviation, which should fail if `tol` were honored -- **passed silently**,
+because the hardcoded `1e-6` was checked instead of the requested `1e-20`.
+That is airtight proof the parameter was decorative: a request for
+sub-attometer precision was silently downgraded to micron-scale precision
+with no error.
+
+**Fixed by checking against `tol` instead of the literal.** One-line change:
+`assert abs(ratio - 0.5) < tol`. Verified default-call behavior is
+byte-identical (`verify_projection()` still returns the exact same
+`0.49999999999999994`, same as before the fix); `tol=1e-20` now correctly
+raises; a genuinely loose `tol=1e-3` still passes, as it always did. Real
+callers re-run end to end post-fix: `prove_shading.py` ("projection check:
+0.500000000000 (exactly 2:1)") and `tileset.py --style cozy_ghibli` (both
+call sites, floor and wall tiling, unchanged output). 40-test suite passes.
+
+Branch `isorender-verify-projection-tol-blind`, new (unrelated to any other
+open PR's subject) -- left unmerged.
+
+## `bitmap_font.py`'s own layout helpers were weight-blind, same bug class as the Godot font-layout check, one file over
+
+The font-layout check `export_godot.py` fixed elsewhere this session
+(`check_font_layout`, see that section) was one symptom of a wider habit
+inside `bitmap_font.py` itself: `raster`/`glyph_box`/`ink_of`/`draw` all
+correctly thread `weight` through to the actual rasterizer, but `measure` --
+the function every width-based layout decision in this file goes through --
+never took a `weight` argument at all, and silently rasterized at
+`glyph_box`'s own default of 1 no matter what was actually being measured.
+Found by scanning every function in `tools/*.py` for a parameter that is
+never referenced in its own body (the same shape as `fridge_under`/`tip_jar`'s
+ignored `seed`, from earlier this session): `fit_cap`'s own `weight`
+parameter never reached `measure`, so a caller asking "does this fit at
+weight 2" silently got weight 1's answer.
+
+That alone would be a dead-parameter finding with no live path -- nothing in
+this repo calls `fit_cap` today (`ui_chrome.py` mentions it only in a
+comment). But the same defect reaches further than `fit_cap`: `render_line`
+-- the function `bitmap_font.py`'s own `--sample`/`--weight` CLI flags call
+directly -- sizes its output canvas with `measure(text, cap, tracking)`
+(weight-blind) and then draws the real ink with `draw(..., weight=weight)`
+(weight-correct). At weight 1 the two numbers agree by construction. At any
+other weight they don't, and `ui_chrome.Canvas.put`'s own bounds check
+(`0 <= x < self.w`) silently drops whatever ink falls outside the
+under-sized canvas -- so the rightmost several pixels of a bold sample line
+are rasterized and then thrown away, with no error and no BLOCKER, reachable
+by running the tool exactly as its own module docstring demonstrates
+(`python tools/bitmap_font.py --sample "..." --weight 2`).
+
+**Measured, not assumed.** Built real weight-2 renders via `render_line`
+itself (the actual production function, not an approximation) across five
+sample strings from the real UI copy and all four shipped cap sizes, and
+compared the canvas width it produced against the real ink extent `ink_of`
+reports at that same weight:
+
+    text              cap   canvas_w (pre-fix)   real ink needs   pixels silently dropped
+    Flat White         7           47                  57                   30
+    Flat White        13          100                 110                   46
+    0123456789         7           50                  60                   44
+    0123456789        13          109                 119                   55
+    Order #42          7           45                  54                   35
+    Order #42         13           97                 106                   43
+    gjpqy               7           26                  31                   11
+    gjpqy              13           53                  58                    6
+
+Every sample at every cap loses ink at weight 2, 6-55 real pixels depending
+on string length and cap size -- the trailing 1-2 characters' rightmost
+strokes, consistently. Visually confirmed at 8x nearest-neighbour scale
+(`out/font_sample.png`, `--sample "Flat White" --cap 13 --weight 2`): the
+pre-fix render's closing "e" is visibly sheared off; the same render with
+the fix applied shows a complete "White".
+
+`fit_cap` has the identical shape without needing Canvas at all: at
+`weight=2` it kept returning the exact same cap `weight=1` would have
+picked, for every sample and width tried, because it was calling the same
+weight-blind `measure`. Checked against the REAL weight-2 ink extent
+(`ink_of`, which does honor weight): the caps it picked routinely didn't
+fit -- e.g. `'Flat White'` at a 100px box, `fit_cap` said cap 13 fit at
+either weight, but cap 13's real weight-2 ink is 108px, 8px over the box it
+was declared to fit.
+
+**Fixed at the root, not per-caller.** `measure` gained a keyword-only
+`weight: int = 1` parameter, threaded to `glyph_box` exactly the way
+`ink_of`/`raster` already do. `wrap` gained the same, threaded into its own
+`measure` calls, since a wrap decision has the identical shape (a width
+comparison against text at a specific weight). `fit_cap` and `render_line`
+already accepted `weight` in their own signatures -- both just stopped
+dropping it, now passing it into `measure`. `block`'s `**kw`-forwarded
+`weight` is threaded into its own `wrap` call; its separate
+`glyph_box("A", cap)` call for line-height math is deliberately left at
+weight 1 -- checked directly (`glyph_box('A', cap, 1)` vs `glyph_box('A',
+cap, 2)` across all four shipped caps), height and baseline are identical at
+every weight, only advance changes, so that call was never the bug.
+
+**Zero regression at weight 1** (the only weight this repo has ever shipped,
+same fact PR #97's own finding established): captured `measure`, `wrap`,
+`fit_cap`, `render_line` and `check`'s output across 7 sample strings, 4
+call patterns and all 4 shipped cap sizes before and after the fix (70
+comparisons, `render_line`'s own rendered pixels hashed rather than
+eyeballed) -- identical on every one. `bitmap_font.py --check` still reports
+legible caps 7-20 and `SIZES = (7, 9, 11, 13)` unchanged. 40-test suite
+passes.
+
+Left as `weight=1` default everywhere, same as every other function in this
+file -- this is a coverage-gap fix, not a behavior change, for the same
+reason PR #97's was: nothing in the shipped pipeline calls any of these
+functions with a non-default weight today. The gap was real regardless,
+silently corrupting output the moment anything did, and the discovery method
+(scan every function for a parameter never read in its own body) is
+general -- worth re-running periodically rather than trusting this pass
+caught everything of this shape once. Branch `bitmap-font-weight-blind-layout`,
+new (unrelated to PR #97's `export_godot.py` subject, though the same root
+cause) -- left unmerged.
+
+---
+
+## `export_godot.py`'s font check recomputes a number the build already got right, weight-blind
+
+`NEXT.md`'s own migration-order notes name `export_godot.py` as one of two
+files "not yet looked at closely enough to know whether it carries the same
+accepted-but-ignored risk" as the `--style`-accepted-but-unthreaded bug
+class PRs #23-#25 fixed elsewhere (`art_review.py`, the other file that
+notes name, was already audited and found clean in PR #31). Looked at it
+closely this pass.
+
+`check_font_layout` (`tools/export_godot.py`) runs Godot's own TextServer
+headless against the exported `.tres` font and compares each string's real
+layout width to `bitmap_font.measure(text, cap)` -- the "bitmap_font says"
+side of the check. `measure()` recomputes every glyph's advance from
+scratch via `glyph_box(ch, cap)`, which defaults its `weight` parameter to
+1 and never receives anything else, no matter what weight the font actually
+being checked was built at. Nothing in this repo passes `--weight` other
+than 1 today (checked: no call site in `package_godot.py`/`manifest.py`,
+no `weight` key in either style's `bible.yaml`), so this has never actually
+diverged -- but it is a real, reproducible latent gap, the same shape as
+this session's other "coverage gap, no live casualty" fixes, not a
+hypothetical one.
+
+Measured directly, not assumed: built the font twice via `bitmap_font.py`'s
+own real `atlas()`/`raster()` functions, once at `--weight 1` (today's only
+real setting) and once at `--weight 2`, then compared `measure()`'s
+recomputed width against each glyph's REAL advance (the one `atlas()`
+already baked into `font.json` at build time, the same number `stage_font()`
+passes through unchanged into the `.tres` Godot actually loads) across all
+four cap sizes and all eight of `verify_font.gd`'s own real sample strings:
+
+    weight=1 (today's only real build):  0 divergences / 32 comparisons
+    weight=2 (hypothetical, same code):  32 divergences / 32 comparisons,
+                                          `measure()` under-reporting every
+                                          string by 4-10px depending on cap
+
+At weight 1 the two computations agree byte-for-byte on every sample --
+confirming this has never fired a false pass or false fail under any build
+this repo has actually shipped. At weight 2 `measure()` is wrong on all 32,
+because a bolder stroke genuinely does push a glyph's rightmost ink pixel
+further right (`raster()`'s own comment: "the advance is the ink's own
+right edge... MEASURED rather than declared"), and `measure()`'s hardcoded
+weight=1 recomputation cannot see that.
+
+**Fixed by not recomputing at all.** `atlas()` already writes each glyph's
+real, weight-correct advance into `font.json`'s `glyphs` dict, which
+`package_godot.stage_font()` already passes through unchanged into `build`.
+`check_font_layout` now sums `build["font"]["sizes"][cap]["glyphs"][ch]
+["advance"]` for each character instead of calling `bitmap_font.measure()`
+-- reading the number that was actually shipped rather than re-deriving an
+approximation of it, one fewer place for the check's own reference value to
+drift from the real build. `bitmap_font`'s only remaining role in this
+check was the now-removed import; nothing else in `export_godot.py`
+changed. Verified: the 0-divergence / 32-divergence numbers above were
+produced by the exact comparison the patched function now performs
+in-process (font built fresh into a scratch `--out`, not the tracked
+`out/ui/font/`, and removed after); the check's OTHER half -- whether
+Godot's TextServer agrees with what `atlas()` baked in -- is untouched,
+same `verify_font.gd` script, same subprocess call. 40-test suite passes.
+
+Branch `font-layout-weight-blind`, new (unrelated to any other open PR's
+subject) -- left unmerged.
+
+### Addendum: the same proof, run against the live Godot engine, not just in-process
+
+The verification above was explicitly scoped to an isolated in-process
+comparison -- `bitmap_font.atlas()`/`measure()` called directly in Python,
+never touching a running Godot instance -- because building the complete
+asset library locally to run the full `export_godot.py main()` pipeline
+(stage -> headless Godot `--import` -> headless Godot `--script
+build_all.gd` -> round-trip checks) was judged too expensive to justify at
+the time. That gap is closed here.
+
+`NEXT.md`'s own historical notes (an earlier, already-landed PR) record a
+cheap way to get real, non-fabricated content into an otherwise-empty local
+`out/` tree without building the whole library: `furnish.py --only <ids>`.
+Used it to build two real props (`grinder_burr`, `chair_wood`), then built a
+real `--weight 2` font via `bitmap_font.py --style cozy_ghibli --weight 2`
+(the same non-default weight the isolated proof above used), then ran the
+complete, unmodified `export_godot.py` pipeline with this branch's fix
+applied -- real staging, a real headless Godot 4.3 `--import` pass, a real
+headless `--script build_all.gd` build, and the real round-trip check. Full
+result:
+
+    -- round-trip check --
+      Godot reads all 5 palettes x 40 colours exactly, at nearest filtering
+      32 string widths match between Godot and bitmap_font
+
+All 32 comparisons pass against live Godot TextServer output, at the exact
+weight (2) where the pre-fix code was proven wrong on all 32 in isolation.
+
+That alone doesn't prove the fix was load-bearing for this run, though --
+it's also what a no-op check would report. So the contrast was run too:
+captured the same real `VERIFY_FONT_JSON:` output this pipeline run produced
+(via Godot's `verify_font.gd`, re-invoked directly, no need to re-run the
+import/build_all steps since their artifacts already existed) and replayed
+the OLD pre-fix comparison logic (`bitmap_font.measure(text, cap)`, the
+weight-blind recompute) against it in Python:
+
+    32/32 flagged as false BLOCKERs by the pre-fix code, against this
+    exact same real Godot output -- 4-10px under-reported per string,
+    matching the isolated proof's numbers exactly (e.g. cap 13
+    '0123456789': Godot 117px vs OLD recompute 107px, diff 10px)
+
+So on the identical real engine output: the fix reports a clean pass, the
+pre-fix code reports 32 false positives. This upgrades the finding from "an
+isolated Python-only proof, believed to generalize to the real pipeline" to
+"proven against live Godot engine output, with the old code's failure mode
+reproduced on that same output as the control." No further code change --
+`check_font_layout` is unchanged from the fix above.
+
+Local build state used for this: `furnish.py --only grinder_burr
+chair_wood` and the weight=2 font build wrote into the real (gitignored,
+never committed) `out/sprites/`, `out/ui/font/`, and
+`godot_export/project/resources/` locations rather than a scratch dir,
+because `export_godot.py`'s full pipeline doesn't support redirecting
+output elsewhere. The weight=2 test font was removed afterward to restore
+pre-test state; the two furnished props were left (harmless additions to an
+already-populated local sprite cache, not tracked by git either way).
+
+## The key-light-drift check's remaining hypothesis, tested and closed
+
+"The key-light-drift check was right about the drift and wrong about the
+cause" (above) left one door open: the dominant-ramp restriction it tried
+was an *approximation* of per-pixel material identity, and the section
+ended on "a fix that actually separates the two signals needs the raw
+per-pixel material id `rasterize()` already computes and `review_queue.py`
+never receives -- it only ever sees the final quantized PNG." That reads as
+an untried lever, exactly the shape this file exists to chase down, so it
+was chased down this pass.
+
+The buffer isn't actually missing. `render_batch.render_sprite()` computes
+it already -- `mat_small`, the real per-face material token from
+`mesh.rasterize()` carried through the same modal downsample the final PNG
+gets -- and just never returns it, because its only consumer today is
+`apply_outline()` inside the same function. Pulled it out (calling
+`rasterize()` and `downsample_modal()` again, outside `render_sprite`, on
+the same 8 real ship azimuths via `frame_all()` for exact parity with what
+`factory.py` actually renders) and restricted each frame's brightest-pixel
+pool to the asset's own cross-frame-stable body material -- the token with
+the largest *minimum* per-frame area share across all 8 directions, not a
+per-frame guess, which is a more principled selector than "dominant ramp"
+was.
+
+Verified the harness first: re-measuring the *unrestricted* spread through
+this real pipeline (real `_bound.obj` meshes from `out/mesh/`, real
+`frame_all()` span/centre fit, real `render_sprite()`, target 64 / factor 4,
+`cozy_ghibli` palette -- not a hand-rolled approximation) reproduced the
+already-published numbers exactly: kettle 3.5x4.5, candle 5.1x3.9. That
+match is what makes the restricted numbers below trustworthy rather than an
+artefact of a different measurement space.
+
+    object          unrestricted (pass/fail)   body-material-restricted
+    kettle          3.5x4.5   [ok]              12.1x7.5   [fail]
+    candle          5.1x3.9   [ok]               7.8x14.5  [fail]
+    french_press    3.2x4.9   [ok]                6.4x15.3 [fail]
+    teapot         11.5x5.7   [fail, x only]      6.6x18.7 [fail, worse]
+    cutting_board    9.2x9.7  [fail]             29.3x32.5 [fail, worse]
+    picture_frame  10.6x21.1  [fail]              28.4x28.3 [fail, worse]
+    wall_clock     21.1x17.7  [fail]              17.9x14.1 [fail, ~same]
+
+Strictly worse than the already-rejected dominant-ramp attempt, on every
+axis that attempt was measured against. All three round-object controls
+broke, not just candle. Neither case dominant-ramp partly helped (teapot,
+cutting_board) improved -- both got noisier instead. Getting the real
+buffer did not unlock the fix the docstring deferred to it.
+
+The reason is in `ingest.py`'s `bind_colour()`: a material token is a ramp
+name plus a lightness-step offset from that ramp's own middle step --
+`"neutral"` vs `"neutral-1"` vs `"neutral+2"` are three different tokens,
+not one. "This frame's dominant material" is therefore finer-grained than
+"this frame's dominant ramp" was, and measured min per-frame share for the
+chosen body-material token ranged 3%-43% across these seven objects -- even
+a visually-uniform round surface like a kettle's body is split across
+several step tokens by ordinary toon shading, so restricting the pool to
+one throws away most of the very population (a broad tonal gradient across
+the whole curved surface) that keeps a round object's centroid estimate
+stable in the first place. This is the same failure shape as the
+dominant-ramp attempt, not a different one that a finer key happens to
+share -- both are "restrict the brightest-pixel pool by material identity,"
+and any granularity of that idea, tested twice now, costs more stability on
+round objects than it buys on flat ones.
+
+**Verdict: does not generalize, and the specific hope this file's own
+prior entry left open is now closed, not just untried.** `check_direction_set`
+is unchanged -- still fires on 19 of 22, still correctly scoped to the three
+round objects as a regression guard, per the existing writeup. The
+docstring's "doesn't have that buffer today" line is updated in place to
+"has the buffer, tried it, it's worse" so a future pass doesn't re-derive
+and re-try the same idea a third time. No code behavior changed; this is a
+documentation-only commit, verified only by the numbers above (there is no
+image to inspect -- nothing about the check's shipped behavior or any
+sprite's pixels moved).
+
+## `check_member_thickness`'s own sibling in `review_library()` had the exact
+## single-azimuth gap its neighbour was already fixed for
+
+`review_library()` runs two mesh checks over every `assetlib.py` generator:
+`check_buried_detail` (fixed for exactly this shape in an earlier pass, its
+own docstring stating the fix in plain terms -- "pass all eight for anything
+that ships as a rotating sprite") and, one call above it in the same
+function, `check_member_thickness` -- still hardcoded to `DimetricCamera
+(45.0)`, never touched. Every asset it checks IS one of those rotating
+sprites: `furnish.build_one` renders and saves 8 real PNGs per asset,
+unconditionally, at `45 + k*45` for `k in range(8)` -- `assets.yaml`'s `sym`
+field only trims the render BUDGET accounting elsewhere, it does not change
+which raw angles `furnish.py` actually generates a file for. So a flat panel
+that goes edge-on at some other angle ships a real, saved sprite this check
+never looked at.
+
+**Swept all 55 library assets across the real 8-azimuth set, not assumed.**
+One already-known failure (`plant_hanging`, previously reported at 35% from
+its single 45-degree sample) reproduces, now at a slightly different
+worst-case number from a different azimuth (38% at 135). Four assets that
+pass cleanly at 45 degrees fail hard at 180 (their own worst angle, matching
+this file's established "the default is the best case, not a blind spot
+hiding a pass" shape from the `table_communal` azimuth sweep): `menu_board`
+and `wall_sign` (both declared `2fold` in `assets.yaml`) and `wall_art_framed`
+(also `2fold`) all measure **100%** thin at 180 degrees -- the panel is
+rendered edge-on, ~1px wide, a vertical sliver where a flat rectangle should
+be. `sandwich_board` (`chalkboard_easel`, declared `sym: none` -- genuinely
+ships all 8 distinct frames, no symmetry-based ambiguity possible) measures
+**23%**, over the 20% floor, at the same 180-degree angle -- and this exact
+asset is already NAMED in the check's own docstring as a documented finding
+("a sandwich board built from zero-thickness quads measured 3px... a
+standing plane seen near edge-on collapses to a line"), just measured at the
+one angle (45) where that collapse happens to be mild.
+
+**Visually confirmed, not just numerically.** Rendered all four at all 8 real
+ship azimuths (`proof/member_thickness_edge_on.png`): six of eight frames
+show a normal, legible flat panel for every asset; the 180-degree frame (and,
+for the three `2fold` panels, the 0-degree frame too, matching their declared
+symmetry) shows a thin diagonal line or a razor-thin sliver -- unmistakably a
+"stray wire," exactly the failure class `MAX_THIN_SHARE` exists to catch.
+
+**A methodology choice that would have silently shipped a check that still
+couldn't see the defect, caught before writing the fix, not after.** The
+first design pooled every requested azimuth's runs into one combined share
+(sum thin pixels / sum total pixels across all 8 views) -- the natural
+generalization of the single-view formula. Ran it against the real library
+before committing to it: **every one of the four edge-on cases dropped back
+under the 20% floor**, because a fully edge-on view contributes almost no
+pixels at all, so its 100%-thin run barely moves a ratio dominated by the
+other seven, mostly-solid views. Pooling was the wrong lever for exactly the
+same reason a global roster recolour was the wrong lever in an earlier hour's
+finding: it touches a different, less-targeted quantity (an ACROSS-VIEW
+average) than what the check actually needs to answer ("does ANY real,
+shipped frame of this asset read as wire"). Fixed by judging each requested
+azimuth independently and reporting the worst one, not the pooled average --
+confirmed this is what actually surfaces all four cases before shipping it.
+
+**Verified, both styles, zero regression on everything already passing.**
+`check_member_thickness(mesh, name, floor_px, azimuths=(45.0,))` -- signature
+extended, default unchanged, so any other caller is unaffected by
+construction (`review_library` is its only caller in this repo). Full
+55-asset library swept at the real 8-azimuth set: exactly the five findings
+above, nothing else newly fails, nothing that previously failed newly
+passes. `manifest.py --check --style cozy_ghibli`: 3 errors (unchanged), 8
+warnings -> 12 (four new, additive, non-blocking -- this check has always
+reported through `warns`, not `errs`). `--style snes_rpg`: 10 errors
+(unchanged, this check is pure mesh geometry with no palette involved --
+same 4 new warnings, same numbers, confirming style-independence rather
+than assuming it). 40-test suite passes unchanged.
+
+**Left unfixed on purpose, same discipline as `check_buried_detail`'s own
+four findings.** This is a coverage-gap fix, not a geometry fix -- the four
+panels' actual thinness at 180 degrees is real, new information, not
+something this branch claims to have solved. A menu board, a wall sign and a
+framed art print are all meant to hang flush against a wall; whether the
+game ever actually presents a player with their 180-degree view (backing
+onto the wall) is a placement-and-camera question this check cannot answer
+and this hour did not investigate -- recorded here rather than assumed
+either way.
+
+## `character.py`'s "accepted, not-fixed-by-design" roster finding (PR #23)
+## reproduces, and had a real, untried third lever
+
+`NEXT.md`'s PR #23 write-up, later re-confirmed unchanged by PR #27's
+`animate.py --style` work, documents `character.py --style snes_rpg` failing
+`check_contrast` on `elder` (hair 0.088 from skin, need 0.13) and
+`check_waistline` on `reader`/`regular`/`writer` (shirt-vs-trousers 0.022 /
+0.040 / 0.080, need 0.085) -- and explicitly frames this as accepted, not
+fixed: "fixing the roster's colours risks breaking `cozy_ghibli`'s clean
+pass, and fixing the check floors would defeat their purpose." Re-ran both
+checks against the current checkout to confirm the claim before touching
+anything -- it reproduces exactly, same four names, same numbers:
+
+```
+elder: hair 'cream+1' is 0.088 from skin (need 0.13) -- head reads as one lump
+[waist] reader: shirt 'foliage' and trousers 'wood' are 0.022 apart in value (need 0.085)
+[waist] regular: shirt 'rose' and trousers 'wood' are 0.040 apart in value (need 0.085)
+[waist] writer: shirt 'sky' and trousers 'wood' are 0.080 apart in value (need 0.085)
+```
+
+**Root cause, confirmed by dumping both palettes' ramp L-values, not
+guessed:** `snes_rpg`'s palette is deliberately more saturated and lower-band
+than `cozy_ghibli`'s, and its `wood` ramp's mid-value dropped from L=0.600
+(cozy) to L=0.559 (snes) while `foliage`/`rose`/`sky` all compressed toward
+it from above (foliage 0.696->0.581, rose 0.716->0.600, sky 0.700->0.639) --
+four ramps that were comfortably spread apart under `cozy_ghibli`'s own
+lightness range converge under `snes_rpg`'s. `elder`'s skin tone (L=0.861 in
+snes_rpg, vs 0.700 in cozy) also happens to land almost inside its own
+`cream` hair ramp's range (0.681-0.949) under `snes_rpg` specifically, which
+is why `cream+1` -- fine under cozy -- reads as one lump there.
+
+**Both checks are pure OKLab-L comparisons on literal ramp+offset tokens
+(`ramps[ramp][index]`), not on rendered pixels.** Unlike PR #80/#81's UI/3D
+speckle, there is no downstream pixel/deterministic post-process available
+here at all -- the check never looks at a rendered pixel, so a despeckle-
+shaped fix is structurally not on the table for this one. The two levers PR
+#23 considered (recolour the shared roster globally, or loosen the check
+floor) are the only two that touch a *global* variable. Neither was checked
+against a **third, narrower lever**: override the specific failing fields
+**per style**, leaving `cozy_ghibli`'s own assignments completely untouched.
+
+**Verified empirically, not assumed:**
+
+- `character.ROSTER_OVERRIDES["snes_rpg"]` patches `elder.hair_mat` ->
+  `"cream-3"` (same ramp, three steps darker -> gap 0.180, clears 0.13) and
+  `reader`/`regular`/`writer`'s `trousers` -> `"wood-1"` (one step darker ->
+  gaps 0.170/0.189/0.228, all clear 0.085). All four picked by scanning the
+  ramps' own step tables for a legal offset that clears the floor, not by
+  guessing once and hoping.
+- `character.py --style snes_rpg`: 4 blockers -> **0 blockers**.
+  `character.py --style cozy_ghibli`: 0 blockers before and after (the
+  override table has no `cozy_ghibli` entry, so `roster_for("cozy_ghibli",
+  ...)` returns the input list unchanged -- structurally unreachable, not
+  just re-tested).
+- `check_palette_spread` and `check_roster_variety` (screen-space pairwise
+  distinctness, which involves an actual render pass) both still pass on the
+  overridden `snes_rpg` roster -- the fix doesn't trade one failing check for
+  another.
+- **Zero-regression, proven with real renders, not inferred:** sha256 of
+  `elder`/`reader`/`regular`/`writer`/`barista` rendered under
+  `--style cozy_ghibli` (azimuth 0, `render_batch.render_sprite`) is
+  byte-identical before and after this change (`git stash` A/B, all 5
+  hashes match). The 40-test suite passes unchanged.
+- **Visually confirmed, both fields:** `elder`'s hair goes from pale ivory
+  that visually blends into the hairline at the forehead to a clearly
+  separated tan/khaki that still reads as an appropriate light/grey elderly
+  hair colour. `reader`/`regular`/`writer`'s trousers, rendered seated
+  (`character.build(spec, seated=True)`, azimuth 45, where the leg is
+  actually exposed on screen) go from a value that nearly matches the shirt
+  to a visibly darker, distinct step -- looked at directly, not inferred from
+  the numbers alone.
+
+**Shipped for real, not just at check-time:** the override was threaded into
+the actual rendering path, not only the check. `animate.py`'s own roster
+construction (`[C.BARISTA] + C.CUSTOMERS`, the literal list that becomes
+every `snes_rpg` sprite sheet) now resolves through `character.roster_for
+(args.style, ...)` too -- otherwise the check would pass while the shipped
+sprites still carried the uncorrected colours, the exact "a check that
+cannot fail for the thing it claims to certify" anti-pattern this file's own
+discipline rule already names. `portrait.py`'s `check`/`build`/`demo` got the
+same threading, since a portrait bust is a dead-on closeup where `elder`'s
+hair/skin collision is at least as visible as on the 46px sprite.
+
+**A fourth, live call site was found only by re-running `manifest.py --check`
+after the fix, not by grepping ahead of time.** An earlier pass this hour
+grepped for `check_eyes_visible`/`check_determinism`/`check_palette_exact`
+(`portrait.py`'s OWN checks) across `manifest.py` and found no match, which
+correctly ruled those out. But `manifest.py` separately calls
+`character.check_contrast`/`check_waistline`/`check_palette_spread` directly
+on the bare `C.ROSTER` (added by PR #78, "fix-manifest-missing-contrast-
+check" -- itself a fix for this exact call being absent, landed before this
+session's window and not visible in a name-only grep for `portrait.py`'s
+functions). Re-running `manifest.py --check --style snes_rpg` after the
+`character.py`/`animate.py`/`portrait.py` changes above still showed the
+same four errors, unchanged, 10 total -- the override existed but this call
+site never used it. Threaded `character.roster_for(active.name)` into
+`manifest.py`'s three call sites (`check_contrast`, `check_waistline`,
+`check_palette_spread`; `check_eye_legibility`/`check_spec_coverage` measure
+different fields, untouched). `manifest.py --check --style snes_rpg`:
+10 errors -> 6, the remaining six being the separate, pre-existing skin-tone
+eye-legibility and room-composition findings this fix does not touch.
+`--style cozy_ghibli`: 3 errors, 8 warnings, unchanged before and after. The
+40-test suite passes after this addition too. Recorded here as a reminder
+that a name-grep proves absence only at the moment it's run -- rerunning the
+actual check after a fix is what caught the site the grep couldn't see.
+
+**This is a scoped patch, not the general fix, and that's stated rather than
+hidden.** The general fix is giving `CharacterSpec`'s colour fields a
+per-style `materials:` role instead of a literal ramp token -- the same
+deferred `assetlib.py`/`character.py` import-order generalization this
+file's earlier `wall_panel()` finding (PR #29) already pointed at, still not
+attempted here. `ROSTER_OVERRIDES` is a small, explicit, four-entry table
+that only ever applies to `snes_rpg` and only to the four fields it names;
+it does not generalize to a fifth style without a fifth hand-picked entry.
+That's an honest limitation of this fix, not a claim that the deeper
+generalization is unnecessary.
+
+**Net result:** the "accepted, not-fixed-by-design" framing in PR #23/NEXT.md
+was half right -- the two levers it named really don't work without a
+tradeoff -- but the finding as a whole does not hold: a real, safe, verified
+third lever existed and was never tried. `portrait.py --check --style
+snes_rpg` still reports the separate, pre-existing `reader` eye-occlusion
+blocker from PR #24 (a hair-geometry issue, unrelated to this fix, left
+exactly as-is -- not touched, not hidden).
+
+## `check_symmetry_claims`'s own `measured_symmetry` was bare -- a closed blind spot, not a defect
+
+Same sweep as the `check_focal_contrast` and `ingest.py` findings above:
+`manifest.py`'s FX symmetry cross-check, `check_symmetry_claims(fx_declared,
+fx_meshes)`, called `measured_symmetry(mesh)` bare -- no `ramps` -- despite
+that function already accepting one. `measured_symmetry` doesn't compare
+silhouettes; its own docstring is explicit that a first version comparing
+the raw lambert buffer was wrong and it compares "the quantized sprite" --
+full colour, after `shade_toon`'s ramp-step quantization -- for exact
+pixel-equality across rotations. That is a structurally palette-dependent
+comparison: two materials that quantize to visually indistinguishable bins
+under one palette's specific ramp spacing need not under another's, so a
+mesh could measure MORE symmetric than it truly is under one style and
+fewer under another, purely from where ramp boundaries happen to fall.
+
+Measured across all 8 FX generators (`fx.FX`), both palettes' own real
+ramps, at the exact `0.25` progress value `manifest.py` samples:
+
+| effect | cozy | snes |
+|---|---|---|
+| fx_steam_cup | 1 | 1 |
+| fx_steam_machine | 8 | 8 |
+| fx_pour_coffee | 1 | 1 |
+| fx_pour_milk | 1 | 1 |
+| fx_door_swing | 4 | 4 |
+| fx_ceiling_fan | 2 | 2 |
+| fx_rain_window | 8 | 8 |
+| fx_order_ready | 1 | 1 |
+
+Identical on every single one. No live casualty today -- the same shape as
+PR #88's `check_direction_stability` wiring fix, not PR #91/#92's real
+surfaced defects. Threaded `ramps` through `check_symmetry_claims` and
+`manifest.py`'s call site anyway: it is a real structural gap (a future FX
+generator or a future style's ramp spacing could trip it, and nothing here
+would have caught that before this fix, regardless of which `--style` was
+being checked), it is fully safe to close (proven by the table above, not
+assumed), and it costs nothing -- `manifest.py --check --style cozy_ghibli`
+and `--style snes_rpg` are both byte-identical before and after, 10/3 errors
+respectively, unchanged. 40-test unittest suite passes unchanged.
+
+Fixed in `tools/art_review.py` (`check_symmetry_claims`) and
+`tools/manifest.py` (its call site) -- branch `symmetry-claims-style-blind`,
+left unmerged.
+
+## `ingest.py`'s own binder checks were bare too -- one clean fix, one real finding too big to rush
+
+Same sweep as `check_focal_contrast` (the section above this one on the branch
+that fix shipped on): `manifest.py`'s comment on the neighbouring UI check
+already documents fixing "accepted the flag but measured cozy_ghibli's
+colours the whole time" (PR #23/#24/#25) for the character checks. Three call
+sites lower, `check_roundtrip`, `check_transform` and `check_albedo_regression`
+-- the stage 1-3 mesh-binder validation, `tools/ingest.py` -- were still
+called bare.
+
+**`check_roundtrip`: real coverage gap, no live casualty.** It exhaustively
+walks every step of the ACTIVE palette's own bindable ramps and asserts each
+one binds back to itself. Bare, it only ever walked cozy_ghibli's 37 steps,
+regardless of `--style` -- a future snes_rpg-specific binder defect could
+not have shown up here no matter which style was being checked. Threaded
+`ramps` through; both styles currently read clean (`[]`), so this closes a
+real gap with nothing hiding behind it today -- same shape as PR #88's
+`check_direction_stability` fix.
+
+**`check_transform`: a bug inside the fix for the bug.** This function
+already accepted `ramps` and used it correctly to write its adversarial
+fixture's MTL -- but then handed that file to its own nested `ingest(obj,
+up="y", height=want_h)` call BARE, so the binder that actually validates the
+round trip re-derived cozy_ghibli's palette internally regardless of what
+`ramps` this function itself received. Threading `ramps` only into
+`manifest.py`'s call site, without also fixing this nested call, would have
+made things WORSE than the status quo: under `--style snes_rpg` it would
+have written the fixture's colours in snes_rpg's own RGB and then asked the
+binder to match them against cozy_ghibli's ramps instead -- a guaranteed,
+entirely artificial mismatch with nothing to do with a real defect. Caught
+before shipping that by reading what the nested call actually does, not just
+threading a parameter and trusting the signature. Fixed both layers.
+
+**`check_albedo_regression`: the fixture bug was real, and fixing it
+surfaced something bigger.** One of its two `rebind_case` fixtures was a
+hardcoded literal, `(169, 113, 81)` -- "a colour already living on the
+library's own middle step," per its own comment, and specifically
+cozy_ghibli's `wood` ramp's middle step, by coincidence of which palette
+this file was authored against. Bare, this never showed: `ramps` was always
+cozy_ghibli's own file either way. Fixed to derive the test colour from the
+ACTIVE palette instead (`ramps["wood"][len(ramps["wood"]) // 2]`, matching
+`check_roundtrip`'s own "middle step is the canonical, named one"
+convention) -- but snes_rpg's own derived wood-mid colour, `(173, 88, 72)`,
+STILL trips `check_albedo_centre` as "too dark." That is not a fixture bug
+any more; it is `check_albedo_centre`'s own `ALBEDO_L_FLOOR`/`ALBEDO_L_CEIL`
+constants (0.596-0.845), which were measured once, empirically, against
+"every one of the thirty meshes in assetlib" under cozy_ghibli's palette
+specifically, and never re-derived for snes_rpg.
+
+Measured across the same 10-asset sample `check_roundtrip` already builds,
+median OKLab L per mesh, cozy_ghibli vs snes_rpg's own real palette:
+
+| asset     | cozy  | snes  |
+|-----------|-------|-------|
+| floor     | 0.500 | 0.411 |
+| counter   | 0.600 | 0.559 |
+| chair     | 0.600 | 0.559 |
+| table     | 0.600 | 0.559 |
+| plant     | 0.696 | 0.581 |
+| bookshelf | 0.600 | 0.559 |
+| crate     | 0.600 | 0.559 |
+| menu      | 0.600 | 0.559 |
+| espresso  | 0.596 | 0.479 |
+| pastry    | 0.716 | 0.639 |
+
+`espresso` is the prop that DEFINES cozy_ghibli's own floor at 0.596 (its
+docstring cites it as "the weakest known-good"). Under snes_rpg's own real
+colours it reads 0.479 -- and 8 of these 10 sampled assets fall entirely
+below the floor. This is not one unlucky material: `check_transform`'s own
+adversarial fixture (a real library chair, not a synthetic colour) trips the
+exact same warning once its nested `ingest()` call is properly threaded --
+"bound albedo median L 0.559 is too dark" -- confirming this from a second,
+independent, real-asset path, not just the regression test's synthetic one.
+
+If `check_albedo_centre` were ever actually exercised on a real snes_rpg
+mesh in production -- nothing has yet; GPU reconstruction is style-agnostic
+and could reach snes_rpg any time -- it would very likely reject nearly
+every correctly-authored, on-palette snes_rpg prop as "too dark," a
+systematic false-positive blocker for that style's own ingestion path, not
+a rare edge case.
+
+**Left open, on purpose, not manufactured into a rushed fix:** recalibrating
+`ALBEDO_L_FLOOR`/`ALBEDO_L_CEIL` per style needs the same empirical
+discipline that produced the cozy_ghibli numbers in the first place -- a
+real measurement across that style's own authored asset range, not a number
+picked to make one fixture pass. That is a separate, larger pass. Shipped
+today: `check_roundtrip` and `check_transform` are fully fixed and threaded
+in `manifest.py`; `check_albedo_regression`'s fixture no longer hardcodes a
+cozy_ghibli-specific literal, but its `manifest.py` call site is
+deliberately left bare until the floor/ceiling question above is actually
+resolved, with a comment pointing here. `check_transform`'s fix is shipped
+anyway, even though it now surfaces the same real finding via a real chair
+asset (`manifest.py --check --style snes_rpg` gains one new ERROR from
+this) -- the nested-`ingest()` bug it fixes is real and independent of the
+floor/ceiling question, and hiding a real defect to avoid an uncomfortable
+but honest new error would be the wrong trade, the same call this session
+made for `table_communal` (PR #83) and the L-run/galley/island composition
+findings (PR #91).
+
+Fixed in `tools/ingest.py` (`check_transform`, `check_albedo_regression`)
+and `tools/manifest.py` (all three call sites) -- branch
+`ingest-checks-style-blind`, left unmerged. `manifest.py --check --style
+cozy_ghibli` is byte-identical before and after; the 40-test unittest suite
+passes unchanged.
+
+---
+
+## The albedo floor's deferred recalibration is harder than it looked, and for a reason that predates snes_rpg entirely
+
+Came back to the "separate, larger pass" left open above with time actually
+budgeted for it, expecting to run the same measurement discipline that
+produced `ALBEDO_L_FLOOR`/`ALBEDO_L_CEIL` once for `cozy_ghibli` and once
+more for `snes_rpg`. It surfaced something the deferred write-up didn't
+anticipate: the reference corpus that discipline runs against has already
+moved, for the DEFAULT style too, not just the new one.
+
+`ALBEDO_L_FLOOR`'s own comment says the bracket comes from "every one of the
+thirty meshes in `assetlib`." Counted fresh with `review_library()`'s own
+filter (the same one `check_member_thickness`/`check_buried_detail` sweep
+the library with): 55, not 30. `assetlib.py` grew after the floor was set
+and nobody re-measured. Re-running the measurement against today's full 55
+under `cozy_ghibli` -- the style this floor is supposedly already correct
+for -- finds two real outliers already outside 0.596-0.845:
+
+    mesh            cozy_ghibli L   snes_rpg L
+    bean_hopper          0.500         0.411
+    book_stack            0.969         0.949
+
+`bean_hopper` is not a mis-authored prop -- three stacked prisms of `wood-1`
+(a step darker than the `wood` ramp's own middle) are the coffee beans
+themselves, the majority of its visible surface, a deliberately dark object.
+`book_stack`/`sugar_caddy`/`tip_jar`/`table_clutter` cluster the light end
+the same legitimate way. Neither is a defect; both are outside the
+documented bracket regardless of which style's palette resolves them.
+
+That reframes the deferred snes_rpg number, and makes it harder, not just
+later. Widening `ALBEDO_L_FLOOR` to legitimately admit `bean_hopper` under
+snes_rpg's own ramps needs a floor near 0.41 -- and 0.408 is the exact
+median L `delight()`'s own docstring cites as the motivating bug this check
+exists to catch: the pre-fix teapot regression, "a near-black blob with the
+right silhouette." A floor loose enough to admit every legitimately dark
+authored prop is a floor that can no longer tell a legitimately dark prop
+from an undelit reconstruction -- the two things this check is asked to do
+(fit the real library's range; still catch the bug it was built for) are
+close enough to genuinely conflict. That is not a snes_rpg-specific problem
+-- the same tension exists for `cozy_ghibli`'s own numbers today, snes_rpg's
+darker palette just makes the low end of it worse (bean_hopper 0.500 to
+0.411, a full 0.089 closer to the 0.408 regression value).
+
+**Verdict: still correctly left open, now for a sharper, verified reason.**
+This is not "the recalibration hasn't happened yet" -- it's "a single global
+median-L threshold may be the wrong shape for what this check is trying to
+distinguish, independent of which style's number gets picked," which is a
+bigger question than either style's own floor/ceiling and shouldn't be
+answered by picking a number under time pressure. Nothing changed in
+`ingest.py`'s checked-in behaviour -- `ALBEDO_L_FLOOR`/`ALBEDO_L_CEIL` are
+unmoved, `check_albedo_centre` is unmoved, and (confirmed by direct grep)
+neither is ever actually invoked against `assetlib.py`'s own authored
+meshes in any live path -- only inside `ingest()` itself and inside
+`check_albedo_regression`'s synthetic fixture, so today's finding has no
+live consequence, the same as the snes_rpg finding it extends. The 55-mesh
+sweep and its numbers are recorded here, plus a matching comment in
+`tools/ingest.py` next to the constants themselves, so a future pass starts
+from "the corpus moved and the floor's own tolerance is already tight
+against the regression it guards" instead of re-discovering both facts from
+zero. Doc-only follow-up commit on branch `ingest-checks-style-blind`
+(same branch, directly extends this PR's own deferred finding) -- 40-test
+suite passes, `manifest.py --check` unchanged both styles (nothing wired to
+this measurement in either direction).
+
+## The narrower question inside the deferred one had an answer, and a live bug behind it
+
+The write-up above correctly left the wide question open -- what should a
+single global `ALBEDO_L_FLOOR`/`CEIL` even mean once outliers like
+`bean_hopper` sit closer to the 0.408 defect value than to either style's
+own typical range. It also, correctly, never asked the narrower question
+underneath it: not "where should the outlier-inclusive envelope sit" but
+"do `cozy_ghibli`'s existing constants already encode a *method*, one that
+could be re-run per style without touching the outlier question at all."
+
+They do. `ALBEDO_L_FLOOR` 0.596, `ALBEDO_L_TARGET` 0.600, `ALBEDO_L_CEIL`
+0.845 are, to the thousandth, the OKLab-L middle step of `neutral`, `wood`
+and `cream` respectively -- not a hand-picked bracket, a description of
+where this palette's three most common material ramps sit. Applying the
+identical derivation to `snes_rpg`'s own ramps:
+
+    ramp      cozy_ghibli mid   snes_rpg mid
+    neutral        0.5961           0.4786
+    wood           0.5998           0.5592
+    cream          0.8454           0.8604
+
+This is the "typical family" reading, not the "outlier envelope" one --
+`bean_hopper`'s 0.411 stays outside `snes_rpg`'s new 0.479 floor exactly as
+it already sits outside `cozy_ghibli`'s 0.596 floor today, so the tension
+documented above between "fit the library" and "still catch the regression"
+is neither widened nor resolved by this fix, just left exactly where it
+was. What the per-style mid values give instead is real: `check_albedo_centre`
+and its two style-blind neighbours in this file were failing snes_rpg on
+their own reference fixtures, not on any of the 55-mesh outliers.
+
+Confirmed both were live before this fix, called directly with each style's
+own ramps:
+
+    check_albedo_regression(ramps=snes_ramps):
+      "regression: check_albedo_centre fired on wood-mid (173, 88, 72),
+       a colour the active palette authors directly -- false positive"
+
+    check_transform(ramps=snes_ramps):
+      "unexpected warning: bound albedo median L 0.559 is too dark; every
+       authored prop lands in 0.596-0.845. A reconstructed colour field
+       carries the concept image's lighting and has to be de-lit before
+       binding, or the renderer shades it twice."
+
+The second one is the more serious of the two: it isn't a synthetic
+fixture complaining about itself, it's `check_transform`'s real chair
+fixture -- correctly transformed, correctly bound, real geometry -- failing
+its own unrelated geometric assertions because `ingest()`'s internal
+`check_albedo_centre` call, called with no style context, measured the
+chair's real 0.559 median L against `cozy_ghibli`'s floor and rejected it.
+A geometry check failing for a colour reason is exactly the shape this
+session has been hunting all along: one lever (widening the global floor,
+already tried and correctly rejected above) tested against a check that
+was actually measuring something else (which style's ramps produced the
+colour being judged).
+
+The fix threads the already-built, previously entirely unused
+`Style.checks` override (`tools/style.py`'s own docstring anticipated this
+exact case: "a new style earns its own [floor], once it has real renders to
+measure rather than a guess") through `ingest.py`'s `check_albedo_centre`,
+`bind_vertex_colours`, `ingest()`, `check_albedo_regression` and
+`check_transform`, and through `manifest.py`'s two call sites --
+`check_albedo_regression()` was still bare even after this PR's first
+commit wired `check_transform`'s `ramps`, which is why only the chair bug,
+not the wood-mid one, would have shown up in a full `--check` run before
+this fix. `styles/snes_rpg/bible.yaml` now carries
+`albedo_l_floor: 0.479`, `albedo_l_ceil: 0.860`, `albedo_l_target: 0.559`;
+`cozy_ghibli`'s `checks: {}` stays empty, so its behaviour is provably
+unchanged, not just assumed so.
+
+Verified, not assumed, on this branch (`ingest-checks-style-blind`):
+stashed the fix to capture a true "before" -- `check_albedo_regression`/
+`check_transform` reproduce both messages above exactly, for `snes_rpg`
+only. Restored the fix -- both return `[]` for both styles, and
+`cozy_ghibli`'s `check_albedo_regression`/`check_transform` output is
+identical before and after (`checks={}` falls back to the exact same
+globals). `check_albedo_regression`'s own internal defect fixtures --
+the near-black-blob regression case and the uniform 0.408 case -- still
+report `[]` for both styles, meaning `delight()`'s own defect-catching
+behaviour is untouched, not loosened. `manifest.py --check --style
+cozy_ghibli`: 3 errors, 9 warnings, matching this branch's pre-fix baseline
+exactly (byte-identical). `manifest.py --check --style snes_rpg`: 10
+errors, 8 warnings, zero of them `ingest:`-prefixed -- the chair-fixture
+bug is gone from the real pipeline, not just the isolated call; the 10
+remaining errors are the pre-existing box/prism character-roster and
+composition findings this branch doesn't carry Hour 50's separate fix for,
+unrelated to albedo and out of scope here. 40-test suite: 40 passed.
+Follow-up commit on branch `ingest-checks-style-blind` (same branch,
+directly completes this PR's own deferred subject).
+
+## `check_focal_contrast` was grading every style's room against cozy_ghibli's palette
+
+The L-run detail-floor investigation above ("The detail floor at 40 plans")
+tried two levers on the same rendered pixels -- back-wall dressing
+structure, shelf count -- and closed both without explaining the L-run
+concentration, concluding "the floor is real... the failing rooms are a
+consistent, repeatable topology-skewed population." That conclusion was
+correct for what it tested, but everything it tested shared a lever neither
+version of the check ever varied: which palette the room was rendered in.
+
+`manifest.py --check --style <name>` resolves `ramps` once from the active
+style (`tools/manifest.py`, the block starting "Resolved once against the
+active style, not cozy_ghibli always") and threads it through
+`check_contrast`, `check_waistline`, `check_eye_legibility`,
+`check_spec_coverage` and `generate_roster` -- the fix for the PR #23/#24/#25
+bug class. `check_built_rooms`, `check_focal_contrast` and
+`check_stool_occupancy`, three call sites lower in the same `try` block,
+were still called bare. Two of those three don't care --
+`check_built_rooms` reads `collisions()`/`grounded()`/
+`seating_faces_tables()`/`screen_occlusion()`, and `check_stool_occupancy`
+counts items by name prefix; neither reads a pixel, confirmed by
+fingerprinting `build()`'s own output (vert/face/item counts and every
+item's position) across three repeated calls on the same plan before ruling
+this out rather than assuming it from the function names -- fully
+deterministic, so palette genuinely cannot move either verdict.
+
+`check_focal_contrast` is the one that does read pixels -- it renders the
+whole frame and measures brightness/contrast/detail lead over the counter --
+and its own `render()` call, inside a nested `read_room()`, never received
+`ramps` either. `render()` has the identical `ramps or load_palette()`
+fallback that `character.py`'s `_palette()` has, so every focal-contrast
+reading this check has ever produced, under any `--style`, was against
+cozy_ghibli's colours. `tools/build_plan.py --focal-scan`, the manual sibling
+of this same instrument, had the same gap for a more direct reason: its
+`main()` already resolves `ramps` from `--style` for every other mode on
+that parser, but `--focal-scan` returns before that block runs, so the flag
+existed on the parser and was simply never read on that path.
+
+**Real before/after**, from `manifest.py --check --style snes_rpg` itself,
+not a standalone script (a standalone script threading `ramps` only into
+`render()` and not into `build()` gives a THIRD, wrong, answer -- see the
+methodology note below):
+
+Before (bug present, cozy_ghibli's render used for both styles):
+```
+ERROR  composition: plan 1 (L run): counter carries -0.001 detail against
+       its room (floor +0.000) -- the busiest thing in frame is not the
+       counter
+ERROR  composition: plan 8 (galley): counter is only -0.012 brighter than
+       its room (floor +0.015) -- no centre
+ERROR  composition: plan 8 (galley): counter carries -0.019 detail against
+       its room (floor +0.000) -- the busiest thing in frame is not the
+       counter
+10 errors, 8 warnings
+```
+
+After (fixed, snes_rpg's own palette used):
+```
+ERROR  composition: plan 1 (L run): counter is +0.001 in contrast against
+       its room (floor +0.030) -- the periphery has as much to look at
+ERROR  composition: plan 3 (island): counter is +0.000 in contrast against
+       its room (floor +0.030) -- the periphery has as much to look at
+ERROR  composition: plan 8 (galley): counter is only -0.008 brighter than
+       its room (floor +0.015) -- no centre
+ERROR  composition: plan 8 (galley): counter carries -0.017 detail against
+       its room (floor +0.000) -- the busiest thing in frame is not the
+       counter
+11 errors, 8 warnings
+```
+
+`cozy_ghibli`'s own `manifest.py --check` output is byte-identical before
+and after (the fix only changes what a NON-default `--style` sees), and the
+40-test unittest suite passes unchanged.
+
+Three distinct shapes in one fix, not one:
+
+- **Plan 1 (L run) changed failure reason, not verdict.** Under
+  cozy_ghibli's own render it fails DETAIL (-0.001, resolution-confirmed at
+  -0.005 @480). Under snes_rpg's own render, properly built with
+  `ramps=snes_rpg` (not just re-coloured), it passes detail (+0.004) but
+  fails CONTRAST instead (+0.001 against a 0.030 floor). Before the fix,
+  `--style snes_rpg` reported cozy_ghibli's detail failure text and numbers
+  for this room -- a real error, for the wrong reason, in a room whose own
+  actual defect is a different one.
+- **Plan 3 (island) was entirely invisible under snes_rpg before the fix.**
+  It renders cleanly under cozy_ghibli's own palette (no error, any style,
+  before or after), so the bug's cozy_ghibli-blind render also happened to
+  pass for this room, and the check reported nothing. snes_rpg's own render
+  fails contrast (+0.000 against 0.030) -- a real, previously entirely
+  unmeasured defect specific to that style's palette on this room.
+- **Plan 8 (galley) is a real defect under both palettes, numbers only.** It
+  fails brightness and detail under cozy_ghibli's own render (-0.012/-0.019)
+  and under snes_rpg's own render (-0.008/-0.017, both less severe but both
+  still below floor, both resolution-confirmed). The bug didn't hide this
+  one or invent it -- cozy_ghibli's numbers were reported for `--style
+  snes_rpg` too, close enough in sign and rough magnitude that nothing here
+  looked obviously wrong from the error text alone.
+
+**Methodology note, caught before it shipped a wrong finding:** an initial
+standalone verification script called `build(plan)` bare and threaded
+`ramps` only into the `render()` call, i.e. re-coloured a cozy_ghibli-BUILT
+room instead of building a genuine snes_rpg one. `_people()` ->
+`generate_roster(n, seed, ramps)` uses the palette during generation, not
+just for final colour, so a different `ramps` at `build()` time can change
+which roster gets placed and where -- a re-coloured cozy_ghibli room is not
+the same room as an actually-built snes_rpg one. That script reported plan
+1 passing cleanly under snes_rpg (+0.078 contrast, comfortably over floor);
+the real, properly-threaded check reports +0.001, failing. `render()` itself
+was confirmed deterministic (three repeated calls on one `Layout`, identical
+to the millipixel) before trusting either number, which is what surfaced the
+`build()`-argument difference as the actual cause rather than leaving
+render-randomness as an open, unresolved doubt. The shipped fix threads
+`ramps` into both `build()` and `render()`, matching `main()`'s own already-
+correct pattern for its default render path.
+
+Fixed in `tools/build_plan.py` (`check_focal_contrast`, `_focal_scan`,
+`main`) and `tools/manifest.py` (the `check_focal_contrast` call site) --
+branch `focal-contrast-style-blind`, left unmerged.
+
+## `organic_rig.py`'s own `check_eyes_visible` had the same single-azimuth shape as `character.py`'s
+
+Third and fourth hour running this same audit against a `check_*` function
+that renders a figure to test eye legibility: `check_generator_range`
+(Hour 20), `check_direction_stability` (Hour 21), `check_eye_legibility`
+(Hour 22), and now `organic_rig.py`'s own `check_eyes_visible` -- a
+different file, the `snes_rpg`-only cylinder/sphere rig's equivalent of
+`character.py`'s check, built independently but with the identical blind
+spot: one hardcoded azimuth (90, not 45 this time), never varied.
+
+**Swept all 8 azimuths across the 4-member `ROSTER`.** Unlike `character.
+py`'s version of this sweep (this file, "`check_eye_legibility` only ever
+rendered azimuth 45"), the occlusion split here is clean and MEMBER-
+independent rather than tone-dependent -- every one of 0/180/225/270/315
+reads 0-2px for every roster member, consistently, no exceptions. A side or
+back view genuinely does not show this rig's face at all; that is correct,
+not a defect, and there is no ambiguous middle set to leave out this time.
+
+45, 90 and 135 all show real, comfortably nonzero eye pixels for every
+member. But 90 -- the one angle ever checked -- turned out to be this
+check's own best case by a wide margin:
+
+    member      az=45 (near eye)   az=90 (both eyes)   az=135 (near eye)
+    scout             8                 18 / 18               6
+    archivist          9                20 / 20               9
+    drifter             4                20 / 20               8
+    smith               5                20 / 20               7
+
+`drifter`'s near eye at 45 measures 4px against the 3px floor -- a genuine,
+if narrow, near-miss invisible to the only angle this check ever rendered.
+Visually confirmed: an upscaled render at 45 shows only a faint dark sliver
+past the head's silhouette where 90 shows two clearly legible eye squares.
+
+**Fix.** `check_eyes_visible` gained an `azimuths` parameter, defaulting to
+`EYES_VISIBLE_AZIMUTHS = (45.0, 90.0, 135.0)` instead of the bare `90.0` it
+always rendered.
+
+**Verified no regression.** Nothing in the safe three-azimuth set actually
+fails at the real 3px floor -- this closes a coverage gap and surfaces a
+narrow near-miss, it does not expose a live defect, the same shape Hour
+21's `check_direction_stability` fix took. Old single-azimuth call
+(`azimuths=(90.0,)`) still returns the exact pre-fix message set (zero).
+Proved the wiring has teeth rather than trusting the diff: temporarily
+raised `MIN_EYE_PIXELS` from 3 to 5 (which puts `drifter`'s 4px in range),
+re-ran `organic_rig.py --check`, got exactly the expected new problem
+(`drifter: left eye renders 4px at azimuth 45...`), reverted immediately
+after. `organic_rig.py --check` (real floor) still reports clean. Full
+40-test suite unchanged.
+
+**Not wired into `manifest.py --check`, and deliberately left that way
+this hour.** Unlike `character.py`'s checks, `organic_rig.py`'s `check()`
+is reachable only via its own CLI (`--check`/`--lock`) and, transitively,
+`style_approve.py`'s lockfile-approval gate -- never `manifest.py --check`
+directly. `style_approve.py`'s own comment explains why `organic_rig.py`
+exists as a separate, `ANY_OF` producer rather than a required one:
+`character.py` "still only knows box/prism" for any style (the import-
+order gap `NEXT.md` already documents), so `manifest.py`'s character block
+has no notion of which rig primitive is active and cannot safely branch to
+this file's checks without becoming aware of that -- a real, separate,
+already-scoped piece of architecture work, not a wiring oversight to close
+in passing the way `check_direction_stability`'s manifest gap was.
+
+New branch (`organic-rig-eyes-single-azimuth`), unrelated to any other
+currently open PR's subject. Left unmerged per standing practice.
+
+## `check_eye_legibility` only ever rendered azimuth 45
+
+Hours 20 and 21 both found real defects by asking whether a check's real
+caller exercised the same range the shipped asset actually varies over --
+`check_generator_range`'s pair floor, then `check_direction_stability`'s
+roster. `check_eye_legibility` is the third `character.py` gate with the
+same shape and the same fixed camera angle, and its own docstring already
+names the mechanism as inherently angle-dependent: "the eyes sit on the
+shaded front facet, so the lambert moves them... and only a render knows
+that." Lambert value is a function of the light-vs-surface angle, which
+changes with azimuth by definition -- a check built on that premise and
+then hardcoded to one azimuth was checking its own claim at a single,
+unverified sample point.
+
+**Swept all 8 azimuths across all 7 skin tones and found a clean three-way
+split, not a uniform "more angles helps":**
+
+    tone           0     45     90    135    180    225    270    315
+    skin-4        --    .196   .161   .196    --    .103*   --     --
+    skin-3        --    .196   .256   .256   .204   .204     --     --
+    skin-2        --    .196   .248   .353   .304   .304     --     --
+    skin-1        --    .256   .341   .450   .404   .404     --     --
+    skin         .103*  .353   .437   .547   .504   .504     --     --
+    skin+1       .204   .450   .533   .644   .602   .602     --    .204
+    skin+2       .304   .547   .533   .644   .602   .602     --    .304
+
+    (-- = no differing pixels between the plain and eyed render; floor .15)
+
+- **270 is fully occluded for every tone, no exceptions** -- the back of
+  the head, correctly showing no face. Not a defect at any tone.
+- **45, 90, 135, 225 show real, non-zero eye-vs-skin pixels for every
+  tone, no exceptions** -- geometrically unambiguous face-on angles.
+  Visually confirmed on `skin-4`: an upscaled render at 45/90 shows two
+  clearly legible eye squares; the same tone at 225 shows only a bare
+  sliver, matching its 0.103 measurement.
+- **0, 180, 315 are ambiguous.** Whether they show any differing pixels at
+  all depends on which skin tone is asked -- pure geometric occlusion
+  cannot do that, since occlusion doesn't know what colour the surface is.
+  These are very likely more instances of "eyes render pixel-identical to
+  skin," an even more severe version of the defect this check exists to
+  catch, at darker tones specifically -- but nothing here can yet
+  distinguish that from a genuine grazing-profile view, and a wrong guess
+  either way is worse than an honest gap. Left OUT of the fix, recorded as
+  open rather than resolved by assumption.
+
+**Fix.** `check_eye_legibility` gained an `azimuths` parameter, defaulting
+to the four decisively safe angles (`EYE_LEGIBILITY_AZIMUTHS = (45.0, 90.0,
+135.0, 225.0)`) instead of the bare `45.0` it always rendered. `manifest.py
+--check`'s call site needed no change -- it was already calling the
+function bare (`check_eye_legibility(ramps)`), so the widened default
+reaches it automatically, the same way narrowing a default closes a gap
+without touching every caller.
+
+**Two different outcomes per style, reported honestly as two different
+outcomes rather than one generalized claim:**
+
+- **`cozy_ghibli`: a genuinely new defect.** The old single-azimuth check
+  reported zero eye-legibility errors here. The sweep found one:
+  `skin-4` at azimuth 225 measures 0.103 against the 0.15 floor -- a real,
+  previously invisible failure, now an `ERROR` (3 -> 4).
+- **`snes_rpg`: confirmation, not discovery, plus one new fact.** NEXT.md
+  already documents this style's `skin-4`/`skin-3`/`skin-2` near-misses at
+  0.147 (PR #24) -- all three were already caught by the old 45-only
+  check, already counted in the existing 10-error baseline. The sweep adds
+  no new FAILING TONE, but does add real information: `skin-4` and
+  `skin-3` measure the *identical* 0.147 at all four checked azimuths, not
+  a range -- meaning this specific defect is a palette-proximity fact (the
+  skin/eye OKLab distance is nearly constant regardless of viewing angle
+  under this compressed ramp), not the shading-angle artifact the
+  mechanism section above describes for `cozy_ghibli`. `skin-2` fails only
+  at 45 (0.147) and clears the floor at 90/135/225 (0.266/0.266/0.152).
+  Error count rises 10 -> 16, entirely from repeating three already-known
+  root causes at the newly-checked angles, not from new subjects -- recorded
+  as such rather than left to look like six new defects. NEXT.md's own PR
+  #24 write-up updated with a pointer here rather than left stale.
+
+**Verified no regression.** Old single-azimuth call
+(`check_eye_legibility(ramps, azimuths=(45.0,))`) still returns exactly
+the pre-fix message sets for both styles, confirming the change is additive
+at the API surface. Full 40-test suite unchanged. `manifest.py --check`
+runtime: ~2.4 minutes, in line with existing cost (the sweep adds 3x the
+renders for one check out of dozens in the suite).
+
+New branch (`eye-legibility-single-azimuth`), unrelated to any other
+currently open PR's subject. Left unmerged per standing practice.
+
+## `check_direction_stability` was never in `manifest.py --check`, and checked one archetype when it did run
+
+Hour 20's `check_generator_range` fix (this file, "the 45-degree default was
+hiding five more collisions") found its bug by asking whether a check's real
+caller exercised the same range the shipped asset actually varies over.
+Applied the same question to every other `character.py` gate rather than
+stopping at one success, and it landed on a second, structurally different
+gap in a check that sits right next to the ones `manifest.py`'s own comments
+already record fixing.
+
+**Not wired in at all.** `grep -n "direction_stability" tools/manifest.py`
+returns nothing. `check_contrast`'s call site in `manifest.py` carries a
+comment naming the exact failure mode this is: "`character.py`'s own
+`main()` has always run [a check] against the fixed roster... but
+`manifest.py --check` never called it here... invisible to this command
+specifically" -- written about `check_contrast`, already fixed for it, and
+for `check_waistline`/`check_eye_legibility`/`check_spec_coverage` beside
+it. `check_direction_stability` -- the check for a character shrinking to an
+unreadable sliver at some rotation, arguably the most visually severe
+failure mode this file has on record -- sits one function away from all
+four and was never carried into the same fix. It only ran via `python
+tools/character.py`'s own separate `main()`, or transitively through
+`character.py --lock` feeding `style_approve.py`'s gate -- neither is part
+of the automated `manifest.py --check` pass this repo treats as the
+authoritative per-commit gate.
+
+**And when it did run, one archetype.** `check_direction_stability(spec=
+None)` defaulted to `CUSTOMERS[2]` ("regular") alone, not `ROSTER` -- unlike
+every sibling check (`check_contrast`, `check_waistline`, `check_palette_
+spread`), which already iterate `roster or ROSTER`. Measured the whole
+roster's minimum silhouette width against the 9px floor to see what that
+one-archetype default was missing:
+
+    barista     12.1px    reader      14.0px    student    10.2px (tightest)
+    regular     15.9px    commuter    15.3px    artist     14.0px
+    elder       11.3px    writer      15.3px    friend     15.1px
+
+`regular`, the one archetype actually checked, sits at 15.9px -- the
+roster's most COMFORTABLE margin, not its tightest. `student`, at 10.2px
+against a 9px floor (13% headroom, the closest anything comes to failing),
+was never checked by any automated path. Nothing currently fails -- this is
+a live coverage gap with no live casualty yet, the same "not a bug today,
+a bug waiting on the next roster edit" shape `check_contrast`'s own history
+already lived through once (the `elder` hair-vs-skin defect that motivated
+wiring it in was found on a re-run, not by the check existing in the first
+place).
+
+**Fix.** `check_direction_stability` now takes `roster=None` and iterates
+`roster or ROSTER`, matching its siblings exactly; `manifest.py --check`
+gained a call against the real roster and, alongside `check_contrast`/
+`check_waistline`, against the 12 generated extras too.
+
+**Proved the wiring has teeth, not just trusted the diff.** Temporarily
+tightened `MIN_SILHOUETTE_PX` from 9 to 11 (only `student`'s 10.2px falls
+in that gap) and re-ran `manifest.py --check`: two new `ERROR` lines
+appeared, `student dir3`/`dir7`, ordinary error count 3 -> 5. Reverted the
+floor immediately after. This is the same class of proof PR #78's fixture
+gave `check_albedo_regression` and Hour 20's forced 45-degree-vs-swept
+comparison gave `check_generator_range` -- a check that has never been
+observed catching anything is unverified, whatever its code reads like.
+
+**Verified no regression at the real floor.** `manifest.py --check`, both
+styles: 3 errors / 10 errors respectively, unchanged from the documented
+baseline, 0 new errors from either the full hand-written roster or the 12
+generated extras -- the roster genuinely clears 9px everywhere, this closes
+a blind spot rather than exposing a live defect. Runtime: ~2.5 minutes for
+the full suite, in line with its existing multi-minute cost; the added 168
+renders (9 roster members + 12 extras, x8 directions) are a small fraction
+of it. Full 40-test suite unchanged. `python tools/character.py` (no args)
+still runs clean, now against the same full roster instead of one spec.
+
+New branch (`direction-stability-not-wired`), unrelated to any currently
+open PR's own subject. Left unmerged per standing practice.
+
+## `check_buried_detail` was checking the one angle furniture doesn't ship as
+
+The check's own docstring already says it: `azimuths` defaults to the single
+view the room composite uses, and to "pass all eight for anything that ships
+as a rotating sprite." Its only real caller, `review_library()` (run from
+`manifest.py --check`), never did -- `check_buried_detail(assets)`, no
+`azimuths` argument, every call since the check was promoted. Every asset in
+that `assets` dict comes from `assetlib.py`, and every `assetlib.py` prop
+`furnish.py` builds *is* exactly what the docstring is warning about:
+`build_one` renders each one at `45 + k*AZIMUTH_STEP` for `k` in `0..7` and
+ships all eight as the sprite sheet ("these sprites are rendered at all 8
+azimuths, so the reservation has to hold with the object turned" -- the
+comment sits four lines from that loop). The check that exists specifically
+to catch detail modelled where the camera can't reach it was only ever
+looking at one of the eight cameras that actually reach it.
+
+Confirmed before touching anything: ran `check_buried_detail` on the current
+`review_library()` asset set two ways. At the single default azimuth (today's
+behaviour) it flags 6 props. Swept across all eight of `furnish.py`'s own
+azimuths, it flags 10 -- the same 6, at higher and more accurate shares
+(`bean_hopper` 41% -> 42%, `drip_brewer` 39% -> 55%, matching the worst angle
+rather than one arbitrary one), plus four never flagged at all before:
+`bookshelf` 38%, `chair` 31%, `menu_board` 52%, `wall_art_framed` 32%.
+
+`bookshelf` is not a new defect -- it is the *original* one this check was
+promoted for ("shelves and books modelled inside a solid carcass box... a
+plain wooden slab standing where a bookcase was meant to be", two sections
+up). That fix was real at the one angle anyone looked at. Rendered all eight
+of its own shipped directions fresh (`out/bookshelf_8dir.png`, 8x
+nearest-neighbour) to check by eye, not just by number: directions 0-2 show
+a real bookshelf, visible shelves and books, exactly as the earlier fix
+intended. Directions 3, 4, 6, 7 are flat, featureless slabs -- the identical
+"plain wooden slab" defect the original finding described, on the five-eighths
+of the object nobody was looking at when that fix shipped. The fix closed the
+complaint at the one camera angle that generated it and left the other seven
+untouched, because nothing that ran afterward ever checked them.
+
+**The fix here is the wiring, not the geometry.** `review_library()` now
+passes `[45.0 + k*AZIMUTH_STEP for k in range(8)]` -- `furnish.py`'s own
+azimuth list, imported from the same `isorender.AZIMUTH_STEP` constant
+rather than re-typing `45.0` a second, divergeable way -- instead of relying
+on the single-view default. This is a check-coverage fix, not a mesh fix, in
+the same spirit as `check_contrast` never being run against the fixed
+`CUSTOMERS` roster (manifest.py, PR #78) and `check_ui` validating the
+wrong style's font path (PR #86): a check with a real, documented blind
+spot that nothing had ever closed.
+
+**Verified zero regression on the blocking gate:** `manifest.py --check`
+still reports exactly 3 errors, same messages, same numbers, byte-identical
+to the documented baseline -- `check_buried_detail`'s findings feed `warns`,
+not `errs`, so widening its coverage cannot flip the gate this repo's own
+doctrine treats as "must be clean before any commit." What changes is the
+warning count: 8 -> 12. Four of those are new, real, and not fixed here --
+`bookshelf`, `chair`, `menu_board`, and `wall_art_framed` each have genuine
+buried geometry on the majority of their shipped rotations, the same class
+of defect the original three (`bookshelf`, `register`, `pastry_case`) were,
+and closing them is per-asset modelling work, not a check change --
+deliberately left failing rather than quietly widening `ACCEPTED_BURIAL` to
+make the new warnings disappear, the same discipline `table_communal` (PR
+#83) was left under for the same reason.
+
+## `check_ui` was still checking the wrong style's font, ten minutes after the fix that made it possible to
+
+Not the "prompt-vs-pixel lever" pattern this file's UI-icon sections have
+been chasing -- a different, adjacent kind of drift, closer to the galley
+finding above: a claim that was true when written and false by the time
+anyone read it again, sitting in code rather than prose this time.
+
+`manifest.py`'s `check_ui` docstring said plainly: `ui_font` is checked
+against one hardcoded path "because `bitmap_font.py` has no `--style` flag
+at all yet." True when that sentence was written (`ee4a645`, 18:32:29) --
+false ten minutes later, in the very next commit on the same branch
+(`2df849d`, 18:42:13, "bitmap_font.py: --style, closing the last real
+`load_palette()` gap"). `bitmap_font.py` has written its output to
+`out/ui/<style>/font/` for a non-default style ever since. `check_ui`'s
+own `font_index` never moved off `out/ui/font/font.json`.
+
+**Confirmed as a live bug, not a stale comment, before touching anything.**
+Built `cozy_ghibli`'s font only (`bitmap_font.py`, no `--style`), then ran
+`manifest.py --check --style snes_rpg` (with `out/ui_snes_rpg/` present
+via `ui_chrome.py`, so the check reaches the font logic rather than
+short-circuiting on "no ui output at all yet"): **no `ui_font` warning at
+all**, under `snes_rpg`, with `snes_rpg`'s own font never built. The check
+was silently reading `cozy_ghibli`'s `font.json` -- whichever style's file
+happened to exist -- regardless of `--style`.
+
+**The fix:** `font_index` now resolves through `forge_dir`, the same
+per-style path `check_ui` already computes correctly for every other
+`ui_forge`-owned id two lines above it (`out/ui/font/font.json` for the
+default style, `out/ui/<style>/font/font.json` otherwise) -- reusing an
+existing correct value rather than re-deriving the same path a second,
+divergeable way. The sheet-existence check a few lines down had the
+identical hardcoded-default bug in the same block and got the same fix.
+The warning message now names the actual path and command
+(`tools/bitmap_font.py --style snes_rpg`) instead of always printing the
+default one.
+
+**Confirmed failable both directions, live.** With `snes_rpg`'s font still
+unbuilt: `warning ui: ui_font declared and no out/ui/snes_rpg/font/font.json
+-- run tools/bitmap_font.py --style snes_rpg`. Built it
+(`bitmap_font.py --style snes_rpg`); the warning cleared. **Verified no
+regression** on the default style, where `forge_dir` and the old hardcoded
+path are byte-identical by construction: `manifest.py --check` still
+reports the documented baseline exactly, 3 errors (plan 1 L-run, plan 8
+galley brightness and detail), unchanged.
+
+## `table_communal`: a coverage gap that was hiding a real defect, half-fixed
+
+Auditing `art_review.py`'s `GENERATORS` list (what `check_generator_range`
+actually measures) against every seeded builder in `assetlib.py`, the same
+kind of two-directional cross-check that found `gates.py`'s missing
+`organic_rig.check_roster` entry, turned up two more: `furnish.py` calls
+`assetlib.table()` directly for `table_2top_square` and `table_communal`,
+neither of which was ever added to `GENERATORS`. `table_round` and
+`table_4top` -- both of which delegate to the same `table()` -- were covered
+and passing, so this looked like simple bookkeeping at first.
+
+`table_2top_square` is: adding it passes cleanly (28.3% mean spread, 6.1%
+closest pair, both comfortably clear of the 15%/4.5% floors). `table_communal`
+is not. Its closest pair measured **0.48%** -- two of eight seeds render
+almost pixel-identical, the exact "seed is barely changing the shape" failure
+mode `check_generator_range`'s own docstring exists to catch, invisible until
+now purely because this recipe was never on the list it checks.
+
+**The mechanism, traced rather than guessed.** `table()`'s randomized draws
+(height, top thickness, overhang, base style, leg radius) are identical
+per-seed regardless of the table's own `w`/`d` -- the RNG doesn't know how
+big the table is. Tracing seeds 1-8 directly: seeds 1 and 3 both drew
+`_base_pedestal` ("Column on a splayed foot. **The cafe two-top.**" -- its own
+docstring). A single small central column, on a table communal-sized at
+4.0x2.0m, occupies a tiny and visually near-constant fraction of the
+silhouette regardless of which few centimetres of thickness/overhang/leg-
+radius the seed happened to draw -- so two pedestal seeds on this table are
+close to indistinguishable, a defect invisible on a `table_round` or
+`table_2top_square` (1.0x1.0m) precisely because the SAME absolute-unit
+variation is a much larger fraction of a much smaller table.
+
+**The fix, and what it did and didn't close.** `_base_trestle`'s own
+docstring already names the size this style belongs to instead: "Two end
+frames joined by a spine. **The long communal table.**" -- the code already
+knew which style suited which size, it just never enforced it. Added a
+size guard in `table()`, the same pattern already used to redirect `_base_
+trestle` to `_base_tripod` under a round top: `_base_pedestal` is excluded
+above `max(w, d) >= 2.5` and substituted with `_base_trestle`. Seeds 1/3's
+pair improved from 0.48% to 4.62%, clearing the pair floor outright.
+
+That fix is real and it is not the whole story. Excluding pedestal collapsed
+its seeds onto the remaining three styles, and doing that exposed a
+**second, pre-existing** collision that had been hiding behind the worse
+one: seeds 5 and 6 both drew `_base_posts` and measured 4.22% apart -- under
+the 4.5% floor, and present in the UNFIXED generator too, just never the
+closest pair because 1-vs-3 was always closer. `_base_posts` places four legs
+at `x0 + r*2.2` / `x1 - r*2.2`-style insets, so leg position does shift with
+the randomized radius `r` -- just, again, by centimetres against a 4-metre
+top. The general mechanism is not "pedestal is wrong," it is "every style's
+variety here is an absolute-unit draw, and a communal-scale table dilutes
+absolute units into invisibility regardless of which style holds them."
+
+**Left failing, deliberately, not given a custom floor.** `wall_art_framed`
+and three other generators in `GENERATORS` do carry an `own` floor, and each
+one is a case where the measured, honest ceiling of a *deliberately* subtle
+generator sits under the default bar for a stated reason (a sack's slump
+looking the same on purpose; a hue drawn from 4 buckets colliding by the
+pigeonhole principle). `table_communal` is not that: a communal table's base
+style and leg arrangement are exactly the kind of first-order silhouette
+change `table_round`/`table_4top`/`table_2top_square` all vary cleanly on.
+Setting `own` low enough to pass would be tuning the instrument to the
+answer -- the same trade this file has rejected everywhere else it was
+proposed (counter orientation, the detail floor's bracket, the mean-spread
+floor). `check_generator_range()` now correctly reports `table_communal`
+failing on both the mean and the pair floor, which is the honest state: a
+real defect, found by closing a coverage gap, half-closed by a real and
+verified fix, with a second, precisely diagnosed cause left as recorded,
+open work -- most likely closed properly by giving long tables a size-
+appropriate leg-count or leg-layout variation rather than more of the same
+few-centimetre radius/thickness draw, which is a real design pass, not a
+one-line fix.
+
+## `check_generator_range`'s own corner-view default was hiding five more collisions, not just `table_communal`'s
+
+Before accepting the entry above's "a real design pass, not a one-line fix"
+as the end of it, asked the same question Hour 15 asked of
+`check_buried_detail`: every measurement of `table_communal` on record --
+this file's own, and `check_generator_range`'s real caller in
+`manifest.py` -- shares one lever, a fixed 45-degree azimuth, while
+`furnish.py.build_one` ships every one of these generators as an
+8-direction rotating sprite. Had a genuinely different lever (more angles)
+ever been tried on this specific check, the way it was on `check_buried_
+detail`? It had not. Swept `table_communal` across all 8 azimuths a real
+sprite ships at, closest pair per angle:
+
+    az    45    90   135   180   225   270   315   360
+    lo  3.91  0.00  3.91  0.00  3.91  0.00  3.91  0.00
+
+The default 45-degree check is `table_communal`'s OWN BEST CASE, not a
+representative one -- every axis-aligned angle (90/180/270/360) is
+PIXEL-IDENTICAL between its closest pair, worse than the 3.9% the existing
+write-up above already treats as a real failure. This is the opposite
+generalization from buried_detail's (there, the default hid a defect a
+wider sweep exposed as real; here, the default was already failing, and a
+wider sweep confirms the same defect is more severe than measured, not that
+it secretly passes elsewhere).
+
+**Swept the other 18 seed-variety generators the same way**, not just the
+one already known to be broken -- the buried_detail precedent was itself a
+warning against trusting one subject's result as the whole picture:
+
+    name               az=45 (default)   worst-of-8   worst azimuth
+    table_4top               5.2%           2.6%           90   NEW FAIL
+    bookshelf                15.9%          0.0%          180   NEW FAIL
+    bench                    9.0%           0.9%          180   NEW FAIL
+    espresso_machine         9.0%           4.0%          225   NEW FAIL
+    pastry_case               7.6%          3.0%          180   NEW FAIL
+    (14 others: worst-of-8 stays clear of the 4.5% floor)
+
+Five of nineteen generators -- over a quarter -- pass the check that ships
+today and fail at a real angle the sprite sheet actually renders. All five
+collisions land on an axis-aligned angle (90/180/225/270), none on a
+diagonal one, which is a physically consistent mechanism and not
+measurement noise: a corner-on (45-family) camera sees two faces of a boxy
+object at once, so a base/leg/shelf-contents difference on either face
+shows; a face-on (90-family) camera sees exactly one face and occludes
+whatever the far side changed, so two seeds that differ only there collapse
+to one silhouette.
+
+**Visually confirmed, not just numerically.** `bookshelf` seeds 1 and 2 at
+45 degrees show clearly different book colours and arrangement on the
+shelves -- correctly read as different by the existing check. The same two
+seeds at 180 degrees are both a flat, featureless orange plank: the
+bookshelf's closed side panel, with every shelf and book that distinguishes
+them on the opposite face, completely hidden. Not a rendering bug --
+`screen_materials`' own docstring already named this exact mechanism for
+silhouette alone ("an open-fronted carcass has the same outline whatever is
+on its shelves"); here the same occlusion swallows the *interior* detail
+the earlier fix (comparing materials, not silhouette) was written to catch,
+because at this specific angle there is no interior showing at all.
+
+**The fix: same wiring pattern as `check_buried_detail`.**
+`check_generator_range` gained a `pair_azimuths` parameter (default
+`(45.0,)`, preserving every existing caller's behaviour byte-for-byte
+unless it opts in), and now checks the closest pair at every azimuth in
+that tuple rather than only the mean's single `azimuth`, reporting whichever
+angle is worst. `manifest.py --check`'s real call site was updated to pass
+all 8 real ship azimuths, the same `45.0 + k * AZIMUTH_STEP` sweep Hour 15
+wired into `review_library()`.
+
+**Verified no regression.** `manifest.py --check`, both styles, before and
+after, on this branch: errors unchanged (3 / 10, matching PR #83's own
+baseline), warnings +5 each style (the five new generator names above,
+identical set under `cozy_ghibli` and `snes_rpg` -- expected, since
+`screen_materials` resolves material identity, not colour, so this
+mechanism is palette-independent by construction). Runtime cost: the sweep
+adds roughly 4 seconds to `check_generator_range` (0.9s to 4.9s) for
+checking 8 angles instead of 1 on 15 generators -- negligible against
+`manifest.py --check`'s multi-minute total. Full 40-test suite unchanged.
+
+**Left failing, deliberately, same reasoning as `table_communal` above.**
+None of the five newly-exposed generators gets an `own` floor -- their
+variety is not deliberately subtle, it is a first-order silhouette/interior
+change with a blind angle, and the honest fix is either giving the
+`table()`-style absolute-unit draws a size-relative version (as attempted
+for `table_communal`) or, for `bookshelf`/`bench`/`espresso_machine`/
+`pastry_case`, auditing what part of each object's variety lives only on
+the face an axis-aligned camera occludes. That is real per-generator
+geometry work, five instances of it, correctly out of scope for a check-
+wiring fix -- recorded here, not silently absorbed into a looser floor.
+
+Follow-up commit on this same branch (PR #83), continuing its own named
+check function rather than opening an unrelated topic. Left unmerged per
+standing practice.
+
+## A third re-check, a genuinely mixed result: the basket that invented `check_speckle` was never re-tested against the fix it inspired
+
+Two sections up, "Four fixes, none of which worked, which is the finding"
+still reads, unedited since before this branch existed: *"There is no render
+setting. The remedy is upstream -- a subject whose surface is smooth at this
+scale, or a better reconstructor."* That basket -- the diagnostic subject
+whose 0.127-0.163 isolated-pixel share fixed `MAX_ISOLATED` at 0.105 in the
+first place -- was never part of either despeckle verification pass, this
+branch's own 32-cached-mesh sweep or the bread_loaf and character-ceiling
+follow-ups above: it isn't a shipped asset (no `basket`/`wicker_basket` id
+anywhere in `assets.yaml` or `subjects.yaml`), so nothing that iterates the
+real library would ever touch it. It sat in this file as a citation, not a
+render, while everything around it got re-tested.
+
+Re-ran it directly, the same way as `bread_loaf`. `main` (pre-despeckle),
+fresh render from `out/mesh/basket_bound.obj`: `art_review.py` reports 8 of 8
+frames blocked at **12.7%-16.3%** -- reproduces the recorded range in this
+file exactly, direction for direction. This branch (post-despeckle), same
+mesh, same render: **7 of 8 blocked, 11.1%-13.2%** -- one frame (`dir1`, the
+thinnest silhouette of the set) now clears; every other frame is lower than
+its `main` counterpart by 2-4 points but still above the 10.5% floor.
+Confirmed by eye, not just the count: an upscaled 8x before/after contact
+sheet (`out/basket_recheck/before_after.png`, all 8 azimuths) shows the two
+rows are close to indistinguishable -- the same dense cream/wood/neutral
+salt-and-pepper mix survives in both, unlike `bread_loaf`'s crust or the
+character-ceiling gate, where despeckle's effect was either total or a side
+effect large enough to see.
+
+So this is a third outcome, not a repeat of either prior re-check. `bread_loaf`
+(two sections up) fully generalized: despeckle was the untried lever and it
+closed the gate outright, 5/8 blocked to 0/8. The frog knight (three sections
+up) did not generalize at all: the gate cleared but the sprite still didn't
+read as its subject, a topology problem no pixel pass can touch. The basket
+is neither -- despeckle **measurably helps** (worst frame 16.3% -> 13.2%,
+average isolated-pixel share down about a quarter) **without closing the
+gate**, because its speckle is wider than the single-pixel-with-no-majority
+case the conservative two-rule pass is designed to remove: a woven surface's
+fine detail survives as small multi-pixel clusters, not lone dots, on a mesh
+this coarse at 64px. That is the literal mechanism the four original fixes
+already diagnosed -- "sub-pixel detail in the source... one 64px pixel covers
+hundreds of triangles of it" -- and despeckle, a real fifth lever the
+original four attempts never included, still runs into the same wall for
+*this specific subject*. The two-sections-up passage's "there is no render
+setting" is narrowly accurate as written (despeckle is not a render setting,
+it is exactly the downstream pixel lever this file elsewhere credits with
+fixing UI icons, lifted objects generally, and bread_loaf specifically) but
+its confident tone reads, after this check, as broader than the evidence
+now supports for the one subject it was built on. Left as the historical
+record with this section as the honest update, not rewritten in place --
+same practice as the frog-knight and bread_loaf follow-ups.
+
+**What this does and does not change:** `check_speckle`'s floor and mechanism
+are untouched -- this was a re-verification of an old, non-shipped diagnostic
+case, not a new fix, and nothing here argues for loosening `MAX_ISOLATED` or
+special-casing `basket` to pass. The basket was never going to ship regardless
+of this result; its only role is as the number that calibrated the floor, and
+that calibration is unaffected by whether despeckle later helps it. What
+changes is confidence in generalizing from any single re-checked case to "the
+speckle floor is now solved everywhere despeckle runs" -- `bread_loaf`
+supported that reading, this doesn't, and the honest position is that
+despeckle's coverage is measured per-subject, not assumed.
+
+## Despeckle's own scope claim, checked: three render paths never got the fix, and none of them needed it
+
+This branch's own commit message and the addendum above describe despeckle
+as wired into "the shared rendering path for every asset type in the
+factory, not just lifted props" (`render_batch.render_sprite`). That is a
+testable claim about the code, not just about visual results, and it does
+not hold literally: `render_room.py`, `animate.py`, and
+`preview_characters.py` each call `rasterize`/`shade_toon`/
+`downsample_modal`/`apply_outline` directly, and none of the three goes
+through `render_sprite` at all -- `grep -n "despeckle(" tools/*.py` shows
+exactly one call site, inside `render_sprite` itself. Two of the three even
+say, in their own code, that they match the "real" path: `animate.
+render_frame`'s docstring called itself "exactly the path a static asset
+takes," and `preview_characters.render_one`'s comment said its grain setting
+was "matching `animate.render_frame`" specifically so the preview sheet
+would not drift from the shipping render. Neither statement has been true,
+in the despeckle sense, since the commit two sections up.
+
+Checked whether this is a live gap or a documentation-precision issue only,
+the same way `check_generator_range`'s azimuth blindness (Hour 20) and
+`check_collapse`'s width blindness (Hour 34) were checked before deciding
+whether anything needed fixing: despeckle exists to remove one specific
+noise pattern -- the per-vertex/per-pixel colour left behind by TripoSR mesh
+reconstruction or SDXL concept art. `grep -rn "load_obj|ingest" tools/
+render_room.py tools/animate.py tools/preview_characters.py tools/layout.py
+tools/assetlib.py` returns nothing: none of those five files ever load an
+ingested OBJ. `render_room.build_room()` -- and `build_plan.build()`, the
+generator that file's own composition checks (`check_focal_contrast` and
+friends) render through the same `render_room.render()` -- places every
+piece of furniture exclusively through `assetlib.py`'s own procedural
+generators (`counter`, `chair`, `table_round`, `grinder`, `plant_small`,
+...). `animate.py` and `preview_characters.py` rasterize exclusively
+`character.build()` output. Neither source has ever passed through TripoSR
+or the SDXL matte pipeline, so there is no noisy per-vertex colour for
+despeckle to remove in the first place, regardless of which branch renders
+it.
+
+Confirmed empirically, not just by absence of a code path: rendered the real
+demo room fresh (`python tools/render_room.py`, this branch, unmodified) and
+ran `check_speckle` directly against the output -- 0 findings, clean, the
+same result it would give on `main` before despeckle existed, because
+nothing in the room's geometry carries the defect either way.
+
+**Conclusion: the coverage gap is real as a fact about the code -- three
+render paths bypass despeckle entirely -- but has no live casualty, because
+none of the three ever renders content that could speckle. No functional fix
+ships here; wiring despeckle into `render_room.py`/`animate.py`/
+`preview_characters.py` defensively, with no measured defect for it to
+catch, would be exactly the "tuning the instrument to an answer nobody
+asked" this repo's own doctrine argues against.** What is worth fixing is
+the record: the commit message's "every asset type in the factory"
+overstates `render_sprite`'s actual reach, and the two docstrings quoted
+above were stale in this one specific respect. Corrected in place, same
+branch: `animate.render_frame` and `preview_characters.render_one` now say
+which parts of the path are actually shared (camera, quantization, palette,
+outline) and name despeckle as the one deliberate, harmless exception, with
+a pointer back to this section.
+
+## `MAX_ISOLATED`'s own calibration was cozy_ghibli-only, and it doesn't fully hold under `snes_rpg` -- despeckle already covers the gap anyway
+
+`check_speckle`'s floor comment (`tools/art_review.py`) is explicit about what
+it was measured against: "Over ten authored props at eight directions each...
+Three props lifted through TripoSR read 0.045 (kettle, good), 0.078 (teapot,
+acceptable) and 0.153 (basket, rejected)." Every one of those renders,
+checked, was `cozy_ghibli` -- `snes_rpg` didn't exist yet when this floor was
+set. Whether 0.105 is the right cut for a style with a genuinely different
+palette (fewer, more saturated ramps, per `snes_rpg`'s own bible) was never
+tested. Checked it directly, on this branch, re-rendering real meshes under
+both styles' real palettes:
+
+**Authored/procedural geometry (`assetlib.py`, what the entire real
+`furnish.py` catalog is built from) is unaffected or slightly safer under
+`snes_rpg`** -- `pastry_case` (the worst authored case in the original
+calibration, ~0.062) measures 0.062 under `cozy_ghibli` and 0.067 under
+`snes_rpg` here; `espresso_machine`, `grinder`, `table_round` all read flat
+or lower. No risk on this side, consistent with the floor's own margin
+("authored art is an order of magnitude below it and cannot trip it" --
+still true under both styles).
+
+**TripoSR-lifted geometry drifts upward under `snes_rpg`, consistently,
+across every mesh tested** (`out/mesh/*_bound.obj`, max isolated share per
+8-frame set):
+
+    mesh            cozy_ghibli   snes_rpg
+    kettle          0.057         0.073
+    teapot          0.080         0.076
+    coffee_cup      0.099         0.099
+    wine_glass      0.072         0.096
+    cheese_wheel    0.092         0.110  <- crosses the 0.105 floor
+    candle          0.090         0.121  <- crosses the 0.105 floor
+    cutting_board   0.148         0.188  (already failing under cozy_ghibli)
+    newspaper       0.129         0.167  (already failing under cozy_ghibli)
+    basket          0.163         0.221  (already failing under cozy_ghibli)
+
+Two meshes that pass cleanly under `cozy_ghibli` fail under `snes_rpg` on
+the identical geometry -- the same directional drift the four already-
+failing meshes show, just crossing the line rather than moving inside it.
+Mechanism, not coincidence: `snes_rpg`'s fewer, more saturated ramps mean
+coarser quantization steps, so the same per-vertex reconstruction noise is
+more likely to land two adjacent samples on opposite sides of a ramp
+boundary -- sharper cross-ramp adjacency, same underlying noise, worse
+isolated-pixel score.
+
+**Checked whether this is currently a live defect, not just a risk.**
+`grep -c "Recipe(" tools/furnish.py` -- 56 recipes, every one a `lambda s:
+A.xxx(...)` call into `assetlib.py`'s procedural generators (confirmed by
+`grep -n "load_obj|ingest\.load" tools/furnish.py`: zero hits beyond the
+`ingest.fit`/`mesh_geometry` import, which normalizes ANY mesh's scale and
+is not itself a load path). The one declared exception is real:
+`assets.yaml`'s `teapot` entry has no `Recipe`, and `furnish.py`'s own
+`UNMAPPED_REASON["teapot"]` says why -- `"already built on the SDXL path"`.
+Checked what that path actually shipped: `out/variants/{evening,golden_hour,
+night,overcast}/props/teapot_dir*.png` are real, committed sprites --
+measured directly against those files (not a reproduction), max isolated
+share **0.080** across all four lighting variants, comfortably under the
+floor, matching the reproduction above almost exactly. But
+`out/sprites_snes_rpg/` -- the one place `snes_rpg`'s own prop library would
+live -- contains no lifted content at all, `teapot` included (`ls
+out/sprites_snes_rpg/*.png`: `crate_cup` and `barista` only, the analytic
+demo scene and the animate.py sheet). `snes_rpg`'s real prop library, lifted
+or procedural, has never actually been rendered to completion. So: a real,
+measured, directional gap in the floor's own generality, and **no live
+casualty today**, because there is nothing currently shipped under
+`snes_rpg` for it to misjudge -- the same shape as this file's `check_
+collapse` and `render_room`/`animate` findings elsewhere in this session,
+not the shape of PR #100's grain finding.
+
+**Checked whether this branch's own fix already covers it, rather than
+assuming.** `despeckle(px, target, min_agree=2, max_passes=5)` takes no
+`ramps`/`style` argument -- it operates purely on already-quantized pixel
+adjacency, so nothing about its own logic should care which palette produced
+the input. Confirmed directly: ran the two crossing meshes, plus `teapot`
+and `kettle`, back through `despeckle()` under `snes_rpg`:
+
+    mesh            before (snes_rpg)   after despeckle
+    cheese_wheel    0.110                0.001
+    candle          0.121                0.000
+    teapot          0.076                0.001
+    kettle          0.073                0.001
+
+Closed completely, at the same conservative margin this branch's other
+verifications show, with zero additional code -- the fix already shipped on
+this branch is general across styles because nothing about it is
+style-specific, not because anyone tested it that way at the time. **No
+functional change ships from this section either** -- `MAX_ISOLATED` stays
+at 0.105 (loosening it would be exactly the "tune the instrument to the
+answer" move this repo's doctrine rejects, and it doesn't need loosening:
+despeckle already keeps every case tested inside it). The value here is
+confidence, recorded rather than assumed: the day someone actually renders
+`snes_rpg`'s prop library against real TripoSR-lifted meshes, this branch's
+fix is already the reason `check_speckle` won't need a second, style-specific
+fix on top of the first one.
+
+## Reopened: the "left open" call above was wrong about which lever was untried
+
+"A genuinely different lever... more reseeds and more negation words, on this
+evidence, will not [work]" turned out to be correct about reseeds and prompt
+negation specifically, and wrong about having exhausted the levers. Both
+prior fix attempts changed the SDXL *prompt* -- what gets drawn. Neither
+touched the *pixel pipeline* downstream of it -- how a drawn image becomes a
+64px icon -- which is where `flat_pixelize`'s own history shows the other
+half of this exact problem was already fixed once before (the mean-vs-modal
+downsample bug, see that function's docstring). That precedent was sitting
+in the same file and wasn't applied here.
+
+**The mechanism:** `downsample_modal` (correctly, by design) preserves
+whatever a source block's majority colour is, so real fine surface detail at
+1024px -- a coin's engraved rivets, a bagel's seed texture, a sandwich crust's
+crumb flecks -- survives the downsample as genuine isolated-pixel scatter,
+not an artifact of quantization. That is different in kind from the bug
+`downsample_modal` was built to fix, and no amount of prompt-side negation
+reliably suppresses SDXL's prior for that detail (confirmed, independently,
+three separate times across this file: `firefly_token`, the two icon-prompt
+attempts above). But the check that gates on it (`check_icon`'s isolated-
+pixel ratio) is a *pixel-adjacency* measure, which means a *pixel-adjacency*
+fix is answering the actual question, where a prompt-text fix never could.
+
+**`_despeckle`** (`tools/ui_forge.py`, added after this section was first
+written) reassigns a pixel to its neighbourhood's modal colour only when (a)
+it is isolated by the exact same 4-neighbour rule the check uses, so nothing
+it touches could have been keeping an icon under the cap, and (b) at least 2
+of its up-to-8 neighbours already agree on a replacement, so a genuine
+silhouette corner or thin point -- not misdrawn, just locally unique -- is
+left alone rather than guessed at. Measured on real SDXL renders, both
+styles, the exact four icons this section called an accepted limitation:
+
+```
+icon              style        before   after
+ui_coin           cozy_ghibli   14.7%    1.8%
+ui_icon_bagel     cozy_ghibli    9.8%    4.2%
+ui_icon_sandwich  cozy_ghibli   17.9%    7.1%
+ui_coin           snes_rpg      15.5%    4.1%
+ui_icon_bagel     snes_rpg      12.1%    4.2%
+ui_icon_sandwich  snes_rpg      17.7%    6.4%
+```
+
+Five of six clear the 6.2% gate outright; the sixth (sandwich) goes from a
+wide miss to a narrow one the existing `--retry-seeds 2` budget closes in
+practice -- confirmed by actually running the full roster: **all four
+previously-permanent failures (`ui_coin`, `ui_icon_bagel`, `ui_icon_pastry`,
+`ui_icon_sandwich`) now build clean under both styles**, `ui_icon_pastry`
+and `ui_icon_sandwich` needing one reseed each, `ui_coin` and `ui_icon_bagel`
+needing none. `python tools/ui_forge.py --style cozy_ghibli` and `--style
+snes_rpg` both now report **20/20 icons built**, up from 13/20 and 12/20.
+Checked for regression against ten already-passing icons: every one measures
+equal or strictly lower isolated-pixel ratio after the change, never higher
+-- expected, since the two conservative rules above guarantee the function
+never touches a pixel that was contributing to a pass.
+
+**Not a full retraction of the earlier finding -- the diffusion-negation
+conclusion holds.** What was wrong was treating "prompt levers exhausted"
+as "levers exhausted." The right lesson, generalized: when a check measures
+a property of the *rendered pixels* (isolated-pixel ratio, contrast, spread)
+rather than a property of *what the artist drew* (subject fidelity,
+composition), a fix aimed at the pixel property directly should be
+considered before -- or at least alongside -- a fix aimed at the prompt,
+because the two are not the same lever even when they move the same number.
+
+**Passing is not the same as reading well, and this is not the same claim.**
+Building all 20 icons clean does not mean all 20 read as their intended
+subject -- `ui_coin` at its default seed (1) passes the gate at 1.8%
+isolated pixels and still does not read clearly as "a round gold coin": the
+render is dominated by a dark, low-legibility interior. A quick 5-seed
+comparison for this one icon (same prompt, same despeckle) found seed 3
+reads clearly as a gold coin with a visible emblem, and 4 of the 5 seeds
+pass the gate outright now that despeckle is in the pipeline (before, this
+few seeds would likely have found zero clean passes). Not fixed here: the
+shipped pipeline still takes the first seed that passes, not the best of
+several, and nothing in `_despeckle` or the check it satisfies can tell a
+murky composition from a legible one -- that is exactly the "the eye has to
+look" gap this file has named before (`ui_icon_pastry`'s own seed-4
+non-croissant, `MAX_RETRY_SEEDS`'s comment). Recorded so a future pass does
+not assume a clean build number means a reviewed-and-approved icon set.
+
+## `ui_coin`: the gap above, closed for the one icon it was measured on
+
+Re-checked the paragraph above rather than just re-reading it: re-rendered
+`ui_coin` at seed 1 and seed 3 fresh, both styles, on this same branch.
+Both pass `check_icon` cleanly (confirmed by the CLI's own `OK` result, no
+`--retry-seeds` needed at either seed). Looked at all four renders before
+touching anything (`out/ui_coin_test/compare.png` -- seed 1 vs seed 3 under
+`cozy_ghibli`; `compare_styles.png` -- seed 3 under `cozy_ghibli` vs
+`snes_rpg`): seed 1 is a dark, murky disc with no readable emblem, exactly
+as the paragraph above describes. Seed 3 is unambiguously a round gold coin
+with a visible circular emblem, under both styles -- `snes_rpg`'s version
+reads with fewer shading bands and more saturation, consistent with that
+style's own bible, not a defect of the seed choice.
+
+**The fix:** `ui_forge.py` gains `UI_SEED_OVERRIDE`, a per-icon seed table
+consulted before the global `--seed` default, with `ui_coin: 3` as its only
+entry. This is deliberately narrow -- a measured, looked-at override for
+the one icon this was actually checked on, not a policy change to how
+seeds are chosen generally. Nothing about `_despeckle` or `check_icon`
+changed; this is a different lever again, one level up from both: neither
+a prompt change nor a pixel post-process, but picking the already-best
+member of a set the pipeline was already capable of producing and already
+had measured.
+
+**Verified no regression.** Full `ui_forge.py` run, both styles, no
+`--only`: **20/20 icons built** under `cozy_ghibli` and **20/20** under
+`snes_rpg`, same as before this change (the fix touches one icon's seed,
+not the gate or the despeckle pass, so every other icon's behaviour is
+untouched by construction, and the full-roster count confirms it rather
+than assuming it). `ui_coin`'s output from each full-batch run is
+byte-identical (sha256) to the standalone seed-3 renders looked at above,
+confirming the override actually takes effect in the real CLI path, not
+just in an isolated test.
+
+**Left as narrow as the evidence.** The paragraph above's real point
+stands: nothing here lets the pipeline tell a murky composition from a
+legible one on its own, for any *other* icon that might have the same
+problem without anyone having looked. This closes the one instance that
+was already measured and named, not the general gap.
+
+## `ui_icon_milk`: a shelf of bottles, not a bottle, passing the same gate `ui_coin` did
+
+The paragraph directly above names the risk in the abstract -- "any *other*
+icon that might have the same problem without anyone having looked." Went
+looking rather than leaving it hypothetical. `NEXT.md`'s "Item/inventory
+icons beyond drinks" entry still claimed "the honest count is 2 of 6" for
+`ui_icon_muffin`/`cookie`/`bagel`/`sandwich`/`milk`/`beans`, unchanged since
+before `_despeckle` landed on this branch (the commit that added it never
+touched that paragraph). Rebuilt all six fresh on this branch, both styles,
+to find out what was actually still true rather than trusting either the
+old "2 of 6" claim or the newer despeckle commit message's "20/20" in the
+aggregate: **6 of 6 now clear the gate, both styles** --
+`_despeckle` (already shipped for `ui_coin`/`bagel`/`pastry`/`sandwich`)
+turns out to have quietly carried `cookie` and (combined with the earlier
+prompt fix) `muffin` over the line too, never counted. `NEXT.md`'s "2 of
+6"/"stays open" wording is stale, not wrong-in-spirit -- it describes a
+real state this branch has since moved past without saying so.
+
+Looked at all six before calling that the end of it, the same discipline
+the paragraph above used for `ui_coin`: **five read as intended.** The
+sixth, `ui_icon_milk`, does not. `out/item4_verify_sheet.png` (built for
+this pass) shows it plainly under both styles: not a milk bottle but a
+shelf of a dozen bottles, some barely distinguished from each other --
+`check_icon`'s isolated-pixel rule has nothing to say about how many
+objects are in frame, so a shelf full of small, mutually-adjacent bottle
+shapes reads as clean pixel adjacency to the gate while reading as the
+wrong picture to a person. Exactly `ui_coin`'s gap, on a subject nobody
+had pointed the same question at yet.
+
+**Swept seeds 1-6** (`ui_forge.forge()` called directly, `retries=0`, so
+each seed's real image is seen rather than masked by auto-reseed) under
+`cozy_ghibli`: seed 1 (today's silent default) is the shelf; seeds 3, 5
+and 6 are each a single, clearly-readable glass milk bottle (seeds 2 and 4
+fail a different, earlier check -- frame-fill -- and never reach an image
+worth judging). Confirmed seed 3 also reads as one bottle under
+`snes_rpg`, not just `cozy_ghibli` -- same cross-style check `ui_coin`'s
+fix got.
+
+**The fix:** `UI_SEED_OVERRIDE` gains `ui_icon_milk: 3`, same mechanism,
+same narrowness -- a looked-at, measured override for the one icon this
+was actually checked on. Picked 3 as the first passing seed found in the
+sweep rather than picking a "best of three" by additional subjective
+ranking, matching how `ui_coin`'s own seed was chosen.
+
+**Verified no regression.** Full `ui_forge.py` run, both styles, no
+`--only`: **20/20 built** under `cozy_ghibli` and **20/20** under
+`snes_rpg`, same counts as before this change. `ui_icon_milk`'s output
+from each full-batch run is byte-identical (sha256) to the standalone
+seed-3 renders looked at above, confirming the override takes effect in
+the real CLI path.
+
+While the sweep tool was already warmed up, looked at the other five
+"beyond drinks" icons too rather than stopping at the one that prompted
+this section: `ui_icon_muffin` under `cozy_ghibli` currently ships on
+seed 2 (`ui_forge.py`'s own auto-reseed picks the first seed that clears
+the gate after seed 1's frame-fill failure) -- and seed 2 draws **two**
+cupcakes plus a small dark artifact on the larger one's crown, not one
+muffin. Same gap, third instance: passes `check_icon` (object count is
+invisible to a pixel-adjacency rule), fails the eye. Swept seeds 1-7:
+2, 5 and 7 are each a multi-object composition (two cupcakes; a
+muffin-tin display of roughly a dozen; two muffins stacked); 3 and 6 are
+each a single, clean muffin. `snes_rpg`'s own auto-reseed already lands
+on seed 3 for this icon (confirmed clean earlier in this file, "one
+sibling icon WAS genuinely fixed"), so `UI_SEED_OVERRIDE["ui_icon_muffin"]
+= 3` closes both styles with the same one seed rather than two per-style
+picks. Verified the same way as `ui_icon_milk` above: full run, both
+styles, 20/20 built each, `ui_icon_muffin`'s `cozy_ghibli` output
+byte-identical (sha256) to the standalone seed-3 test; `snes_rpg`'s output
+unchanged from before this commit (it already reached seed 3 on its own).
+`ui_icon_bagel`, `ui_icon_cookie` and `ui_icon_sandwich` were also looked
+at in the same contact sheet and read as intended in both styles --
+checked, not assumed, but genuinely nothing to fix there today.
+
+**Left exactly as narrow as before.** Three icons in this family now carry
+a seed override for the identical reason (`ui_coin`, `ui_icon_milk`,
+`ui_icon_muffin`), which is enough of a pattern to name plainly: any icon
+whose prompt invites SDXL toward a "collection" framing (a shelf, a
+display case, a stack, a plate of several) rather than one object is a
+candidate for this exact gap, and nothing in `check_icon` or `_despeckle`
+checks for that automatically -- both operate on pixels within one frame,
+not on how many objects that frame contains. Still not fixed in general --
+the eye still has to look, one icon at a time.
+
+## The six chrome ids were still being generated, silently, for nothing
+
+A commit from well before this audit loop started already decided this
+question once: `ui_chrome.py`'s own message says plainly, "the six chrome
+ids belong in procedural code rather than in a diffusion prompt," and
+lists why -- `ui_coin`, `ui_ticket`, `ui_dialogue_frame`, `ui_nameplate`,
+`ui_upgrade_frame` and `ui_star_rating` are wrong-*shape* failures (a
+speech bubble photographed as a tablet, a star rendered as an eight-point
+burst, the coin "gated muddy"), and shape is not something `check_icon`'s
+isolated-pixel rule can see. `ui_chrome.py` was built to draw all six
+instead, deterministically, no GPU, no seed. `manifest.py`'s own
+`check_ui` docstring already calls `ui_coin` "a CHROME key" in its
+comments, as if the question were long settled.
+
+It was settled in prose and in the drawing code. It was never settled in
+`ui_forge.py`'s own `UI_PROMPTS` dict, which still listed all six --
+meaning every full `ui_forge.py` run has been spending real SDXL time (and
+this file's own `--retry-seeds` budget) generating six icons nobody was
+going to use. `ui_chrome.py` writes into the identical `out/ui/<id>.png`
+path `ui_forge.py` does, and this repo's own `README.md` documents running
+`ui_forge.py` and then `ui_chrome.py`, in that order -- so in every
+build that follows the documented steps, `ui_chrome.py`'s output silently
+overwrote `ui_forge.py`'s, every time, for six of the twenty declared `cat:
+ui` entries.
+
+**Confirmed, not assumed, before touching anything.** `set(ui_forge.
+UI_PROMPTS) & set(ui_chrome.CHROME)` returns exactly those six ids.
+Rebuilt `ui_coin` alone through `ui_forge.py`, saved a copy, then ran
+`ui_chrome.py --only ui_coin` and compared: two different files (sha256
+`583e35f...` vs `4404921...`), and looking at both makes the intent
+obvious at a glance -- `ui_forge.py`'s SDXL coin is the same kind of
+overworked, textured render this file has already recorded for `ui_coin`
+above; `ui_chrome.py`'s is a flat gold disc with a clean ring highlight,
+exactly the shape the chrome commit set out to draw. The two-directional
+coverage-audit technique this loop has used on `gates.py`, `GENERATORS`
+and `REQUIRED_PRODUCERS` in earlier hours applies here too, just checking
+set membership between two producers' own dicts instead of a producer
+against a catalog -- and it found a real gap the same way.
+
+**One honest consequence worth naming directly, not burying:** the
+`ui_coin` seed-tuning two sections above (`UI_SEED_OVERRIDE["ui_coin"] =
+3`, added earlier this same audit loop) was real work, correctly measured
+and correctly verified at the time -- seed 3 genuinely does read as a coin
+where seed 1 doesn't. It was never wrong. It was tuning a producer whose
+output turns out to never reach the shipped library, for a reason that has
+nothing to do with seeds. That is not the frog-knight case (a finding that
+turned out not to generalize) -- it is a finding that was correct and
+irrelevant, which is a different and equally worth-recording outcome: the
+measurement stands, the artifact it improved was already dead.
+
+**The fix:** removed all six ids from `ui_forge.py`'s `UI_PROMPTS`,
+removed the now-unreachable `UI_SEED_OVERRIDE["ui_coin"]` entry (left a
+comment explaining why it is gone rather than deleting the context
+silently), and fixed the module docstring's own `--only ui_coin,ui_ticket`
+example, which named two ids this change removes from what `--only` can
+select. `ui_icon_pastry`'s own precedent -- deleted from `UI_PROMPTS`
+outright once its generative path was rejected, not merely left to fail
+quietly -- is the standard this change follows, applied to six ids that
+were never actually failing, just never actually used.
+
+**Verified no regression, both styles, both tools.** `ui_forge.py`:
+14/14 built under `cozy_ghibli` and 14/14 under `snes_rpg` (was 20/20;
+the six removed ids are the entire difference, by construction).
+`ui_chrome.py`: unchanged, 10/10 both styles -- it never read
+`UI_PROMPTS`, so nothing about its own six chrome ids' output could have
+moved. `manifest.py --check`: identical to the documented baseline on both
+styles -- `cozy_ghibli` 3 errors (unchanged: plan 1 L-run, plan 8 galley
+brightness and detail), `snes_rpg` 10 errors (unchanged: the 4 character
+blockers, the 3 skin blockers, the 3 composition errors) -- confirming
+this is a compute-and-consistency fix, not a coverage change: every `cat:
+ui` id the manifest audits was already present on disk before this change
+(via `ui_chrome.py`) and still is after it.
+
+## `check_member_thickness` was checking a scale nothing ships at, and it was wrong about the one thing it currently flags
+
+"New promoted check: member thickness" (this file, much earlier) describes
+`art_review.check_member_thickness` as rasterizing "at the scale it is
+actually seen (27.2 px/unit)." That was true when it was written. It is not
+true today: `furnish.py`'s per-object sprite -- `frame_all(mesh)` fitting
+each asset to fill its own 64px canvas -- is what `package_godot.py` actually
+packages and ships, not a fixed room-embedded camera. `render_room.py`, the
+thing that DOES use a fixed camera, writes to `proof/shop.png` and is never
+referenced by the export tooling; its own docstring calls it an integration
+test, not a shipped path.
+
+**Measured the gap rather than assumed it.** `frame_all`'s span, converted to
+an effective px/unit at the real 64px target, against the check's fixed
+27.2, across 16 real `assetlib.py` props:
+
+```
+prop            real ppu   room ppu   ratio
+counter          41.3        27.2      1.5x
+table_round       60.4        27.2      2.2x
+register          80.6        27.2      3.0x
+tip_jar          124.3        27.2      4.6x
+succulent        132.5        27.2      4.9x
+```
+
+Every one of the 16 sampled ran higher, never lower -- small objects most of
+all, because `frame_all` fills a small object's own canvas the same as a
+large one's, where the fixed camera renders a small object as a small shape
+adrift in mostly-empty space. Since the same floor (4px) is being compared
+against a systematically UNDER-estimated real scale, the fixed-scale check
+can only ever be too strict, never too lax -- it cannot hide a genuinely thin
+member from a player, but it can flag one that reads fine in its real,
+shipped form.
+
+**It was already doing that.** `review_library()`'s entire live output before
+this pass was one `check_member_thickness` finding: `plant_hanging: 35% of
+its mass is in runs under 4 px at room scale (limit 20%) -- reads as wire`.
+Re-measured at `plant_hanging`'s own real span (0.466, vs the fixed camera's
+1.15): **0%, clean pass.** The fixed camera renders `plant_hanging` small and
+adrift; its real per-object sprite fills the frame the way every shipped
+sprite does, and the same geometry reads fine.
+
+**The fix:** `check_member_thickness` gained optional `span`/`centre`
+parameters that, when given, replace the fixed camera with `frame_all`'s real
+values and render at the real 64px target instead of a `ppu`-derived
+resolution. `review_library()` now computes and passes both per asset. Kept
+the old `ppu`-based path as the default for any other caller, since nothing
+else in the codebase calls this function directly.
+
+**Wiring `span` alone was not enough, and this file's own words about
+verifying in both directions applied here too.** The fixed path's
+`target=(0.5, 0.5, 0.5)` assumes every asset sits centred in its own tile,
+which is only ever approximately true. Passing the tighter real `span`
+against that same wrong look-at point produced two assets that rendered
+**fully empty** (`cup_and_saucer`, `cup_espresso` -- a span tight enough to
+fill their real sprite missed their actual off-centre geometry entirely) and
+one spurious **100%** finding (`wall_sign`, clipped rather than genuinely
+thin) -- caught by re-running immediately after the first version of this
+fix, before it was called done. Wiring `frame_all`'s `centre` through as well
+(the same value `furnish.py` already passes to `render_sprite`) cleared all
+three.
+
+**Verified the check still has teeth, not just that it goes quiet.** A
+synthetic 0.02-unit rod (thinner than any real prop's structural member, at a
+plausible coffee-shop scale) still flags 100% thin mass at its own real ship
+span; a 0.12-unit post of the same height, rendered the same way, passes
+clean. The relaxation only removes a false positive; it does not remove the
+check's ability to catch a true one.
+
+**Zero regression, checked both styles.** `check_buried_detail` (the other
+half of `review_library()`, untouched by this change) reports the same 6
+findings before and after. `manifest.py --check` warning count drops by
+exactly 1 under both `--style cozy_ghibli` and `--style snes_rpg` -- the
+`plant_hanging` line disappearing, nothing else moving -- consistent with a
+style-agnostic geometry check whose one live finding was a false positive,
+not a style-specific one.
+
+## The scale fix above was still an incomplete picture -- a second, independently-opened fix on the same function needed folding in
+
+Auditing what else touches `check_member_thickness` before calling the scale
+fix done found `member-thickness-single-azimuth`, an open PR against the SAME
+function, opened independently and reaching a structurally identical insight
+from the other axis: the check has always rasterized a single fixed 45 degree
+view, but `furnish.build_one` ships every asset at all 8 real azimuths
+unconditionally, and a flat member that goes edge-on at some other angle can
+collapse to a stray line there without ever showing at 45. That fix already
+measured worst-of-8 (not pooled -- pooling dilutes a genuine edge-on collapse
+below the floor by averaging it against seven mostly-solid views) and
+verified it against this file's own recorded edge-on-collapse cases.
+
+Neither fix alone is a complete account of what `furnish.py` renders: the
+scale fix (above) still only looked at one azimuth; the azimuth fix still
+measured all 8 through the fixed room camera. Combined them on this branch --
+`check_member_thickness` now takes both `span`/`centre` (real per-object
+scale) and `azimuths` (worst-of-N, not pooled), and `review_library()` passes
+the real 8-azimuth ship set alongside the real span/centre it already
+computed.
+
+**Verified together, not just merged together.** Re-ran `review_library()`:
+still 6 findings, all `check_buried_detail`, `check_member_thickness`
+contributing zero -- the real library has no member that is thin at its real
+scale from ANY of its 8 real ship angles, not just the one this check used to
+look at. That is new information, not an assumption: printed the raw
+per-azimuth share for four real flat-panel props (`wall_sign`, `menu_board`,
+`sandwich_board`, `coat_rack`) to confirm the machinery produces real,
+varying numbers rather than trivially returning zero everywhere --
+`sandwich_board` measures 0% at six azimuths and 3% at the two it goes most
+edge-on, `coat_rack` 0-1%, both nowhere near the 20% floor but genuinely
+different by angle.
+
+**Positive control, since the real library currently has nothing to catch:**
+built a synthetic 0.01-thick flat panel that is normal-looking from most
+angles and goes fully edge-on at two of the eight. At azimuth 45 alone (the
+old default) it measures 0% and passes clean -- the exact blind spot the
+azimuth fix exists for. Across all 8 real azimuths at its own real span, it
+measures 100% thin mass at azimuths 180 and 360, correctly flagged: `thin_
+panel: 100% of its mass is in runs under 4px at ship scale at azimuth 180
+(limit 20%) -- reads as wire`.
+
+**Cost, measured rather than waved away:** `manifest.py --check` now runs in
+~2m55s for `cozy_ghibli` (member thickness alone went from ~24 rasterizes to
+~192, one per asset per real azimuth). Correct and still fast enough to run
+by hand or in CI; not free.
+
+**Left for him to reconcile, not resolved here:** `member-thickness-single-
+azimuth` remains open as its own PR with its own history and is NOT closed by
+this commit -- this branch folds its insight in and supersedes it
+functionally, but closing someone else's open PR is a call for him to make,
+not this pass. Flagging directly: merging both `member-thickness-ship-scale`
+and `member-thickness-single-azimuth` as separate PRs will conflict, since
+both rewrite the same function body differently. This branch is the version
+that has both fixes verified together; the standalone azimuth PR is now
+redundant with it but is left standing for him to close or not.
+
+## `review_library()`'s other half had the same unfinished reconciliation, and finishing it found 4 real defects
+
+Auditing what else touches `review_library()` (the function both fixes above
+edited) before calling this branch done found the same shape of loose end
+one function over: `buried-detail-azimuth-coverage`, another already-open PR
+against this exact function, adds `azimuths=all_azimuths` to the
+`check_buried_detail(assets)` call at the bottom of `review_library()` --
+`check_buried_detail`'s own docstring already says "pass all eight for
+anything that ships as a rotating sprite," the identical lesson this
+branch's `check_member_thickness` fix just re-derived independently for its
+neighbour in the same function. This branch's `review_library()` still
+called `check_buried_detail(assets)` bare, so it would conflict with that
+PR the same way it conflicted with `member-thickness-single-azimuth` --
+completed it here rather than leaving a second half-reconciled function.
+
+`review_library()` already computes `ship_azimuths` for the member-thickness
+call (added this branch, this session); reused it for `check_buried_detail`
+rather than recomputing a second local list.
+
+**This one was not cosmetic.** Before: 6 `check_buried_detail` findings
+(`bean_hopper`, `drip_brewer`, `lamp_table`, `pourover_stand`,
+`sandwich_board`, `tip_jar`), all still present after. After: 10 -- 4 new,
+real defects invisible at the single azimuth this check has always run at:
+`bookshelf`, `chair`, `menu_board`, `wall_art_framed`. Spot-verified `chair`
+by hand (`front_facing` per azimuth, not trusted from the aggregate number):
+25.0% buried at azimuth 45 alone (the check's old default, passes clean
+against the 30% floor) but the geometry the check pools across all 8 real
+ship azimuths lands at 30.6%, rounding to the 31% the check now reports --
+a real object whose occluded-detail share crosses the floor only once every
+angle it actually ships at is counted, not at the one angle it used to be
+judged by.
+
+**Verified end to end, both styles.** `manifest.py --check` warnings rise by
+exactly 4 under both `--style cozy_ghibli` (8->12) and `--style snes_rpg`
+(7->11), error counts unchanged in both -- matching the 4 new `check_buried_
+detail` lines precisely, nothing else moving.
+
+**Cost, updated honestly:** `manifest.py --check` now runs ~4m10s per style
+(`check_buried_detail` went from checking each asset at 1 azimuth to 8, on
+top of `check_member_thickness`'s own 8x from the prior commit). Slower, and
+still a command meant to be run by hand or in CI, not per-request -- the
+same tradeoff already accepted for the scale/azimuth fix above, now paid
+twice in the same function for a check that was genuinely missing real
+coverage both times.
+
+**Same reconciliation note as above, not repeated in full:**
+`buried-detail-azimuth-coverage` remains open and is NOT closed by this
+commit. Merging it separately against this branch will conflict on the same
+line this branch already rewrote; this branch's version has both fixes
+verified together.
