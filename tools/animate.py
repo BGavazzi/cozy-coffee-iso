@@ -125,7 +125,12 @@ def fit(spec, clip_specs, margin=0.06):
 
 def render_frame(mesh, azimuth, ramps, target, factor, centre=(0.0, 0.0, 0.70),
                  span=0.98):
-    """One sprite, through exactly the path a static asset takes."""
+    """One sprite, through the same camera/quantization/palette/outline path a
+    static asset takes -- except despeckle, added to `render_sprite` after this
+    function was written and never ported here. That's fine, not stale: this
+    only ever rasterizes `character.build()` output, which is authored geometry
+    and has no TripoSR/SDXL per-vertex noise for despeckle to remove (see
+    ART_CRITIQUE.md, "Despeckle's own scope claim, checked")."""
     cam = DimetricCamera(azimuth)
     cam.span = span
     size = target * factor
