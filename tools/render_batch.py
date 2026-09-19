@@ -22,7 +22,7 @@ from isorender import (  # noqa: E402
 )
 from mesh import compute_vertex_normals, load_obj, rasterize  # noqa: E402
 from pixelize import (  # noqa: E402
-    apply_outline, downsample_modal, load_palette, shade_toon,
+    apply_outline, despeckle, downsample_modal, load_palette, shade_toon,
 )
 from style import DEFAULT_STYLE, load_style  # noqa: E402
 
@@ -86,6 +86,7 @@ def render_sprite(source, azimuth, target, factor, ramps, smooth=False,
         mat, lam, _ = render(source, cam, size)
 
     px = downsample_modal(shade_toon(mat, lam, size, ramps, dither=True), size, factor)
+    px = despeckle(px, target)
 
     # Carry material ids through the same downsample so the outline pass knows
     # which ramp bounds each surface. SORTED INDEX, never `hash(m) % 251`: with
