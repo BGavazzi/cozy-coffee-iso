@@ -6,7 +6,7 @@ The premise this file operationalizes: taste is the one thing a machine
 cannot be handed. Everything else -- is this palette-exact, does this eye
 render enough pixels to read as an eye, does this room have a focal point --
 is a matter of finding the right gate for the specific problem. This repo
-already has 62 of them, built one hard-won defect at a time, scattered as
+already has 65 of them, built one hard-won defect at a time, scattered as
 `check_*` functions across twenty files with no shared vocabulary. This file
 does not replace any of them; it catalogs them, so "what actually has to be
 true before this ships" is a question with a queryable answer instead of a
@@ -173,6 +173,15 @@ _DETERMINISTIC = [
     ("manifest.py", "check_ui",
      "Does every declared cat: ui entry exist, and does it still hold up?",
      "asset manifest"),
+    ("organic_rig.py", "check_direction_stability",
+     "The actual claim under test: a true-circle cross-section should swing",
+     "organic rig x 8 directions"),
+    ("organic_rig.py", "check_eyes_visible",
+     "Does EACH eye render enough pixels to read as an eye, once hair and",
+     "organic-rig roster"),
+    ("organic_rig.py", "check_roster",
+     "Real contrast/waistline evidence for THIS rig's own cast, not",
+     "organic-rig roster"),
     ("package_godot.py", "check_anim_layout",
      "Do the resolved rects fit the sheet, and does each one belong to one "
      "clip?", "engine export"),

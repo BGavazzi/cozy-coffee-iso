@@ -759,6 +759,20 @@ def table(w: float = 1.0, d: float = 1.0, h: float = 0.58, top=WOOD,
         # disc with three bases one of which was drawn twice, and the closest
         # pair of eight round tables measured 2.9%.
         style = _base_tripod
+    if not round_top and style is _base_pedestal and max(w, d) >= 2.5:
+        # A single central column is "the cafe two-top" by its own docstring,
+        # and stops making sense once the top is long enough to need someone
+        # sitting at each end to reach the middle. It also stops making
+        # variety: `leg_r`/`thick`/`over` are the same few-centimetre draw
+        # regardless of table size, so on a 4m communal top that draw is a
+        # rounding error against the silhouette -- seeds 1 and 3 both landed
+        # on `_base_pedestal` here and rendered 0.48% apart, under the 4.5%
+        # closest-pair floor, invisible only because `table_communal` (the
+        # `table()` caller this size belongs to) was never added to
+        # `check_generator_range`'s `GENERATORS`. `_base_trestle`'s own
+        # docstring already names the size this style belongs to instead:
+        # "the long communal table."
+        style = _base_trestle
     # 0.085 read as tree trunks under a disc; 0.052 read as wire. Each base
     # style scales this itself, because a lone raked leg carries more load --
     # and looks like it should -- than one of four posts.

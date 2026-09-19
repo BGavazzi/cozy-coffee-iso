@@ -22,7 +22,7 @@ from isorender import (  # noqa: E402
 )
 from mesh import compute_vertex_normals, load_obj, rasterize  # noqa: E402
 from pixelize import (  # noqa: E402
-    apply_outline, downsample_modal, load_palette, shade_toon,
+    apply_outline, despeckle, downsample_modal, load_palette, shade_toon,
 )
 from style import DEFAULT_STYLE, load_style  # noqa: E402
 
@@ -56,20 +56,37 @@ def frame_all(mesh, margin: float = 0.06):
 
 
 def render_sprite(source, azimuth, target, factor, ramps, smooth=False,
-                  span=None, centre=None):
+                  span=None, centre=None, grain=0.0, wear=None):
     """`source` is either an analytic Scene or a Mesh. Everything downstream of
-    the buffers is identical, which is the point: generation stages are pluggable."""
+    the buffers is identical, which is the point: generation stages are pluggable.
+
+    `grain`/`wear` default to off (`mesh.rasterize`'s own pre-grain default),
+    unlike `render_room.py`/`animate.py`/`preview_characters.py`'s direct
+    `rasterize` calls, which all pass `grain=1.0`. This function has callers
+    those three don't -- `character.py`/`organic_rig.py`/`portrait.py`'s
+    `plain`-vs-`eyed` eye-legibility renders diff two sprites pixel for
+    pixel, and grain is world-space noise that would put false positives
+    into that diff. Keeping the default off makes the capability available
+    (see `ART_CRITIQUE.md`, "the entire prop library ships without the
+    texture treatment rooms and characters get") without silently changing
+    output for a caller that never asked for it -- the same reasoning that
+    kept `bitmap_font.measure`'s new `weight` keyword-only. Whether
+    `furnish.py`'s own call site should opt in is a visual call for a human,
+    not decided here.
+    """
     size = target * factor
     cam = DimetricCamera(azimuth)
     if span:
         cam.span = span
     if hasattr(source, "faces"):
         mat, lam, _ = rasterize(source, cam, size, smooth=smooth,
-                                target=centre)
+                                target=centre, grain=grain,
+                                ramps=ramps if grain > 0 else None, wear=wear)
     else:
         mat, lam, _ = render(source, cam, size)
 
     px = downsample_modal(shade_toon(mat, lam, size, ramps, dither=True), size, factor)
+    px = despeckle(px, target)
 
     # Carry material ids through the same downsample so the outline pass knows
     # which ramp bounds each surface. SORTED INDEX, never `hash(m) % 251`: with
