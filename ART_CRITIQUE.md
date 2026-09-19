@@ -5447,6 +5447,51 @@ accepting a visibly-imperfect-but-recognisable render the way the character
 ceiling accepts a lumpy blob) could revisit this; more reseeds and more
 negation words, on this evidence, will not.
 
+## `check_ui` was still checking the wrong style's font, ten minutes after the fix that made it possible to
+
+Not the "prompt-vs-pixel lever" pattern this file's UI-icon sections have
+been chasing -- a different, adjacent kind of drift, closer to the galley
+finding above: a claim that was true when written and false by the time
+anyone read it again, sitting in code rather than prose this time.
+
+`manifest.py`'s `check_ui` docstring said plainly: `ui_font` is checked
+against one hardcoded path "because `bitmap_font.py` has no `--style` flag
+at all yet." True when that sentence was written (`ee4a645`, 18:32:29) --
+false ten minutes later, in the very next commit on the same branch
+(`2df849d`, 18:42:13, "bitmap_font.py: --style, closing the last real
+`load_palette()` gap"). `bitmap_font.py` has written its output to
+`out/ui/<style>/font/` for a non-default style ever since. `check_ui`'s
+own `font_index` never moved off `out/ui/font/font.json`.
+
+**Confirmed as a live bug, not a stale comment, before touching anything.**
+Built `cozy_ghibli`'s font only (`bitmap_font.py`, no `--style`), then ran
+`manifest.py --check --style snes_rpg` (with `out/ui_snes_rpg/` present
+via `ui_chrome.py`, so the check reaches the font logic rather than
+short-circuiting on "no ui output at all yet"): **no `ui_font` warning at
+all**, under `snes_rpg`, with `snes_rpg`'s own font never built. The check
+was silently reading `cozy_ghibli`'s `font.json` -- whichever style's file
+happened to exist -- regardless of `--style`.
+
+**The fix:** `font_index` now resolves through `forge_dir`, the same
+per-style path `check_ui` already computes correctly for every other
+`ui_forge`-owned id two lines above it (`out/ui/font/font.json` for the
+default style, `out/ui/<style>/font/font.json` otherwise) -- reusing an
+existing correct value rather than re-deriving the same path a second,
+divergeable way. The sheet-existence check a few lines down had the
+identical hardcoded-default bug in the same block and got the same fix.
+The warning message now names the actual path and command
+(`tools/bitmap_font.py --style snes_rpg`) instead of always printing the
+default one.
+
+**Confirmed failable both directions, live.** With `snes_rpg`'s font still
+unbuilt: `warning ui: ui_font declared and no out/ui/snes_rpg/font/font.json
+-- run tools/bitmap_font.py --style snes_rpg`. Built it
+(`bitmap_font.py --style snes_rpg`); the warning cleared. **Verified no
+regression** on the default style, where `forge_dir` and the old hardcoded
+path are byte-identical by construction: `manifest.py --check` still
+reports the documented baseline exactly, 3 errors (plan 1 L-run, plan 8
+galley brightness and detail), unchanged.
+
 ## `table_communal`: a coverage gap that was hiding a real defect, half-fixed
 
 Auditing `art_review.py`'s `GENERATORS` list (what `check_generator_range`
