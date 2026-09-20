@@ -9467,3 +9467,71 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## PR cluster reconciliation, round two: fourteen open branches (#128-#141), one real supersession found, one stale claim corrected, and the documented cross-PR interaction re-verified live
+
+`#138` reconciled the first ten branches of this session's cluster
+(`#128`-`#137`) and found one genuine cross-PR interaction: `#130` (eye
+lambert-shading fix) and `#137` (widened `EYE_LEGIBILITY_AZIMUTHS`,
+4 azimuths -> 7) each measured `check_eye_legibility` correctly against
+`main` alone (14 new failures for `#137` alone), but together the combined,
+real count is 11, not 14 and not the naive sum. Four more branches have
+opened since (`#138` itself, plus the three `NEXT.md` staleness fixes
+`#139`/`#140`/`#141`) -- redone the same check for real rather than assuming
+a doc-only tail is automatically safe.
+
+**Method: sequentially merged all fourteen branches into a local, unpushed
+scratch branch, in PR order, resolving every conflict by hand rather than
+picking a side blind.** Every conflict but one was `ART_CRITIQUE.md`'s tail,
+each PR appending its own new section after the same anchor line -- pure
+3-way append conflicts, safely resolved by keeping both blocks in the order
+merged. `tools/assetlib.py` (touched by `#132`/`#133`/`#134`/`#135`, four
+different generators' fixes) and `tools/character.py` (touched by `#130`
+and `#137`, different regions of the file -- `SKIN_TONES`/shading near the
+top, `EYE_LEGIBILITY_AZIMUTHS` well below `MIN_EYE_GAP`) both auto-merged
+clean with no markers at all, confirmed by diffing the merged result against
+`main` and finding exactly the union of both branches' own hunks, nothing
+extra and nothing missing.
+
+**The one conflict that was not a pure append: `#131` and `#132`, both on
+`bookshelf`.** `#131` is the honest "tried it, didn't close it" investigation;
+`#132` is the real fix, and its own write-up already narrates and supersedes
+`#131` by name ("The documentation-only branch above... is superseded by
+this one"). Git's 3-way merge put both full write-ups back to back, which
+would have shipped two overlapping "bookshelf" sections telling most of the
+same story twice, one flatly inferior to the other and confusing about which
+is current. Resolved by keeping `#132`'s version only and dropping `#131`'s
+-- not a append-conflict pattern, a real editorial call the merge tool
+cannot make on its own. Any future reconciliation of this cluster should
+watch for this shape specifically: a doc-only investigation branch and its
+own later real-fix branch, both still open, are not independent appends.
+
+**Re-verified the one already-documented interaction live, not carried
+forward on trust.** Ran `check_eye_legibility()` directly against the full
+fourteen-way merge: **11 errors**, matching `#138`'s own predicted combined
+count exactly, not `#137`'s stand-alone 14 and not `main`'s stand-alone 1.
+Full 40-test suite (`python -m unittest discover -s tools -p "test_*.py"`):
+40 passed, 0 failures, on the fully merged state.
+
+**One stale claim found and worth naming, in `#134`'s own write-up.** Its
+"three different levers" section records the axis-aligned residual
+(`table_communal` at azimuths 90/180/270/360, 1.6-3.1% against the 4.5%
+floor after the fix) and states plainly: "This is not currently checked
+live (the widened sweep is `pair-azimuths-widened`'s own separate,
+still-unmerged work)." That was true when `#128` first wrote it, and untrue
+by the time `#134` repeated it: `manifest.py:534` already calls
+`check_generator_range(pair_azimuths=all_azimuths)` on `main`, unrelated to
+any of this cluster's own branches -- the exact same misconception this
+session already corrected once, for `espresso_machine`, earlier this pass.
+Confirmed live: `python tools/manifest.py --check` on current `main` prints
+`warning table_communal: closest pair of 8 seeds differs by only 2.8% at
+azimuth 90 (floor 4%)` right now, today, with none of this cluster merged --
+it is a real, already-live, non-blocking warning, not a hypothetical future
+one. Nothing to fix in code; `#134`'s own text should drop the "not
+currently checked live" clause when it lands, the same correction `#136`
+already made for the identical claim about `espresso_machine`.
+
+**Not a fix shipped here, same discipline as `#138`.** No code changed. The
+scratch branch used for this verification was local-only and never pushed;
+all fourteen source branches remain the real, individually reviewable
+units. This is a second compatibility report, not a fifteenth feature.
