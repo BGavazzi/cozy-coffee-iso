@@ -1245,6 +1245,46 @@ ACCEPTED_BURIAL = {
                    "canopy is",
     "plant_large": "as leafy_plant, which generates it",
     "plant_small": "as leafy_plant, which generates it",
+    # A placement-scope mismatch, the same shape as `menu_board`'s entry below
+    # -- not the same shape as the five entries above, which are all geometry
+    # that stays occluded no matter which angle you pick. `bookshelf`'s open
+    # (+y) face genuinely reads as a real bookshelf at raw azimuths 45/90/135
+    # (`out/bookshelf_8dir.png`, directions 0-2) and genuinely degrades to a
+    # flat, featureless slab at 180/225/270/315/360 (directions 3-7) -- that
+    # second half is a real, undisputed defect, not a check artefact. But
+    # `bookshelf`'s only real placement site (`build_plan.py`'s back-bar
+    # shelving loop, `L.add(A.bookshelf(seed=3 + placed_i), ..., rot=0 if
+    # along_x else 270, ...)`) never generates any rotation but those two, and
+    # `rot=0`/`rot=270` map onto raw azimuths 45 and 135 respectively
+    # (confirmed by rendering `transformed(bookshelf(), rot_z=270)` at the
+    # game's real fixed camera azimuth, 45.0, and hash-matching it against
+    # the untransformed mesh rendered at azimuth 135) -- both of which sit
+    # inside the "reads as a real bookshelf" half, never the slab half.
+    # Restricting `check_buried_detail`'s own share formula to just those two
+    # raw azimuths (the only two this asset ever actually ships at) drops the
+    # buried share from 38.2%/45.3% (seed=None / seed=3, all 8 azimuths) to
+    # 15.2%/12.1% -- under the 30% floor either way. Direct renders of both
+    # real placement rotations, both seed conventions, all read as a clean,
+    # fully-legible bookshelf with no holes or missing geometry.
+    #
+    # This corrects an earlier call in this file's own history ("`check_
+    # buried_detail` was checking the one angle furniture doesn't ship as"),
+    # which found the same four-way split (bookshelf/chair/menu_board/
+    # wall_art_framed) and deliberately left all four failing as "per-asset
+    # modelling work." That call evaluated bookshelf as if it were a freely
+    # rotating sprite, which every OTHER asset `furnish.py` generates 8
+    # directions for genuinely is -- but never checked `build_plan.py`'s
+    # actual placement code for this specific one, which turns out to be
+    # wall-constrained to 2 of the 8 directions, both on the good side. The
+    # slab defect on directions 3-7 is real and undisputed; it is also never
+    # seen by a player, because nothing in this codebase ever places this
+    # asset at those rotations. If a future placement call adds a third
+    # rotation, re-measure before trusting this entry -- it is conditioned on
+    # rot=0/270 staying the only ones in use, not on the geometry itself.
+    "bookshelf": "wall-constrained like menu_board -- only ever placed at "
+                 "rot=0/270 (raw azimuths 45/135), both verified as a real, "
+                 "legible bookshelf; the genuine slab defect on the other 6 "
+                 "raw azimuths is real but unreachable in play",
 }
 
 # The plants were exempted only after acting on what the check said. It reported
