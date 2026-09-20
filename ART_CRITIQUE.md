@@ -9467,3 +9467,73 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## The "N checks" claim, traced: real methodology, hand-maintained for a year, and not safely fixable by any grep this session tried
+
+Last hour's `PIPELINE.md`/`README.md` staleness pass (PR #143) found three
+disagreeing check-count claims -- 29 (`PIPELINE.md`), 26 (`README.md`), and
+a crude `grep -rn "^def check_" tools/*.py` returning 65 -- and flagged all
+three as suspect rather than picking one, per this session's own standing
+caution against substituting a crude recount for an unknown original
+methodology. Traced it properly this pass, the same way PR #140 traced "52
+Godot resources": `git log -S` to find every commit that changed the number,
+read what each one actually did.
+
+**The number was never a guess, and it was never a raw function count.**
+`git log -p --follow -- PIPELINE.md` shows the full lineage in one file:
+14 -> 16 -> 17 -> 18 -> 20 -> 21 -> 22 -> 23 -> 29, one bump per commit,
+each one landing alongside real, named work (`check_ui`'s own commit bumps
+21->22 and names it in the same line; the bitmap_font commit bumps 23->29
+and is the one this pass dug into). Checked out that bitmap_font commit
+(`8a078d9`, 2026-08-29) directly and ran the same crude grep against ITS
+tree, not today's: **50** `def check_` functions existed then, against a
+claimed "29." The gap isn't new and isn't drift -- it was already there the
+day "29" was written. Whatever "checks" meant, it was never "count every
+function named `check_*`."
+
+**What it likely does mean, with real evidence, not a guess:** grepping for
+bare `def check(...)` (no trailing underscore) across `tools/*.py` finds
+four per-producer aggregators -- `bitmap_font.check()`, `organic_rig.
+check()`, `portrait.check()`, and `manifest.check()` itself -- each of which
+folds several `check_*` functions into one callable surface:
+`bitmap_font.check()` returns `check_distinct(...) + check_counters(...) +
+check_bounds(...) + check_pairs(...)`, four functions folded into one call;
+`portrait.check()` folds `check_palette_exact`, `check_distinct`,
+`check_eyes_visible`, `check_determinism` into one; `organic_rig.check()`
+folds `check_direction_stability`, `check_roster`, `check_eyes_visible`
+(shared with `portrait.check()` -- the same sub-check counted from two
+producers) into one. A call-graph pass over all 60 distinct `check_*` names
+in the current tree, classifying each by whether it is ever called from
+inside another `check_*` function's body, found only 5 cleanly self-
+contained as sub-checks by that narrow test (`check_albedo_centre`,
+`check_albedo_regression`, `check_contrast`, `check_plan`, `check_waistline`)
+-- fewer than the bitmap_font/portrait/organic_rig examples above, because
+the analysis only catches a sub-check called BY another `check_*`-named
+function, and misses every sub-check folded by a bare `check()` aggregator
+(not `check_`-prefixed, so outside the search). That gap is the real finding:
+the true unit "N checks" counts is closer to *named check surfaces a
+producer or `manifest.py` exposes*, not individual functions -- and no
+regex distinguishes a surface from a helper without reading each
+aggregator's body by hand, the way this pass read four of them.
+
+**One dead end worth recording so it isn't retried.** `b0a9165`'s own commit
+message ("Verified by pinning skin and blush back to their old defaults and
+watching both fire at 100%. Twenty-six checks, 0 errors, 0 warnings.") reads
+like captured tool output, which would have made this trivial -- run the
+same command today, read the number off. It isn't: `grep` across
+`tools/manifest.py`'s full history for any printed "N checks" summary format
+finds nothing: the only live summary format `manifest.py --check` has ever
+printed is `"{errors} errors, {warnings} warnings"` (`tools/manifest.py:642`
+today), no check count anywhere in it, then or now. The commit message's
+"Twenty-six checks" was hand-typed prose echoing this file's own claimed
+number, not a tool's own report of it. There is no live ground truth to
+just re-run.
+
+**Left exactly as PR #143 flagged it -- unfixed, on purpose.** A confident
+correction would require going through every one of today's 60-65 `check_*`
+functions and every bare `check()` aggregator by hand, the way this pass
+did for four of them, to decide which are counted surfaces and which are
+folded sub-checks -- real, substantial work, not a grep. This section exists
+so that work starts from a traced methodology instead of another guess.
+Nothing in `PIPELINE.md`/`README.md` changed this pass; PR #143's flags
+stand. No code touched.
