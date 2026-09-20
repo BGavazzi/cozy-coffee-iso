@@ -9467,3 +9467,67 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## PR-pile reconciliation, round four: 23 PRs grew to 29, zero new real conflicts
+
+This file's reconciliation habit (Hours 44, 47, 48, 55, 63, then again at
+`pr-reconciliation-round-three`/PR #151 for the 23-PR pile of that hour) got
+re-run this hour after two more sessions (`snes-rpg-lock-refresh-and-focal-
+verdict`/PR #155 and `build-plan-snes-lock-refresh`/PR #156) pushed the open
+count from 23 to 29 without anyone re-checking whether the six newest
+branches (#151-#156) introduced a fresh collision, or whether the pile's
+older, un-re-verified corners (`assetlib.py`, touched by five separate open
+PRs: #132/#133/#134/#135/#145) still merge cleanly against each other now
+that the pile is this size.
+
+**Method, corrected mid-pass.** A naive pairwise `git merge-tree <merge-base
+of two PR branches> branchA branchB` was tried first on the `assetlib.py`
+cluster and reported 4 spurious "conflicts" (bookshelf-vs-bench, table_
+communal-vs-pastry_case, table_communal-vs-saucer, pastry_case-vs-saucer).
+All four turned out to be an artifact of the method, not real: two PR
+branches cut from different points of `main` share a merge-base *older*
+than either branch's own base, so `merge-tree` between them also surfaces
+whatever changed on `main` in between as a false "changed in both." The
+correct test is the one this file's own prior reconciliation passes already
+used and this pass returned to: merge every open PR's branch **sequentially
+into one throwaway worktree seeded from current `main`**, in PR-number
+order, so each merge sees the real common history. Under that method, all
+four "conflicts" above vanished -- `assetlib.py`'s five PRs each touch a
+different generator function and merge clean, pairwise and all-at-once.
+
+**What's actually still real, both already known, neither new:**
+
+- **#148 (`gates-py-doc-reconciliation`) vs #143 (`pipeline-md-counts-were-
+  stale`)** -- both rewrite the same `PIPELINE.md` stage-8 row and the same
+  `README.md` lines with different, incompatible replacement text. Already
+  named in PR #151's write-up. Resolved the same way again this pass: #148
+  supersedes #143 (it traces the discrepancy #143 only flagged, down to a
+  verified root cause and a real fix -- see "The 'N checks' count --
+  resolved, not by classifying, by finding what already classifies it").
+- **#150 (`galley-focal-box-per-run`) vs #128 (`galley-focal-box-was-one-
+  box-for-two-counters`)** -- both fix the identical galley `focal_box`
+  topology bug, independently, via two different implementations
+  (per-counter boxes vs per-run hulls) touching the same lines of
+  `tools/build_plan.py`, `tools/render_room.py`, and the same `NEXT.md`
+  paragraph. Already named in PR #151's write-up, resolved there in favor
+  of #128; resolved the same way again this pass, with #150's own numbers
+  kept in `NEXT.md` as corroborating evidence rather than deleted outright,
+  since a second independent measurement landing on the same conclusion
+  ("7 of 10 -> 2 of 10" vs #128's own residual-gap finding) is real
+  information even though only one implementation ships.
+
+**No new conflict anywhere else in the pile,** including the six branches
+added since PR #151's sweep (#151 itself, #152, #153, #154, #155, #156) and
+the previously-unswept `assetlib.py` five-way cluster. Verified, not
+asserted: the fully-reconciled 29-PR worktree passes `pytest -q` at 40/40,
+and with #154/#155/#156 all combined, `python tools/lockfile.py --status
+--style snes_rpg` shows zero `STALE` entries left (all four of last hour's
+and this hour's stale-lock fixes land together cleanly), `style_approve.py`
+reports both styles `APPROVED for use`.
+
+**Not a task, no code shipped.** Same as every other reconciliation pass on
+this branch: the finding is the reconciliation itself, recorded so a future
+merge of this pile knows exactly which two pairs need a human decision
+(#148 vs #143, #150 vs #128, both already decided) and can otherwise merge
+the remaining 27 branches in any order without surprises. Scratch worktree
+used for verification, discarded after -- nothing here changes `main`.
