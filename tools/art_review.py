@@ -1245,6 +1245,41 @@ ACCEPTED_BURIAL = {
                    "canopy is",
     "plant_large": "as leafy_plant, which generates it",
     "plant_small": "as leafy_plant, which generates it",
+    # A third shape of reason, distinct from every entry above (all geometry
+    # that stays occluded regardless of viewing angle) and from menu_board's
+    # entry elsewhere in this session's backlog (wall-constrained to 2 of 8
+    # raw azimuths, both verified legible). `wall_art_framed` has no real
+    # placement call site AT ALL -- not build_plan.py, not render_room.py,
+    # nothing. `furnish.py`'s `Recipe` table generates its 8-direction sprite
+    # sheet the same as every catalog asset, but nothing in this codebase
+    # ever instantiates a placed one. This is the same fact an earlier
+    # investigation into `check_generator_range`'s azimuth-blindness already
+    # found and used to close its own flip on this asset ("`wall_art_framed`
+    # isn't placed anywhere in this repo's real room compositions at all
+    # (catalog-only, in `furnish.py`'s `Recipe` table, never called from
+    # `build_plan.py` or `render_room.py`) -- no live casualty regardless"),
+    # independently re-confirmed here (grep across every tools/*.py call
+    # site) for a different check that measures a different thing.
+    #
+    # The geometry itself is real, undisputed detail-behind-a-solid-back:
+    # `wall_art_framed` mounts its mount/picture/horizon layers proud of one
+    # face of a frame box, so viewed from the opposite side (raw azimuths
+    # 225/270/315 -- confirmed by direct render and front_facing() sweep,
+    # `proof/wall_art_framed_8dir_never_placed.png`) the frame's own back
+    # blocks them, same mechanism as a real picture frame viewed from
+    # behind. Azimuths 180/360 are not part of this: those go edge-on (a
+    # separate, already-documented `check_member_thickness` finding on the
+    # same three 2fold panels), not back-facing.
+    #
+    # If a future placement call ever wires this asset into build_plan.py or
+    # render_room.py, re-measure before trusting this entry -- against
+    # whichever rotations that call site actually uses, the same way
+    # menu_board's entry is conditioned on its own two. Until then there is
+    # no rotation to verify against, because there is no placement at all.
+    "wall_art_framed": "never placed in any real room composition -- "
+                       "catalog-only (furnish.py's sprite sheet, no "
+                       "build_plan.py/render_room.py call site); no live "
+                       "casualty regardless of which raw azimuth is bad",
 }
 
 # The plants were exempted only after acting on what the check said. It reported
