@@ -9577,3 +9577,62 @@ new, smaller, honestly-measured gap rather than struck out entirely.
 
 New branch (`galley-focal-box-per-run`, off `main`). Left unmerged per
 standing practice.
+
+---
+
+## Correction: this fix duplicates PR #128, opened earlier in this same session
+
+Found via `gh pr list` at the start of the following hour, before starting
+its own investigation -- and should have been checked BEFORE this branch
+was started, not after. PR #128 (`galley-focal-box-was-one-box-for-two-
+counters`) fixed this exact bug earlier in this session: `focal_box()`
+unions a galley's two counters into one box spanning the aisle between
+them, and the fix is to split it per counter. Both PRs independently
+diagnosed the identical root cause and implemented the identical shape of
+fix (`focal_box()` returns per-run boxes, `focal_report()` unions per-box
+hulls), and -- worth recording as accidental cross-validation -- both
+produce IDENTICAL numbers on the three seeds they share:
+
+    seed  8: PR #128 L=+0.046 C=+0.146 D=+0.021  ==  PR #150 (this branch), same
+    seed 10: PR #128 L=+0.050 C=+0.146 D=-0.002  ==  PR #150 (this branch), same
+    seed 12: PR #128 L=+0.108 C=+0.146 D=+0.081  ==  PR #150 (this branch), same
+
+**PR #128 is the better implementation and should be treated as canonical.**
+It clusters zones by geometric proximity (any two zones closer than 0.5
+world units merge into one counter) rather than this branch's approach
+(pairing `service`/`backbar` zones by list position, gated on
+`floorplan.SERVICE_RUNS[topology] > 1`) -- clustering is topology-agnostic
+and needs no name-based lookup or an assumption about zone-append order,
+so it keeps working for a future multi-run topology this branch's approach
+would silently mis-handle if it ever violated the paired-append-order
+assumption. PR #128 also ran the real `manifest.py --check` end to end for
+both styles (not just box-level numbers) and rendered+eyeballed the
+residual seed-10 failure with a plausible root-cause hypothesis (the wood
+floor between counters carries real competing plank-seam detail) --
+verification this branch did not do.
+
+**What this branch adds that PR #128 doesn't have:** a wider 1-60 seed scan
+found 2 more galley occurrences beyond the 3 PR #128 measured (seeds 48,
+57) -- seed 48 passes cleanly post-fix, seed 57 narrowly fails detail
+post-fix (the *same* narrow-failure shape as seed 10, confirmed real at
+both 320 and 480 target resolutions, not a resolution artifact). This is a
+genuinely useful addition, not just a repeat, but it does not justify two
+open PRs fixing the same bug two different ways.
+
+**Recommendation, not an action taken here:** keep PR #128 as the fix that
+gets merged; fold this branch's seed 48/57 finding into a comment on PR
+#128 (or a tiny follow-up commit there) instead of merging this branch;
+close PR #150. Left for the user to decide -- closing another open PR is
+not this session's call to make unilaterally, even one it opened itself by
+mistake.
+
+**Root cause of the duplication, worth fixing going forward:** the standing
+audit loop's own methodology has no step for checking `gh pr list`/
+`git branch -a` for an existing unmerged attempt on the same claim before
+starting a fix. `NEXT.md`/`ART_CRITIQUE.md` on `main` correctly still
+described this as an open accepted limitation, because PR #128 is unmerged
+-- so nothing about this hour's read of `main` was factually wrong, the gap
+was procedural: an open, unmerged PR from an earlier hour in this same
+session is invisible to a fresh read of `main`'s docs, and checking for one
+takes one `gh pr list` call. Recorded here so a future hour does that check
+first, not after building a second version of the same fix.
