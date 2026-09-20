@@ -38,7 +38,9 @@ Three kinds, in the order a real review actually applies them:
 from __future__ import annotations
 
 import argparse
+import re
 from dataclasses import dataclass
+from pathlib import Path
 
 KINDS = ("deterministic", "llm", "taste")
 
@@ -273,11 +275,55 @@ def by_producer(producer: str) -> list[Gate]:
     return [g for g in ALL_GATES if g.producer == producer]
 
 
+def verify(root: Path | None = None) -> list[str]:
+    """Diff REGISTRY against the live `check_*` functions in `tools/*.py`.
+
+    This catalog has drifted before without anyone noticing until a doc that
+    hand-restated its size (PIPELINE.md's "29", tools/README.md's "62") was
+    caught stale by a manual `git grep` comparison (see ART_CRITIQUE.md,
+    "The 'N checks' count"). That comparison is mechanical -- this function
+    is that same comparison, kept runnable instead of repeated by hand.
+    """
+    root = root or Path(__file__).resolve().parent
+    pattern = re.compile(r"^def (check_\w+)", re.MULTILINE)
+    live: set[tuple[str, str]] = set()
+    for path in sorted(root.glob("*.py")):
+        if path.name == "gates.py":
+            continue
+        for name in pattern.findall(path.read_text(encoding="utf-8")):
+            live.add((path.name, name))
+
+    cataloged = {(g.producer, g.name) for g in REGISTRY}
+    out = []
+    for producer, name in sorted(live - cataloged):
+        out.append(f"not catalogued: {producer}::{name} is a live check_* "
+                   f"function with no entry in gates.py's REGISTRY")
+    for producer, name in sorted(cataloged - live):
+        out.append(f"stale entry: gates.py catalogs {producer}::{name}, but "
+                   f"no such function exists there any more")
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--list", nargs="?", const="all", choices=[*KINDS, "all"])
     ap.add_argument("--producer", metavar="FILE")
+    ap.add_argument("--verify", action="store_true",
+                     help="diff REGISTRY against the live check_* functions "
+                          "in tools/*.py")
     args = ap.parse_args()
+
+    if args.verify:
+        problems = verify()
+        if not problems:
+            print(f"clean: all {len(REGISTRY)} catalogued deterministic "
+                  f"gates match a live check_* function, and every live "
+                  f"check_* function is catalogued")
+            return 0
+        for p in problems:
+            print(f"  {p}")
+        print(f"\n{len(problems)} problem(s)")
+        return 1
 
     if args.producer:
         gates = by_producer(args.producer)

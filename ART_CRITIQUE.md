@@ -9467,3 +9467,69 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+---
+
+## `gates.py --verify` -- closing the gap the last branch found but didn't fix
+
+The `gates-py-doc-reconciliation` branch (PR #148, this session, a few hours
+back) found that `tools/gates.py`'s catalog had gone stale twice against the
+real codebase -- once indirectly (PIPELINE.md's "29" was never derived from
+it at all) and once directly (`tools/README.md`, which DOES point at
+`gates.py`, still hand-restated its size as 62 when the live catalog had
+grown to 65). That branch fixed the docs and explicitly flagged the root
+cause as unfixed: `gates.py`'s own `REGISTRY` has no automated check tying
+it to the live `check_*` functions in the codebase -- it has only stayed in
+sync because whoever added a new `check_*` function remembered to also add
+it here, twice, per its own commit history.
+
+This branch closes that gap directly: a `verify()` function in `gates.py`
+itself, wired to `--verify`, that scans every `tools/*.py` file (except
+`gates.py` itself) for top-level `def check_\w+` definitions with the exact
+same regex discipline the by-hand audit used (`^def check_`, column 0, so a
+nested/indented helper doesn't count, matching the convention `REGISTRY`
+already uses), and diffs the result against `REGISTRY`'s `(producer, name)`
+pairs in both directions -- a live function with no catalog entry, and a
+catalog entry whose function no longer exists.
+
+**Verified empirically, not just by reading the code:**
+
+    $ python tools/gates.py --verify
+    clean: all 65 catalogued deterministic gates match a live check_*
+    function, and every live check_* function is catalogued
+
+That's the expected "nothing to report" result on the current, already-
+reconciled codebase. To prove the tool actually *detects* drift rather than
+trivially passing, both failure directions were exercised against temporary
+scratch directories (never against real repo files):
+
+- A temp dir holding one file with an uncatalogued `check_totally_new`
+  function correctly produced a `not catalogued: ...` finding for it (and,
+  since that temp dir had none of the real 65 functions, all 65 real
+  `REGISTRY` entries correctly came back `stale entry: ...` against it too
+  -- confirming the "catalog entry with no matching function" direction in
+  the same run).
+- Re-run against the real `tools/` directory afterward: clean again, same
+  as before the scratch-dir tests, confirming the tests read but never
+  wrote anything under `tools/`.
+
+**Zero regression check:** `python tools/gates.py --list` and
+`python tools/gates.py --producer character.py` re-run after the edit,
+byte-identical output to before -- the new `import re`, `from pathlib import
+Path`, and `verify()` function are additive; nothing about the existing
+`REGISTRY`/`by_kind`/`by_producer` code path changed.
+
+**Honest scope note:** this closes the specific gap PR #148 flagged (no
+automated tie between the catalog and the code), not a general CI
+enforcement story -- nothing currently *runs* `gates.py --verify`
+automatically on a commit; it is a command a human (or agent) has to
+remember to run, same as `python tools/manifest.py --check` today. Wiring
+it into an actual CI/pre-commit gate is a reasonable further step and
+explicitly out of scope here -- this branch is the tool existing and being
+proven correct, not a new enforcement mechanism.
+
+New branch (`gates-verify-self-check`, off `main`, independent of PR #148's
+`gates-py-doc-reconciliation` branch -- both touch `tools/gates.py`/
+`tools/README.md`'s "Gates and provenance" section and will need ordinary
+reconciliation on merge, same as every other PR cluster this session).
+Left unmerged per standing practice.

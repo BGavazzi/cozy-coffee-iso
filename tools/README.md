@@ -75,6 +75,7 @@ proof sheet, which every shipped feature here has always waited on).
 
     python tools/gates.py --list
     python tools/gates.py --producer character.py
+    python tools/gates.py --verify       # catalog vs. live check_* functions
 
 `tools/lockfile.py` records which gates a producer's output passed, and at
 what content hash of the active style's `bible.yaml` -- so an approval is
