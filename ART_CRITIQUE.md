@@ -9467,3 +9467,79 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+---
+
+## `snes_rpg` reaches real APPROVED status -- three stale lock entries were the only thing standing in the way, not an unfinished feature
+
+Went looking for "other work worth doing" this hour after the eye-
+legibility lever-mismatch sweep came up clean on its last candidate
+(`portrait.py`, see above). Nearly picked up the SNES style-pack
+architecture plan on the assumption it was unstarted -- it is not. NEXT.md's
+own "Style packs: generalizing beyond one art direction" section records
+78+ landed PRs on this exact initiative (data model, gate catalog, lock
+provenance, the LLM gate contract, the organic cylinder/sphere rig,
+`--style` plumbed through every entry-point script, an import-order fix
+scoped to a real measured defect). Correcting course before acting on a
+stale belief: this session's own prior memory note about this repo already
+warned "verify via git log before trusting a 'not built' claim" for this
+exact area, and the belief carried into this hour's wakeup context was
+exactly that mistake, one level removed (not "not built" but "not
+started," same failure).
+
+**What `style_approve.py --style snes_rpg` actually reported: three stale
+lock entries, not a missing feature.** `lockfile.py --status` showed
+`organic_rig.py:silhouette`, `palette_forge.py:palette+variants`,
+`build_plan.py:proof/plan_room_snes_rpg.png` and `render_room.py:proof/
+shop_snes_rpg.png` all `STALE` -- approved against an older bible hash
+(`412f3d9424a679b6`, 2026-09-07) than the style's current one
+(`644eb8fe574e9786`). Something edited `styles/snes_rpg/bible.yaml` after
+that recording and nobody re-ran `--lock` since. The same shape of drift
+as this hour's earlier `portrait.py`/`reader` correction, at repo scale
+rather than one producer.
+
+**Re-verified live, not rubber-stamped.** `organic_rig.py --check --style
+snes_rpg --lock` and `palette_forge.py --style snes_rpg --lock --quiet`
+both re-ran their real gates against current code and the current bible,
+and both still pass -- refreshed cleanly, `approved: true` at the current
+hash. That left one requirement: `style_approve.py` needs at least one
+approved, current `llm:focal_hierarchy` verdict, and neither of the two
+existing ones (`build_plan.py`'s and `render_room.py`'s) was current.
+
+**Regenerated the render fresh rather than judging a stale cached image.**
+`python tools/render_room.py --style snes_rpg` -- new `proof/
+shop_snes_rpg.png`, deterministic proxy numbers all positive (+0.048 mean
+L, +0.167 contrast, +0.054 detail, counter vs elsewhere). Looked at it
+side by side with the already-approved `proof/shop_big.png`
+(`cozy_ghibli`) before judging, not just trusting the numbers -- this is
+exactly the check `gates.py` names as the strongest candidate for
+approximating a real judgment with an ever-more-specific numeric proxy,
+so the numbers passing isn't the same question as the rubric's actual
+question.
+
+**Real verdict, including the part that doesn't flatter the result.**
+PASS, but recorded as a genuinely closer call than `cozy_ghibli`'s
+version of the same room, not a clean rubber stamp: `snes_rpg`'s higher
+saturation makes the green rug (with a solid-green-clothed customer on
+it) and the magenta bench/cafe-table set noticeably more eye-catching
+than their more desaturated `cozy_ghibli` counterparts, real competition
+for the counter that the reference image doesn't have to the same degree.
+The counter still wins on a sub-second glance -- back-wall position,
+framed by windows and the chalkboard signage, the one clean light-vs-dark
+value break in the frame -- but it's a judgment call, not a landslide, and
+recorded as one. See `proof/shop_snes_rpg.png`'s `llm_verdict.reasoning`
+in `styles/snes_rpg/lock.json` for the full recorded reasoning.
+
+**Result:** `python tools/style_approve.py --style snes_rpg` now reports
+`APPROVED for use` for the first time. `cozy_ghibli` confirmed unaffected
+(`style_approve.py --style cozy_ghibli`: still `APPROVED`). 40-test suite
+passes. `build_plan.py`'s own `plan_room_snes_rpg.png` llm-verdict entry
+is left stale -- not needed, `style_approve.py` only requires one current
+verdict of this kind, and re-judging a second image for a requirement
+already satisfied would be exactly the "sweeping change nobody looked at"
+this track's own process argues against. Left as a genuinely open,
+smaller follow-up if anyone wants a second independent judgment on record.
+
+Branch `snes-rpg-lock-refresh-and-focal-verdict`, based on `main` directly,
+left unmerged. Touches `styles/snes_rpg/lock.json` and `proof/
+shop_snes_rpg.png` only -- no code changes.
