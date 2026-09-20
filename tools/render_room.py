@@ -360,16 +360,21 @@ def focal_report(px, target, cam, centre, span, box=None):
     the wrong instrument -- darkening a corner ADDS ramp transitions there, so a
     deliberate vignette scored as detail and the "focal peak" landed in an empty
     corner.
+
+    `box` may be one box or a list of boxes -- a galley's two counter runs
+    sit on OPPOSITE walls, and a single hull built from the union of both
+    (the original, single-box behaviour) spans the room's full depth,
+    grading the walkway and seating between them as if it were counter. One
+    hull per box, unioned by "is this pixel inside ANY of them", keeps each
+    run's own region tight the same way the single-hull fix below already
+    keeps ONE run's region tight against its own front/back bleed -- see
+    ART_CRITIQUE.md, "galley's focal box, measured and fixed, not loosened".
     """
     from oklab import srgb_to_oklab
-    (ax, bx), (ay, by), (az, bz) = box or FOCAL_BOX
-    us, vs = [], []
-    for x in (ax, bx):
-        for y in (ay, by):
-            for z in (az, bz):
-                p = (x, y, z)
-                us.append(dot(p, cam.right) - dot(centre, cam.right))
-                vs.append(dot(p, cam.up) - dot(centre, cam.up))
+    boxes = box or FOCAL_BOX
+    if isinstance(boxes[0][0], (int, float)):
+        boxes = [boxes]
+
     def to_px(u, v):
         # `px` is the full target x target buffer, before the crop-to-content
         # step. Subtracting the crop origin here shifted the rect off the
@@ -377,7 +382,6 @@ def focal_report(px, target, cam, centre, span, box=None):
         # a real region cannot have, and the tell that the box was degenerate.
         return ((u / span * 0.5 + 0.5) * target,
                 (0.5 - v / span * 0.5) * target)
-    pts = [to_px(u, v) for u, v in zip(us, vs)]
 
     # The eight corners of a world-space box project to a HEXAGON, not to a
     # rectangle, and taking their axis-aligned bounding box was grading a
@@ -388,7 +392,17 @@ def focal_report(px, target, cam, centre, span, box=None):
     # answer in a known direction; it just makes the instrument deaf, and the
     # first sign of that was a contrast floor that had to be set NEGATIVE to
     # let real rooms through.
-    hull = _convex_hull(pts)
+    hulls = []
+    for (ax, bx), (ay, by), (az, bz) in boxes:
+        us, vs = [], []
+        for x in (ax, bx):
+            for y in (ay, by):
+                for z in (az, bz):
+                    p = (x, y, z)
+                    us.append(dot(p, cam.right) - dot(centre, cam.right))
+                    vs.append(dot(p, cam.up) - dot(centre, cam.up))
+        pts = [to_px(u, v) for u, v in zip(us, vs)]
+        hulls.append(_convex_hull(pts))
 
     w = target
     def stats(pred):
@@ -400,7 +414,9 @@ def focal_report(px, target, cam, centre, span, box=None):
         return (sum(Ls) / len(Ls),
                 Ls[int(len(Ls) * 0.95)] - Ls[int(len(Ls) * 0.05)])
 
-    inside = _in_hull(hull)
+    hull_preds = [_in_hull(h) for h in hulls]
+    def inside(x, y):
+        return any(p(x, y) for p in hull_preds)
     n_in = sum(1 for i, c in enumerate(px)
                if c is not None and inside(i % w, i // w))
     if n_in < 200:

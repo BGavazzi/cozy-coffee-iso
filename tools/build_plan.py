@@ -989,11 +989,36 @@ def _people(L: Layout, plan: F.Plan, n: int = 7, seed: int = 1,
 
 
 
-def focal_box(plan: F.Plan) -> tuple:
-    """The service area, as the run and the back bar together."""
-    zs = plan.of("service") + plan.of("backbar") + plan.of("service_return")
-    return ((min(z.x0 for z in zs), max(z.x1 for z in zs)),
-            (min(z.y0 for z in zs), max(z.y1 for z in zs)), (0.0, 1.50))
+def focal_box(plan: F.Plan) -> tuple | list[tuple]:
+    """The service area(s), as each run and its own back bar together.
+
+    A single box for every topology except `galley`. Galley's two runs sit
+    on OPPOSITE walls (`floorplan.SERVICE_RUNS["galley"] == 2`), and
+    unioning them into one box -- the original behaviour, still correct for
+    every one-run topology -- spans the room's full depth, so the "focal
+    zone" includes the walkway and seating between the two counters as if
+    it were counter. Returns one box per run instead when there is more
+    than one, paired by list position the same way `build()`'s own
+    `runs[i]`/`backs_all[i]` zip already trusts: `floorplan.generate()`
+    appends each run's `[run, back, queue]` triple together, so
+    `plan.of("service")[i]` and `plan.of("backbar")[i]` are one counter's
+    two halves. `render_room.focal_report` accepts either shape. See
+    ART_CRITIQUE.md, "galley's focal box, measured and fixed, not loosened".
+    """
+    n_runs = F.SERVICE_RUNS.get(plan.topology, 1)
+    svc, back, ret = (plan.of("service"), plan.of("backbar"),
+                     plan.of("service_return"))
+    if n_runs <= 1 or len(svc) != n_runs or len(back) != n_runs:
+        zs = svc + back + ret
+        return ((min(z.x0 for z in zs), max(z.x1 for z in zs)),
+                (min(z.y0 for z in zs), max(z.y1 for z in zs)), (0.0, 1.50))
+    boxes = []
+    for i in range(n_runs):
+        zs = [svc[i], back[i]] + ret
+        boxes.append(((min(z.x0 for z in zs), max(z.x1 for z in zs)),
+                      (min(z.y0 for z in zs), max(z.y1 for z in zs)),
+                      (0.0, 1.50)))
+    return boxes
 
 
 # How tall the island's back bar stands, and the reasoning that got there is

@@ -22,15 +22,21 @@ three items, all real:
   Deliberately not "fixed" -- a rig boosted until the metric agreed would be a
   knob rather than a cause. Do not attempt to close this one; it is recorded
   as an accepted, understood gap, not a bug.
-- **The galley topology fails `manifest.py --check`'s composition test on 3 of
-  3 occurrences (100%)**, under both style packs. Not new -- commit
-  `71451c3`'s own message already measured this at n=40 and explicitly
-  declined to fix it (galley's focal box spans the room's full depth, so its
-  detail/mean-L reads low by the same box-size mechanism the closed corner
-  case named, just more severe). Never surfaced into `ART_CRITIQUE.md`'s prose
-  until now -- see "A real, already-measured galley finding was never folded
-  out of its own commit message". Do not loosen `MIN_FOCAL_L`/
-  `MIN_FOCAL_DETAIL` to admit it; that would tune the floor to the answer.
+- **Mostly closed 2026-09-20: the galley topology's composition-check
+  failure was the check's box, not the room.** `focal_box` unioned both of
+  a galley's counter runs (opposite walls) into one box spanning the room's
+  full depth, grading the walkway between them as if it were counter --
+  `build_plan.focal_box()` now returns one box per run instead, and
+  `render_room.focal_report()` unions per-run hulls rather than building one
+  hull from both. `MIN_FOCAL_L`/`MIN_FOCAL_DETAIL` were NOT touched -- this
+  fixed what the check measures, not its floor, so `71451c3`'s original
+  refusal to tune the floor to the answer still stands correct. Across the 5
+  galley seeds found in a 1-60 scan, failing (seed, floor) pairs went from 7
+  of 10 to 2 of 10. Two seeds still narrowly fail the detail floor (both
+  within 0.01 of 0, confirmed real at both render resolutions, not a
+  resolution artifact) -- a smaller, honestly-measured residual gap, not a
+  closed case. See `ART_CRITIQUE.md`, "galley's focal box, measured and
+  fixed, not loosened".
 
 **Closed 2026-09-15: the UI icon speckle gate.** The earlier claim here (4 of
 20 `cat: ui` icons failing the speckle gate under both styles, unfixable by
