@@ -9467,3 +9467,74 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+---
+
+## Full 23-PR reconciliation (#128-#150) -- one real duplicate found, one real doc-claim collision, checks confirmed clean on the combined state
+
+Last full sweep (Hour, "PR-conflict reconciliation, re-run at the pile's
+largest size yet") covered through PR #142. Nine more PRs (#143-#150) opened
+since. Ran the same drill again in a scratch worktree
+(`git branch -f _recon_tmp main && git worktree add ../recon-check-150
+_recon_tmp`, local-only, never pushed): merge every open PR in order with
+`git merge --no-edit origin/<branch>`, resolve conflicts, keep going.
+
+**Every PR merges. Two conflicts were real content collisions, not the usual
+tail-append.**
+
+1. **PR #148 (`gates-py-doc-reconciliation`) vs PR #143's already-merged
+   text.** #143 had flagged PIPELINE.md's "29 checks" and README.md's
+   "twenty-six checks" as stale-and-unverified, without resolving which
+   number was right. #148 resolves it for real, citing `gates.py --list`
+   (65) as the live source of truth and explaining why hand-restating a
+   count anywhere else keeps going stale. Kept #148's text, not a merge of
+   both -- #143's caveat is superseded, not complementary, the same relation
+   PR #131 had to PR #132 in the previous round.
+2. **PR #150 (`galley-focal-box-per-run`) vs PR #128
+   (`galley-focal-box-was-one-box-for-two-counters`).** Already found and
+   flagged in-session: both independently diagnosed and fixed the identical
+   galley `focal_box` bug (the two-counter union spanning the room's full
+   depth). This is the one this sweep's own methodology -- clustering by
+   file/line proximity across the open pile -- would NOT have caught ahead
+   of time, because the collision isn't two PRs editing nearby lines of an
+   existing function; it's two PRs each rewriting the same function's full
+   body from scratch, independently, with different internal structure
+   (name/list-position pairing gated on `SERVICE_RUNS` vs
+   geometric-proximity clustering that's topology-agnostic) but numerically
+   identical output. `git merge-tree` line-clustering, which caught every
+   real risk in the previous round, gives no signal for "two functions that
+   look nothing alike on a diff but compute the same thing." The only way
+   this surfaced at all was running `gh pr list` before starting new work
+   and noticing the titles described the same fix twice. Kept PR #128's
+   version (topology-agnostic, generalizes to a third counter-run topology
+   for free) over PR #150's (gated on today's one `SERVICE_RUNS` entry) in
+   this merge; PR #150 itself already carries an honest correction commit
+   recommending the same. Both PRs are left open and unmerged for the human
+   to close -- not this sweep's call to make.
+
+**Everything else merged with the routine tail-append pattern** (every
+branch forked from the same point in this file, appending near the end;
+strip the three marker lines, keep both blocks) -- same as every previous
+round, nothing new to report per-PR.
+
+**Checks run against the fully-merged combined state, not just "no git
+conflict":**
+
+- `python tools/gates.py --verify`: clean -- all 65 catalogued gates match a
+  live `check_*` function both ways, confirming #148 and #149 didn't drift
+  from each other despite both touching this file's territory.
+- `python tools/manifest.py --check`: the two `composition: plan 8 (galley)`
+  errors present on plain `main` (counter brightness/detail against its
+  room, the exact bug #128/#150 both fix) do not appear in the merged
+  state -- the fix is live and working post-merge, not just present in two
+  branches that happen not to collide.
+- The `skin-*` eye-legibility errors that appear in both the merged-worktree
+  run and a plain-`main` run, at different skin/azimuth combinations each
+  time the command is re-run, look like an existing non-deterministic gate
+  rather than anything this merge introduced or changed -- noted here, not
+  chased, since it isn't a reconciliation question and predates every PR in
+  this pile.
+
+No other regression found against the previously-passing set. Scratch
+worktree used for this was local-only and never pushed; all 23 source
+branches remain the real reviewable units, still open, still unmerged.
