@@ -9467,3 +9467,46 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## NEXT.md's "UI art" count was stale, not just the bookkeeping this file already flagged elsewhere
+
+This file's own "Where the open work actually is -- read this first" header
+already warns that NEXT.md's snapshot "will drift again," and has already
+caught two real instances of it drifting (the "2 of 6" muffin/bagel/etc.
+count going stale once `_despeckle` quietly carried more icons over the
+line, and the six chrome ids sitting unused in `ui_forge.py`'s `UI_PROMPTS`
+months after `ui_chrome.py` was built to draw them instead). Went looking
+for a third instance in the same section rather than assuming those two
+were the only ones.
+
+`NEXT.md`'s "What a game still needs" section, under "Closed since this
+question was first asked", says: *"UI art -- 14 usable of 15 declared,
+split between a generative path for object icons and a procedural one for
+chrome."* Checked the actual current numbers rather than trusting the
+sentence: `assets.yaml` declares **25** `cat: ui` ids today, not 15 --
+`ui_forge.UI_PROMPTS` covers 14 of them (SDXL-generated object icons),
+`ui_chrome.CHROME` covers 10 (deterministic chrome), and the 25th,
+`ui_font`, is `bitmap_font.py`'s own separate path (confirmed built,
+`out/ui/font/font.json` and `out/ui/snes_rpg/font/font.json` both present
+on disk). Cross-checked set membership both directions, the same two-
+directional technique this loop has used before on `gates.py`/
+`GENERATORS`/`REQUIRED_PRODUCERS`: every declared id has exactly one
+producer, and no producer claims an id `assets.yaml` doesn't declare.
+
+**Why it drifted:** the icon roster grew (cappuccino, cold brew, tea, and
+others were added after the "15 declared" sentence was written) at the
+same time the six-chrome-ids fix (this file, "The six chrome ids were
+still being generated, silently, for nothing") *removed* six ids from
+`UI_PROMPTS` and moved them to `ui_chrome.py` -- two changes to the same
+number, in opposite directions, on different branches, neither of which
+touched this one summary sentence. The "usable" half was stale too: 14/14
++ 10/10 both-styles-clean is already independently verified and on record
+in that same section, so the accurate current count is 25 usable of 25
+declared, not a downgrade from 14/15 -- the roster grew AND every new
+entry already has a working producer.
+
+**Fixed:** the "UI art" bullet in `NEXT.md`'s closed-items list, updated to
+the current, verified count and cross-referenced here. No code changed --
+this is a documentation correction, the same shape as the "2 of 6" and
+six-chrome-ids fixes it follows, just caught before a person read the old
+number and acted on it rather than after.

@@ -539,8 +539,18 @@ not, not every asset any game has ever shipped.
 
 **Closed since this question was first asked**
 
-- ~~UI art~~ — 14 usable of 15 declared, split between a generative path for
-  object icons and a procedural one for chrome.
+- ~~UI art~~ — **count corrected 2026-09-19, was stale**: 25 usable of 25
+  declared (was "14 usable of 15 declared" here, describing an older,
+  smaller roster from before both the icon set grew and the six chrome ids
+  were split out of the generative path into `ui_chrome.py` -- see
+  `ART_CRITIQUE.md`, "NEXT.md's 'UI art' count was stale, not just the
+  bookkeeping this file already flagged elsewhere"). Split three ways now,
+  not two: a generative path for 14 object icons (`ui_forge.py`, verified
+  14/14 clean under both styles), a procedural path for 10 pieces of chrome
+  (`ui_chrome.py`, deterministic, 10/10 both styles), and a font path for
+  `ui_font` (`bitmap_font.py`, confirmed built for both styles). `assets.yaml`
+  declares exactly 25 `cat: ui` ids and exactly 25 have a producer that
+  covers them -- checked directly, not assumed from the old count.
 - ~~Engine export for animations and UI~~ — all three producers now build
   Godot resources, 52 of them.
 - ~~Hand-authoring a subject list per reference photo~~ —
