@@ -6,14 +6,14 @@
     ],
     "llm_verdict": {
       "judge": "claude-sonnet-5",
-      "reasoning": "Weaker than the other snes_rpg scene: this layout's counter is a long thin run rather than a compact cluster, and the magenta cushioned chairs scattered through the seating area compete with it more than plants do in the other scene. The grey espresso machine at the counter's far end still reads as the first thing noticed on a glance, just by a smaller margin (+0.078 measured focal contrast vs +0.166). Recorded as honest secondary evidence, not cherry-picked.",
+      "reasoning": "Re-verified after the same bible.yaml edit that staled the other 3 snes_rpg entries this session. The room layout, counter, and espresso machine are pixel-identical to the 2026-09-07 recording -- only the barista's garment colour changed (was near-black/grey, now green/tan under the current material mapping), which is what moved the deterministic focal-contrast proxy from +0.078 down to +0.000 (mean-L and detail still favour the counter, +0.120/+0.038). Looked at the image directly: the grey espresso machine is still the one cool-toned object in an otherwise warm palette and still reads as the first thing the eye catches, but by an even smaller margin than the already-marginal 2026-09-07 call -- this is the weakest of the three focal_hierarchy verdicts now on record for this style, right at the edge of PASS, not a comfortable one. Recorded honestly as such, not smoothed over.",
       "rubric": "focal_hierarchy"
     },
     "producer": "build_plan.py",
-    "recorded_at": "2026-09-07T16:17:07+00:00",
+    "recorded_at": "2026-09-20T18:27:17+00:00",
     "scope": "proof/plan_room_snes_rpg.png",
     "style": "snes_rpg",
-    "style_hash": "412f3d9424a679b6"
+    "style_hash": "644eb8fe574e9786"
   },
   "character.py:roster": {
     "approved": false,
