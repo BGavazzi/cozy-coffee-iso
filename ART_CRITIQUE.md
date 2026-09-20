@@ -9467,3 +9467,63 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## Swept every producer file in `tools/` for `furnish.py`'s UNMAPPED_REASON pattern -- one real hit (already fixed, PR #145), everything else was either already resolved or a genuine, correctly-reasoned constraint
+
+Last hour's `saucer` fix (PR #145) came from a fresh angle this session
+hadn't tried yet: reading `tools/*.py` comments directly for accepted-
+limitation language, rather than re-reading the four top-level `.md` files.
+Continued that sweep this hour across every other producer with its own
+registry or explanatory comment block -- `tileset.py`, `ui_forge.py`,
+`ui_chrome.py`, `character.py`, `animate.py`, `floorplan.py`, `gates.py`,
+`ingest.py`, `organic_rig.py`, `package_godot.py`, `assetlib.py` -- looking
+specifically for `furnish.py`'s shape: a check firing, one lever tried, and
+either an unexamined or an incorrectly-accepted reason it can't be fixed.
+
+**No second `UNMAPPED_REASON`-shaped registry exists anywhere else in
+`tools/`.** `grep -rln "UNMAPPED\|NO_RECIPE\|NOT_BUILT\|_REASON\s*=\|no builder\|no recipe"` across every file in `tools/` returns only
+`furnish.py` and `assetlib.py` (the latter just narrates where
+`furnish.py`'s own registry sent real builder work, including the
+`fridge_under`-and-neighbours "back-of-house fixtures" section already
+built to close earlier gaps it found).
+
+**Every other candidate this pass found was already closed, or was a real
+constraint rather than an untried lever:**
+- `tileset.py`'s "**Wall tiles cannot be stacked**" is a proven mathematical
+  fact (the camera's `sqrt(6)/4 * W` vertical scale is irrational, never a
+  whole pixel count at any tile width), not a check limitation -- no
+  downstream lever applies to an irrational number.
+- `character.py`'s `EYE_LEGIBILITY_AZIMUTHS` "three deliberately left out"
+  comment is the exact claim PR #137 already resolved (on its own unmerged
+  branch); `main` still shows the old text because that PR hasn't landed.
+  Not a new finding, the same one already shipped.
+- `ingest.py`'s `ALBEDO_L_FLOOR`/`CEIL` "bean_hopper/book_stack outlier
+  tension" is a live, carefully-reasoned tradeoff, not a shrug: the comment
+  itself already shows the arithmetic for why widening the floor to admit
+  every authored outlier would also admit the exact undelit-reconstruction
+  defect (`delight()`'s own motivating bug, 0.408 median L) the check
+  exists to catch. Per-style recalibration already shipped for the real bug
+  this section found (PR #92, `wood-mid`'s false positive) -- the remaining
+  tension is named, understood, and correctly left alone, not avoided.
+- `ui_forge.py`'s speckle history, `ui_chrome.py`'s outline/gap notes, and
+  `art_review.ACCEPTED_BURIAL`'s `table_4top`/`pastry_case`/`leafy_plant`
+  entries are all findings this session (or an earlier one, in the plants'
+  case) already acted on -- `ACCEPTED_BURIAL["counter"]` ("modules tile
+  flush, so each one's end panels abut its neighbour") is the one entry not
+  explicitly re-verified this pass, but its own reasoning is airtight by
+  construction: counter modules are DESIGNED to tile flush, so a hidden end
+  panel is the intended outcome of a real design choice, not a check
+  measuring the wrong thing.
+- `organic_rig.py`'s "kept as a box, deliberately" foot-geometry note and
+  similar module-docstring asides are design explanations, not check
+  failures with an untried fix.
+
+**Honest conclusion: this angle is close to exhausted for now.** One real
+fix came out of it (`saucer`, PR #145); a full sweep of everywhere else it
+could plausibly recur turned up nothing else waiting to be found the same
+way. Recorded here so a future pass doesn't re-run the same grep sweep
+expecting a different result -- the next fresh angle needs to be something
+other than "read tools/*.py comments for accepted-limitation language,"
+which this pass now covers completely, not just partially.
+
+No code touched this pass.
