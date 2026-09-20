@@ -9546,3 +9546,96 @@ legibility lines added, the pre-existing 2 unrelated galley errors and all
 Fixed in `tools/character.py` (`EYE_LEGIBILITY_AZIMUTHS`, its docstring
 comment, and `check_eye_legibility`'s own default). Branch
 `eye-legibility-ambiguous-azimuths-werent-ambiguous`, left unmerged.
+
+---
+
+## The eyes "render no pixels at all" was mostly a measurement bug, not a rig one -- 14 errors down to 6, and one of PR #137's own "blank" proof images was wrong
+
+PR #137 widened `check_eye_legibility` from 4 azimuths to 7 and found 14
+errors where main had 1 -- real work, but every fix attempt on this check
+so far (PR #130: EYE's shading mode; PR #137: which angles get measured)
+shared one lever: treat this as a question about what colour the eye
+renders. Never checked whether the check's own DIFF LOGIC was the thing
+failing to see a colour that was actually there.
+
+**It was.** `check_eye_legibility` finds eye pixels by rendering the head
+twice -- with and without a face -- and diffing:
+
+```python
+gaps = [math.dist(srgb_to_oklab(a[:3]), srgb_to_oklab(b[:3]))
+        for a, b in zip(plain, eyed)
+        if a is not None and b is not None and a != b]
+```
+
+`a is not None and b is not None` silently drops any pixel where the eye
+quad sits slightly proud of the bare head's own surface at grazing angles
+-- transparent in `plain`, solid in `eyed`, at the same screen position.
+That is not a weak signal to discard; going from empty background to a
+drawn pixel is the single strongest visibility signal a sprite can carry,
+stronger than any two solid colours next to each other. The guard treated
+it as no evidence at all.
+
+**Measured how much of "no pixels at all" was this, not a real collision.**
+Instrumented the exact az=0/315 cases PR #137's own proof images call
+blank: at az=0 and az=315, for every skin tone, `both-solid-diff` pixels
+(the only kind the old code counted) was **0**, while 15-25
+`bare=None, eyed=solid` pixels existed and were silently skipped every
+time. Confirmed these are real EYE-material pixels surviving the full
+downsample/outline pipeline (24 of 28 4x4 blocks have `EYE` as the modal
+colour at az0 for `skin-4`), not a despeckle or dither artifact -- tested
+both independently by re-running the pipeline with despeckle off and with
+dither off; neither changed the zero-pixel result, ruling out the two
+other candidate downstream levers before settling on the diff guard as the
+actual cause.
+
+**Fix.** For a pixel where `plain` is `None` and `eyed` is not, compare
+`eyed`'s colour against its own nearest solid neighbour in `eyed` (the
+same "what's actually next to this pixel" question the colour-gap branch
+already answers, just sourced from the eyed frame instead of a bare-head
+baseline that doesn't exist at that position) and fold that distance into
+the same `gaps` list, same `max()` aggregation, same floor. No new
+constant, no relaxed threshold -- `MIN_EYE_GAP` is untouched.
+
+**Verified against PR #137's own branch, not against main** (this fix has
+no effect until #137's widened azimuths are in place -- at the shipped
+4-azimuth default, `skin-4` az225 is the only failure either version
+finds, unchanged): built on
+`eye-legibility-ambiguous-azimuths-werent-ambiguous` directly.
+`check_eye_legibility()` alone: **14 errors -> 6**. Every "the eyes render
+no pixels at all" line is gone -- 0 remain, out of 8 that existed. Two
+cases resolve completely, not just get a real number: `skin` at az0 and
+`skin+1`/`skin+2` at az315 all now measure comfortably above the 0.15
+floor. Four remain real: `skin-4` at az0/180/225, `skin-3`/`skin-2`/
+`skin-1` at az0 (all a modest 0.076, `skin-4`'s pre-existing az225 result
+unchanged at 0.103) -- close calls, not the wide "blank" spread PR #137
+reported.
+
+**Visually confirmed the correction, not just the numbers -- and found
+PR #137's own proof image wrong for one case.** Re-rendered `skin+2` at
+az315: the eyed frame shows a small but genuinely visible dark mark on the
+head's silhouette edge that the bare frame does not have
+(`proof/eye_legibility_skin+2_az315_actually_visible.png`, next to the
+existing `eye_legibility_skin+2_az315_blank.png` from #137 -- same tone,
+same azimuth, same pipeline, different verdict). It is not a clean two-eye
+read, but it is not blank either; "the widest single-azimuth blank-face
+spread this check has found" overstated what az315 actually does to every
+tone. `skin-4` at az0, by contrast, really is a near-miss by eye
+(`proof/eye_legibility_skin-4_az0_marginal_real_failure.png`) -- a faint
+mark close in value to the surrounding near-black face, next to the same
+tone's clearly legible az90 render already in `proof/` from #137. The
+fix's numbers track what the renders actually show in both directions,
+not just in the direction that makes the fix look good.
+
+**Zero regression.** `python -m pytest -q`: 40 passed. `manifest.py
+--check --style snes_rpg`: unchanged at 4 errors (composition-only, this
+check never reaches `organic_rig`'s cast, same finding PR #137 already
+established). `manifest.py --check --style cozy_ghibli`: 8 errors total
+(6 eye-legibility + the 2 pre-existing, unrelated galley composition
+errors also present on plain `main` -- PR #128/#150's territory, not
+this one's).
+
+Branch `eye-legibility-silhouette-extension`, built on top of PR #137's
+branch rather than against `main`, so the diff shown is just this
+incremental fix -- left unmerged, same as everything else in this pile.
+Does not touch `EYE_LEGIBILITY_AZIMUTHS` or which angles are measured,
+only how a measured pixel is scored.
