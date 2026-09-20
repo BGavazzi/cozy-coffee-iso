@@ -3594,7 +3594,7 @@ through two separate implementations.
   signal-to-noise gap no threshold placement closes. Left at 0.0 and
   recorded as a population-rate check (roughly 1 in 8-9 wall/L runs), not a
   per-room verdict.
-- **Added 2026-09-13: the galley topology fails composition (mean-L and/or
+- ~~**Added 2026-09-13: the galley topology fails composition (mean-L and/or
   detail) on 3 of 3 occurrences in a fresh 12-plan scan (100%, matching its
   own build commit's 100% at n=40)**, confirmed identical under both style
   packs. This is NOT new -- commit `71451c3` already measured and explicitly
@@ -3603,7 +3603,15 @@ through two separate implementations.
   this file's prose until "A real, already-measured galley finding was never
   folded out of its own commit message" below. Do not loosen either floor to
   admit galley; the mechanism (its focal box spans the full room depth, not
-  a strip near one wall) is understood and accepted, not a bug.
+  a strip near one wall) is understood and accepted, not a bug.~~ **Mostly
+  resolved, and not by loosening the floors.** See "galley's focal box,
+  measured and fixed, not loosened" below: the accepted mechanism was a real
+  measurement bug (a union box spanning both counters and the walkway
+  between them), not a genuine compositional defect, and fixing the box
+  definition instead of the threshold took 5 known galley seeds from 7 of 10
+  (seed x floor) failures down to 2, both under 0.01 of the zero detail
+  floor, confirmed at both render resolutions. Two seeds still narrowly fail
+  detail -- named honestly below, not claimed away.
 - ~~**Added 2026-09-13: 4 of 20 `cat: ui` icons (`ui_coin`, `ui_icon_bagel`,
   `ui_icon_pastry`, `ui_icon_sandwich`) fail the speckle gate under BOTH
   styles.**~~ Closed 2026-09-15: not by a better prompt (two attempts, still
@@ -9467,3 +9475,164 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+---
+
+## galley's focal box, measured and fixed, not loosened
+
+`check_focal_contrast`'s accepted-limitation entry for the galley topology
+(NEXT.md, "the galley topology fails `manifest.py --check`'s composition
+test on 3 of 3 occurrences") names its own root cause in passing: `focal_box`
+unions every `service`/`backbar`/`service_return` zone into ONE box, and a
+galley's two counter runs sit on OPPOSITE walls, so that union spans the
+room's FULL depth -- the "focal zone" the check measures against includes
+the walkway and seating between the two counters, not just the counters
+themselves. The only lever ever considered was loosening `MIN_FOCAL_L`/
+`MIN_FOCAL_DETAIL` to admit the failure, and it was correctly rejected as
+"tuning the instrument to the answer" (`71451c3`'s own commit message).
+Nobody had tried fixing the box instead of the floor -- a different lever
+in the same shape as this session's other fixes (PR #80/#81's despeckle
+pass, this session's `saucer` geometry): not adjusting the check's pass/
+fail line, but fixing what it measures.
+
+**This is not a new idea in this file.** `render_room.focal_report`'s own
+docstring already records fixing an almost identical bug once, for a SINGLE
+run: "taking their axis-aligned bounding box was grading a region that is
+only 51-64% counter... Averaging a third of the background into the
+foreground reading... makes the instrument deaf" -- the convex-hull-of-
+projected-corners technique exists specifically to keep one run's box tight
+against its own front/back bleed. That fix was never extended to a topology
+with TWO runs; the hull got wider (a single hull spanning both counters and
+the gap) instead of there being two hulls.
+
+**The fix:** `build_plan.focal_box()` now returns a box per run when a
+topology has more than one (`floorplan.SERVICE_RUNS[topology] > 1` -- today
+only `galley`, at 2), pairing each run's `service` zone with its own
+`backbar` zone by list position -- the exact pairing `build()`'s own
+`runs[i]`/`backs_all[i]` zip already trusts, documented in that function's
+own comment ("`floorplan.generate()` appends each run's own `[run, back,
+queue]` triple together"). `render_room.focal_report()` accepts either one
+box or a list of boxes, builds one convex hull per box, and defines "inside
+the focal zone" as membership in ANY of them -- so the gap between two
+counters is correctly `elsewhere`, not incorrectly `focal`, without
+touching a single threshold.
+
+**Verified empirically, both directions, same code path (`git stash` /
+`git stash pop` around the same measurement script, not two different
+scripts):**
+
+    seed   pre-fix  L / C / D              post-fix  L / C / D
+    8      -0.012 / +0.045 / -0.019  ->    +0.046 / +0.146 / +0.021   both fixed
+    10     -0.019 / +0.054 / -0.042  ->    +0.050 / +0.146 / -0.002   L fixed, D still narrowly fails
+    12     +0.026 / +0.054 / -0.012  ->    +0.108 / +0.146 / +0.081   D fixed (L already passed)
+    48     -0.001 / +0.054 / -0.018  ->    +0.056 / +0.146 / +0.003   both fixed
+    57     +0.024 / +0.062 / +0.004  ->    +0.060 / +0.146 / -0.005   D flips pass->fail, barely
+
+    (floors: MIN_FOCAL_L +0.015, MIN_FOCAL_CONTRAST +0.030, MIN_FOCAL_DETAIL 0.0)
+
+All 5 galley seeds found in a 1-60 scan, not just the 3 NEXT.md named --
+seeds 48 and 57 are two more the earlier 12/40-plan passes happened not to
+sample. Failing (seed, floor) pairs: **7 of 10 before, 2 of 10 after** (L:
+3 failing -> 0 failing; detail: 4 failing -> 2 failing). Seed 57's detail
+reading crosses the zero floor in the wrong direction (+0.004 -> -0.005) --
+recorded honestly rather than only reporting the wins: both values sit
+within 0.01 of a floor set at exactly 0, on a metric this file's own
+`check_focal_contrast` docstring already calls a step function at coarse
+resolution, so this reads as measurement noise near a knife-edge threshold
+rather than a real regression, but it IS a case that got numerically worse
+and is named as one.
+
+**The two remaining failures are real, not a resolution artifact:** re-ran
+seeds 10 and 57 at `FOCAL_CONFIRM_TARGET` (480, the same confirm-render
+`check_focal_contrast` already applies to borderline failures) --
+seed 10: -0.002 at 320, -0.003 at 480. seed 57: -0.005 at 320, -0.010 at
+480. Neither rescues at the higher resolution; both stay failing at
+essentially the same margin. Left open, not claimed fixed -- this is a
+partial, measured improvement (100% failure rate on the topology's known
+occurrences down to 40%), not a closure of the accepted-limitation entry.
+
+**Zero regression, proven structurally, not just by re-running the suite:**
+`focal_box()` returns the exact original single-tuple shape, computed by
+the exact original expression (`zs = svc + back + ret`, same concatenation
+order as before), for every topology with `SERVICE_RUNS.get(topology, 1)
+<= 1` -- which is all four non-galley topologies. Confirmed directly rather
+than assumed: printed `focal_box()`'s output for one seed of each of the
+four (L run, peninsula, island, wall run) and all four came back
+`list=False`, single-box, going through `focal_report`'s unchanged
+single-hull code path (the `isinstance(boxes[0][0], (int, float))`
+normalization check exists precisely so a plain box is wrapped into a
+one-element list rather than iterated wrong). `check_focal_contrast(n=5,
+seed=1)` -- the real suite check, which at this seed picks L run/
+peninsula/island/galley/wall run, galley included -- now reports **0
+failures**, where it previously reported galley plan 8's brightness and
+detail misses (confirmed via the same before/after measurement above).
+
+**Honest scope note:** this closes the MEASUREMENT bug the accepted-
+limitation entry itself named (the box spanning the full room depth), not
+every galley composition question. Two of five known seeds still fail
+detail narrowly. `MIN_FOCAL_L`/`MIN_FOCAL_DETAIL` were not touched --
+consistent with `71451c3`'s original, correct refusal to tune the floor to
+the answer. NEXT.md's accepted-limitation entry is updated to describe the
+new, smaller, honestly-measured gap rather than struck out entirely.
+
+New branch (`galley-focal-box-per-run`, off `main`). Left unmerged per
+standing practice.
+
+---
+
+## Correction: this fix duplicates PR #128, opened earlier in this same session
+
+Found via `gh pr list` at the start of the following hour, before starting
+its own investigation -- and should have been checked BEFORE this branch
+was started, not after. PR #128 (`galley-focal-box-was-one-box-for-two-
+counters`) fixed this exact bug earlier in this session: `focal_box()`
+unions a galley's two counters into one box spanning the aisle between
+them, and the fix is to split it per counter. Both PRs independently
+diagnosed the identical root cause and implemented the identical shape of
+fix (`focal_box()` returns per-run boxes, `focal_report()` unions per-box
+hulls), and -- worth recording as accidental cross-validation -- both
+produce IDENTICAL numbers on the three seeds they share:
+
+    seed  8: PR #128 L=+0.046 C=+0.146 D=+0.021  ==  PR #150 (this branch), same
+    seed 10: PR #128 L=+0.050 C=+0.146 D=-0.002  ==  PR #150 (this branch), same
+    seed 12: PR #128 L=+0.108 C=+0.146 D=+0.081  ==  PR #150 (this branch), same
+
+**PR #128 is the better implementation and should be treated as canonical.**
+It clusters zones by geometric proximity (any two zones closer than 0.5
+world units merge into one counter) rather than this branch's approach
+(pairing `service`/`backbar` zones by list position, gated on
+`floorplan.SERVICE_RUNS[topology] > 1`) -- clustering is topology-agnostic
+and needs no name-based lookup or an assumption about zone-append order,
+so it keeps working for a future multi-run topology this branch's approach
+would silently mis-handle if it ever violated the paired-append-order
+assumption. PR #128 also ran the real `manifest.py --check` end to end for
+both styles (not just box-level numbers) and rendered+eyeballed the
+residual seed-10 failure with a plausible root-cause hypothesis (the wood
+floor between counters carries real competing plank-seam detail) --
+verification this branch did not do.
+
+**What this branch adds that PR #128 doesn't have:** a wider 1-60 seed scan
+found 2 more galley occurrences beyond the 3 PR #128 measured (seeds 48,
+57) -- seed 48 passes cleanly post-fix, seed 57 narrowly fails detail
+post-fix (the *same* narrow-failure shape as seed 10, confirmed real at
+both 320 and 480 target resolutions, not a resolution artifact). This is a
+genuinely useful addition, not just a repeat, but it does not justify two
+open PRs fixing the same bug two different ways.
+
+**Recommendation, not an action taken here:** keep PR #128 as the fix that
+gets merged; fold this branch's seed 48/57 finding into a comment on PR
+#128 (or a tiny follow-up commit there) instead of merging this branch;
+close PR #150. Left for the user to decide -- closing another open PR is
+not this session's call to make unilaterally, even one it opened itself by
+mistake.
+
+**Root cause of the duplication, worth fixing going forward:** the standing
+audit loop's own methodology has no step for checking `gh pr list`/
+`git branch -a` for an existing unmerged attempt on the same claim before
+starting a fix. `NEXT.md`/`ART_CRITIQUE.md` on `main` correctly still
+described this as an open accepted limitation, because PR #128 is unmerged
+-- so nothing about this hour's read of `main` was factually wrong, the gap
+was procedural: an open, unmerged PR from an earlier hour in this same
+session is invisible to a fresh read of `main`'s docs, and checking for one
+takes one `gh pr list` call. Recorded here so a future hour does that check
+first, not after building a second version of the same fix.

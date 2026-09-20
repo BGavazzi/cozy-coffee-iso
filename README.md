@@ -90,7 +90,9 @@ authoring rather than sampling.
     # the gates
     python tools/manifest.py --check     # runs all twenty-six checks
     python tools/build_plan.py --focal-scan 12   # slower gate: 12 whole rooms,
-                                                 # currently 0 of 12 failing
+                                                 # currently 1 of 12 failing (a
+                                                 # galley seed narrowly missing
+                                                 # the detail floor, see NEXT.md)
     python tools/character.py            # hair contrast, palette spread, silhouette floor
     python tools/fx.py                   # loop seams
 
