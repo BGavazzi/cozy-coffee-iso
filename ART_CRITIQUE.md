@@ -9467,3 +9467,95 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## `chair`'s buried-detail floor: one of the two "obviously dead" faces the check flagged wasn't
+
+Picked up the acknowledged, un-triaged backlog from `check_buried_detail`'s
+widened 8-azimuth sweep (`bookshelf`/`chair`/`menu_board`/`wall_art_framed`,
+noted above as "real, per-asset modelling work, not a check change" and
+left untouched). Started with `chair` (31%, closest to the 30% floor of the
+four) rather than all of them at once, on the theory a single well-traced
+case would show whether this whole backlog is one mechanism or four
+different ones.
+
+**Traced, not assumed.** `check_buried_detail`'s real caller
+(`review_library()`) builds `chair`'s mesh with `fn()` -- no args, so
+`seed=None`, the fixed default that uses `_legs_square`. Instrumented
+`front_facing()` directly across all 8 ship azimuths and took the union of
+every triangle that is camera-facing at some angle but never wins a pixel
+at any: 26 unique triangles, all four legs' identical set. By face normal:
+each leg's TOP (facing straight up, `(0,0,1)`) and its two INWARD-facing
+sides (the two faces pointing toward the chair's own centre, e.g. the
+front-left leg's `+x` and `+y` faces) -- never its two OUTWARD sides.
+Rendered the chair at azimuth 45 and 225 and looked: confirmed by eye,
+you cannot see under this chair from any elevated isometric angle, in
+either direction. Geometrically this is the seat's own overhang doing
+exactly what `table_4top`'s `ACCEPTED_BURIAL` entry already names for a
+different piece of furniture ("the far pair of legs sits behind the
+tabletop's own near edge") -- a solid slab sitting directly above and
+outboard of the legs it rests on.
+
+**First attempt: delete all three flagged faces per leg (top + 2 inward
+sides), the same triangle-reduction `leafy_plant` already used (8 sides ->
+6) to answer this exact kind of finding for real instead of just
+allowlisting it.** Rewrote `_legs_square` to build the box from five
+explicit quads instead of `add_box`'s six. `check_buried_detail` result:
+empty, share down from 30.6% to 0.96%, 96 -> 72 faces. Looked like a clean
+win on the check's own numbers.
+
+**It wasn't, and the mandated zero-regression pass is what caught it.**
+Hashed the shipped render (`render_sprite`, real `frame_all` span/centre,
+real `cozy_ghibli` palette) at all 8 azimuths, before and after, via `git
+stash` A/B. Four of eight -- the face-on views, 90/180/270/360 -- were
+byte-identical. The four CORNER-on views (45/135/225/315) were not: 446 to
+466 differing pixels out of 9216 each (about 5%), and several of them were
+not colour shifts but genuine holes -- solid wood pixels turning fully
+transparent. `check_buried_detail`'s own occlusion test
+(`visible_faces()`, its own rasterization pass at `res=160`) said these
+exact faces never win a pixel; the production render (supersampled through
+`render_sprite`'s real pipeline, a different resolution and sampling path)
+disagreed by a handful of edge pixels at the steeper, more foreshortened
+corner-on angles. The check's answer to "does this face's own colour ever
+show" was right. It is a different question from "is this face safe to
+delete," and this hour is the first time in this file's history those two
+questions have come apart -- every prior use of the same reasoning
+(`leafy_plant`'s 8->6 sides, the various `ACCEPTED_BURIAL` entries) never
+actually removed geometry across a check/render resolution boundary this
+way, so the assumption they're equivalent was untested until now.
+
+**Reverted the three-face version and bisected which one of the three
+faces was load-bearing.** Removing ONLY the top face (keeping both inward
+sides, all four sides total plus the bottom): 0 differing pixels at all 8
+azimuths, hashed both ways, and `check_buried_detail` still returns empty
+(13.3% share, comfortably under the 30% floor -- the top face alone was
+most of the 26 flagged triangles). Removing only the two inward sides
+(keeping the top): reproduces the same ~450-466-pixel diff the naive fix
+had, confirming the inward sides -- not the top -- are the ones some corner
+azimuth's supersampled rasterization actually grazes. The top face was
+genuinely dead; the two inward faces looked identical by the check's own
+metric and were not.
+
+**Shipped: `_legs_square` drops only the top face.** 96 -> 88 faces, 30.6%
+-> 13.3% buried share, `check_buried_detail` clears for `chair`. Verified
+byte-identical, hashed, at all 8 azimuths for the default (`seed=None`)
+chair AND for 16 seeded chairs spanning all four `LEG_STYLES` picks (only
+`_legs_square`-selecting seeds are affected by this change; the other
+three leg builders are untouched code). `pytest -q`: 40/40. `manifest.py
+--check`: 3 errors -> 3 errors (unchanged), 18 -> 17 warnings, the `chair`
+line gone and nothing else moved. `--style snes_rpg`: 4 errors -> 4 errors
+(unchanged), 18 -> 17 warnings, same single line gone -- this fix is
+style-independent (mesh geometry, not palette), and both styles were
+checked rather than assumed.
+
+**Not extended to `bookshelf`/`menu_board`/`wall_art_framed` this hour.**
+Each is a different generator with its own geometry and would need the
+same trace-then-bisect treatment from scratch, not a copy of this reasoning
+-- and this hour's own result argues against assuming any of them will
+bisect as cleanly as `chair` did. Left as the same acknowledged, untriaged
+backlog it was before, now with a concrete warning attached: `check_
+buried_detail` clearing is necessary but not sufficient evidence a face is
+safe to delete -- always hash the actual shipped render across all 8
+azimuths before trusting the check's own lower-resolution occlusion pass.
+
+Branch `chair-buried-detail-top-face-real-fix`, based on `main`, left
+unmerged.
