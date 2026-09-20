@@ -542,7 +542,10 @@ not, not every asset any game has ever shipped.
 - ~~UI art~~ — 14 usable of 15 declared, split between a generative path for
   object icons and a procedural one for chrome.
 - ~~Engine export for animations and UI~~ — all three producers now build
-  Godot resources, 52 of them.
+  Godot resources, 114 of them (verified with a real `export_godot.py` run
+  against the current asset roster, same `len(resources)` count the "52"
+  figure came from originally — the gap is asset-roster growth since, not a
+  broken count).
 - ~~Hand-authoring a subject list per reference photo~~ —
   `scaffold_subjects.py`.
 - ~~A character portrait / dialogue bust~~ — `portrait.py`, 9 of 9 roster
