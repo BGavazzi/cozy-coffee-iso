@@ -9467,3 +9467,85 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## `menu_board`'s buried chalk was a real measurement, aimed at azimuths nothing ever places it at
+
+Second item off the `check_buried_detail` backlog (`bookshelf`/`chair`/
+`menu_board`/`wall_art_framed`; `chair` closed last hour). Traced `menu_board`
+(52%, the worst of the four) the same way: union of every front-facing-but-
+never-visible triangle across the 8 raw azimuths `review_library()` checks.
+All 26 flagged triangles are the chalk quads themselves (the heading and
+every price row -- the entire point of this asset, see its own docstring:
+"a blank grey slab... reads as an unexplained hole in the wall") plus the
+panel's own edge faces behind them. Per-azimuth breakdown: every one of
+those faces is front-facing-and-hidden at exactly 3 of the 8 raw azimuths
+(225/270/315) and simply not a candidate at all -- not hidden, just not
+facing the camera -- at the other 5. Rendered azimuth 45 and 225 and looked:
+45 shows the chalk clearly (`proof/menu_board_az45_legible_from_front.png`);
+225 is a blank brown slab (`proof/menu_board_az225_blank_from_back.png`) --
+literally the pre-chalk defect this asset's own docstring was written to
+fix, reproduced by viewing it from the back.
+
+**This time the check's own occlusion measurement is correct -- the question
+is whether those 3 azimuths are ever real.** A prior hour's `check_member_
+thickness` finding hit the identical class of asset (`menu_board`/`wall_
+sign`/`wall_art_framed`, all `sym: 2fold` wall decor) going edge-on-thin at
+azimuth 180, and closed with an explicit, honest non-answer: "whether the
+game ever actually presents a player with their 180-degree view (backing
+onto the wall) is a placement-and-camera question this check cannot answer
+and this hour did not investigate." That question was still open. Answered
+it this hour, for `menu_board` specifically, with the same load-bearing
+architecture fact `PIPELINE.md` already states but nothing had connected to
+this backlog yet: "in an isometric game the camera is fixed and the *object*
+rotates" -- the 8 raw azimuths a check sweeps are the object's own possible
+world rotations relative to one unmoving camera, not 8 places a camera might
+go. A free-standing, player-rotatable prop can end up at any of them. A
+wall-mounted decoration that never moves after placement can only end up at
+whatever rotations the placement code itself ever calls it with.
+
+**Traced the actual placement code, not assumed.** `build_plan.py` has
+exactly one call site for `menu_board` (`try_wall(A.menu_board(), at, 0 if
+horizontal else 270, ...)`) -- every placed instance in this codebase gets
+world rotation `0` or `270`, nothing else, ever. Rendered both, transformed
+through the same `Layout.add`/`transformed(rot_z=...)` path `build_plan.py`
+itself uses, at `render_room.py`'s real fixed camera (`azimuth=45.0`, its
+documented default and the one every room composite actually uses):
+**both read correctly, chalk fully legible**
+(`proof/menu_board_rot0_real_placement_legible.png`,
+`proof/menu_board_rot270_real_placement_legible.png`). The math checks out
+against the raw-azimuth trace too -- `rot=0` and `rot=270` land on raw
+azimuths 45 and 135, both members of the "good" 5, never the "bad" 3. The
+3 flagged azimuths correspond to a rotation this codebase's own code has
+never once called `menu_board` with.
+
+**Fixed by adding `menu_board` to `ACCEPTED_BURIAL`, with a reason of a
+different KIND from every existing entry, flagged as such in the code
+comment.** `table_4top`/`pastry_case`/`counter`/`leafy_plant` are all
+geometry that stays occluded from every angle -- true no matter how the
+object is placed. This one is a placement-scope mismatch: the geometry
+really is hidden at 3 specific angles, and this asset really is never shown
+at those angles, for a reason (fixed camera, two hardcoded placement
+rotations) that lives in `build_plan.py`, not in `assetlib.py`. Said so
+explicitly in the comment, including the condition under which the entry
+stops being valid (a third rotation ever gets added for this asset) --
+an allowlist entry is only as honest as the thing that would make it wrong.
+
+**Checked `wall_sign` (identical `try_wall` call, same two rotations)
+rather than assumed it shares the finding:** already passes clean at 10%,
+comfortably under the 30% floor -- its geometry doesn't have the same
+frame-in-front-of-detail shape, so nothing to fix there. `wall_art_framed`
+(the fourth backlog item) is NOT placed by `build_plan.py` at all -- no
+traced rotation set exists to verify against -- so it is deliberately left
+untouched, same as `bookshelf`, for a future hour's own trace.
+
+**Verified, both styles, zero regression.** `check_buried_detail`: empty
+for `menu_board` alone (was 52.2%, now exempted rather than measured
+against the floor). `pytest -q`: 40/40. `manifest.py --check`: 3 errors ->
+3 (unchanged), 18 -> 17 warnings,
+only the `menu_board` line gone. `--style snes_rpg`: 4 errors -> 4
+(unchanged), 18 -> 17 warnings, same single line gone -- pure mesh-level
+change, style-independent, checked rather than assumed, matching `chair`'s
+fix last hour.
+
+Branch `menu-board-buried-detail-placement-scope`, based on `main`, left
+unmerged.

@@ -1245,6 +1245,22 @@ ACCEPTED_BURIAL = {
                    "canopy is",
     "plant_large": "as leafy_plant, which generates it",
     "plant_small": "as leafy_plant, which generates it",
+    # A different KIND of reason from every entry above -- those are all
+    # geometry that stays occluded no matter which angle you pick. This one
+    # is a placement-scope mismatch: the chalk is genuinely hidden behind the
+    # frame at 3 of the 8 raw azimuths `review_library()` checks (225/270/
+    # 315), but `menu_board` is wall-mounted decor, not a rotating sprite --
+    # `build_plan.py`'s only two call sites ever place it at `rot=0` or
+    # `rot=270` (`try_wall(A.menu_board(), ..., 0 if horizontal else 270,
+    # ...)`), never any other rotation. Rendered both, at the game's real
+    # fixed camera azimuth (`render_room.py`'s default, 45.0): both read
+    # correctly, chalk fully legible. The 3 flagged azimuths correspond to
+    # placements nothing in this codebase ever generates. If a future
+    # placement call adds a third rotation for this asset, re-measure before
+    # trusting this entry -- it is conditioned on the two rotations above
+    # staying the only ones in use, not on the geometry itself.
+    "menu_board": "wall-mounted, not a rotating sprite -- only ever placed at "
+                  "rot=0/270, both verified legible at the real fixed camera",
 }
 
 # The plants were exempted only after acting on what the check said. It reported
