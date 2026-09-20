@@ -365,15 +365,22 @@ def check_roster(style_name: str = "snes_rpg", roster=None) -> list[str]:
 
 MIN_EYE_PIXELS = 3  # same floor portrait.py's own check_eyes_visible uses
 
-# Swept all 8 azimuths x the 4-member ROSTER (Hour 23 of the recurring
-# audit): 45/90/135 show a real, comfortably-nonzero eye-pixel count for
-# every member, no exceptions; 0/180/225/270/315 read 0-2px for every member,
-# consistently -- a side/back view genuinely does not show the face on this
-# rig, correctly, not a defect. Unlike `character.py`'s equivalent sweep
-# (see ART_CRITIQUE.md, "`check_eye_legibility` only ever rendered azimuth
-# 45"), that occlusion split is clean and member-independent here, not
-# tone-dependent, so there is no ambiguous middle set to leave out.
-EYES_VISIBLE_AZIMUTHS = (45.0, 90.0, 135.0)
+# Hour 23's sweep concluded 0/180/225/270/315 read "0-2px for every member,
+# consistently" and called that clean, member-independent occlusion. It was
+# consistent, but not for the reason claimed: `check_eyes_visible` counted
+# only `a is not None and b is not None` pixels, the exact same guard that
+# undercounted `character.check_eye_legibility` (see ART_CRITIQUE.md, "the
+# eyes render no pixels at all was mostly a measurement bug, not a rig
+# one") -- at a grazing angle the eye box sits proud of the bare head's own
+# curved surface, transparent-vs-solid, and the old count dropped every one
+# of those pixels rather than treating them as evidence. Re-measured with
+# that counted: `archivist` at az180 goes 0px->5-6px, az315 0px->12px;
+# `drifter` at az0 goes 0px->6px, az315 0px->17px -- comfortably visible,
+# not occluded, at angles the old sweep called uniformly blank. All 8
+# azimuths now included; some genuinely still fail (see
+# `check_eyes_visible`'s own docstring), but not the ones this comment used
+# to name.
+EYES_VISIBLE_AZIMUTHS = (0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0)
 
 
 def check_eyes_visible(style_name: str = "snes_rpg", roster=None,
@@ -391,12 +398,19 @@ def check_eyes_visible(style_name: str = "snes_rpg", roster=None,
     hide behind, no assumption about which half of the frame is which eye --
     just "did adding this eye change any pixels at all."
 
+    A pixel counts as evidence two ways, not one: `plain` and `eyed` both
+    solid but different (the eye recoloured an existing surface), or
+    `plain` background and `eyed` solid (the eye box sits proud of the
+    bare head's own curved surface at a grazing angle, so there is nothing
+    there to recolour -- there is only something new). The second case used
+    to be silently dropped, which is what made `EYES_VISIBLE_AZIMUTHS`'s
+    excluded angles look uniformly occluded when several of them are not;
+    see that constant's own comment.
+
     Checked at every azimuth in `azimuths`, not only 90 -- 90 turned out to
     be this check's own best case by a wide margin (18-20px for every
     roster member) while 45, an equally real angle the figure ships at,
-    drops as low as 4px (`drifter`'s near eye) against the 3px floor. See
-    `EYES_VISIBLE_AZIMUTHS`'s own comment for which angles are safe to
-    include and why.
+    drops as low as 4px (`drifter`'s near eye) against the 3px floor.
     """
     style = load_style(style_name)
     ramps = load_palette(style.palette_path)
@@ -420,7 +434,8 @@ def check_eyes_visible(style_name: str = "snes_rpg", roster=None,
                 _, eyed = render_sprite(one_eye, az, TARGET, FACTOR, ramps,
                                         span=span, centre=centre)
                 n = sum(1 for a, b in zip(plain, eyed)
-                       if a is not None and b is not None and a != b)
+                       if (a is not None and b is not None and a != b)
+                       or (a is None and b is not None))
                 if n < MIN_EYE_PIXELS:
                     at = "" if az == 90.0 else f" at azimuth {az:.0f}"
                     out.append(f"{spec.name}: {side} eye renders {n}px{at} "
