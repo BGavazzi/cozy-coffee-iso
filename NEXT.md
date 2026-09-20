@@ -2,16 +2,25 @@
 
 ## Where the open work actually is — read this first
 
-`ART_CRITIQUE.md`'s **final "Still open" section** (currently at its bottom,
-titled "Still open") is the live queue. Nothing else in this file is, and
-**this list itself is not that section** -- it is a snapshot that was already
-stale as of 2026-09-13: re-checking it against `ART_CRITIQUE.md`'s own later
-passes found 3 of these 5 lines closed (with a fourth, the double-run
-topology, already shipped and merged, commit `71451c3`, despite this file's
-own Tier B2 wording still calling it unbuilt further down). **Read
-`ART_CRITIQUE.md`'s "Still open" section directly rather than trusting this
-paragraph** -- it will drift again. As of a further 2026-09-15 pass, it holds
-three items, all real:
+`ART_CRITIQUE.md`'s **last "Still open" section** (written 2026-09-15) is
+the closest thing to a live queue this file has, but **it is no longer at
+the bottom of the file, and it predicts its own successor never got
+written**: that heading sits at roughly the 37% mark now (line ~3550 of
+~9470), with thousands of lines of later, real passes appended after it and
+no later "Still open" heading replacing it. Read those later sections by
+scanning the file's tail (`grep -n "^## " ART_CRITIQUE.md | tail`), not by
+assuming this heading is still current-by-position. **This list itself is
+not that section** -- it is a snapshot that was already stale as of
+2026-09-13: re-checking it against `ART_CRITIQUE.md`'s own later passes
+found 3 of these 5 lines closed (with a fourth, the double-run topology,
+already shipped and merged, commit `71451c3`, despite this file's own Tier
+B2 wording still calling it unbuilt further down). **Read `ART_CRITIQUE.md`'s
+last "Still open" section directly rather than trusting this paragraph** --
+it will drift again, and by now already has once, structurally rather than
+in content. As of the 2026-09-15 pass it holds three items; re-verified live
+against the current repo on 2026-09-19 (a real `manifest.py --check` run and
+a scan of every later pass mentioning either by name) and all three are
+still real, unchanged:
 
 - **Stages 1-3** (SDXL concept -> TRELLIS 2 mesh -> UniRig rig) need a GPU and
   model weights. The seam (`ingest.py`) is built and checked; nothing feeds
