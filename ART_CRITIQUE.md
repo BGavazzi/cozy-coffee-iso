@@ -9467,3 +9467,65 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## `build_plan.py`'s second `snes_rpg` proof scene had the same stale-lock pattern PR #155 just fixed -- one more entry, not caught by that sweep
+
+Last hour's audit (`snes-rpg-lock-refresh-and-focal-verdict`, PR #155) found
+and re-verified 3 lock entries left stale by an untracked `bible.yaml` edit:
+`organic_rig.py:silhouette`, `palette_forge.py:palette+variants`, and
+`render_room.py`'s `llm:focal_hierarchy` verdict on `proof/shop_snes_rpg.
+png`. `python tools/lockfile.py --status --style snes_rpg` on `main` still
+showed a 4th entry at the same old hash after that PR: `build_plan.py:
+proof/plan_room_snes_rpg.png`, also an `llm:focal_hierarchy` verdict, on
+this style's *second* composed scene (`build_plan.py`'s floor-plan render,
+distinct from `render_room.py`'s shop composite). Missed by the prior sweep
+because that hour stopped once `style_approve.py --style snes_rpg` reported
+APPROVED -- `style_approve.py` only requires *one* current `llm:
+focal_hierarchy` verdict on any scope, so a second scene's stale entry
+doesn't block approval and doesn't show up unless `lockfile.py --status` is
+read past the approval gate's own pass/fail line.
+
+**Re-verified the same way, not rubber-stamped.** Regenerated `proof/
+plan_room_snes_rpg.png` fresh (`python tools/build_plan.py --style snes_rpg
+--out proof/plan_room_snes_rpg.png --no-confirm`) and diffed it against the
+previously-committed image (pulled via `git show HEAD:...` since the local
+file had already been overwritten). The two are visually identical except
+the barista figure's garment colour -- near-black/grey in the 2026-09-07
+recording, green/tan now, a downstream effect of the same bible edit that
+staled the other three entries, not a layout or geometry change. That's
+also the full explanation for the deterministic focal-contrast proxy moving
+from +0.078 (the 2026-09-07 number, itself already recorded as "weaker than
+the other scene") to +0.000 this time: the darker garment was apparently
+contributing some of the old contrast margin near the counter, and the
+new, warmer garment colour blends into the palette more. Mean-L (+0.120)
+and detail (+0.038) still favour the counter zone; only the contrast
+dimension went to exactly zero.
+
+**Looked at the image, not just the numbers.** With contrast at 0.000 this
+was worth a real look rather than trusting mean-L/detail alone. By eye, the
+grey espresso machine on the counter is still the one cool-toned object in
+an otherwise warm pink/cream/maroon room, and it still reads as the first
+thing the eye catches on a glance -- but this is now the weakest of the
+three `focal_hierarchy` verdicts on record for this style (the other two,
+`render_room.py`'s shop scene and this scene's own prior recording, both
+had a clearer margin). Recorded a fresh PASS via `llm_gate.py --record`
+with that "weakest of three, right at the edge" reasoning written into the
+verdict itself, not smoothed into an easy approval -- consistent with how
+last hour's `render_room.py` verdict was recorded as "a closer call than
+`cozy_ghibli`" rather than papering over the gap.
+
+**Zero regression, both styles.** `pytest -q`: 40/40, same as before this
+change. `lockfile.py --status --style snes_rpg` now shows only the 3
+entries PR #155 already covers as stale (unchanged by this branch, since
+PR #155 is a separate unmerged branch off `main` and this branch doesn't
+include its commits) -- `build_plan.py`'s entry is the only one this branch
+touches, and it now reads `approved  644eb8fe574e9786`, matching the live
+bible hash. `cozy_ghibli` untouched.
+
+**Left for him to decide, not resolved here:** this branch is based on
+`main`, not stacked on PR #155, since the two touch different lock entries
+and don't conflict -- but once PR #155 merges, `lockfile.py --status
+--style snes_rpg` will still show this same `build_plan.py` line as stale
+against whatever hash is live at that point, if `main`'s bible has moved
+again in the meantime. Worth a final live check right before merging either
+one, not assumed from this write-up.
