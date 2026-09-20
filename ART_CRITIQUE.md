@@ -9467,3 +9467,33 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## Targeted cross-check: does `saucer` (PR #145) collide with the four other `assetlib.py` geometry fixes it now sits alongside?
+
+A full third reconciliation of all 19 open PRs was flagged as diminishing
+returns two hours running -- but PR #145 is the newest, and the only
+*code*-touching PR since the last full pass (#142 covered #128-#141). Ran a
+narrower, targeted check instead of a third full sweep: merged just the
+five `tools/assetlib.py`-touching branches together -- `#132` (bookshelf),
+`#133` (bench), `#134` (table_communal), `#135` (pastry_case), `#145`
+(saucer) -- in a local, unpushed scratch worktree.
+
+Every `tools/assetlib.py` merge auto-resolved with zero conflict markers,
+matching `#142`'s own earlier finding that this file merges clean across
+four generator fixes; `#145`'s insertion (a new `saucer()` function right
+after `cup_and_saucer()`) sits far enough from `bookshelf`/`bench`/
+`table_communal`/`pastry_case`'s own edits elsewhere in the file that git
+never even attempted a 3-way resolution there. Only `ART_CRITIQUE.md`
+conflicted, the same mechanical tail-append pattern as every other doc
+conflict this cluster has produced.
+
+**Verified with a real run, not just a clean merge.** `python tools/
+furnish.py` on the five-way-merged state: **"57 distinct sprite sets -- no
+two ids render the same eight images"** -- `check_distinct` passes clean
+with all five fixes and the new `saucer` geometry together, same as each
+branch reports alone. No new collision introduced by combining them.
+
+Not a fix, not a new problem found -- a confirmation, reached by actually
+running the combined state rather than assuming a clean git merge implies
+a clean pipeline. Scratch worktree used for this was local-only and never
+pushed; all five source branches remain the real reviewable units.
