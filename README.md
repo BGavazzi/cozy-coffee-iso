@@ -87,7 +87,9 @@ authoring rather than sampling.
     # fill verdict + reason in review/verdicts.jsonl
     python tools/review_queue.py stats            # what to automate next
 
-    # the gates
+    # the gates -- twenty-six here is `manifest.py --check`'s own subset;
+    # the full catalog (65, all producers, see `tools/gates.py --list`)
+    # is larger because not every gate is wired into this one command
     python tools/manifest.py --check     # runs all twenty-six checks
     python tools/build_plan.py --focal-scan 12   # slower gate: 12 whole rooms,
                                                  # currently 0 of 12 failing
