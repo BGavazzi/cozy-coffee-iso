@@ -1065,6 +1065,20 @@ def check_eye_legibility(ramps=None, azimuths=EYE_LEGIBILITY_AZIMUTHS) -> list[s
     without -- so the check does not need to know where in the frame they
     landed, and it keeps working if the eye line moves.
 
+    That difference has two shapes, and only counting one of them was a real
+    bug: at grazing angles the eye quad can sit slightly PROUD of the bare
+    head's own surface, so the eye is transparent-background in `plain` and
+    solid in `eyed` at the same pixel -- opacity itself is evidence (nothing
+    reads as more visible than a mark against empty background), but the
+    original `a is not None and b is not None` guard discarded exactly this
+    case, because there is no `plain` colour to diff against. Measured
+    against the head's own nearest solid neighbour in `eyed` instead --
+    "how does this eye pixel compare to what is drawn right next to it,
+    since there is no bare-head baseline here" -- the same OKLab distance
+    the rest of this check already trusts, just with a different source for
+    the "face" side of the comparison. See ART_CRITIQUE.md, "the eyes
+    render no pixels at all was mostly a measurement bug, not a rig one".
+
     It can fail. Restore `EYE` to a skin offset and it fires on four of the
     seven tones, which is how it was verified.
 
@@ -1089,6 +1103,27 @@ def check_eye_legibility(ramps=None, azimuths=EYE_LEGIBILITY_AZIMUTHS) -> list[s
             gaps = [math.dist(srgb_to_oklab(a[:3]), srgb_to_oklab(b[:3]))
                     for a, b in zip(plain, eyed)
                     if a is not None and b is not None and a != b]
+            for i, (a, b) in enumerate(zip(plain, eyed)):
+                if a is not None or b is None:
+                    continue
+                # The eye poked past the bare head's own silhouette here --
+                # compare against its own nearest solid neighbour instead of
+                # skipping it, the same "strongest local contrast" reading
+                # the colour-gap branch above already uses.
+                x, y = i % 48, i // 48
+                best = 0.0
+                for dx in (-1, 0, 1):
+                    for dy in (-1, 0, 1):
+                        if dx == 0 and dy == 0:
+                            continue
+                        nx, ny = x + dx, y + dy
+                        if 0 <= nx < 48 and 0 <= ny < 48:
+                            nb = eyed[ny * 48 + nx]
+                            if nb is not None:
+                                best = max(best, math.dist(
+                                    srgb_to_oklab(b[:3]), srgb_to_oklab(nb[:3])))
+                if best > 0.0:
+                    gaps.append(best)
             at = "" if az == 45.0 else f" at azimuth {az:.0f}"
             if not gaps:
                 out.append(f"skin '{tone}'{at}: the eyes render no pixels "
