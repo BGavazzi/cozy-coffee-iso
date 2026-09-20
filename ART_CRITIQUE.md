@@ -9467,3 +9467,53 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## NEXT.md's "52 Godot resources" claim was stale, not wrong -- reproduced the exact original count and it grew 52 -> 114 as the asset roster grew
+
+`NEXT.md`'s "Closed since this question was first asked" list carried: "all
+three producers now build Godot resources, 52 of them." A crude filesystem
+count (`find godot_export -type f -iname "*.tres" -o -iname "*.tscn"`) turned
+up 182, wildly different -- but that count mixes two style projects
+(`project/` and `project_snes_rpg/`, the latter not existing when "52" was
+written) and counts `.tscn` alongside `.tres`, so it wasn't a fair comparison
+and was deliberately not trusted on its own.
+
+Traced the real origin with `git log -S "52 of them" --oneline -- NEXT.md`,
+landing on `e7ac250`. Its companion commit forty minutes earlier, `4b44402`,
+has the actual methodology in its own words: "export_godot builds 52
+resources including 17 animation SpriteFrames" -- the exact number printed
+by `export_godot.py`'s own `len(resources)` line (`tools/export_godot.py:351
+-353`), which globs `*.tres` under one style's `godot_export/project*/
+resources/` directory, nothing else, for the single style that existed then
+(today's `cozy_ghibli`).
+
+Reproduced that exact same line against the current repo with a real,
+headless Godot 4.3 run, not a filesystem guess:
+
+```
+python tools/export_godot.py --godot-bin D:/vibes/.godot-tool/Godot_v4.3-stable_win64_console.exe
+...
+built 56 prop SpriteFrames, 17 animation SpriteFrames, 10 UI resources, 11 tile sources, 4 fonts in res://resources
+...
+114 resources written to D:\VIBES\cozy-coffee-iso\godot_export\project\resources
+```
+
+Zero `BLOCKER` lines -- all three round-trip checks (nine-slice margins,
+palette LUT, font layout) still pass clean. 114, same style, same code path,
+same counting rule as the "52" that was originally recorded. The claim
+wasn't broken; the roster it describes grew (more props, a much larger
+animation set, more UI chrome) in the ~3 weeks between the two counts, and
+nobody had re-run the export to refresh the number written into NEXT.md.
+`godot_export/project/resources/` is gitignored build output, not tracked
+source, so there's no way to catch this drift by reading a diff -- it only
+shows up by actually running the exporter.
+
+Not fixed and out of scope here: the `snes_rpg` style pack didn't exist when
+"52" was written, so it isn't part of this correction, but for the record a
+fresh run against it (`--style snes_rpg`) currently builds 66 resources of
+its own -- a second, independently-verified number, not folded into the
+114 above.
+
+Doc-only change: `NEXT.md` line updated 52 -> 114 with the verification
+method named inline, so the number is traceable the next time it goes stale.
+No code touched.
