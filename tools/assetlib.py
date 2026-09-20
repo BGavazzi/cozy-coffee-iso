@@ -1253,6 +1253,23 @@ def cup_and_saucer() -> Mesh:
     return m
 
 
+def saucer() -> Mesh:
+    """A standalone plate, not `cup_and_saucer()` scaled down.
+
+    `fit()` scales a mesh uniformly, so fitting the cup-plus-saucer mesh to
+    this id's own 0.03 declared height still produces the same proportions
+    at a smaller absolute size -- the same shape `cup_latte` already ships,
+    just shrunk, which quantizes to byte-identical sprites and trips
+    `check_distinct`. Own geometry instead: the same two-tone rim
+    `pastry_plate` already uses for a plate reading as more than a flat
+    disc, without the pastries on top.
+    """
+    m = Mesh()
+    m.add_cylinder((0.5, 0.5, 0.0), 0.13, 0.018, CERAMIC, 14)
+    m.add_cylinder((0.5, 0.5, 0.018), 0.10, 0.012, "cream+3", 14)
+    return m
+
+
 def crate(seed: int | None = None) -> Mesh:
     """Slatted, with the slats drawn as value rather than as geometry.
 

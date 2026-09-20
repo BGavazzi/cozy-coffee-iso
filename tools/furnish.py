@@ -206,6 +206,7 @@ RECIPES: dict[str, Recipe] = {
     # tableware
     "cup_espresso":            Recipe(lambda s: A.cup_espresso(), 0),
     "cup_latte":               Recipe(lambda s: A.cup_and_saucer(), 0),
+    "saucer":                  Recipe(lambda s: A.saucer(), 0),
     "cup_togo":                Recipe(lambda s: A.cup_togo(), 0),
     "mug_ceramic":             Recipe(lambda s: A.mug_ceramic(), 0),
     "milk_jug":                Recipe(lambda s: A.milk_jug(), 0),
@@ -234,12 +235,6 @@ UNMAPPED_REASON = {
     "counter_pass":            "no builder; the pass-through is a void",
     "wall_clock":              "no builder; already built on the SDXL path",
     "teapot":                  "already built on the SDXL path",
-    "saucer":                  "`cup_and_saucer` is one mesh and `fit` scales it "
-                               "UNIFORMLY -- fitting to the saucer's 0.03 height "
-                               "shrinks the cup too rather than flattening to "
-                               "the disc, and reframing then made the sprites "
-                               "byte-identical to cup_latte (caught by "
-                               "check_distinct)",
 }
 
 
