@@ -82,15 +82,20 @@ authoring rather than sampling.
     python tools/preview_clips.py --who barista   # clip strips + looping GIFs
     python tools/preview_characters.py            # roster + 8 directions
     python tools/portrait.py --demo                # -> proof/portraits.png
-    python tools/preview_generators.py            # 16 generators x 8 seeds
+    python tools/preview_generators.py            # 27 generators x 8 seeds (was 16)
     python tools/review_queue.py build "sprites/*.png"
     # fill verdict + reason in review/verdicts.jsonl
     python tools/review_queue.py stats            # what to automate next
 
     # the gates
-    python tools/manifest.py --check     # runs all twenty-six checks
+    python tools/manifest.py --check     # runs all the checks (this count also
+                                          # drifts -- see PIPELINE.md's "29
+                                          # checks" note for why it's not
+                                          # restated as a number here)
     python tools/build_plan.py --focal-scan 12   # slower gate: 12 whole rooms,
-                                                 # currently 0 of 12 failing
+                                                 # currently 3 of 12 failing (was 0;
+                                                 # the galley topology's accepted,
+                                                 # understood gap, see NEXT.md)
     python tools/character.py            # hair contrast, palette spread, silhouette floor
     python tools/fx.py                   # loop seams
 
@@ -120,13 +125,15 @@ authoring rather than sampling.
 The reference room is still the better room. It holds seven passes of judgement
 that no rule encodes — why the queue runs across the view rather than into it,
 why the crates go against the far walls. What the generator has is that it can
-make a different cafe, and that every one it makes clears twenty-six checks.
+make a different cafe, and that every one it makes clears the automated
+tier (checks, plural -- see the note above about why this file stopped
+naming a specific count).
 
 ![a generated room: window bar, different counter topology, occupied seating](proof/plan_room_stools.png)
 
-Nobody placed those people at the bar by hand. `window-bar occupancy` — the
-newest of the twenty-six checks — exists because a room can pass every
-placement rule and still read as empty; see below.
+Nobody placed those people at the bar by hand. `window-bar occupancy` —
+one of the checks below — exists because a room can pass every placement
+rule and still read as empty.
 
 ## The loop is a ratchet
 
@@ -134,7 +141,12 @@ Every human rejection carries a reason. Reasons that recur get promoted into the
 automated tier, so **human review volume falls as the factory matures**. `stats`
 names the next check to write rather than leaving it to guesswork.
 
-Twenty-four checks have been promoted so far: camera-space key light, hair/skin
+Checks promoted so far (this list is at least one short of current, flagged
+rather than recounted -- `check_eye_legibility` is live in `manifest.py`
+today, verified by name at its call site, and isn't named below; a full
+reconciliation of this list against every check `manifest.py --check`
+actually runs is real work left for a future pass, per this file's other
+check-count caveats above): camera-space key light, hair/skin
 contrast, per-character palette spread, waistline separation, silhouette pixel
 floor, seating orientation, member thickness, grounding, declared-symmetry
 verification, screen-space occlusion, buried detail, derived direction labels,

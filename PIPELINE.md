@@ -180,13 +180,15 @@ layout.
 Tiles were the test of whether that shape was right: adding a fourth
 producer cost four lines in the stager and one function in `build_all.gd`.
 
-Output: `godot_export/project/resources/`, **54 resources** for the current
-library -- 32 prop `SpriteFrames`, 17 animation `SpriteFrames` (9 characters,
-8 effects, 3032 frames), 3 nine-slice `StyleBoxTexture`, and two `TileSet`
-resources carrying 7 atlas sources -- referencing the staged PNGs by path
-rather than duplicating them. `barista.tres` alone
-carries 336 `AtlasTexture` regions across 56 named `<clip>_<dir>`
-animations.
+Output: `godot_export/project/resources/`, **114 resources** for the
+current library (re-verified with a real `export_godot.py` run against
+`main`, not carried forward -- see `ART_CRITIQUE.md`'s Godot-resource-count
+entries for the trail; the 54 this line used to say was accurate for a
+smaller, earlier asset roster, not a broken count): 56 prop `SpriteFrames`,
+17 animation `SpriteFrames`, 10 UI resources, 11 tile sources, and 4 fonts
+-- referencing the staged PNGs by path rather than duplicating them.
+`barista.tres` alone carries 336 `AtlasTexture` regions across 56 named
+`<clip>_<dir>` animations.
 
 Reference-image ("examples") conditioning in `concept.py` -- the other half
 of "prompts and examples in, engine-usable assets out" -- is built; see the
@@ -266,16 +268,19 @@ foliage, fabric and skin — most of the material range a 2D game needs.
 | 5 (render) | working — exact 2:1, 8 azimuths, camera-space key. **Consumes OBJ meshes** via `mesh.py`, or analytic primitives as a fixture |
 | 6 (pixelize) | working — `pixelize.py`, ramp-quantized, zero contamination |
 | 7 (metadata) | working — `animate.py` emits `atlas.json`: frame rects, per-clip anchors, fps, direction order |
-| 8 (auto-review) | working — `art_review.py` and friends, **29 checks**, most run by `manifest.py --check`; `furnish.check_distinct` is the exception and runs in the producer that can act on it, because a duplicate is a fact about a build, not about the manifest. `check_grid` was tightened rather than added: uniform blocks are evidence of an upscale, not proof, so the finding now has to survive reconstructing the image from one pixel per block — that removed 20 false blockers on flat-shaded blockout geometry (a chalkboard's edge-on face lost 43% of its solid pixels under the round trip and was still being reported as upscaled art) while a deliberately 2x- and 4x-upscaled sprite is still caught at 100% |
+| 8 (auto-review) | working — `art_review.py` and friends, **29 checks** (unverified as of this pass -- a crude count of every `check_` function across `tools/` now returns 65, and `README.md` separately says "twenty-six"; neither is a fair comparison to whatever this 29 originally enumerated, so it's flagged here rather than replaced with a guess -- see `ART_CRITIQUE.md`), most run by `manifest.py --check`; `furnish.check_distinct` is the exception and runs in the producer that can act on it, because a duplicate is a fact about a build, not about the manifest. `check_grid` was tightened rather than added: uniform blocks are evidence of an upscale, not proof, so the finding now has to survive reconstructing the image from one pixel per block — that removed 20 false blockers on flat-shaded blockout geometry (a chalkboard's edge-on face lost 43% of its solid pixels under the round trip and was still being reported as upscaled art) while a deliberately 2x- and 4x-upscaled sprite is still caught at 100% |
 | 9 (human critique) | working — `review_queue.py`, contact sheet + ratchet |
-| 10 (engine export) | working — `export_godot.py`, 22 Godot `SpriteFrames` resources built from the current sprite library |
+| 10 (engine export) | working — `export_godot.py`, 114 Godot resources built from the current library (see "Engine export" below for the breakdown; was 22 SpriteFrames-only at an earlier, UI/tile/font-less snapshot of this table) |
 
 **UI art takes a shorter route through the same parts.** An icon has no mesh
 and exactly one azimuth, so `tools/ui_forge.py` runs stage 1 (via
 `concept()`'s `positive_override`, the custom escape hatch) straight into
 stage 6 (`pixelize`'s snap + modal downsample + outline), skipping 2 through
 5 because they have nothing to contribute rather than because they are slow.
-It builds the fourteen `cat: ui` entries `assets.yaml` declares. Order
+It builds the `cat: ui` entries `assets.yaml` declares -- 25 as of this
+line's last check (`grep -c "cat: ui" assets.yaml`), up from 14 when this
+was written; see `NEXT.md`'s "UI art" entry for the icon-roster-growth
+history. Order
 matters in the quantizer: pixels are snapped to the palette *before* the
 modal downsample, because `downsample_modal` assumes palette-exact input --
 which the 3D path gets free from `shade_toon` and the flat path does not.
