@@ -858,7 +858,28 @@ BACK_STYLES = (_back_low, _back_tall, _back_shoulder, _back_solid)
 
 
 def _legs_square(m, f, cx, cy, r, top):
-    m.add_box((cx - r, cy - r, 0), (cx + r, cy + r, top), f)
+    # The top face sits flush under the seat's own overhang and never wins a
+    # pixel at any of the 8 ship azimuths -- confirmed by `check_buried_
+    # detail`, which flagged it (and the two inward side faces) on a
+    # default chair. Dropping it is a real, verified triangle-count cut,
+    # not a visual change: byte-identical renders at all 8 azimuths,
+    # confirmed by hash. The two inward side faces looked like the same
+    # kind of dead geometry by the same reasoning but are NOT safe to drop
+    # -- doing so opened real holes in the silhouette at the four corner-on
+    # azimuths (~5% of the sprite's pixels, not a rounding artefact), so
+    # they stay. See ART_CRITIQUE.md, "chair's buried-detail floor: one of
+    # the two 'obviously dead' faces the check flagged wasn't".
+    x0, x1, y0, y1, z0, z1 = cx - r, cx + r, cy - r, cy + r, 0.0, top
+    m.add_quad((x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0), f,
+              facing=(0.0, 0.0, -1.0))
+    m.add_quad((x0, y0, z0), (x0, y0, z1), (x0, y1, z1), (x0, y1, z0), f,
+              facing=(-1.0, 0.0, 0.0))
+    m.add_quad((x1, y0, z0), (x1, y0, z1), (x1, y1, z1), (x1, y1, z0), f,
+              facing=(1.0, 0.0, 0.0))
+    m.add_quad((x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1), f,
+              facing=(0.0, -1.0, 0.0))
+    m.add_quad((x0, y1, z0), (x1, y1, z0), (x1, y1, z1), (x0, y1, z1), f,
+              facing=(0.0, 1.0, 0.0))
 
 
 def _legs_tapered(m, f, cx, cy, r, top):
