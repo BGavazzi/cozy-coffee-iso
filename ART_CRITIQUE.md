@@ -9467,3 +9467,80 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+---
+
+## `organic_rig.check_eyes_visible` had the exact same undercounting bug as `check_eye_legibility` -- and it had already produced a wrong "clean, settled" conclusion
+
+Found while looking for the same shape of bug elsewhere after fixing
+`character.check_eye_legibility`'s silhouette-extension blind spot (see
+above, "the eyes render no pixels at all was mostly a measurement bug").
+`organic_rig.py`'s own eye-visibility check (`organic_rig.py`'s equivalent
+for the `cylinder_sphere` rig) uses the identical shape of diff:
+
+```python
+n = sum(1 for a, b in zip(plain, eyed)
+       if a is not None and b is not None and a != b)
+```
+
+Same guard, same blind spot: a pixel where the eye box sits proud of the
+bare head's own curved surface at a grazing angle -- transparent in
+`plain`, solid in `eyed` -- was never counted as evidence.
+
+**This one had already produced a wrong conclusion that had been treated as
+settled.** `EYES_VISIBLE_AZIMUTHS`'s own comment, from an earlier hour's
+sweep: "0/180/225/270/315 read 0-2px for every member, consistently -- a
+side/back view genuinely does not show the face on this rig, correctly,
+not a defect... that occlusion split is clean and member-independent
+here." It was consistent -- consistently wrong, for the same reason every
+one of `character.py`'s "eyes render no pixels at all" lines was wrong.
+
+**Measured before assuming the same fix applies.** Full 8-azimuth x
+4-member x 2-side sweep, `plain`/`eyed` pixel counts recorded both ways:
+`archivist` at az180 goes 0px -> 5-6px, az315 0px -> 12px; `drifter` at az0
+goes 0px -> 6px, az315 0px -> 17px -- comfortably visible, not occluded, at
+angles the earlier sweep called uniformly blank for every member. Checked
+for the reverse case too (`eyed` rendering FEWER solid pixels than `plain`,
+which would mean the fix is unsound) across all 64 tone/azimuth/side
+combinations -- zero instances.
+
+**Fix, two parts together, same as this session's earlier character.py
+work:** (1) count `a is None and b is not None` pixels as evidence, same
+principle as the character.py fix, no new constant, `MIN_EYE_PIXELS`
+untouched; (2) `EYES_VISIBLE_AZIMUTHS` widened from `(45, 90, 135)` to all
+8 -- the earlier 5-azimuth exclusion was reasoned from the now-disproven
+"clean occlusion" claim, so there is no longer a basis to leave them out.
+
+**Honest before/after, not just the final number.** Current main (3
+azimuths, buggy count): 0 errors. Widening to 8 azimuths WITHOUT the
+undercount fix (the naive version of this change, measured deliberately
+to show what it would have looked like): **32 errors** -- most of them the
+same false-negative shape PR #137 hit. Widening + fixing the undercount
+together: **17 errors**, real. Every one of the 17 was individually
+checked for the reverse-case sanity condition above; none tripped it.
+
+**Visually confirmed both directions.** `archivist` az315 right eye
+(0px -> 12px): `proof/eyes_visible_archivist_az315_right_now_visible.png`
+next to `proof/eyes_visible_archivist_az315_bare.png` -- a small but real
+dark mark on the head's silhouette edge in the eyed render, absent in the
+bare one, the same shape of evidence the character.py correction found for
+`skin+2` at az315. `drifter` az270 left eye (2px, still failing): rendered
+alone in `proof/eyes_visible_drifter_az270_left_still_occluded.png` -- a
+clean back-of-head view, genuinely no eye visible, confirming this
+particular case is real occlusion, not another measurement artifact.
+
+**Zero regression.** `python -m pytest -q`: 40 passed. `manifest.py
+--check --style cozy_ghibli`: unchanged at 3 errors (`organic_rig`'s
+checks only run for `cylinder_sphere` styles, `cozy_ghibli` is
+`box_prism`, this branch never touches that path). `manifest.py --check
+--style snes_rpg`: 21 errors (17 new eye-visibility + the same 4
+pre-existing, unrelated composition errors already on record).
+
+Branch `eyes-visible-silhouette-extension`, based on `main` directly (no
+other open PR touches `organic_rig.py`), left unmerged. Process note for
+whoever picks this pile up next: a "swept all N cases, found a clean
+member-independent split" conclusion is exactly the shape of claim this
+bug produces -- consistent across members because the bug is
+angle-driven, not member-driven, which reads as confirmation instead of as
+the tell it actually was. Worth remembering before trusting the next
+"consistent, therefore correct" sweep in this file at face value.
