@@ -9467,3 +9467,60 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## `saucer` had a real, correctly-diagnosed fix sitting in a code comment for a while -- built it
+
+This session's audit has mostly been re-checking claims already written down
+in `NEXT.md`/`ART_CRITIQUE.md`. Widened the search this hour to `tools/*.py`
+comments themselves, on the theory that an "accepted limitation" doesn't
+have to live in the two files this audit usually reads -- and `furnish.py`'s
+own `UNMAPPED_REASON` dict (ids with no builder, and why, "printed by
+`--list` so the gap stays a stated gap rather than a silence") had one entry
+that was a diagnosis, not a shrug:
+
+> `saucer`: "`cup_and_saucer` is one mesh and `fit` scales it UNIFORMLY --
+> fitting to the saucer's 0.03 height shrinks the cup too rather than
+> flattening to the disc, and reframing then made the sprites byte-identical
+> to cup_latte (caught by `check_distinct`)"
+
+This is exactly the shape this audit looks for -- one lever tried
+(`ingest.fit()`'s uniform height scale on the existing `cup_and_saucer()`
+mesh), a check that measures something else (`check_distinct`, sprite-byte
+identity, not proportions), and the write-up already correctly named why
+that lever can never work: `fit()` scales x/y/z by one scalar, so shrinking
+the whole cup-plus-saucer mesh to the saucer's declared 0.03 height produces
+the *same shape*, just smaller -- the exact same silhouette `cup_latte`
+already ships at its own 0.15 height, both camera-framed to the same
+canvas. No amount of re-fitting was ever going to produce a different
+sprite from the same mesh. Unlike most findings this audit reopens, this
+one wasn't wrong about the mechanism -- it correctly identified that the
+different lever needed was new geometry, and just never built it.
+
+**Built it.** `assetlib.saucer()`: a standalone two-tone disc (base ring +
+a lighter raised inner rim, `"cream+3"` over `CERAMIC`), the same value-
+contrast idiom `pastry_plate()` already uses for a plate that reads as more
+than a flat blob, without the pastries. Wired into `furnish.py`'s
+`RECIPES` and removed from `UNMAPPED_REASON`.
+
+**Verified, not assumed clean:**
+- Full `furnish.py` run, all 57 ids (was 56): **"57 distinct sprite sets --
+  no two ids render the same eight images"** -- `check_distinct` passes
+  clean, `saucer` included, confirming the new geometry lever actually
+  closes the gap the old uniform-scale lever couldn't.
+- `manifest.py --check`: 3 errors, 18 warnings -- byte-identical to `main`
+  before this change (the same pre-existing eye-legibility and galley
+  findings this session has tracked all along; `saucer` introduces zero new
+  warnings of its own, including no `check_buried_detail`/`check_
+  generator_range` hits).
+- Visual inspection by eye: `saucer_dir0.png`/`saucer_dir2.png` read
+  cleanly as a plate, distinct from `cup_latte_dir0.png`'s mug silhouette
+  at a glance, not just by check-passing bytes.
+- `furnish.py --list`'s own unmapped count drops 8 -> 7; the seven left are
+  genuinely different in kind from `saucer`'s old entry -- missing
+  geometry variants (`counter_corner_l/r`, `counter_end`, `counter_pass`,
+  `espresso_machine_1group`) or ids already covered by the SDXL path
+  (`wall_clock`, `teapot`) -- none of them describe a check-vs-lever
+  mismatch the way `saucer`'s old entry did.
+
+New branch (`furnish-saucer-real-builder`). Left unmerged per standing
+practice.
