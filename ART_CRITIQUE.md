@@ -9467,3 +9467,52 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+---
+
+## NEXT.md's "reader's left eye renders 0px" was already fixed months ago -- the doc and the lock.json entry just never caught up
+
+While sweeping `character.py`/`organic_rig.py`'s rendered-diff checks for
+the silhouette-extension undercounting bug (this file, the two entries
+above), checked `portrait.py`'s own `check_eyes_visible` for the same
+pattern -- it shares the identical `a is not None and b is not None`
+guard, so it looked like a third candidate.
+
+**It isn't currently buggy, but the search surfaced something else.**
+Measured every roster member x both eyes x both styles for dropped
+silhouette-extension pixels: zero, everywhere. `PORTRAIT_AZIMUTH = 90` is
+a dead-on face shot, not a grazing angle, so the eye never pokes past the
+bare head's own silhouette the way it does at 0/180/315 on the full
+sprite rig -- this check genuinely doesn't need the fix the other two did.
+
+Re-running it for real (`python tools/portrait.py --check --style
+snes_rpg`) to confirm that, though, didn't match NEXT.md's own account of
+this check at all: NEXT.md (the "Landed (PR #24, stacked on #23)" section)
+still describes `reader`'s left eye as rendering 0px against bare skin
+under `snes_rpg`, a genuine `hair_mat`/`C.EYE` colour collision (both
+`neutral-2`). Live output today says "9 portraits: palette-exact,
+distinct, both eyes visible on every one, deterministic" -- no failures at
+all. `git log` traces this to PR #117 ("Hour 61: fix reader's invisible
+left eye under snes_rpg"), already merged into `main` long before this
+hour -- `reader`'s `hair_mat` was moved off `neutral-2` for real. The doc
+bullet describing the bug was never updated once the fix landed.
+
+**`styles/snes_rpg/lock.json` had the same staleness, in machine-readable
+form.** Its `portrait.py:roster` entry still read `"approved": false`,
+`recorded_at: 2026-09-02` -- from before PR #117 existed. Refreshed with
+`python tools/portrait.py --check --style snes_rpg --lock`: now
+`"approved": true"`, `recorded_at: 2026-09-20`. `style_approve.py --style
+snes_rpg` confirmed unaffected either way -- `portrait.py` was never the
+blocker (`organic_rig.py`'s entry already satisfies the character-roster
+requirement), consistent with what NEXT.md already said about this.
+
+Not a lever-mismatch fix -- no check was measuring the wrong thing here.
+Just the same "trust the current run, not the last time someone wrote it
+down" discipline this session has applied to numeric claims (`PIPELINE.md`
+"N checks", `README.md` counts) applied to a pass/fail claim instead.
+Corrected both the NEXT.md bullet (struck through, not deleted, with the
+real fix and commit named) and the lock.json entry in the same commit so
+neither drifts from the other again.
+
+Branch `portrait-snes-lock-was-stale`, based on `main` directly, left
+unmerged.
