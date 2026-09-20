@@ -9467,3 +9467,103 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## `bookshelf`'s buried-detail warning: real geometry defect, unreachable placement
+
+The section above ("`check_buried_detail` was checking the one angle
+furniture doesn't ship as") widened the check to all 8 raw azimuths, found
+`bookshelf`/`chair`/`menu_board`/`wall_art_framed` newly failing, visually
+confirmed `bookshelf`'s specifically as a real defect (directions 0-2 read
+as a real bookshelf; the rest degrade to a flat, featureless slab -- the
+original "plain wooden slab" defect this check was promoted to catch,
+present on five-eighths of the object nobody was looking at when that
+earlier fix shipped), and deliberately left all four failing as "per-asset
+modelling work... the same discipline `table_communal` was left under."
+
+That call never checked whether `build_plan.py` actually places this asset
+at all 8 rotations. It doesn't. `chair` and `wall_art_framed` genuinely do
+rotate freely (or at least aren't traced to a fixed rotation set yet); but
+`bookshelf` has exactly one real placement site -- the back-bar shelving
+loop -- and it is wall-constrained the same way `menu_board` turned out to
+be (see the `menu-board-buried-detail-placement-scope` branch, same hour):
+
+    tools/build_plan.py, back-bar shelving loop:
+        L.add(A.bookshelf(seed=3 + placed_i), at=at,
+              rot=0 if along_x else 270, name=name)
+
+Never any other rotation, in the only place this codebase ever instantiates
+a placed `bookshelf`. `furnish.py`'s 8-direction sprite sheet is a separate,
+generic asset-catalog artefact every `assetlib.py` prop gets uniformly --
+generating it doesn't mean the room composite ever shows all 8 sides of
+this specific one, any more than it did for `menu_board`.
+
+**Confirmed empirically, not assumed.** `rot=0`/`rot=270` are two numbers
+that happen to coincide in value with two of the check's own raw azimuths,
+but rotation and camera azimuth aren't the same axis and needed checking,
+not assuming: rendered `transformed(bookshelf(), rot_z=270)` at the game's
+real fixed room-composite camera (`render_room.py`'s default, azimuth 45.0)
+and hash-compared it against the untransformed mesh rendered at each raw
+check azimuth. It matched azimuth 135 exactly (byte-identical), not 315 or
+any other candidate. `rot=0` trivially matches azimuth 45 (identity
+transform). So the two rotations this asset is ever placed at map onto raw
+azimuths 45 and 135 -- directions 0 and 2, both already confirmed above as
+the "reads as a real bookshelf" half, never the slab half.
+
+Restricting `check_buried_detail`'s own share formula (`hidden / candidate`,
+summed across whichever azimuths are passed) to just those two real
+azimuths instead of all 8:
+
+    | mesh (seed)         | all 8 azimuths      | azimuths 45+135 only |
+    |----------------------|--------------------|-----------------------|
+    | seed=None (the check) | 38.2% (168/440)   | 15.2% (20/132)        |
+    | seed=3 (real placement seed) | 45.3% (373/824) | 12.1% (32/264) |
+
+Both drop from well over the 30% floor to comfortably under it. Direct
+renders confirm it by eye too, not just by number: `transformed(bookshelf
+(seed=3), rot_z=0)` and `rot_z=270` through the real `Layout.add` path, at
+azimuth 45.0 --
+`proof/bookshelf_rot0_real_placement_legible.png` and
+`proof/bookshelf_rot270_real_placement_legible.png` -- both a clean, fully
+legible bookshelf, visible shelves and books, no holes. Repeated with
+`seed=None` (the exact mesh `check_buried_detail` itself evaluates) --
+`proof/bookshelf_seedNone_rot0_legible.png` and
+`proof/bookshelf_seedNone_rot270_legible.png` -- same result. The full
+8-direction sprite sheet (`proof/bookshelf_8dir_good_vs_slab.png`) shows the
+split directly: directions 0-2 (the two this asset ships at, plus one
+neither rotation ever reaches) read as a real bookshelf; 3, 5, 7 are flat
+slabs; 4 and 6 show only a thin edge of shelf, none of them ever placed.
+
+**This is not "the defect isn't real."** It is real, on 6 of the 8 raw
+azimuths. It is also never seen by a player, because nothing in this
+codebase ever rotates a placed `bookshelf` to any of those 6. Same
+reasoning as `menu_board`'s entry, different asset, independently verified
+rather than assumed to generalize.
+
+Added to `ACCEPTED_BURIAL` with a reason distinct from every entry before
+`menu_board`'s (those are all geometry that stays occluded regardless of
+viewing angle -- this and `menu_board` are both placement-scope mismatches,
+conditioned on the placement call sites named in the comment staying the
+only ones in use).
+
+**Verified zero regression.** `manifest.py --check` before this change: 3
+errors, 18 warnings, including `warning bookshelf: 38% of its camera-facing
+tris are fully occluded (168/440)`. After: 3 errors (identical messages),
+17 warnings -- the `bookshelf` line gone, every other warning (including
+`chair`, `menu_board`, `wall_art_framed`, and the unrelated generator-range
+and UI warnings) present and byte-identical to the baseline. No geometry
+changed; this is a check-scope correction, not a mesh fix -- `bookshelf()`
+in `assetlib.py` is untouched.
+
+New branch (`bookshelf-buried-detail-placement-scope`), based on `main`,
+independent of the unmerged `chair-buried-detail-top-face-real-fix` and
+`menu-board-buried-detail-placement-scope` branches from the same hour's
+backlog (chair needed a real geometry fix; menu_board needed the exact same
+placement-scope argument as this one, on a different asset). Left unmerged
+per standing practice.
+
+Of the four assets this check newly flagged, `chair` and `menu_board` and
+now `bookshelf` are resolved (geometry fix, placement-scope exemption,
+placement-scope exemption respectively). `wall_art_framed` remains open --
+unlike `bookshelf`/`menu_board`, no placement call site has been traced for
+it yet, so it isn't yet known whether the same lever applies; that is next
+hour's business, not assumed here.
