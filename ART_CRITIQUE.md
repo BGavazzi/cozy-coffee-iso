@@ -9557,4 +9557,25 @@ verification method inline, same discipline as `NEXT.md`'s equivalent
 fixes. Both files' check-count claims are named as suspect but deliberately
 left alone pending a proper traced investigation (methodology unknown,
 three conflicting numbers on record, no confident correction to make yet).
+
+**Caught mid-fix: `README.md`'s "twenty-six" appeared three more times
+after the one already flagged**, at the two prose mentions right after the
+quickstart ("clears twenty-six checks" and "the newest of the twenty-six
+checks") and in the ratchet section's own named list ("Twenty-four checks
+have been promoted so far"). Fixing one instance of an ambiguous claim
+while leaving three more repeating the same unverified number two dozen
+lines away would have been worse than the original staleness -- an
+internally inconsistent file instead of a merely outdated one. The two
+prose mentions now point at the same caveat rather than restating a number;
+the named list is different in kind from the other three (it enumerates
+specific checks by name, not just a count), so it got a specific check
+rather than a blanket flag: `check_eye_legibility` is confirmed live in
+`manifest.py` (`_c.check_eye_legibility(ramps)`, line 439) and is not named
+anywhere in the list's 24 items, meaning the list under-counts by at least
+one real, currently-running check, not just an ambiguous methodology gap
+like the round-number claims. Flagged with that specific example rather
+than silently re-numbered to 25, since one confirmed omission doesn't rule
+out others without the same full reconciliation this section already
+declined to do for "29"/"26"/"65".
+
 No code touched.
