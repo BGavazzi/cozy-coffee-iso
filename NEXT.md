@@ -1093,13 +1093,23 @@ not-yet-started gap, not a bug in this one.
 
 Running both for real found more of the same honest picture:
 
-- `portrait.py --check --style snes_rpg`: `reader`'s left eye renders 0px
+- ~~`portrait.py --check --style snes_rpg`: `reader`'s left eye renders 0px
   against bare skin. Its `hair_mat` (`neutral-2`) and `character.EYE`
   (also `neutral-2`) are literally the same ramp+offset -- under
   `cozy_ghibli`'s specific RGB values that pair still separates enough to
   read; under `snes_rpg`'s darker, more compressed `neutral` ramp it
   doesn't. Same root cause as PR #23's finding, different check, different
-  specific collision.
+  specific collision.~~ **Fixed for real, PR #117 ("Hour 61: fix reader's
+  invisible left eye under snes_rpg"), already merged into `main` --
+  `reader`'s `hair_mat` was moved off `neutral-2` so it no longer collides
+  with `C.EYE`. `python tools/portrait.py --check --style snes_rpg`
+  reports "both eyes visible on every one" today; `styles/snes_rpg/
+  lock.json`'s `portrait.py:roster` entry still said `approved: false`
+  from a 2026-09-02 recording though, months stale relative to a fix that
+  landed since -- refreshed with `--lock` alongside this correction. This
+  bullet had been sitting here describing a bug that was already gone,
+  the same shape of drift the "N checks" staleness entries elsewhere in
+  this file were written to catch, just not caught on itself.
 - `manifest.py --check --style snes_rpg`: the same three waistline
   failures PR #23 already found (consistent -- both producers measure the
   same roster against the same palette), plus three new near-misses:
@@ -1119,8 +1129,10 @@ None of these threaten either style's approval: `style_approve.py` doesn't
 require `portrait.py` or `manifest.py` to pass, only `character.py` OR
 `portrait.py` OR `organic_rig.py` for the character-roster requirement, and
 `organic_rig.py`'s entry already satisfies it. Recorded honestly rather
-than suppressed, same as PR #23 -- `styles/snes_rpg/lock.json` now has a
-real `portrait.py:roster` entry with `approved: false`.
+than suppressed, same as PR #23 -- `styles/snes_rpg/lock.json`'s
+`portrait.py:roster` entry was `approved: false` at the time this was
+written; it is `approved: true` now, refreshed alongside the correction
+above once the underlying bug was actually fixed.
 
 **Landed (PR #25, stacked on #24): `--style` for `ui_chrome.py` -- the last
 producer that could take it without needing the GPU.** `ui_forge.py` (SDXL
