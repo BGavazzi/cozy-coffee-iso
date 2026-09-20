@@ -9467,3 +9467,59 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## NEXT.md's own pointer to the "live queue" was stale in a new way: the section it names stopped being at the bottom
+
+NEXT.md's opening section tells a reader where the actual current state lives:
+`ART_CRITIQUE.md`'s last `## Still open` heading. That pointer already
+carried a warning that it "will drift again" -- and it has, but not the way
+the warning anticipated. It didn't drift by going out of date in place; it
+drifted because the file kept growing underneath it and no later `## Still
+open` heading was ever written to replace it.
+
+`grep -n "^## Still open" ART_CRITIQUE.md` finds its last real occurrence at
+line 3550, in a file that is now 9469 lines long -- roughly 37% of the way
+through, with 5900+ lines of later, dated passes appended after it (the file
+now ends around "`review_library()`'s other half had the same unfinished
+reconciliation..." at line 9420). NEXT.md's own text still called that
+heading "currently at its bottom," which stopped being true well before this
+audit found it.
+
+Checked what that means for the content, not just the position, since a
+stale pointer to accurate content is a smaller problem than a pointer to
+wrong content. Grepped every later pass (lines 3630-9469) for the two named
+items that aren't purely environment-blocked (`Stages 1-3` is a toolchain
+fact, not something a render can confirm or deny):
+
+- **Counter orientation** -- re-measured with real N·L numbers in a later
+  pass ("A real, already-measured galley finding was never folded out of its
+  own commit message" and the section before it): still costs the focal lead
+  0.04, still deliberately left as an accepted, understood gap, not touched.
+- **Galley topology** -- re-confirmed live this pass with a real
+  `manifest.py --check` run against current `main`:
+  ```
+  ERROR   composition: plan 8 (galley): counter is only -0.012 brighter than
+          its room (floor +0.015) -- no centre
+  ERROR   composition: plan 8 (galley): counter carries -0.019 detail against
+          its room (floor +0.000) -- the busiest thing in frame is not the
+          counter
+  ```
+  Same mechanism named at the time (`71451c3`'s own commit message, never
+  loosened): the focal box spans the room's full depth. Still real, still
+  correctly left alone.
+
+So the three-item list itself was not wrong -- both content-bearing items
+were re-verified against live output, not just re-read. What was wrong was
+telling a reader "it's at the bottom" when it hasn't been for a while, which
+matters because the whole point of that paragraph is to save a future reader
+(human or agent) from reading stale prose as current. A pointer that is
+itself positionally stale defeats that purpose quietly -- nothing in the
+file *says* it's wrong, the reader just has to notice the heading isn't
+actually near the end.
+
+**Doc-only change:** NEXT.md's opening pointer paragraph now says where the
+heading actually sits (~37% mark, not the bottom), names that no later
+`## Still open` heading was ever written to replace it, gives a concrete way
+to find real current state (`grep -n "^## " ART_CRITIQUE.md | tail`), and
+records that the three items under it were freshly re-verified against live
+output on 2026-09-19, not just carried forward by trust. No code touched.
