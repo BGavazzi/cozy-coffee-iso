@@ -9467,3 +9467,105 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## `wall_art_framed`'s buried-detail warning: not placed anywhere, at all
+
+Last of the four assets `check_buried_detail`'s azimuth-widening newly
+flagged (bookshelf/chair/menu_board/wall_art_framed, section above). Chair
+needed a real geometry fix (leg top face only, on its own branch). Bookshelf
+and menu_board both turned out to be placement-scope mismatches: wall-
+constrained to 2 of 8 raw azimuths, both on the "reads correctly" side
+(separate branches, same hour). This one is a third shape entirely.
+
+`wall_art_framed` has no real placement call site. Not a narrow one, like
+its wall-mounted siblings -- none at all. Grepped every `tools/*.py` for
+`wall_art_framed`: it exists in `assetlib.py` (the builder), `assets.yaml`
+(a `cat: decor, fp: [1,0]` declaration -- the same flush-wall footprint
+shape as `menu_wall_board`/`menu_chalkboard`/`wall_clock`), and `furnish.py`
+(a `Recipe` entry that feeds the generic 8-direction catalog sprite sheet
+every `assetlib.py` prop gets). Nowhere in `build_plan.py` or
+`render_room.py` does anything ever call `A.wall_art_framed(...)`. It is
+generated for the asset catalog and never placed in a room.
+
+**This is not a new finding -- it independently reproduces one.** An
+earlier investigation into `check_generator_range`'s own azimuth-blindness
+(section "`check_generator_range`'s single azimuth wasn't the bug; the
+untested configuration was", this file) already established exactly this
+fact for a different check: *"`wall_art_framed` isn't placed anywhere in
+this repo's real room compositions at all (catalog-only, in `furnish.py`'s
+`Recipe` table, never called from `build_plan.py` or `render_room.py`) --
+no live casualty regardless."* That was reached by tracing a completely
+different check's azimuth flip. Re-derived here from scratch, for
+`check_buried_detail`, by grepping the same three files fresh -- same
+answer, independently confirmed rather than assumed to carry over.
+
+**The geometry defect is real, and its mechanism is worth naming.**
+`wall_art_framed()` builds a frame box, then mounts a mount/picture/horizon
+stack proud of ONE face of it. Swept `front_facing()` across all 8 raw
+azimuths:
+
+    az=45   front=24  hidden= 2  (8%)
+    az=90   front=16  hidden= 0  (0%)
+    az=135  front=24  hidden= 2  (8%)
+    az=180  front=16  hidden= 0  (0%)   <- edge-on, not back-facing (see below)
+    az=225  front=24  hidden=18 (75%)
+    az=270  front=16  hidden=12 (75%)
+    az=315  front=24  hidden=18 (75%)
+    az=360  front=16  hidden= 0  (0%)   <- edge-on, not back-facing
+    overall: 32.5% (52/160)
+
+Azimuths 225/270/315 are the object viewed from behind the frame's own
+back panel -- the picture content sits mounted on the FRONT face only, so
+the frame's own bulk blocks it from this side, the same way a real picture
+frame does when you walk around behind it. Confirmed visually, not just
+numerically: `proof/wall_art_framed_8dir_never_placed.png` shows a clean
+framed picture at directions 0/1/2, an edge-on sliver at 3 (matching this
+codebase's already-documented `check_member_thickness` finding on the same
+`2fold` panels, a separate mechanism), then three solid dark/brown blocks
+at 4/5/6 -- the frame's plain back -- then another sliver at 7.
+
+**This does not need, and does not get, the same "verified rotation"
+treatment `bookshelf`/`menu_board` got.** Those two have a real call site
+with a specific `rot` value to hash-match against a raw azimuth. This one
+has no call site to verify against -- there is no rotation to check,
+because nothing rotates it into a room at all. The honest exemption here
+is narrower and stronger at once: not "the bad azimuths are unreachable
+given how this asset is placed," but "this asset is not placed," full stop,
+the same standard `check_generator_range`'s investigation already accepted
+for this exact asset.
+
+Added to `ACCEPTED_BURIAL` with that reason, distinct from every entry
+before it, `menu_board`'s included -- conditioned on staying unplaced, with
+the same "re-measure if that changes" caveat every placement-scope entry in
+this file carries.
+
+**Verified zero regression.** `manifest.py --check` before: 3 errors, 18
+warnings, including `warning wall_art_framed: 32% of its camera-facing tris
+are fully occluded (52/160)`. After: 3 errors (identical), 17 warnings --
+only the `wall_art_framed` buried-detail line gone, everything else
+(including `wall_art_framed`'s own unrelated `check_member_thickness`
+edge-on note, which lives in a different check entirely and is untouched)
+byte-identical. No geometry changed; `wall_art_framed()` in `assetlib.py` is
+untouched.
+
+New branch (`wall-art-framed-buried-detail-not-placed`), based on `main`,
+independent of the `chair`/`menu_board`/`bookshelf` branches from the same
+backlog. Left unmerged per standing practice.
+
+**This closes the four-asset `check_buried_detail` backlog from the
+azimuth-widening section above: chair (real geometry fix), menu_board and
+bookshelf (placement-scope, wall-constrained), wall_art_framed (not placed
+at all).** Three different underlying mechanisms behind what looked, at the
+check's own output, like the same kind of warning four times over.
+
+**One loose thread, flagged rather than chased this hour:** tracing
+`wall_art_framed`'s placement turned up that `bean_hopper`, `drip_brewer`,
+`lamp_table`, `pourover_stand`, and `tip_jar` -- five of the *other*
+`check_buried_detail` warnings, present even before the azimuth-widening,
+not part of this backlog -- also have no `A.<name>(...)` call site anywhere
+in `build_plan.py`. Whether that means the same "not placed, no live
+casualty" reasoning applies to some or all of them, or whether they're
+placed some other way this grep missed (a generic id-keyed dispatch, a
+different placement file), is unverified and genuinely unknown -- worth a
+dedicated pass, not a guess extended from one confirmed case to five
+unchecked ones.
