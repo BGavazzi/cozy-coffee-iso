@@ -68,8 +68,12 @@ primitives that only take one radius -- now `torso_radius`/`head_radius`/
 
 ### Gates and provenance
 
-`tools/gates.py` catalogs every `check_*` function in this repo -- 62 of them
--- as `deterministic`, `llm` (a real category, honestly empty; see the module
+`tools/gates.py` catalogs every `check_*` function in this repo -- 65 of them
+as of this writing, verified via `python tools/gates.py --list`'s own trailer
+line rather than hand-counted, because a hand-counted copy of this exact
+number is what went stale here before (62, three gates behind current) and
+in `PIPELINE.md`'s stage-8 row (29, badly behind) -- see ART_CRITIQUE.md --
+as `deterministic`, `llm` (a real category, honestly empty; see the module
 docstring for the strongest candidate), or `taste` (the human opening the
 proof sheet, which every shipped feature here has always waited on).
 

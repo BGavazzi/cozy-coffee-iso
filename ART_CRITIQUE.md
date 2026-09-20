@@ -9467,3 +9467,109 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+---
+
+## The "N checks" count — resolved, not by classifying, by finding what already classifies it
+
+PR #144 (branch `n-checks-methodology-trace`, unmerged) investigated the
+disagreeing "N checks" claims across this repo's docs — PIPELINE.md's stage-8
+row said 29, the top-level README.md said 26 (and separately named 24
+"promoted" checks), and a crude `grep -c '^def check_'` said 65. It traced
+the historical lineage of PIPELINE.md's number (14 -> 29, one bump per real
+commit, confirmed via `git log -p --follow`), proved 29 was never a raw
+function count even at the moment it was set, and found four per-producer
+bare `check()` aggregators (`bitmap_font.check()`, `organic_rig.check()`,
+`portrait.check()`, `manifest.check()`) as the strongest candidate for what
+"one counted check" actually means — then explicitly declined to fix the
+number, on the grounds that a confident answer needed manually classifying
+60-65 individual `check_*` functions by call-site, real work not safely
+done via grep in that session.
+
+That classification already exists. `tools/gates.py`, added 2026-09-02 (commit
+`6e551c4`, well before this hour's audit run and completely independent of
+it), is a maintained catalog — a `Gate` dataclass and a flat `_DETERMINISTIC`
+list — of every `check_*` function in the repo, tagged `deterministic`,
+`llm` (planned, currently empty), or `taste` (the human looking at the proof
+sheet). It has been kept in sync twice since it was added (commits
+`297864d` and `7dcf1e1`, both adding newly-written `organic_rig.py` gates
+the catalog had missed). Critically, its answer to "what counts as one
+check" is NOT the aggregator-folding theory PR #144's write-up proposed —
+`gates.py` counts every individual `check_*` function as its own gate, flat,
+regardless of whether it happens to be called from inside a bare `check()`
+wrapper. Four sub-checks folded into `bitmap_font.check()` are four gates in
+the catalog, not one.
+
+**Verification, run fresh this hour, not assumed from the file's own
+docstring:**
+
+    $ git grep -c "^def check_" -- tools/     # every check_* definition, independently
+    65 matches (one per producer file, summed)
+    $ python tools/gates.py --list | tail -1
+    67 gates total: 65 deterministic, 1 llm (planned), 1 taste
+
+The independent `git grep` count and `gates.py`'s own cataloged count match
+exactly, name-for-name (diffed by `(producer, name)` pair, zero entries on
+either side of the symmetric difference) — the catalog is not just present,
+it is currently *accurate* against the live codebase, not stale itself.
+
+**What was actually stale, then, was not the classification — it was that
+none of the three docs making "N checks" claims ever pointed at the file
+that already answers the question:**
+
+- `PIPELINE.md`'s stage-8 status-table row said **29** — the number PR #144
+  traced to a years-old, never-recounted commit-by-commit bump, off by 36
+  from the current live total.
+- Top-level `README.md`'s "twenty-six checks" claim (three occurrences,
+  lines 91/123/128) is a *narrower*, different claim — specifically
+  `manifest.py --check`'s own subset, not the global catalog — and turned
+  out to be close to right: manually tracing every `check_*` name called
+  directly in `manifest.check()`'s body (25 distinct names) plus the two
+  more pulled in transitively through its `review_library()` call
+  (`check_member_thickness`, `check_buried_detail`) gives ~27 distinct
+  gates actually exercised by that one command — near enough to 26 that
+  rewriting the prose over it would trade an approximately-true number for
+  a differently-approximately-true one, not a real fix. Left as prose, with
+  one added pointer to `tools/gates.py` for readers who want the full
+  catalog rather than this command's subset — the actual gap here wasn't a
+  wrong number, it was that nothing in this file told a reader the global
+  catalog existed at all.
+- `tools/README.md` **already points at `gates.py`** (it is the doc that
+  introduces the file) and had *still* drifted: it hand-restated the count
+  as **62**, three gates behind current, itself proof that a hardcoded
+  number is the actual bug class here, independent of which specific number
+  is wrong — even the doc written specifically to describe the
+  self-updating catalog let its own copy of the catalog's size go stale.
+
+**The fix, shipped this branch:** `PIPELINE.md`'s stage-8 row now cites `65`
+with the live-verification command (`python tools/gates.py --list`) rather
+than a bare number, and says explicitly why it isn't restating one: the
+"29" it's replacing is the second hardcoded copy of this exact number caught
+drifting in two different docs in the same hour. `tools/README.md`'s "62"
+is corrected to `65` with the same reasoning inline. Top-level `README.md`
+gets one added pointer, no number changed, since its own number was
+approximately accurate for the narrower claim it was actually making.
+
+**Zero regression check:** doc-only change, no `tools/*.py` file touched;
+`python tools/gates.py --list` re-run after the edits still reports the same
+`67 gates total: 65 deterministic, 1 llm (planned), 1 taste` trailer used to
+verify the numbers above, confirming nothing about the catalog itself moved
+under this change.
+
+**Honest limitation carried forward:** `gates.py` has no automated
+self-check tying its `_DETERMINISTIC` list to the live `check_*` functions
+in the codebase — it has stayed in sync so far only because whoever added a
+new `check_*` function remembered to also add it to `gates.py` (twice,
+per the commit history above). Nothing enforces that. A `gates.py --verify`
+mode that diffs its own catalog against a fresh `git grep` — exactly the
+comparison this write-up did by hand — would close that gap and is a
+reasonable next real-fix candidate, not attempted in this branch since it is
+new scope (a new check, not a doc fix) rather than the doc-reconciliation
+this branch is about.
+
+New branch (`gates-py-doc-reconciliation`, off `main`, independent of PR
+#143's or PR #144's unmerged branches — will need ordinary reconciliation
+against both when merged, since #143 already touched some of these same
+`README.md`/`PIPELINE.md` lines with an unresolved caveat this branch now
+resolves for real, and #144's own write-up is the investigation this finding
+completes). Left unmerged per standing practice.
