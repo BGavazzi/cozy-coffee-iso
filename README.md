@@ -82,15 +82,20 @@ authoring rather than sampling.
     python tools/preview_clips.py --who barista   # clip strips + looping GIFs
     python tools/preview_characters.py            # roster + 8 directions
     python tools/portrait.py --demo                # -> proof/portraits.png
-    python tools/preview_generators.py            # 16 generators x 8 seeds
+    python tools/preview_generators.py            # 27 generators x 8 seeds (was 16)
     python tools/review_queue.py build "sprites/*.png"
     # fill verdict + reason in review/verdicts.jsonl
     python tools/review_queue.py stats            # what to automate next
 
     # the gates
-    python tools/manifest.py --check     # runs all twenty-six checks
+    python tools/manifest.py --check     # runs all the checks (this count also
+                                          # drifts -- see PIPELINE.md's "29
+                                          # checks" note for why it's not
+                                          # restated as a number here)
     python tools/build_plan.py --focal-scan 12   # slower gate: 12 whole rooms,
-                                                 # currently 0 of 12 failing
+                                                 # currently 3 of 12 failing (was 0;
+                                                 # the galley topology's accepted,
+                                                 # understood gap, see NEXT.md)
     python tools/character.py            # hair contrast, palette spread, silhouette floor
     python tools/fx.py                   # loop seams
 

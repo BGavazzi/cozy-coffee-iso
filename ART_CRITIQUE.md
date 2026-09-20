@@ -9467,3 +9467,94 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## The staleness pattern PR #139/#140 fixed in NEXT.md turned out to have its own independent copies in PIPELINE.md
+
+This session's audit has so far stayed inside `NEXT.md`/`ART_CRITIQUE.md`.
+Broadened it to the repo's other status docs -- `PIPELINE.md`, `ASSET_SPEC.md`,
+`README.md` -- on the theory that a claim can drift anywhere it's written
+down twice, and `NEXT.md` isn't the only file that restates pipeline output
+in prose. It wasn't: `PIPELINE.md` carries three independent restatements
+of numbers this session already found stale once, each written at a
+different, earlier point in the repo's history and never updated when the
+underlying build grew.
+
+**The Godot resource count, twice, at two different old values.** The
+"Engine export" section's own detail line said "54 resources... 32 prop
+`SpriteFrames`, 17 animation `SpriteFrames`... 3 nine-slice `StyleBoxTexture`,
+and two `TileSet` resources." The Status table's stage-10 row separately said
+"22 Godot `SpriteFrames` resources." Neither matches the other, because each
+was written at a different snapshot of the exporter (the table predates UI/
+tile/font export entirely -- SpriteFrames-only, no nine-slice or TileSet
+category at all -- while the detail section's snapshot has nine-slice and
+TileSet but no UI-icon or font category). Re-ran `export_godot.py` for real
+against current `main` rather than trusting either number:
+
+```
+built 56 prop SpriteFrames, 17 animation SpriteFrames, 10 UI resources, 11 tile sources, 4 fonts in res://resources
+114 resources written to D:\VIBES\cozy-coffee-iso\godot_export\project\resources
+```
+
+114, not 54 and not 22 -- the same underlying drift this session already
+named and fixed once for `NEXT.md`'s "52 of them" claim (PR #140), just a
+different file, a different old snapshot number, and two copies instead of
+one. The animation `SpriteFrames` count (17) is the one figure that hasn't
+moved at all across every snapshot this session has found, on any of the
+three files -- prop count and the newer UI/tile/font categories are what
+actually grew.
+
+**The UI-declared count, independently.** "It builds the fourteen `cat: ui`
+entries `assets.yaml` declares" -- the identical stale claim `NEXT.md`
+carried before PR #139 (14 -> 25), restated here as its own sentence rather
+than inherited from that file. `grep -c "cat: ui" assets.yaml` confirms 25
+today, matching `NEXT.md`'s already-corrected number exactly -- same
+underlying fact, same fix, second file.
+
+**Checked but not fixed: stage 8's "29 checks."** A crude `grep -rn "^def
+check_" tools/*.py | wc -l` returns 65 today, more than double -- but per
+this session's own established caution (the "52 Godot resources" lesson:
+don't substitute a crude re-count for a claim whose original counting
+methodology is unknown), that comparison isn't trustworthy on its own.
+"29 checks" almost certainly wasn't counting every `check_` function in
+every file the way the grep does -- `furnish.check_distinct` is called out
+by name as one specific exception to "most run by `manifest.py --check`",
+implying the 29 was some more specific enumeration (checks wired into
+`manifest.py --check`'s own output, maybe, not every `check_`-prefixed
+function anywhere in `tools/`). Left unfixed and flagged honestly rather
+than guessed at -- a real future pass should trace this the same way PR
+#140 traced "52" (git pickaxe to the commit that first wrote "29", read
+what it actually enumerated) before touching the number.
+
+**`README.md` carried the same pattern, twice more, plus its own copy of
+the check-count ambiguity.** Its quickstart comments said "16 generators x
+8 seeds" for `preview_generators.py` and "currently 0 of 12 failing" for
+`build_plan.py --focal-scan 12`. Both checked directly rather than assumed
+stale from the `PIPELINE.md` pattern alone:
+
+- `preview_generators.py` iterates `art_review.GENERATORS` directly (its
+  own comment says so: "The rows come from `art_review.GENERATORS`"), not a
+  fixed subset -- `len(art_review.GENERATORS)` is 27 today, not 16. Real
+  roster growth, same shape as every other count this pass found.
+- `build_plan.py --focal-scan 12` run for real against current `main`:
+  **3 of 12 rooms fail** (all three `galley` occurrences, `plan 8`/`10`/`12`
+  -- `L`/`C`/`D` margins matching the exact numbers `NEXT.md`'s own "Still
+  open" list already names for this topology), not 0. This isn't a fresh
+  regression -- it's `NEXT.md`'s already-accepted, already-understood galley
+  gap (re-confirmed live again just two hours ago in this session's own
+  "Still open" pointer fix), simply never propagated into this quickstart
+  comment when that gap was first found.
+- Line 91's "runs all twenty-six checks" is the same ambiguous metric as
+  `PIPELINE.md`'s "29 checks," now with a THIRD number in play (65 by the
+  crude grep, 29 in `PIPELINE.md`, 26 here) and no more certainty about
+  which methodology either 26 or 29 used. Flagged in place rather than
+  replaced with any of the three, pointing at `PIPELINE.md`'s note so the
+  ambiguity is recorded once, not chased three ways with three guesses.
+
+**Doc-only change:** `PIPELINE.md`'s two Godot-resource-count statements
+and its UI-declared-count sentence, plus `README.md`'s generator count and
+focal-scan failure count, now carry today's verified numbers with the
+verification method inline, same discipline as `NEXT.md`'s equivalent
+fixes. Both files' check-count claims are named as suspect but deliberately
+left alone pending a proper traced investigation (methodology unknown,
+three conflicting numbers on record, no confident correction to make yet).
+No code touched.
