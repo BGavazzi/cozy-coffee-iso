@@ -9467,3 +9467,80 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## The third `check_eyes_visible`, checked for the same pixel-attribution question, doesn't currently need the fix
+
+This file now has three independent eye-legibility checks, built by three
+different producers, all comparing a bare render against a rendered
+render-with-eyes and looking for differing pixels: `character.py`'s
+`check_eye_legibility` (found this session to be picking up an incidental
+neighbouring-pixel shading shift instead of the real eye at azimuth 225,
+fixed by filtering to the eye's own ramp), `organic_rig.py`'s
+`check_eyes_visible` (found this session to be checking only azimuth 90,
+fixed by widening the azimuth range), and `portrait.py`'s own
+`check_eyes_visible` -- built independently, for a portrait bust rather
+than a sprite, and never checked this session for either of the other
+two's defects.
+
+**The azimuth question doesn't apply here by construction.** A portrait
+never rotates -- `PORTRAIT_AZIMUTH = 90.0` is the only angle a portrait is
+ever rendered at, in the shipped game, full stop. There is no "the real
+asset varies over 8 directions and the check only samples one" gap to
+find, because the real asset only ever has one direction. Confirmed by
+reading rather than assumed: `render_bust()`, the only place a portrait
+gets built for shipping, hardcodes `PORTRAIT_AZIMUTH`.
+
+**The pixel-attribution question does apply, and was checked directly.**
+`check_eyes_visible` here counts differing pixels between a bare bust and
+one with a single isolated `_eye_box` added -- a raw count against
+`MIN_EYE_PIXELS = 3`, not `character.py`'s `max(gap)`, but the same
+underlying risk: a pixel can differ for a reason other than the eye
+itself (a neighbouring surface's lambert crossing a ramp step when the
+box's geometry is added), inflating the count. Re-ran the real function
+against the shipped 9-member roster, once unfiltered (today's code) and
+once filtered to pixels that are actually members of `C.EYE`'s own ramp
+(the same fix `check_eye_legibility` shipped):
+
+    name          side    old   new
+    barista       left     98    81  <- inflated
+    barista       right    81    81
+    reader        left    110   110
+    reader        right   125   109  <- inflated
+    student       left    116    99  <- inflated
+    student       right    99    99
+    regular       left    127   110  <- inflated
+    regular       right   110   110
+    commuter      left    125   110  <- inflated
+    commuter      right   110   110
+    artist        left    104    92  <- inflated
+    artist        right    90     90
+    elder         left    118    99  <- inflated
+    elder         right    99     99
+    writer        left     98    81  <- inflated
+    writer        right    81     81
+    friend        left    113    99  <- inflated
+    friend        right    99     99
+
+The mechanism is real and systematic -- the LEFT eye is inflated by 13-19
+non-eye pixels for every one of the nine, the right eye never is, which
+says something specific and asymmetric is happening at this azimuth/
+elevation combination (worth naming for whoever next touches this camera,
+not chased further here since nothing depends on it: the two eye boxes
+are placed symmetrically but the camera and key light are not, so the two
+sides do not have to shade identically). But the smallest FILTERED count
+across all 18 eye/side pairs is 81, against a floor of 3 -- roughly 27x
+headroom. Nothing here is close enough to the floor for the attribution
+question to change a verdict, unlike `character.py`'s azimuth-225 case
+where the true, filtered number was already failing.
+
+**Left unfixed on purpose, not overlooked.** Filtering this check the way
+`check_eye_legibility` was filtered would be a real, verifiable, zero-risk
+change -- but it would be tightening a check that already has 27x margin,
+for a codebase where the identical fix already exists as precedent to copy
+if this margin ever gets thin. Recorded here so a future pass that finds
+this same file doesn't have to re-derive the comparison, and so the
+otherwise-good story ("three checks, one shared blind spot, two genuinely
+fixed") doesn't get told as three when it's actually two-and-a-confirmed-
+non-issue.
+
+No code changed. Doc-only.
