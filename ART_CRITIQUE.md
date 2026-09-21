@@ -9467,3 +9467,37 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## `tileset.py`'s `check_manifest_placement` was the seventh "N checks" instance -- the first producer with no `--check` mode at all
+
+Same shape as the six before it: a producer's own check function is real,
+correct, and never re-run against what actually shipped. `tileset.py`'s
+`check_manifest_placement` -- "can a consumer rebuild the room from
+`tileset.json` alone, pixel-identical to a direct render" -- already reads
+real atlas PNGs off disk. But it has exactly one call site, gated behind
+`build()`'s own `--proof` flag, and even then it is handed the in-memory
+`meta` dict `build()` is about to write, never `out/tiles/tileset.json` read
+back off disk. The file a consumer would actually load has never once been
+checked against reality.
+
+Where `palette_swap.py` (last hour) had a real `--check` mode that exercised
+three of its four checks, `tileset.py` has none at all: `check_lattice`,
+`check_collapse` and `check_manifest_placement` all only ever ran inside
+`build()`. Only `check_manifest_placement` was worth wiring in here --
+`check_lattice` is a pure function of the `--width` CLI argument, not of
+anything that can drift after being shipped, and `check_collapse` tests
+theoretical colour values under the active ramps rather than a real file on
+disk.
+
+**Verified, not assumed.** A standalone audit of the real shipped
+`tileset.json` + atlas PNGs, both styles, found 0 problems before wiring
+anything in. With the fix wired into `manifest.py check()` -- not
+style-gated, since `tileset.py` builds real independent per-style output
+with no shared directory to collide on -- both styles are byte-identical to
+their established baselines (`cozy_ghibli` 3 errors/17 warnings, `snes_rpg`
+4 errors/18 warnings unchanged, confirming the check works for both styles'
+atlases, not just the default). Teeth-tested by overwriting one real shipped
+file (`out/tiles/floor_plank.png`) with a different tile's bytes: caught
+immediately ("tileset: 16640 pixel(s) differ between the projected room and
+the one rebuilt from tileset.json alone", errors 3->4), then restored from a
+backup and confirmed sha256-identical to the original, check clean again.
