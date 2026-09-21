@@ -514,6 +514,29 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         from animate import check_direction_labels
         for msg in check_direction_labels():
             errs.append(msg)
+        # `check_ui` below already audits `ui_font` for existence (font.json
+        # + its sheets on disk) and pixel-level palette/isolation correctness
+        # -- but neither of those can see a font that is legible-by-pixel and
+        # illegible-by-shape: two glyphs rasterising identically (I/l/1,
+        # O/0), a counter (the hole in an 'e' or 'o') closed up at a small
+        # cap height, ink escaping its own advance/cell, or two adjacent
+        # glyphs touching and reading as one. `bitmap_font.py`'s own four
+        # checks measure exactly that, purely from the vector `GLYPHS`
+        # definitions -- no ramps, no style, no disk read -- and its own CLI
+        # already treats a `SIZES` entry that fails them as build-blocking
+        # (`bitmap_font.py --check` exits 1). `manifest.py --check` had never
+        # called any of the four, for any cap height, ever: confirmed by
+        # grepping this file's history for "bitmap_font" and finding only
+        # path-string comments in `check_ui`. Same shape as the
+        # `organic_rig.py`/`portrait.py` gaps above and in an earlier commit
+        # this session -- a check with real teeth, reachable only by hand.
+        # Style-independent by construction (glyph shapes don't depend on
+        # the active palette), so this runs once, unconditionally, not
+        # per-style like the checks above it.
+        import bitmap_font as _bf
+        for cap in _bf.SIZES:
+            for msg in _bf.check(cap):
+                errs.append(f"bitmap_font: {msg}")
         from render_room import build_room
         room = build_room()
         for msg in room.screen_occlusion():
