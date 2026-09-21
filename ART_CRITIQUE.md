@@ -9467,3 +9467,86 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## PR-pile reconciliation round seven (44 -> 49, two known standing conflicts re-verified, one new one found and resolved)
+
+Triggered by this session's own growth-threshold rule (last sweep, round
+six/PR #171, at 44 open; this hour's fresh `gh pr list --state open --limit
+200` read 49 -- the 5-open threshold). Same methodology as every prior
+round: detached scratch worktree off `main` (`git worktree add --detach`),
+every open PR's branch merged in number order (`git merge --no-edit
+origin/<branch>`), conflicts resolved by hand rather than `--no-verify`'d
+away, full 40-test suite plus a live `manifest.py --check` run against the
+fully-merged tree, worktree discarded after.
+
+**Both previously-known standing conflicts re-verified, not assumed
+carried-forward:**
+
+- `#150` (`galley-focal-box-per-run`) vs `#128`
+  (`galley-focal-box-was-one-box-for-two-counters`): both branches
+  independently fixed the exact same galley focal-box defect (one union box
+  spanning both counters vs one box per counter) with different
+  implementations -- `#128`'s proximity-clustering `focal_box()` is
+  topology-agnostic ("any future multi-run topology gets this for free");
+  `#150`'s is index-paired to `SERVICE_RUNS`, simpler but tied to a specific
+  data-shape assumption. `#128` taken throughout (code, `NEXT.md`,
+  `README.md`, its own `ART_CRITIQUE.md` write-up), matching this session's
+  own established precedent for this exact pair.
+- `#148` (`gates-py-doc-reconciliation`) vs `#143`
+  (`pipeline-md-counts-were-stale`): both touch the same "N checks" claim in
+  `README.md`/`PIPELINE.md`. `#148`'s resolution is strictly better than
+  either side taken alone -- it points both docs at `tools/gates.py --list`
+  (a real, already-`main`-merged, live-queryable catalog of all 65
+  deterministic gates) instead of a hand-typed number, which is exactly the
+  "don't hardcode what a live command can answer" fix this repo's own
+  `check_generator_range`/`check_spread_floor_regression` precedent already
+  established elsewhere. Took `#148`'s side for both files.
+
+**One new conflict this round, not seen in any prior sweep:** `#170`
+(`eye-legibility-ramp-membership-filter`) vs `#152`
+(`eye-legibility-silhouette-extension`), both editing
+`character.check_eye_legibility`'s pixel-gap loop. Genuinely complementary,
+not competing -- `#152` handles the eye poking past the bare head's own
+silhouette (`a is None`, falls back to nearest-solid-neighbour comparison);
+`#170` filters the normal colour-gap branch to the eye's own ramp (avoiding
+the incidental-skin-shading misattribution bug). Combined both by hand: the
+ramp-membership filter now applies to the silhouette-extension fallback too
+(a poked-past-silhouette pixel that isn't actually eye-coloured shouldn't
+count either, same reasoning as the branch above it). `python -c "import
+ast; ast.parse(...)"` confirms the combined function parses; not run
+against a live render in this scratch worktree (see caveat below).
+
+**Every other conflict was pure independent-append** (two unrelated
+sections, or two unrelated dict entries in `ACCEPTED_BURIAL`, landing at the
+same point because both branches shared an older common ancestor) --
+resolved by keeping both in full, HEAD's content first, same shape this
+file's own prior rounds already used. 12 total conflict points across the
+49-branch chain (`ART_CRITIQUE.md` in all 12, plus `tools/art_review.py`
+x2, `tools/character.py` x1, `tools/render_room.py`/`tools/build_plan.py`/
+`NEXT.md`/`README.md`/`PIPELINE.md` x1 each for the `#150`/`#148` pairs) --
+every one resolved without discarding a real fix from either side.
+
+**Verified on the fully-merged tree, all 49 branches:** every `tools/*.py`
+file still parses (`ast.parse`, no syntax errors introduced by hand-editing
+conflict regions); full 40-test unittest suite passes unchanged; a live
+`python tools/manifest.py --check --style cozy_ghibli` run against the
+combined tree exits 0 with 0 errors, 5 warnings -- cleaner than `main`
+alone (3 errors, 17 warnings), as expected since the pile is entirely real,
+independently-verified fixes layered on top of each other. The one warning
+line unique to this run (`"25 ui entries declared and out/ui/ does not
+exist"`) is a scratch-worktree artifact (no producer script has ever run
+there to generate the PNGs), not a code defect.
+
+**Caveat, stated honestly:** the `#170`/`#152` combined fix above was
+verified for syntax only in this scratch worktree, not re-rendered live --
+this reconciliation sweep's job is confirming the PILE coexists, not
+re-doing each individual branch's own verification. If `#170` and `#152`
+are ever merged together for real, re-run `character.py`'s own
+`check_eye_legibility` against both fixes combined before trusting the
+combination blind.
+
+Scratch worktree was local-only and discarded after
+(`git worktree remove --force`); all 49 source branches remain the real
+reviewable units. This entry, doc-only, its own branch
+(`pr-pile-reconciliation-round-seven`), left unmerged per standing
+practice.
