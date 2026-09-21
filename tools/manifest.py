@@ -627,6 +627,33 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         from build_plan import check_stool_occupancy
         for msg in check_stool_occupancy():
             errs.append(f"occupancy: {msg}")
+        # And whether the shipped tile atlas can still be rebuilt from its
+        # own published numbers. `tileset.py`'s `check_manifest_placement`
+        # asks exactly this -- "can a consumer rebuild the room from
+        # tileset.json alone, pixel-identical to a direct render" -- but it
+        # has exactly one call site, gated behind `build()`'s own `--proof`
+        # flag, and even then it is handed the in-memory `meta` dict
+        # `build()` is about to write, not `out/tiles/tileset.json` read back
+        # off disk. So it has never once verified the file a consumer would
+        # actually load: same gap shape as `palette_swap.check_exact` above,
+        # except `tileset.py` has no `--check` mode at all, so nothing here
+        # was previously exercised outside generation time. Unlike the
+        # variant library, tile atlases are built per style with no shared,
+        # un-namespaced directory to collide on, so this runs for every
+        # style rather than being gated to the default.
+        import tileset as _ts
+        from style import DEFAULT_STYLE
+        tiles_dir = (_ts.OUT_DIR if active.name == DEFAULT_STYLE
+                    else _ts.OUT_DIR.parent / f"tiles_{active.name}")
+        tileset_json = tiles_dir / "tileset.json"
+        if tileset_json.exists():
+            tile_meta = json.loads(tileset_json.read_text(encoding="utf-8"))
+            tile_width = tile_meta["tile_size"][0]
+            wall_patterns = _ts.make_wall_patterns(active.materials)
+            for msg in _ts.check_manifest_placement(
+                    tile_meta, tile_width, ramps, out_dir=tiles_dir,
+                    wall_patterns=wall_patterns):
+                errs.append(f"tileset: {msg}")
     except Exception as exc:                       # pragma: no cover
         warns.append(f"clip cross-check skipped: {exc}")
 
