@@ -1608,11 +1608,22 @@ def _aframe_panel(slate_side: float) -> Mesh:
     # Solid panels, not quads. A zero-thickness plane is right for a floor
     # overlay and wrong for anything standing up: seen near edge-on it collapses
     # to a 1 px line, which is how this shipped at 3 px and read as a stray mark.
-    m.add_box((0.12, 0.485, 0.0), (0.88, 0.515, 0.90), WOOD)
+    # `skip={"top"}`: this face sits right under `sandwich_board`'s hinge-cap
+    # box (wider in y, straddling this panel's own top in z) and can never win
+    # a pixel at any azimuth -- confirmed by `check_buried_detail`'s own
+    # front_facing/visible sets, and verified with a real render-hash
+    # comparison, not assumed from the geometry alone (see ART_CRITIQUE.md,
+    # "sandwich_board: two more redundant faces, one seam, one glue joint").
+    m.add_box((0.12, 0.485, 0.0), (0.88, 0.515, 0.90), WOOD, skip=frozenset({"top"}))
     if slate_side > 0:
-        m.add_box((0.17, 0.515, 0.16), (0.83, 0.527, 0.78), "neutral-2")
+        # `skip={"y0"}`: the slate's inward face is glued flush against the
+        # panel it mounts on and is hidden the same way -- confirmed the same
+        # two ways.
+        m.add_box((0.17, 0.515, 0.16), (0.83, 0.527, 0.78), "neutral-2",
+                  skip=frozenset({"y0"}))
     else:
-        m.add_box((0.17, 0.473, 0.16), (0.83, 0.485, 0.78), "neutral-2")
+        m.add_box((0.17, 0.473, 0.16), (0.83, 0.485, 0.78), "neutral-2",
+                  skip=frozenset({"y1"}))
     return m
 
 
