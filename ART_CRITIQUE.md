@@ -9467,3 +9467,60 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## The "N checks" wiring-gap audit, checked against its remaining candidates: exhausted for this pass, honestly
+
+Seven real instances of the same gap shape have now been found and fixed
+this session (`organic_rig.py`, `portrait.py`, `bitmap_font.py`,
+`ui_forge.py`/`ui_chrome.py`, `furnish.py`, `palette_swap.py`,
+`tileset.py`). Before starting an eighth, the remaining candidates from
+`gates.py`'s 67-gate catalog that are not yet wired into `manifest.py
+check()` were checked one by one, against real code rather than assumed:
+
+- **`fx.py`'s `check_loops`** turned out to already be wired in
+  (`import fx as _fx` / `_fx.check_loops()`, `tools/manifest.py` around line
+  377-384) -- missed by an earlier `from <module> import check_*` grep this
+  session ran, because this one call site uses `import fx as _fx` instead.
+  Worth naming as a process note: a text grep for one import style is not a
+  substitute for actually reading the file when auditing what is and is not
+  wired in, and it produced a false candidate here.
+- **`review_queue.py`'s `check_direction_set`** is not a gap, it is correctly
+  scoped where it already lives. Its own docstring documents, with real
+  measured before/after numbers, that it fires on 19 of 22 real objects and
+  that two independently different fix attempts (restricting the brightest-
+  pixel pool to the dominant ramp; restricting it to each object's own
+  cross-frame-stable body material) were both measured and found to make
+  things *worse*, not better -- including breaking clean passes on the three
+  round-object controls that had been working. A check with an ~86%
+  false-positive rate belongs in the human-review queue it already feeds,
+  not in `manifest.py --check`'s error list, which exists specifically so
+  every line in it is a true statement that something built is wrong (see
+  `check_ui`'s own docstring on this same distinction). Wiring it in would
+  not close a gap, it would drown the sound checks in noise.
+- **`concept.py`'s `check_concept_fitness`** gates raw SDXL concept renders
+  before they become meshes. Concept PNGs are explicitly excluded from
+  "shipped asset" by every other producer's own asset filter
+  (`palette_swap.is_asset` skips `*_concept*` by name) -- there is no shipped
+  file for a re-verification to read.
+- **`export_godot.py` / `package_godot.py`'s engine-export checks**
+  (`check_nine_slice_roundtrip`, `check_palette_lut_godot`,
+  `check_font_layout`, `check_anim_layout`, `check_palette_lut`) apply to
+  `godot_export/project/`, which `package_godot.py`'s own docstring says is
+  gitignored and "regenerated from factory output every run." Unlike
+  `out/sprites/`, `out/tiles/` or `out/variants/` -- each independently
+  rebuildable, so one can go stale relative to another -- there is no
+  partial-rebuild path here for the checked state to drift from what ships,
+  because nothing here persists between runs to drift in the first place.
+
+Also re-checked `ART_CRITIQUE.md`'s own "Still open" list (last written at
+line 3550, itself over 5,900 lines behind the file's current end -- `NEXT.md`
+already flags this staleness at its own top) against everything this session
+has since closed. All three of its remaining items are unchanged and, on
+inspection, correctly left open rather than merely unexamined: Stages 1-3 are
+blocked on a missing `nvcc`/MSVC toolchain, not code; counter orientation and
+the galley topology are both explicitly accepted gaps with their own
+"do not loosen the floor to admit this" reasoning already on record, not
+claims anyone forgot to revisit.
+
+No new fixable finding this pass, in either vein this session has been
+mining. Recorded so a future hour does not re-run the same search from zero.
