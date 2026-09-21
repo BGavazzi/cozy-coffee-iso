@@ -9467,3 +9467,134 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## PR-pile reconciliation round eight (49 -> 54, one philosophical contradiction between two of this session's own unmerged branches found, one intermittent bug found and honestly left unresolved)
+
+Same methodology as round seven (PR #177): `git worktree add --detach` a
+scratch tree off `main`, `git merge --no-edit origin/<branch>` every open PR
+in ascending number order, checking each merge's actual exit code rather
+than grepping only for the string "CONFLICT" (round seven's own lesson,
+re-applied). All 54 then-open PRs (#128 through #181) merge together
+cleanly once every conflict below is resolved. Scratch worktree was
+local-only, never pushed; all 54 source branches remain the real reviewable
+units, still open, still unmerged.
+
+**Conflict count: roughly 20 points across 54 merges**, almost all the same
+shape as round seven found: two branches independently appending a new
+`## ...` section (or, twice this round, a new dict entry) to
+`ART_CRITIQUE.md`/`art_review.py`'s `ACCEPTED_BURIAL` at the same anchor
+point, because both shared an older common ancestor before several
+sequential merges accumulated new content there. Resolved by keeping both
+sides in full, HEAD first, same as every previous round.
+
+**Two standing conflicts, re-confirmed, one with a NEW finding underneath
+it:**
+
+- **#150 vs #128** (galley focal-box implementation) -- re-confirmed
+  exactly as round seven found it: #128 is the documented-canonical
+  implementation (clusters zones by geometric proximity, verified end to
+  end with a live `manifest.py --check` and a rendered/eyeballed residual
+  failure), #150 is an independently-authored duplicate that produces
+  IDENTICAL numbers on every seed the two share. Took HEAD's side (#128)
+  entirely for `tools/build_plan.py`/`tools/render_room.py`/`README.md`/
+  `NEXT.md`, kept both write-ups in `ART_CRITIQUE.md` as history.
+- **#148 vs #143** (the "N checks" count in `README.md`/`PIPELINE.md`) --
+  took #148's "point at `tools/gates.py --list`, stop hand-typing a number"
+  approach again, per round-seven precedent. **New this round:** #148's own
+  resolved text claimed, as a deliberate design rationale, that
+  `furnish.check_distinct` "runs in the producer that can act on it,
+  because a duplicate is a fact about a build, not about the manifest" --
+  i.e. an explicit argument AGAINST ever wiring it into `manifest.py
+  --check`. This directly contradicts PR #180 (this session's own furnish
+  fix, merged into this same reconciled tree two branches later), which
+  does exactly that, on the opposite rationale (`check_ui`'s own stated
+  principle: "a file can be built, pass at build time, and later be
+  replaced by hand or by a palette change; this is the check that would
+  notice"). Two unmerged PRs from different hours of this same session hold
+  directly contradictory positions on the same design question, and the
+  merge conflict forced a real choice rather than a mechanical one --
+  resolved by editing the merged text to drop #148's now-inaccurate claim
+  (rather than either blindly keep stale reasoning or blindly prefer
+  whichever branch merges later), since #180's side has five sibling fixes
+  this session (`organic_rig`/`portrait`/`bitmap_font`/`ui_forge`+
+  `ui_chrome`/`furnish`) all built on the same "re-verify at ship time"
+  principle and #148's contrary claim was never itself verified against a
+  render, just asserted. Left as a note for whoever reviews these two PRs:
+  they cannot both be merged as originally written without one side's
+  stated rationale being wrong.
+
+**Three new dict-entry conflicts, same taxonomy as the doc-append case, one
+level down in `tools/art_review.py`'s `ACCEPTED_BURIAL` dict:** #160
+(`bookshelf`), #161 (`wall_art_framed`), and #164 (`lamp_table`) each add
+one new key to the same dict at the same anchor point, immediately after
+whichever sibling PR merged most recently. All three are independent,
+non-colliding keys -- kept all of them, fixed two "below"/"above"
+cross-reference comments whose wording depended on merge order.
+
+**One genuinely complementary code conflict, re-confirmed AND, unlike round
+seven, actually run this time:** #170 vs #152, `character.py`'s
+`check_eye_legibility` -- same combination round seven's write-up already
+described (base colour-gap condition gains #170's ramp-membership filter,
+#152's silhouette-extension branch gains the same filter with the same
+reasoning). Round seven's own honest caveat was that this combination was
+"only syntax-verified" (`ast.parse`, never actually run). This round closes
+that: `character.check_eye_legibility()` was executed live against the
+merged code and returned 0 findings, no exception -- the combination is now
+proven to work, not just proven to parse.
+
+**One new conflict this round, `tools/manifest.py`:** #174 (tileset checks
+wired into `manifest.py --check`) and #180 (furnish checks wired in, this
+session's own PR) both insert their new block at the exact same anchor
+point -- immediately after the existing `check_stool_occupancy()` call.
+Pure independent append, kept both blocks in sequence (#174's tileset block
+first, then #180's furnish block, matching PR-number order). Notably,
+#176 (portrait), #178 (bitmap_font), and #179 (ui_forge/ui_chrome) -- this
+session's other three wiring fixes, all touching the same function -- did
+NOT conflict with each other or with #174/#180 on the code itself; their
+insertion points were far enough apart for git's own three-way merge to
+resolve automatically. Only each PR's own `ART_CRITIQUE.md` entry needed
+the standard append-resolution.
+
+**Verification:** 40-test suite (`tools/test_content_pipeline.py`/
+`tools/test_design_wizard.py`/`tools/test_game_factory.py`) passes clean on
+the fully-merged tree. `manifest.py --check --style snes_rpg` ran clean with
+a rich, real result (19 errors, 5 warnings, including genuine findings like
+`smith: left eye renders 0px at azimuth 270...` and two galley composition
+failures) -- confirming all five of this session's manifest.py-check wiring
+fixes (tileset/portrait/bitmap_font/ui_forge+ui_chrome/furnish) are live and
+producing real output simultaneously for the first time. `--style
+cozy_ghibli` ran clean on 9 of 10 attempts, each time reporting 0 errors
+for the section this session has tracked all day as "3 errors, 17 warnings"
+-- a genuine improvement, not a fluke of the merge: this reconciliation is
+the first time PRs #158-162 (real, individually-verified `chair`/
+`menu_board`/`bookshelf`/`wall_art_framed`/`tip_jar` buried-detail fixes)
+have ever been combined together with everything else, and their combined
+effect appears to have closed every buried-detail error this session's
+baseline carried, leaving only `drip_brewer`'s already-documented partial
+case as a warning.
+
+**One finding left honestly unresolved, not claimed fixed:** on 1 of 10
+`--style cozy_ghibli` runs, `manifest.py --check` threw
+`unsupported operand type(s) for -: 'float' and 'range_iterator'` inside
+`check()`'s own big try block, silently swallowed by its bare
+`except Exception as exc: warns.append(f"clip cross-check skipped: {exc}")`
+-- which meant that one run reported only 2 warnings instead of the normal
+5, because almost the entire check suite inside that block never ran.
+Investigated for real, not waved off: a retry loop (3 more attempts, all
+clean) and a `PYTHONHASHSEED` sweep across 5 explicit seeds (0-4, testing
+whether hash-randomization-dependent dict/set iteration order was the
+trigger, since "range_iterator" rather than a bare "range" suggests an
+already-`iter()`'d object landing in arithmetic) were both tried. Neither
+reproduced it -- 9 of 10 total attempts across this whole investigation
+ran clean, and forcing 5 different explicit hash seeds didn't catch it
+either, which actually weakens the hash-randomization theory rather than
+confirming it. Root cause NOT found this session. Flagged here rather than
+guessed at, per this file's own standing discipline. Separately worth
+flagging: `check()`'s single bare `try`/`except` around its entire main
+check block silently hides ANY internal exception, not just this one --
+it made even detecting this bug's existence a matter of luck (one lucky
+early run) rather than something the tool would ever surface on its own. A
+future pass could log the exception (traceback included) in addition to
+recording its message, which would turn "did this happen" from a question
+that requires re-running the command many times into one the tool answers
+for itself the first time it happens again.
