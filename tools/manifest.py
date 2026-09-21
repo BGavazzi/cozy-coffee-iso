@@ -511,6 +511,42 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
                 errs.append(msg)
             for msg in _o.check_direction_stability(active.name):
                 errs.append(msg)
+        # `portrait.py` is the OTHER name in `style_approve.py`'s own
+        # `REQUIRED_PRODUCERS_ANY_OF = ("character.py", "portrait.py",
+        # "organic_rig.py")` -- exactly the standing `organic_rig.py` had
+        # before the fix above (614e06f/6582f6f): a producer whose renders
+        # `style_approve.py` accepts as this style's character evidence, with
+        # its own `check()` (`check_palette_exact`, `check_distinct`,
+        # `check_eyes_visible`, `check_determinism`) never once called from
+        # `manifest.py --check`, for any style, ever -- confirmed by grepping
+        # this file's own history for "portrait" and finding only comments.
+        # Busts are always box/prism geometry (`C.head`/`chest`/`C.hair`)
+        # regardless of the active style's rig primitive, so this runs
+        # unconditionally rather than gated like the block above -- portrait
+        # renders exist, and are checkable, under `cylinder_sphere` styles
+        # too. Calls the four sub-checks directly, not the bare `check()`
+        # aggregator, matching the organic_rig fix's own precedent, and
+        # reuses `_roster`/`ramps` already resolved above rather than letting
+        # `portrait.check()`'s own defaults (`C.ROSTER`, `load_palette()`
+        # with no path) silently re-introduce the same always-cozy_ghibli bug
+        # this file's other call sites were fixed for.
+        import portrait as _pt
+        from io import BytesIO
+        _pt_pngs, _pt_blobs = {}, {}
+        for _spec in _roster:
+            _img, _px = _pt.render_bust(_spec, ramps=ramps)
+            _pt_pngs[_spec.name] = _px
+            _buf = BytesIO()
+            _img.save(_buf, format="PNG")
+            _pt_blobs[_spec.name] = _buf.getvalue()
+        for msg in _pt.check_palette_exact(_pt_pngs, ramps):
+            errs.append(f"portrait: {msg}")
+        for msg in _pt.check_distinct(_pt_blobs):
+            errs.append(f"portrait: {msg}")
+        for msg in _pt.check_eyes_visible(_roster, ramps):
+            errs.append(f"portrait: {msg}")
+        for msg in _pt.check_determinism(_roster, ramps):
+            errs.append(f"portrait: {msg}")
         from animate import check_direction_labels
         for msg in check_direction_labels():
             errs.append(msg)

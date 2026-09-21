@@ -9467,3 +9467,79 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## `portrait.py`'s own checks were never wired into `manifest.py --check` either -- the same gap `organic_rig.py` had, found by finishing the "N checks" question this file already traced but declined to hand-classify
+
+Went looking for the large, standing task this file's own "N checks" section
+(`check-count-claim-traced-not-fixable`) left explicitly unfinished: a full
+call-graph classification of every `check_*` function and the four bare
+`check()` aggregators (`bitmap_font.py`, `manifest.py`, `organic_rig.py`,
+`portrait.py`) into "named surfaces" vs "folded sub-checks," which that pass
+called "real work, not a grep" and left for later. Did the classification --
+wrote a script that maps every `def check_*`/`def check(` in `tools/*.py`
+(69 definitions today: 65 `check_*` plus the 4 aggregators) to every call
+site, tagging each one by whether its caller is itself a `check_*`-named
+function or a bare `check()` (folded sub-check) or something else (a
+surface). Three of the four aggregators turned out to be reachable ONLY from
+their own producer's CLI (`bitmap_font.check()` from its own `main()`,
+`organic_rig.check()` from its own `main()` -- confirmed by finding the
+`problems = check(args.style)` call the first grep pass missed, `portrait.
+check()` from its own `main()`), never from `manifest.py`. That's expected
+for two of them: `bitmap_font.py` isn't a `style_approve.py` required
+producer, and `organic_rig.py`'s INDIVIDUAL sub-checks (not its aggregator)
+were already wired directly into `manifest.py --check` by this session's own
+earlier `614e06f`/`6582f6f` (see this file's own entry a few sections above,
+"Two more 'deliberately left' claims, both already closed").
+
+**`portrait.py` is not expected -- it is `style_approve.py`'s OTHER required
+producer, in exactly organic_rig.py's old shape.** `tools/style_approve.py`:
+`REQUIRED_PRODUCERS_ANY_OF = ("character.py", "portrait.py", "organic_rig.
+py")`. `portrait.py` is accepted evidence of a style's character rendering
+being legible, the same standing `organic_rig.py` had before its own fix --
+and `portrait.py`'s own `check()` (`check_palette_exact`, `check_distinct`,
+`check_eyes_visible`, `check_determinism`) had never once been called by
+`manifest.py --check`, for any style, ever. Confirmed by grepping this
+file's entire history for "portrait" inside `manifest.py`: only comments,
+never an import. `manifest.py`'s own `check_ui()` touches font PNGs and
+declared-UI-id bookkeeping, never a portrait render -- there was no other
+path by which this coverage could have existed and gone unnoticed.
+
+**Fixed the same way `organic_rig.py` was: call the four sub-checks
+directly, not the bare aggregator.** Portrait busts are always box/prism
+geometry (`character.head`/`chest`/`hair`) regardless of the active style's
+rig primitive, so unlike the `organic_rig.py` block this one is NOT gated on
+`rig.primitive == "cylinder_sphere"` -- it runs for every style. Reuses
+`_roster` and `ramps`, already resolved once above for `character.py`'s own
+checks, rather than letting `portrait.check()`'s own defaults (`C.ROSTER`,
+`load_palette()` with no path) silently reintroduce the exact
+always-cozy_ghibli bug this file fixed at every other call site in this
+function.
+
+**Verified zero regression, both styles, via a real stashed-baseline
+comparison** (not assumed from an unclear-timing background run -- the first
+attempt at this baseline landed suspiciously close to an hour boundary and
+was re-run properly with `git stash`/`git stash pop` to remove any doubt):
+`manifest.py --check --style cozy_ghibli` and `--style snes_rpg` are
+byte-identical before and after, line for line (`diff` exit 0 both ways) --
+3 errors/17 warnings and 4 errors/18 warnings respectively, unchanged,
+because `portrait.py --check` is currently clean under both styles (`9
+portraits: palette-exact, distinct, both eyes visible on every one,
+deterministic`, run directly, both styles).
+
+**Proved the wiring has teeth**, the same way the `tileset.py` wiring did
+last hour: temporarily set `portrait.MIN_EYE_PIXELS` to an impossible 999
+(from 3), reran `manifest.py --check --style cozy_ghibli`, and 18 new
+`portrait:`-prefixed ERROR lines appeared -- both eyes, all 9 roster
+members, error count 3 -> 21 -- that the unmodified `main` would never have
+reported under any `--style` flag, because it never called `portrait.py` at
+all. Reverted immediately; `git diff tools/portrait.py` is empty.
+
+**40-test unittest suite passes unchanged.** Fixed in `tools/manifest.py`
+only (one new block, ~30 lines) -- branch `portrait-checks-wired-into-
+manifest-check`, left unmerged. `bitmap_font.py`'s checks remain genuinely
+out of scope for this fix: it is not a `REQUIRED_PRODUCERS_ANY_OF` member,
+and its checks (glyph legibility, counter shapes, kerning pairs) measure a
+different asset class than anything else `manifest.py --check` gates today
+-- a real question, but a separate one from "the required-producer gap
+`organic_rig.py` already proved is worth closing," which is what this pass
+closes for its last remaining instance.
