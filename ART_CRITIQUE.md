@@ -9467,3 +9467,71 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## `bitmap_font.py`'s own checks were the last of the four bare `check()` aggregators never reachable from `manifest.py --check` -- closed, on different grounds than `portrait.py`
+
+Last hour's `portrait.py` fix closed the gap for the one aggregator that had
+a `style_approve.py REQUIRED_PRODUCERS_ANY_OF` argument behind it.
+`bitmap_font.py` has no such argument -- it is not a required producer, and
+its four checks (`check_distinct`, `check_counters`, `check_bounds`,
+`check_pairs`) measure a different asset class (font glyph legibility)
+than anything else `manifest.py --check` gates today. Worth checking on its
+own merits rather than assumed out of scope just because the required-
+producer argument doesn't apply.
+
+**The real argument: `ui_font` is a declared, shipped `assets.yaml` entry,
+and `check_ui` (which already audits it) cannot see what these four checks
+see.** `check_ui` verifies `font.json` exists, its sheets exist on disk,
+and the rendered PNGs are palette-exact with acceptable isolated-pixel
+share -- all pixel-*colour* properties. `bitmap_font.py`'s four checks are
+pixel-*shape*/topology properties: do any two glyphs rasterise identically
+(I/l/1, O/0 collisions), does a counter (the hole in an 'e' or 'o') survive
+at this cap height, does ink stay inside its own advance/cell, do two
+adjacent glyphs' ink touch and read as one. A font could pass every one of
+`check_ui`'s checks -- correct palette, no isolated pixels -- while 'a' and
+'o' rasterise to the same bytes at the shipped cap height, and nothing
+`manifest.py --check` runs would notice. `bitmap_font.py`'s own CLI already
+treats exactly this as build-blocking (`bitmap_font.py --check` exits 1 if
+any declared `SIZES` entry fails); `manifest.py --check` had never called
+any of the four, for any cap height, ever -- confirmed by grepping this
+file's history for "bitmap_font" and finding only path-string comments in
+`check_ui`.
+
+**Fixed by calling `bitmap_font.check(cap)` for every cap in `bitmap_font.
+SIZES` (today: 7, 9, 11, 13), unconditionally, once per `manifest.py
+--check` run -- not per style.** Confirmed style-independence first rather
+than assumed: `raster()`/`GLYPHS` take no `ramps`/style argument at all,
+glyph shapes are vector definitions rasterised the same way regardless of
+the active palette (only the rendered PIXELS' colour depends on style, via
+a separate path `check_ui` already covers). Placed in `manifest.py`'s
+`check()`, feeding `errs` (build-blocking), matching the severity
+`bitmap_font.py`'s own CLI already assigns this class of defect -- not
+folded into `check_ui`'s `warns`-only return, which is correct for its own
+existence-gap findings but would understate a real shape defect as a
+"library is allowed to be incomplete" note.
+
+**Verified zero regression via a real git-stash baseline** (both styles):
+`manifest.py --check --style cozy_ghibli`/`--style snes_rpg` are
+byte-identical before and after, because `bitmap_font.py --check` is
+currently clean at every shipped cap height (`legible: [7, 8, 9, ..., 20]`,
+`SIZES declares: [7, 9, 11, 13]`, run directly).
+
+**Proved the wiring has teeth.** Widened `SIZES` to temporarily include
+`5` -- a cap height already known to fail (`bitmap_font.py --check`'s own
+sweep reports cap 5 and 6 as `FAIL`) -- and reran `manifest.py --check
+--style cozy_ghibli`: 5 new `bitmap_font:` ERROR lines appeared (`['8',
+'S']`/`['c', 'o']`/`['i', 'l']` collisions plus two closed counters,
+`'4'`/`'A'`), error count 3 -> 8, that unmodified `main` would never report
+under any `--style`. Reverted immediately; `git diff tools/bitmap_font.py`
+empty afterward.
+
+**40-test unittest suite passes unchanged.** Fixed in `tools/manifest.py`
+only (one new block, ~20 lines) -- branch `bitmap-font-checks-wired-into-
+manifest-check`, left unmerged. This closes the last of the four bare
+`check()` aggregators found unreachable from `manifest.py --check` by last
+hour's hand-classification (`bitmap_font.py`, `organic_rig.py` -- fixed
+earlier this session -- `manifest.py` itself, which is the gate, and
+`portrait.py` -- fixed last hour): all three real producer aggregators are
+now closed, on whichever grounds actually applied to each (required-
+producer evidence for `organic_rig.py`/`portrait.py`, declared-shipped-
+asset-with-a-blind-spot for `bitmap_font.py`).
