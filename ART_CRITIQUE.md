@@ -9467,3 +9467,80 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## `assets.yaml`'s `tiles` section is a disconnected declaration -- 16 ids, 63 budgeted renders, zero producers, and nothing notices
+
+Following up on the same hand-classification that found `organic_rig.py`,
+`portrait.py` (#176), `bitmap_font.py` (#178), `ui_forge.py`/`ui_chrome.py`
+(#179), and `furnish.py` (#180) unreachable from `manifest.py --check`, the
+next candidate was `tileset.py`'s own checks (`check_lattice`,
+`check_collapse`, `check_manifest_placement`) -- also confirmed via grep to
+have zero call sites outside `tileset.py` itself. Investigating whether
+those were a sixth instance of the same gap surfaced something different and
+larger: `tileset.py` has no relationship to `assets.yaml`'s `tiles` section
+at all.
+
+**What's actually declared:** `assets.yaml`'s `tiles` section lists 16 ids
+-- `floor_wood_plank`, `floor_tile_hex`, `wall_brick`, `wall_door`, and so
+on -- each with a `cat`, `fp`, `h`, `mat`, `sym`, and `prio` exactly like a
+prop. `manifest.py`'s own `renders_for()` treats the section identically to
+`props`: symmetry class times frames times variants. Several are `prio: 1`
+("needed for a playable vertical slice"). `python tools/manifest.py`'s own
+budget summary currently reports this section as **16 assets, 63 renders**,
+folded into the pipeline's 3742-render total.
+
+**What actually exists:** nothing. `grep -rn "floor_wood_plank" tools/*.py`
+returns zero hits -- not in `furnish.py` (whose own `load_declared()` reads
+only `data["props"]`, `tiles` is never touched), not in `tileset.py`, not
+anywhere. `tileset.py` is real, working, and tested (`check_lattice`/
+`check_collapse`/`check_manifest_placement`, all passing, `--proof` verified
+-- see NEXT.md's own tileset section for the full derivation) -- but it
+produces atlases keyed by its own `PATTERNS` dict (`floor_plain`,
+`floor_plank`, `floor_checker` -- three floor types, not seven) and a
+`make_wall_patterns()` set keyed by pattern function name (`wall_plain`,
+`wall_panel`, `wall_window`, `wall_door` -- four, not nine), written to
+`out/tiles/*.png`. None of those fifteen file/pattern names match any of the
+sixteen declared `tiles` ids in `assets.yaml`. `render_room.py`'s actual
+whole-shop composite doesn't touch either system -- it calls
+`assetlib.floor()`/`assetlib.wall_run()` directly, generating floor/wall
+geometry procedurally per room rather than compositing from either the
+declared tile ids or `tileset.py`'s atlas.
+
+So there are three disconnected things that all reasonably answer to the
+word "tile": a 16-id `assets.yaml` declaration (unbuilt), a 15-pattern
+`tileset.py` atlas system (built, tested, meant for the Godot engine
+export), and `assetlib.py`'s procedural floor/wall builders (built, used
+directly by every room composite this repo has ever rendered). NEXT.md's own
+"still missing" list (`Autotile / terrain rules, and openings`) discusses
+`tileset.py`'s pattern system in detail and treats it as *the* tile system
+-- there is no mention anywhere in NEXT.md or README.md of the `assets.yaml`
+`tiles` section's 16 ids as a thing that still needs building, which reads
+as this declaration predating `tileset.py` and never being reconciled with
+it once `tileset.py` shipped under a different naming scheme.
+
+**Why this is NOT this hour's sixth "wire an existing check in" fix:**
+every fix so far in this shape (`organic_rig.py`, `portrait.py`,
+`bitmap_font.py`, `ui_forge.py`/`ui_chrome.py`, `furnish.py`) had a real,
+working, already-written check sitting one import away, disconnected only
+by an accident of which file calls it. There is no such check here to wire
+in, because there is no producer whose output could be checked against
+these sixteen ids in the first place -- `check_ui`'s "declared but not
+built" pattern needs a *file-naming convention* to check existence against,
+and none exists connecting `floor_wood_plank` to anything `tileset.py`
+writes. Inventing one (deciding, for instance, that `floor_wood_plank`
+*means* `tileset.py`'s `floor_plank` pattern under `wood`'s ramp, and
+`floor_wood_worn` needs a fourth pattern that doesn't exist yet) is a real
+design decision about what these sixteen declared assets are actually
+*for*, not a downstream pixel check -- exactly the kind of unilateral call
+this audit's own standing instructions say to document honestly rather than
+force.
+
+**Left as an honest finding, no code changes this hour.** If this is worth
+closing, the actual options are: (a) delete the sixteen `tiles` entries from
+`assets.yaml` as superseded dead declaration now that `tileset.py` is the
+real system, correcting the render budget from 3742 to 3679; or (b)
+decide what each id is actually supposed to map to in `tileset.py`'s pattern
+space (which would mean widening `tileset.py`'s `PATTERNS`/wall-pattern sets
+from 3+4 to 7+9, real new authored geometry, not a check) and then, only
+once that mapping exists, add the same "declared but not built" audit
+`check_ui` already has. Either is a real product decision, not a bug fix.
