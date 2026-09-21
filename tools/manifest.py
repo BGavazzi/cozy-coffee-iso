@@ -627,6 +627,41 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         from build_plan import check_stool_occupancy
         for msg in check_stool_occupancy():
             errs.append(f"occupancy: {msg}")
+        # And whether the shipped time-of-day variant library is still
+        # palette-exact. `palette_swap.py`'s own `check_exact` is real and
+        # exhaustive (see its docstring), but it is called from exactly one
+        # place: inside `swap()`'s per-file write loop, the moment a variant
+        # file is built. It is never re-run against a file already sitting
+        # in `out/variants/` -- the same gap shape as `furnish.check_distinct`
+        # above, except this producer's other three checks (`check_total`,
+        # `check_injective`, `check_roundtrip`) ARE already exercised by
+        # `palette_swap.py --check`, which reads the real shipped base
+        # library off disk. Only `check_exact` was orphaned.
+        # `out/variants/` is a single, un-namespaced directory that
+        # `palette_swap.py` always writes into regardless of `--style` --
+        # only `cozy_ghibli`'s build has ever populated it, so this only
+        # runs for the default style; running it under a style whose
+        # sources were never swapped into this directory would check real
+        # files against the wrong style's palette.
+        from style import DEFAULT_STYLE
+        if active.name == DEFAULT_STYLE:
+            from palette_swap import (check_exact as check_variant_exact,
+                                       is_asset as is_variant_asset,
+                                       load_bible as load_variant_bible)
+            from palette_forge import forge as forge_palette
+            variants_root = ROOT / "out" / "variants"
+            if variants_root.exists():
+                variant_bible = load_variant_bible(style)
+                for variant in variant_bible["palette"].get("variants", {}):
+                    vdir = variants_root / variant
+                    if not vdir.exists():
+                        continue
+                    allowed = {sw.rgb for sw in forge_palette(variant_bible, variant)}
+                    for p in sorted(vdir.rglob("*.png")):
+                        if not is_variant_asset(p):
+                            continue
+                        for msg in check_variant_exact(p, allowed):
+                            errs.append(f"variant {variant}: {msg}")
     except Exception as exc:                       # pragma: no cover
         warns.append(f"clip cross-check skipped: {exc}")
 
