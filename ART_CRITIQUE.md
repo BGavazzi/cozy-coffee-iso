@@ -9467,3 +9467,102 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## `tip_jar`'s coins were never visible -- the same bug `bean_hopper` already fixed and documented
+
+Last hour's PR #161 (`wall_art_framed`) flagged a loose thread: five other
+`check_buried_detail` warnings -- `bean_hopper`, `drip_brewer`, `lamp_table`,
+`pourover_stand`, `tip_jar` -- also showed no placement call site under the
+same grep, unverified whether the "not placed, no live casualty" reasoning
+extends to them. Traced all five this hour. It doesn't, cleanly, for any of
+them: unlike `wall_art_framed`/`menu_board`/`bookshelf`, whose buried share
+swings hard between azimuths (a directional front/back split), these five
+measure nearly IDENTICAL buried share at every one of the 8 raw azimuths --
+`tip_jar` at exactly 42% every time, `bean_hopper` 41-44%, `lamp_table`
+35-36%. Three of the five (`bean_hopper`, `lamp_table`, `tip_jar`) are
+declared `sym: radial` in `assets.yaml`, which is exactly why: a radially
+symmetric mesh looks the same from every angle, so rotation -- real
+placement or not -- cannot change what's buried. This is the `leafy_plant`/
+`table_4top` shape of problem (occluded no matter which angle you pick),
+not the `menu_board` shape, and "not placed anywhere" doesn't resolve it
+the way it resolved `wall_art_framed` -- these would still be buried at
+whatever azimuth they *were* placed at, if they ever are.
+
+**That reframing turned up a real, fixable defect in one of the five.**
+`tip_jar()`'s own docstring: *"Glass reads as near-empty at this size, so
+what makes it a tip jar is the coin mass at the bottom."* The geometry
+never delivered on that sentence. The mesh drew a full-height glass prism
+(radius `r`, z 0 to 0.30) and a smaller coin prism (radius `r * 0.87`)
+*inside* it, from z 0 to the randomized fill height. Both are solid, this
+rasteriser has no transparency, and the coin prism sits strictly inside the
+glass prism's own radius at every height it occupies -- there is no camera
+angle, real or hypothetical, from which any part of the coins was ever
+going to reach a pixel. Confirmed by `check_buried_detail` (42%, identical
+at all 8 azimuths, matching the radial-symmetry reasoning above) and by
+eye: rendered `tip_jar(seed=None)` at azimuth 45
+(`proof/tip_jar_before_coins_invisible.png`) -- a plain blue glass cylinder
+with a cream label band. No gold anywhere.
+
+**This is not a new bug shape -- it's a known one, already fixed once in
+this same file, four functions away.** `bean_hopper()`'s own comment
+documents finding and fixing the identical mistake: *"A hopper modelled as
+a glass shell with beans inside draws the shell over the beans -- this
+rasteriser has no transparency -- and a whole vessel of `sky+2` came out as
+a pale blue tank... So the wall is beans, and the glass is two narrow bands
+that read as the empty top of the vessel."* `tip_jar` never got the same
+treatment. Same rasteriser limitation, same wrong nesting order, same
+author-visible docstring promising content the geometry hid.
+
+**The fix, applying `bean_hopper`'s own precedent:** swapped the nesting
+for a stack. Instead of a full-height glass shell with a smaller coin
+prism inside it, `tip_jar` now draws a full-radius (`r`) coin prism from
+z=0 to the fill height, then a full-radius glass prism from the fill
+height to the rim (0.30) -- the coins ARE the outer wall below the fill
+line, the empty headspace above it is glass, exactly `bean_hopper`'s "wall
+is beans, glass is the empty top" shape. Label and rim bands are unchanged
+(already proud of the shell, already visible).
+
+**Verified, all four ways the standing discipline asks for:**
+- **Real check, before/after:** `check_buried_detail` 41.7% (320/768) ->
+  29.2% (224/768) -- crosses the 30% floor, no `ACCEPTED_BURIAL` entry
+  needed, the geometry itself now clears it.
+- **Visual, by eye:** `proof/tip_jar_8dir_coins_now_visible.png` -- all 8
+  ship directions now show a genuine gold coin band at the base, cream
+  label above it, blue glass headspace at the top, dark rim -- a jar that
+  reads as a tip jar for the first time. Radially symmetric, so (correctly)
+  near-identical across all 8 directions rather than direction-dependent.
+- **The seed variety this asset was always supposed to have, now actually
+  on screen:** `proof/tip_jar_8seeds_fill_variety_visible.png` -- 8 seeds at
+  azimuth 45 show visibly different coin-fill levels for the first time.
+  Measured with `check_generator_range`'s own method
+  (`screen_materials`/`_screen_spread`, seeds 1-8, azimuth 45, the exact
+  window `tip_jar`'s `GENERATORS` entry already documents a floor for):
+  spread goes from 10.6% (pre-fix, this exact window) to 17.4% (post-fix) --
+  a genuine increase, not noise, confirming the coin-fill randomization
+  (which the check's own comment already called "dominant") is doing real
+  visible work for the first time rather than being invisible set-dressing
+  the radius/label wobble was silently carrying alone.
+- **Zero regression:** `manifest.py --check`, 3 errors / 18 warnings before,
+  3 errors (identical) / 17 warnings after -- only the `tip_jar`
+  buried-detail line gone. No new warning anywhere, including no new
+  `check_generator_range` line for `tip_jar` despite the spread number
+  moving -- it moved further from both floors, not closer.
+
+**The other four loose-thread assets are a different, honest finding: not
+generalized, not force-fit.** `bean_hopper` already got this exact fix
+(its own comment proves it -- the remaining 42% is the two thin glass
+bands' own inside faces, structurally minor, a much smaller version of the
+same `pastry_case`/`counter` "flush abutment" shape, not the same defect).
+`drip_brewer`, `lamp_table`, `pourover_stand` were read but not
+individually traced to a root cause this hour -- `lamp_table`'s always-
+hidden faces are concentrated in materials matching its stem/shade
+junction, which `lamp_floor`'s own docstring already flags as a known,
+accepted thinness ("the stem has to be thin... the gap either side of it
+is most of the silhouette"), suggestive but not confirmed; `drip_brewer`
+and `pourover_stand` remain genuinely unknown. Left open rather than
+guessed at -- one confirmed real fix and three honestly-unresolved
+questions is a better hour's output than five assumed-identical fixes.
+
+New branch (`tip-jar-buried-coins-real-fix`), based on `main`, independent
+of the four `check_buried_detail` branches from the prior two hours. Left
+unmerged per standing practice.
