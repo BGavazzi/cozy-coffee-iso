@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import traceback
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -628,6 +629,22 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         for msg in check_stool_occupancy():
             errs.append(f"occupancy: {msg}")
     except Exception as exc:                       # pragma: no cover
+        # This block folds together most of the checks in this function --
+        # a single unexpected failure anywhere in it (a real bug, not a
+        # style/asset problem) used to be visible only as this one summary
+        # line, with everything else in the block silently never running
+        # and no way to tell which check even failed without re-running by
+        # hand under a debugger. Traceback to stderr fixes that: `--check`
+        # still degrades gracefully (one producer's bug doesn't crash the
+        # whole command) but the failure is now diagnosable on the first
+        # occurrence instead of requiring it to be caught red-handed. See
+        # ART_CRITIQUE.md, "PR-pile reconciliation round eight" -- an
+        # intermittent exception here was found, investigated, and left
+        # unresolved specifically because this swallow gave nothing to
+        # investigate beyond the exception's own str().
+        print(f"  WARNING clip cross-check failed with a real exception -- "
+              f"traceback follows:", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
         warns.append(f"clip cross-check skipped: {exc}")
 
     for msg in check_ui(man, active):
