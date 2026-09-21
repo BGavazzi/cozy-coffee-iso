@@ -9467,3 +9467,43 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## `palette_swap.py`'s `check_exact` was the sixth "N checks" instance -- and the first where only 1 of a producer's 4 checks was actually the gap
+
+Same audit as the five before it (`organic_rig.py`, `portrait.py`,
+`bitmap_font.py`, `ui_forge.py`/`ui_chrome.py`, `furnish.py`): a producer's
+own check function is real, correct, and never re-run against what actually
+shipped. This time the producer is `palette_swap.py`, and the check is
+`check_exact` -- "every written file is palette-exact in the TARGET palette
+... exhaustive, not sampled." It has exactly one call site, inside `swap()`'s
+per-file write loop, so it only ever runs at the instant a variant file is
+built. `out/variants/` (the shipped time-of-day variant library: 4 variants,
+3,020 files per the README) is never touched again after that.
+
+What makes this one different from the previous five: `palette_swap.py`
+already has a `--check` mode, and it is NOT a no-op. It runs `check_total`
+and `check_injective` (properties of the swap table itself) and
+`check_roundtrip` (real base-library files, read off disk, round-tripped
+through the current table) -- three of the producer's four checks were
+already correctly exercised against real shipped state. Only `check_exact`,
+the one that verifies an already-written variant file rather than the base
+library or the table, was orphaned. Worth stating precisely rather than
+folding into "another instance of the same bug": the previous five were
+all-or-nothing (a producer's checks ran once, at its own build time, full
+stop); this one is a producer that mostly did the right thing and missed one
+check out of four.
+
+**Verified, not assumed.** A baseline audit of all 3,020 currently-shipped
+variant PNGs (reusing `check_exact` directly, not reimplemented) found 0
+problems before anything was wired in. With the fix wired into
+`manifest.py check()` -- gated to `active.name == DEFAULT_STYLE`, since
+`out/variants/` is a single un-namespaced directory only `cozy_ghibli`'s
+build has ever populated, and checking `cozy_ghibli`-sourced files against
+`snes_rpg`'s palette would be nonsense -- both styles are byte-identical to
+their established baselines (`cozy_ghibli` 3 errors/17 warnings, `snes_rpg`
+4 errors/18 warnings unchanged, which also confirms the style gate actually
+gates). Teeth-tested by overwriting one real shipped file
+(`out/variants/golden_hour/props/armchair_dir0.png`) with a different
+variant's bytes: caught immediately (`variant golden_hour: armchair_dir0.png:
+9 colour(s) off the variant palette after swapping: ...`), then restored from
+a backup and confirmed sha256-identical to the original, check clean again.
