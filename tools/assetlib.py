@@ -1882,7 +1882,18 @@ def bean_hopper() -> Mesh:
     """An inverted cone on a collar. The taper IS the object -- a cylinder of
     beans is a tin."""
     m = Mesh()
-    m.add_prism((0.5, 0.5, 0.0), 0.16, 0.16, 0.10, METAL, 10)          # collar
+    # `cap_top=False` on every course but the last: each top cap below sits
+    # flush under the next course's equal-or-larger footprint and can never
+    # win a pixel at any of the 8 real ship azimuths -- confirmed by
+    # `check_buried_detail`'s own front_facing/visible sets, not assumed from
+    # the geometry alone (see ART_CRITIQUE.md, "bean_hopper: five redundant
+    # cap seams, the same class of dead face drip_brewer's fix named but left
+    # standing"). Structural, not a checked-angle coincidence: a cap sealed
+    # under a wider-or-equal course above it stays sealed under ANY azimuth,
+    # by construction, so this isn't the single-azimuth trap the rest of this
+    # audit keeps finding.
+    m.add_prism((0.5, 0.5, 0.0), 0.16, 0.16, 0.10, METAL, 10,
+                cap_top=False)                                         # collar
     # The BEANS are the outer surface, not the glass. A hopper modelled as a
     # glass shell with beans inside draws the shell over the beans -- this
     # rasteriser has no transparency -- and a whole vessel of `sky+2` came out
@@ -1890,9 +1901,11 @@ def bean_hopper() -> Mesh:
     # for windows. So the wall is beans, and the glass is two narrow bands that
     # read as the empty top of the vessel.
     for r, z0, z1 in ((0.20, 0.10, 0.26), (0.26, 0.26, 0.42), (0.31, 0.42, 0.56)):
-        m.add_prism((0.5, 0.5, z0), r, r, z1 - z0, "wood-1", 10)       # beans
+        m.add_prism((0.5, 0.5, z0), r, r, z1 - z0, "wood-1", 10,
+                    cap_top=False)                                     # beans
     m.add_prism((0.5, 0.5, 0.36), 0.265, 0.265, 0.03, "wood-2", 10)    # band
-    m.add_prism((0.5, 0.5, 0.56), 0.31, 0.31, 0.06, GLASS, 10)         # empty top
+    m.add_prism((0.5, 0.5, 0.56), 0.31, 0.31, 0.06, GLASS, 10,
+                cap_top=False)                                         # empty top
     m.add_prism((0.5, 0.5, 0.62), 0.33, 0.33, 0.06, "neutral+1", 10)   # rim
     return m
 

@@ -9467,3 +9467,91 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+
+## `bean_hopper`'s buried-detail warning: five redundant cap seams, dead at every azimuth by construction
+
+`bean_hopper` sat at 42% buried (476/1120 candidate tris across the 8 real ship
+azimuths) since `check_buried_detail` was widened to all 8 azimuths -- but,
+unlike the `bookshelf`/`chair`/`menu_board`/`wall_art_framed` backlog that
+widening found, nobody had chased *why* for this one yet. It looked like a
+candidate for the same "single-azimuth blind spot" story the rest of this
+file keeps finding, so it was checked rather than assumed.
+
+It isn't that story. `front_facing`/`visible_faces` (`art_review.py`'s own
+machinery, not a new tool) across all 8 azimuths identifies exactly 50
+always-hidden faces, every one of them a flat cap triangle, clustered at
+exactly 5 heights, 10 triangles each (one full n=10 cap fan per seam):
+z=0.10, 0.26, 0.42, 0.56, 0.62. `bean_hopper()` is six stacked `add_prism`
+courses (collar, three beans bands, glass headspace, rim); each of those 5
+heights is a seam where a lower course's top cap sits flush under the next
+course's equal-or-larger footprint. `add_prism` always builds full top and
+bottom cap fans with no way to omit either -- so every one of those 6 seams
+silently built two redundant, mutually-sealed disks, and 5 of the 6 (every
+seam except the very last, under the rim) leave the lower cap permanently
+sealed.
+
+**This is not the single-azimuth trap.** A cap sealed under a wider-or-equal
+course stays sealed at every possible camera angle, not just the 8 this
+check samples -- structural, not measurement-scope-dependent, unlike
+`bookshelf`/`wall_art_framed`'s placement-scope stories above. It is, however,
+the exact same class of dead geometry this file already named and left open
+for `drip_brewer` two sections up ("Closing the loose thread"): "a redundant
+internal prism-cap seam" from stacking instead of nesting, flagged there as
+real but not chased because it needed "a chair-style pixel-hash-verified face
+deletion to safely remove." That is what this section does.
+
+**The fix:** `Mesh.add_prism` (`tools/mesh.py`) gains `cap_top`/`cap_bottom`
+keyword-only-in-spirit bools, both defaulting `True` -- every one of the
+other ~78 existing call sites is unaffected, confirmed by grep (80 total call
+sites across the codebase, none passing these new params before this
+change). `bean_hopper()` (`tools/assetlib.py`) passes `cap_top=False` on 5 of
+its 6 `add_prism` calls -- every course but the rim, which keeps both caps
+since nothing sits above it. Chose to drop exactly the 50 faces the
+front_facing/visible sweep confirmed dead, nothing more (the collar/beans/
+glass bottom caps, which face away from the camera at every azimuth by
+construction and are therefore never even candidates, are left alone --
+real but smaller waste, out of scope for this pass, matching the same
+discipline `chair`'s fix used to leave its two ambiguous inward faces
+standing rather than reaching past what was actually verified).
+
+**Verified four ways, matching `chair`'s own bar:**
+- `check_buried_detail({"bean_hopper": ...})` called directly: 42% -> 0%,
+  finding list empty.
+- Face count: 280 -> 230 (-50, -17.9%).
+- **Byte-identical renders, not just the check's res=160 approximation.**
+  Rendered through the real `render_batch.render_sprite` path (the same
+  function `furnish.py` ships through) at all 8 real ship azimuths, before
+  and after: sha256 of every frame matches exactly, position for position.
+  This is the check `chair`'s own commit message calls out as necessary and
+  not implied by the first one -- "the check's own occlusion pass (res=160)
+  and the shipped supersampled render disagreed by a handful of edge pixels"
+  there, so it was verified here rather than assumed clean.
+- Visual check by eye: still reads correctly as a bean hopper (beans body,
+  glass headspace band, metal collar and rim all present and in the right
+  place).
+
+**`manifest.py --check`, both styles, full run:** `cozy_ghibli` 3 errors/17
+warnings -> 3 errors/**16** warnings, only the `bean_hopper` buried-detail
+line gone, nothing else moved. `snes_rpg` 4 errors/18 warnings -> 4
+errors/**17** warnings, same single line gone -- confirmed against a real
+stashed-baseline run of this exact branch's changes, not assumed from the
+`cozy_ghibli` result alone, since `snes_rpg`'s run surfaced an unrelated
+`warning ui: 14 declared but not built` line that isn't in `cozy_ghibli`'s
+output. Traced that difference before trusting the comparison: it is present
+identically in BOTH the stashed-baseline and with-fix `snes_rpg` runs, so it
+predates this change. Cause, not chased further here since it's orthogonal:
+last session's UI icon build (see the `ui_heart_mood` section elsewhere in
+this file) only ran `ui_forge.py` under the default `cozy_ghibli` style,
+never `--style snes_rpg`, so `snes_rpg`'s own `out/ui/` never got those 14
+icons built on this checkout. `out/` is gitignored either way, so neither
+this nor that has a diff of its own to ship.
+
+**Generalizes, doesn't chase it here.** The exact same seam pattern is
+already named, unfixed, in `drip_brewer`'s and `pourover_stand`'s own code
+comments from the "Closing the loose thread" section -- both still nest a
+coffee-fill prism directly under a glass headspace prism of equal-or-larger
+radius, on a different open branch (`drip-brewer-pourover-coffee-and-lamp-
+table-structural`). `cap_top=False` on the coffee course there would be the
+same fix, verified the same way, and is flagged here as a concrete, ready
+follow-up rather than reopening that branch's own history in this one.
