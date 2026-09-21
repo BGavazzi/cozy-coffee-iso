@@ -627,6 +627,34 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         from build_plan import check_stool_occupancy
         for msg in check_stool_occupancy():
             errs.append(f"occupancy: {msg}")
+        # Tiles. `tileset.py`'s own `build()` runs `check_lattice`/
+        # `check_collapse` on every invocation and blocks on failure, so a
+        # broken tile has never shipped -- but `manifest.py --check` itself
+        # never touched either, which is a real, previously-documented gap
+        # (ART_CRITIQUE.md, "the one real gap: manifest.py --check never
+        # touches tileset.py at all"). `check_manifest_placement` stays
+        # proof-gated on purpose -- it compares against already-built PNG
+        # atlases on disk, which this command does not assume exist, so
+        # wiring it here would make a `--check` run depend on a prior
+        # `tileset.py` build instead of computing everything fresh the way
+        # every other check in this block does. `check_lattice`/
+        # `check_collapse` need nothing from disk -- both render or measure
+        # live, the same as `check_generator_range`/`check_focal_contrast`
+        # above -- so both are safe to add without that dependency.
+        import tileset as _t
+        for msg in _t.check_lattice(64):
+            errs.append(f"tileset: {msg}")
+        wall_patterns = _t.make_wall_patterns(active.materials)
+        for name, (fn, variants) in sorted(_t.PATTERNS.items()):
+            for msg in _t.check_collapse(fn, variants, 64, ramps,
+                                         _t._lambert((0.0, 0.0, 1.0))):
+                errs.append(f"tileset: {name}: {msg}")
+        for axis in sorted(_t.WALL_AXES):
+            for name, (fn, variants) in sorted(wall_patterns.items()):
+                for msg in _t.check_collapse(fn, variants, 64, ramps,
+                                             _t._lambert(_t.WALL_AXES[axis][1]),
+                                             _t.WALL_HEIGHT):
+                    errs.append(f"tileset: {name}_{axis}: {msg}")
     except Exception as exc:                       # pragma: no cover
         warns.append(f"clip cross-check skipped: {exc}")
 

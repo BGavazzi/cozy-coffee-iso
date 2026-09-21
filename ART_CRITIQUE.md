@@ -9467,3 +9467,60 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## `tileset.py`'s checks were never in `manifest.py --check`, closing the gap that finding named but didn't fix
+
+An earlier pass ("the one real gap: `check_manifest_placement` only runs
+behind `--proof`") found and measured this precisely: `tileset.py`'s own
+`build()` runs `check_lattice`/`check_collapse`/`check_manifest_placement`
+on every invocation and blocks on failure, but `manifest.py --check` --
+the automated, no-rebuild-required gate this whole session has spent real
+effort hardening for every other producer -- never imports `tileset` at
+all. That pass concluded honestly ("a coverage note, not a bug to fix")
+and shipped no code, because the check was live-verified passing against
+the real shipped atlases and nothing was actively broken. Re-checking this
+hour whether that conclusion still stood after ~15 more hours of nobody
+picking it up: it did, and the gap was still open, so this closes it.
+
+**Scoped to the two checks that don't need a prior build.**
+`check_lattice(width)` is pure integer arithmetic and `check_collapse(...)`
+renders live and measures the render -- both compute everything fresh, the
+same discipline every other check in `manifest.py`'s block already
+follows (`check_generator_range`, `check_focal_contrast`, `check_buried_
+detail`, ...). `check_manifest_placement` stays proof-gated on purpose: it
+compares a fresh projection against PNG atlases already on disk, and
+wiring it into `--check` would make this command's own correctness depend
+on whatever `out/tiles*/` happens to contain from a previous, unrelated
+build -- a real dependency this command has never had for anything else,
+not a gap to match the other two checks' shape.
+
+Wired both, once per style (via `active.materials` -> `make_wall_patterns`,
+the same resolution `tileset.build()` itself uses, not a module-level
+default): `check_lattice(64)` -- 64 is the only tile width this codebase
+has ever shipped, confirmed earlier by this same investigation -- and
+`check_collapse` for every floor pattern in `PATTERNS` at the floor's own
+lambert, and every wall pattern in `make_wall_patterns(active.materials)`
+crossed with every axis in `WALL_AXES`, each at that axis's own lambert
+and `WALL_HEIGHT` -- the identical loop shape and lambert derivation
+`tileset.build()` uses for the same two checks, not a re-derived copy.
+
+**Verified the wiring has teeth, not just that it stays quiet.** Degraded
+a copy of the live palette (every ramp longer than one step collapsed to
+its own first colour, repeated) and ran `check_collapse` against the real
+`floor_checker` pattern through it directly: fired immediately -- "4
+materials resolve to only 2 colours at lambert 0.641... (cream, cream-1,
+wood-1, wood-1-1)" -- confirming a real regression in this shape would be
+caught, not silently absorbed by a wiring mistake.
+
+**Zero regression, both styles.** `manifest.py --check`: 3 errors/17
+warnings, byte-identical to before. `--style snes_rpg`: 4 errors/18
+warnings, byte-identical to before. Both match the two live-verified-clean
+results the earlier pass already established for the real shipped
+atlases, now reached the same way `check_generator_range` and every other
+producer's checks are -- automatically, on every `--check` run, not only
+when someone remembers to pass `--proof` to a different command. Full
+40-test suite: 40 passed.
+
+Fixed in `tools/manifest.py` (`check()`, right after `check_stool_
+occupancy`) -- branch `tileset-checks-wired-into-manifest-check`, left
+unmerged.
