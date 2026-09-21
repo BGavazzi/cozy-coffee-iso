@@ -9467,3 +9467,54 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## PR-pile reconciliation, round five (30 -> 35, zero new real conflicts)
+
+Standing hourly habit: `gh pr list --state open` first, and a full
+sequential-merge sweep once the open count grows 5+ since the last one.
+Round four (`pr-pile-reconciliation-round-four`, PR #157) swept at ~30;
+this hour's count was 35, five over, so this is a real sweep, not a skip.
+
+**Method, same as every prior round:** `git branch -f tmp origin/main`,
+`git worktree add`, then merge every open PR's branch in number order,
+aborting and recording each conflict rather than resolving inline (this is
+a survey, not a merge). All five of this session's `check_buried_detail`
+branches from the last three hours (`chair-buried-detail-top-face-real-fix`
+#158, `menu-board-buried-detail-placement-scope` #159,
+`bookshelf-buried-detail-placement-scope` #160,
+`wall-art-framed-buried-detail-not-placed` #161,
+`tip-jar-buried-coins-real-fix` #162) were the specific thing worth
+checking this round -- three of them (#159/#160/#161) touch the same
+`ACCEPTED_BURIAL` dict in `tools/art_review.py`, and two (#158/#162) touch
+`tools/assetlib.py`, so a real collision among them was plausible enough to
+verify rather than assume clean.
+
+**Result: only #128 and #130/#131 merge cleanly in sequence; every other
+branch conflicts, but only on `ART_CRITIQUE.md`'s own append point** --
+the expected, benign shape this file's own append-only convention produces
+every round, not a new finding. Specifically checked, not assumed: `tools/
+art_review.py` and `tools/assetlib.py` merged clean for every one of
+#158-162 in this pass -- the three `ACCEPTED_BURIAL` entries auto-merged
+without a code conflict (each appends near the end of the dict, no
+overlapping context lines), and the chair/tip_jar geometry fixes touch
+different functions in `assetlib.py` with no overlap either. Zero real
+collisions among this session's own five branches.
+
+**The only real, non-`ART_CRITIQUE.md` conflict found is the same one
+round four already named and resolved:** `galley-focal-box-per-run` (#150)
+vs `galley-focal-box-was-one-box-for-two-counters` (#128), both touching
+`tools/build_plan.py`/`tools/render_room.py`/`NEXT.md` for the same galley
+`focal_box` fix. Round four's own resolution stands unchanged: #128's fix
+is the one to keep, #150 is redundant and should close in its favour when
+a human does a merge pass. `#148 vs #143` (`PIPELINE.md`/`README.md` count
+claims), the other collision round four named, was not independently
+re-verified this round -- neither branch has moved since, so there is
+nothing new to check.
+
+**Not a task, no code changed.** Doc-only, same branch convention as every
+prior reconciliation round. This is round five specifically to avoid
+colliding with round four's own still-unmerged write-up on the same
+`ART_CRITIQUE.md` append line -- both are true simultaneously and a human
+merge pass only needs to keep one (whichever lands last carries the fuller
+picture; this one supersedes round four's finding by reconfirming it,
+not contradicting it).
