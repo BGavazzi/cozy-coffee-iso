@@ -1912,7 +1912,8 @@ def drip_brewer() -> Mesh:
     m.add_box((0.22, 0.24, 0.20), (0.78, 0.42, 0.92), "neutral+1")     # column
     m.add_box((0.22, 0.24, 0.62), (0.80, 0.74, 0.78), "neutral+1")     # brew head
     m.add_box((0.24, 0.26, 0.20), (0.76, 0.72, 0.23), "neutral-1")     # warm plate
-    m.add_prism((0.52, 0.54, 0.23), 0.20, 0.20, 0.18, "wood-2", 10)    # coffee
+    m.add_prism((0.52, 0.54, 0.23), 0.20, 0.20, 0.18, "wood-2", 10,
+                cap_top=False)                                        # coffee
     m.add_prism((0.52, 0.54, 0.41), 0.20, 0.20, 0.16, GLASS, 10)       # empty headspace
     m.add_box((0.70, 0.50, 0.26), (0.76, 0.58, 0.52), "neutral-1")     # handle
     return m
@@ -1936,7 +1937,8 @@ def pourover_stand() -> Mesh:
     m.add_prism((0.58, 0.50, 0.66), 0.10, 0.10, 0.06, METAL, 8)        # ring
     m.add_prism((0.58, 0.50, 0.60), 0.06, 0.06, 0.20, CERAMIC, 10)     # cone
     m.add_prism((0.58, 0.50, 0.80), 0.16, 0.16, 0.04, CERAMIC, 10)
-    m.add_prism((0.58, 0.50, 0.06), 0.17, 0.17, 0.12, "wood-2", 10)    # coffee
+    m.add_prism((0.58, 0.50, 0.06), 0.17, 0.17, 0.12, "wood-2", 10,
+                cap_top=False)                                        # coffee
     m.add_prism((0.58, 0.50, 0.18), 0.17, 0.17, 0.18, GLASS, 10)       # empty headspace
     return m
 
