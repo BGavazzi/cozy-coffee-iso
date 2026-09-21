@@ -9467,3 +9467,86 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+
+## `table_4top`'s az90 collision: fixed one cause, and a fix for the second made things worse -- reverted
+
+Last of the original five `check_generator_range` worst-of-8-azimuth
+failures (`bookshelf` #132, `bench` #133, `table_communal` #134,
+`pastry_case` #135, `espresso_machine` -- documented as a real, non-
+generalizing gap) to get its own from-scratch investigation. Confirmed via
+`gh pr list --search` per name before starting, per this session's own
+discipline, rather than assumed complete from memory.
+
+`table_4top`'s own docstring already fixed an EARLIER, different closest-
+pair collapse (mean 30%, closest pair 0.3%, fixed by making table height
+vary). This is a second, later one: `check_generator_range`'s own docstring
+already names the number -- `table_4top` passes the default 45-degree
+azimuth clean (5.2%) but drops to 2.6% at azimuth 90 (floor 4.5%).
+
+**Traced the actual pair.** Seeds 5 and 6 both draw `_base_posts` (one of
+four `BASE_STYLES`, picked by chance) and differ only in continuous jitter
+(height, top thickness, overhang, leg radius) -- not enough at azimuth 90,
+a straight-on view down the table's short axis where the near and far leg
+pairs project close together. Confirmed by rendering both: visually
+near-identical at az90, distinguishable but subtle even at az45. **The
+same mechanism `bench` already had** (`ART_CRITIQUE.md`, "bench's axis-
+aligned collision was a coin-flip, not an occlusion problem") -- a same-
+style coincidence over an 8-seed sample against a small discrete choice,
+not an occlusion bug. Checked fresh rather than assumed, since this file's
+own history already has one case (`table_communal`'s pedestal, below) that
+looks identical to this and one that doesn't (`bookshelf`'s carcass).
+
+**Applied `bench`'s own lever: cycle the style deterministically by seed
+instead of drawing it from `rnd()`, plus split `leg_r` into two guaranteed-
+separated halves keyed the same way.** This closed the original posts-vs-
+posts collision (seeds 5/6 no longer collide) -- but table's discrete space
+is only 4 styles, not `bench`'s exact 2x4=8 (a true bijection onto the
+8-seed sample), so cycling by `(seed - 1) % 4` GUARANTEES seeds `i` and
+`i + 4` always share a style, forever, rather than only sometimes by
+chance. Whichever of those four forced pairs lands on `_base_pedestal`
+collides no matter what: `_base_pedestal`'s foot radius is
+`min(x1 - x0, y1 - y0) * 0.30`, derived only from the table's own fixed
+footprint, not from `leg_r` -- the exact structural limitation this file
+already named and left deliberately unaddressed for `table_communal`
+("A single central column ... `leg_r`/`thick`/`over` ... are a rounding
+error against the silhouette"). Measured: seeds 3 and 7 now share pedestal
+and render **0.7% apart at az90** (worse than the 2.6% it replaced) --
+and, because the cycle also FORCES this pairing rather than leaving it to
+chance, they now collide at the **default 45-degree azimuth too** (4.0%,
+under the same 4.5% floor), a NEW failure at the one angle that had always
+passed.
+
+**Tried widening the existing large-table pedestal exclusion
+(`max(w, d) >= 2.5`, already used to redirect `table_communal`'s pedestal
+to trestle) by aspect ratio instead of absolute size**, since `table_4top`
+(2.0 x 1.0, a 2:1 oblong) is exactly the "long enough to need someone at
+each end" shape that rule's own reasoning already names. **This made it
+worse again**, for a different reason: redirecting pedestal to trestle
+collapses two of the four style-cycle slots onto one style, so trestle
+then filled 4 of the 8 sampled seeds instead of 2, and produced two NEW
+trestle-vs-trestle collisions (seeds 3/4 and 7/8) -- one of them again at
+the default azimuth. The same "collapsing a style onto another style is
+how a generator loses range without losing a branch" trap `_base_tripod`'s
+own docstring already names for the round-table case, rediscovered here
+for the non-round one.
+
+**Reverted both changes.** `table_4top` ships unchanged: closest pair
+2.6% at azimuth 90, clean everywhere else, exactly the state
+`check_generator_range`'s own docstring already documents. Two real
+findings from this pass, neither shipped as code:
+
+- The `_base_posts` half of this collision (seeds 5/6) IS fixable the
+  `bench` way, but table's 4-style discrete space can't absorb a full
+  seed-bijective cycle without creating a guaranteed, permanent pairing --
+  a partial version of `bench`'s fix (cycling only among the *non-
+  pedestal* styles, keeping pedestal genuinely random and rare) might
+  thread this, but was not attempted this hour; left as a concrete,
+  narrower next step rather than guessed at now.
+- The `_base_pedestal` half is the same already-accepted, structural
+  `table_communal` limitation, now confirmed to reach `table_4top` too --
+  not a defect specific to this generator, a property of `_base_pedestal`
+  itself on any small-to-medium fixed footprint.
+
+Zero code change shipped this pass; `manifest.py --check` unaffected
+(confirmed: working tree matches `main` exactly after the revert).
