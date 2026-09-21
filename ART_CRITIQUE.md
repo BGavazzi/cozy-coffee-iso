@@ -9467,3 +9467,80 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+
+## `sandwich_board`'s buried-detail warning: two dead faces, two different reasons, both `add_box`'s missing counterpart to `add_prism`'s new caps
+
+Last of the 10-asset `check_buried_detail` backlog from "`review_library()` had
+4 real defects" to get its own individual investigation -- `bean_hopper`,
+`bookshelf`, `chair`, `drip_brewer`, `lamp_table`, `menu_board`,
+`pourover_stand`, `tip_jar`, `wall_art_framed` all already have a PR or an
+`ACCEPTED_BURIAL` entry on some branch; confirmed fresh via `gh pr list
+--search` per name rather than trusted from memory, and `sandwich_board`
+alone came back with nothing.
+
+`front_facing`/`visible_faces` across all 8 real ship azimuths (same
+machinery the `bean_hopper` section above used) finds exactly 8 always-hidden
+faces out of 60 -- one quad's worth (2 triangles) at each of 4 locations,
+falling into two distinct, unrelated causes:
+
+- **Each panel's own top face**, sitting flush under `sandwich_board`'s
+  hinge-cap box, which is wider in y and straddles both panels' tops in z.
+  Structurally the same bug the `bean_hopper` section above just fixed --
+  a cap sealed under a wider-or-equal solid above it, dead at every azimuth
+  by construction -- just on boxes (`add_box`) instead of prisms
+  (`add_prism`).
+- **Each slate's mounting face**, the one glued flush against the wood
+  panel it sits on. A different mechanism -- not a stacking seam, a glue
+  joint -- but the same underlying fact: two solids sharing a face, one of
+  which can never be seen. Closer in spirit to `chair`'s already-fixed
+  "top face flush under the seat's overhang" than to a seam.
+
+**The fix:** `add_box` (`tools/mesh.py`) gains a `skip` parameter -- a
+frozenset naming any of its 6 faces (`top`, `bottom`, `y0`, `x1`, `y1`,
+`x0`, the order the function already builds them in) to omit entirely.
+Defaults to empty, unchanged behaviour for all ~204 other existing call
+sites (confirmed by grep). This is `add_prism`'s new `cap_top`/`cap_bottom`
+from the `bean_hopper` section above, generalized to the other primitive
+that needed it -- the same lever, not a new one, applied a second time in
+the same hour once the shape of the problem repeated on a different solid.
+
+`_aframe_panel` (`tools/assetlib.py`) passes `skip={"top"}` on the wood
+panel and `skip={"y0"}`/`skip={"y1"}` on the slate (whichever face is
+inward, depending on which side the slate mounts to).
+
+**Verified the same four ways as `bean_hopper`, not fewer -- `chair`'s own
+history is exactly the warning that a check clearing is not proof enough:**
+- `check_buried_detail({"sandwich_board": ...})`: findings list empty
+  (was 36%, 78/216 tris summed across 8 azimuths).
+- Faces: 60 -> 52 (-8, -13.3%).
+- **Byte-identical sha256 render hashes at all 8 real ship azimuths**
+  through the real `render_sprite` path, before and after -- unlike
+  `chair`, which found its two "inward side" faces were NOT actually safe
+  despite passing the same check, both dropped faces here passed the real
+  supersampled-render comparison cleanly on the first attempt, no
+  bisection needed (`proof/sandwich_board_az0_after_fix.png`,
+  `proof/sandwich_board_az90_after_fix.png`).
+- Visual check by eye at az=90 (near-frontal): wood frame, dark slate
+  board clearly visible and centred -- not the "closed rectangular box...
+  read as a doorway" this asset's own docstring already records as its
+  original, unrelated bug.
+
+**`manifest.py --check`, both styles, full run:** `cozy_ghibli` 3 errors/17
+warnings -> 3 errors/**16** warnings, `snes_rpg` 4 errors/18 warnings -> 4
+errors/**17** warnings -- only the `sandwich_board` buried-detail line gone
+in either, nothing else moved (this branch predates `bean_hopper`'s own
+still-unmerged PR #166, so that line correctly still appears in both runs;
+`snes_rpg`'s own pre-existing, unrelated `ui: 14 declared but not built`
+warning -- traced last hour to a local-checkout gap, not a code defect --
+is also present unchanged in both).
+
+**Left exactly as narrow as `bean_hopper`'s fix.** This closes the entire
+10-asset `check_buried_detail` backlog that "`review_library()`'s other
+half had the same unfinished reconciliation" opened -- every entry now has
+either a real geometric fix or a verified `ACCEPTED_BURIAL` exemption on
+some open branch. Two structural lessons carried forward for whatever the
+next stacked-solid asset turns out to be: `add_prism`'s cap seams and
+`add_box`'s flush-glued faces are the same bug wearing two different
+primitives, and clearing `check_buried_detail` is a reason to go verify
+with a real render, never a substitute for it.

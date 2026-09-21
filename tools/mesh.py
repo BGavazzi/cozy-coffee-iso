@@ -68,12 +68,32 @@ class Mesh:
         self.faces.append(((i, i + 1, i + 2), None, material))
         self.faces.append(((i, i + 2, i + 3), None, material))
 
-    def add_box(self, lo: Vec, hi: Vec, material: str) -> None:
+    _BOX_FACES = ("top", "bottom", "y0", "x1", "y1", "x0")
+
+    def add_box(self, lo: Vec, hi: Vec, material: str,
+                skip: frozenset[str] = frozenset()) -> None:
+        """`skip` names any of `_BOX_FACES` to omit that quad entirely.
+
+        Off by default -- every existing caller is unaffected. Reach for it
+        only once a specific face is confirmed dead at every azimuth, not
+        just the ones a check happens to sample: a face flush against
+        another solid (two panels glued face to face, a lid sealed under a
+        wider lid) stays hidden under any camera angle, by construction,
+        the same reasoning `add_prism`'s own `cap_top`/`cap_bottom` were
+        added for. See `sandwich_board` for the case this was added for --
+        and verify with a real rendered pixel-hash comparison before
+        trusting it, not the buried-detail check alone: `chair`'s own fix
+        found two faces that looked exactly this dead by the check and
+        were not (see ART_CRITIQUE.md, "chair's buried-detail floor").
+        """
         (x0, y0, z0), (x1, y1, z1) = lo, hi
         p = [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0),
              (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]
-        for quad in ((4, 5, 6, 7), (1, 0, 3, 2), (0, 1, 5, 4),
-                     (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)):
+        for name, quad in zip(self._BOX_FACES,
+                              ((4, 5, 6, 7), (1, 0, 3, 2), (0, 1, 5, 4),
+                               (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7))):
+            if name in skip:
+                continue
             self.add_quad(*(p[i] for i in quad), material=material)
 
     def add_prism(self, centre: Vec, rx: float, ry: float, height: float,
