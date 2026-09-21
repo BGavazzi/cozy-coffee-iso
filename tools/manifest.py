@@ -259,10 +259,27 @@ def check_ui(man: dict, active) -> list[str]:
     try:
         from PIL import Image
         from pixelize import audit, load_palette
-        from ui_forge import MAX_ISOLATED
+        from ui_forge import MAX_ISOLATED, MIN_ICON_COVERAGE
+        from ui_chrome import check_nine_slice
         ramps = load_palette(active.palette_path)
     except Exception as exc:                       # pragma: no cover
         return out + [f"pixel audit skipped: {exc}"]
+
+    # `ui_forge.check_icon` and `ui_chrome.build` each gate their own writes
+    # on coverage (and, for chrome, nine-slice band uniformity) at generation
+    # time -- but only at generation time. Neither property was previously
+    # re-audited here, so a shipped icon or frame hand-replaced (or restored
+    # from a stale commit) after generation could go off-palette-clean and
+    # unspeckled while still being drawn too small to read, or, for a chrome
+    # piece, having a stretch band that would smear -- and nothing here would
+    # notice. `ui_chrome.py` already writes each style's resolved insets to
+    # `nine_slice.json` beside the PNGs it describes, so this reads that
+    # rather than re-deriving scale/insets a second, divergeable way.
+    nine_slice: dict[str, list[int]] = {}
+    for d in ui_dirs:
+        p = d / "nine_slice.json"
+        if p.exists():
+            nine_slice.update(json.loads(p.read_text(encoding="utf-8")))
 
     for aid in sorted(set(declared) - set(missing)):
         with Image.open(located[aid] / f"{aid}.png") as im:
@@ -286,6 +303,13 @@ def check_ui(man: dict, active) -> list[str]:
         if ratio > MAX_ISOLATED:
             out.append(f"{aid}: {ratio:.1%} isolated pixels "
                        f"(cap {MAX_ISOLATED:.1%})")
+        cover = len(solid) / float(w * h)
+        if cover < MIN_ICON_COVERAGE:
+            out.append(f"{aid}: fills {cover:.1%} of its frame "
+                       f"(floor {MIN_ICON_COVERAGE:.0%})")
+        if aid in nine_slice:
+            for msg in check_nine_slice(px, w, h, nine_slice[aid]):
+                out.append(f"{aid}: {msg}")
     return out
 
 
