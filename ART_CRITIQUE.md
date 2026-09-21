@@ -9467,3 +9467,94 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## `check_eye_legibility` was measuring the wrong pixel at azimuth 225
+
+The azimuth-widening pass (`eye-legibility-single-azimuth`, above) found one
+real failure at azimuth 225: `skin-4` at 0.103 against the 0.15 floor. That
+number was never re-examined once the check stopped throwing it as an
+error -- worth doing, because the check's own method (find every pixel that
+differs between a bare head and a head-with-a-face render, report the
+*strongest* gap) has a hole: adding the eye geometry can nudge a
+neighbouring **skin** pixel's lambert across its own ramp's step boundary --
+still skin, one shade darker or lighter, no eye involved -- and that
+incidental shift can carry more OKLab distance than the real eye pixel next
+to it. `max()` cannot tell the two apart; it just reports the bigger number.
+
+Dumped every differing pixel behind the reported 0.103 for `skin-4`/225:
+two columns, one genuinely eyed (`(72,31,34)` skin-ramp-0 -> `(35,35,44)`
+neutral-ramp-0, gap 0.076) and one that never touched the eye at all
+(`(106,55,48)` skin-ramp-1 -> `(72,31,34)` skin-ramp-0, gap 0.103, both
+colours straight off the skin ramp). The check had been reporting the
+second pixel's number as if it were the eye's.
+
+**Geometry levers tried first, both falsified before touching the check.**
+The eye box sits `0.004` past the head's front facet and is `0.08` wide;
+both look like plausible causes of a half-occluded sliver at a grazing
+azimuth. Swept `proud` from 0.004 to 0.08 (20x) and box half-width from
+0.04 to 0.08 (2x) against a same-azimuth harness: the *reported* gap did
+not move at all across either sweep -- 0.103 exactly, at every value --
+until `proud` past ~0.05 made the box vanish behind the silhouette entirely
+(0 differing pixels, not an improvement). The number invariant under both
+sweeps was the tell that it was not measuring the eye box's own geometry in
+the first place; both levers are recorded here so a future pass does not
+re-try them expecting a different result.
+
+**Fix: filter the pixel search to the eye's own ramp before taking the
+max.** `check_eye_legibility` now builds the set of colours in `EYE`'s ramp
+once per call and only counts a differing pixel toward the gap if the
+`eyed` render's colour at that pixel is actually a member of that set --
+the same "which ramp did this pixel really come from" question
+`check_buried_detail`'s azimuth pooling and the despeckle reassignment rule
+both already answer by construction, applied here to pixel provenance
+instead of triangle visibility or neighbour colour. Filtered `skin-4`/225
+correctly reports the real pixel: 0.076, not 0.103 -- still a failure
+either way, but now for the right reason and the right number.
+
+**The real finding is scope, not a new mechanism.** Re-ran all seven skin
+tones at azimuth 225 through the filtered check:
+
+    tone     old (unfiltered)   new (filtered)
+    skin-4   0.103  FAIL        0.076  FAIL
+    skin-3   0.204  ok          0.076  FAIL
+    skin-2   0.304  ok          0.076  FAIL
+    skin-1   0.404  ok          0.076  FAIL
+    skin     0.504  ok          0.076  FAIL
+    skin+1   0.602  ok          0.076  FAIL
+    skin+2   0.602  ok          0.076  FAIL
+
+Every tone lands on the *identical* 0.076 -- the eye pixel that survives
+occlusion at this azimuth clamps to its ramp's darkest step regardless of
+skin tone, and so, independently, does the one skin pixel next to it that
+the old check's `max()` had been substituting in its place for six of the
+seven tones. The old check was not measuring six different real numbers
+that happened to clear the floor; it was measuring one incidental artefact,
+six times, that happened to be large enough not to notice the real defect
+underneath it. `manifest.py --check --style cozy_ghibli`: 3 -> 9 errors,
+all six new lines this exact tone-invariant azimuth-225 failure, warnings
+unchanged (17 -> 17). `--style snes_rpg`: 4 -> 4 errors, 18 -> 18 warnings,
+byte-identical -- this style's own eye/skin ramp relationship at azimuth
+225 already clears 0.15 for every tone under the filtered check too, so
+nothing here was hiding anything for it. Full 40-test suite: 40 passed,
+unaffected (none of it exercises this check).
+
+**Left open, honestly.** This is the same "real defect, only a fix for the
+*check* shipped, the underlying geometry issue is not resolved" shape as
+the `drip_brewer` glass-cap entry above, not a full close. Azimuth 225
+places a front-mounted eye at a near-grazing view of its own facet, where
+almost the entire box is occluded by the head's own silhouette and the
+sliver that survives sits exactly where lambert clamps both the eye
+material and the skin material to their ramp floors -- a property of that
+one facet's normal at that one camera angle, invariant to the eye box's own
+position or size, as the falsified geometry sweeps above show directly. A
+fix would need a lever that changes the *facet*, not the box: more head
+segments so 225 lands mid-facet instead of at its edge, or accepting that
+`EYE_LEGIBILITY_AZIMUTHS` should not list 225 as a safe angle for a
+front-mounted eye at all. Neither was attempted this pass -- flagged as a
+concrete next step rather than guessed at now.
+
+New branch (`eye-legibility-ramp-membership-filter`), stacked conceptually
+on `eye-legibility-single-azimuth` (same function, no line conflict since
+that branch only touched the `azimuths` default and this one only touches
+the pixel filter) but not based on its branch -- both are independently
+mergeable in either order. Left unmerged per standing practice.

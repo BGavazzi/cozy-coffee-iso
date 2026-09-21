@@ -1058,8 +1058,10 @@ def check_eye_legibility(ramps=None, azimuths=EYE_LEGIBILITY_AZIMUTHS) -> list[s
     """
     from render_batch import frame_all, render_sprite
     from oklab import srgb_to_oklab
-    from pixelize import load_palette
+    from pixelize import load_palette, material
     ramps = ramps or load_palette()
+    eye_rname, _ = material(EYE)
+    eye_ramp_colors = set(ramps[eye_rname])
     out = []
     for tone in SKIN_TONES:
         bare = merge(head(tone))
@@ -1070,9 +1072,18 @@ def check_eye_legibility(ramps=None, azimuths=EYE_LEGIBILITY_AZIMUTHS) -> list[s
                                      span=span, centre=centre)
             _, eyed = render_sprite(eyed_mesh, az, 48, 4, ramps,
                                     span=span, centre=centre)
+            # Restricted to pixels the EYE material actually painted (its own
+            # ramp's colours) -- not every pixel that merely changed. Adding
+            # the eye geometry can nudge a neighbouring skin pixel's lambert
+            # across a ramp-step boundary (still skin, one index darker or
+            # lighter) with no eye involved at all, and that incidental shift
+            # can carry a larger OKLab distance than the real, much fainter
+            # eye pixel beside it -- see the azimuth-225 case this floor was
+            # bracketed against below.
             gaps = [math.dist(srgb_to_oklab(a[:3]), srgb_to_oklab(b[:3]))
                     for a, b in zip(plain, eyed)
-                    if a is not None and b is not None and a != b]
+                    if a is not None and b is not None and a != b
+                    and b[:3] in eye_ramp_colors]
             at = "" if az == 45.0 else f" at azimuth {az:.0f}"
             if not gaps:
                 out.append(f"skin '{tone}'{at}: the eyes render no pixels "
