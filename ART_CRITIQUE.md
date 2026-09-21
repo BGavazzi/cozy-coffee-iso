@@ -9467,3 +9467,61 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## An hour's audit that found three candidates already closed, not one new fix
+
+Three "accepted limitation" -shaped candidates were checked this hour, each
+re-verified against live code/checks rather than trusted from the doc
+alone. None generalized into a new fix; recorded together rather than
+padded into separate sections for the sake of one each.
+
+- **`fridge_under`/`tip_jar`'s dead `seed` parameter, suspected stale.** The
+  "full library" section above (`assetlib.py` 24 seeded builders, 15 gated)
+  names this bug and explicitly defers it ("Left for a follow-up in
+  `NEXT.md` rather than fixed here"), written before line 5039's own later
+  entry landed. Checked whether that later fix actually reached `main`, not
+  assumed from the docstring's own forward reference: `git log -S "seed
+  parameter that did nothing"` finds `81e50aa`, confirmed on `main`
+  (`git branch --all --contains` includes it), `tools/assetlib.py` shows
+  both functions using the real `_mix(seed)`/`rnd()` closure today, and
+  `tools/art_review.py`'s `GENERATORS` carries both with real floors
+  (`fridge_under` 1.5%/0.5%, `tip_jar` 0.55%/5%). `NEXT.md` line 377 already
+  says "Landed (PR #43)". Genuinely closed, on `main`, correctly documented
+  in both files -- not a stale bullet, just a defect whose write-up sits
+  earlier in this append-only file than its own resolution does.
+- **`check_focal_contrast --style snes_rpg`'s L-run/island contrast
+  failures, this hour's original queued topic.** Already investigated in
+  full by PR #129 (`focal-contrast-floor-is-not-a-step-count-problem`):
+  measured across all 5 topologies rather than assuming a uniform
+  palette-step-count cause, found the drop is NOT uniform (galley actually
+  reads *higher* under `snes_rpg`), rendered and eyeballed both failing
+  rooms at delivery resolution, and concluded honestly that the cause is
+  topology-specific geometry interacting with `snes_rpg`'s own ramp
+  choices -- "a palette-authoring question, not a measurement bug." Left
+  open, already at the same rigor this file holds every other honest
+  non-generalizing finding to (`espresso_machine`, `table_4top`). Nothing
+  to add this hour beyond confirming the finding still matches current
+  `main` (`manifest.py --check --style snes_rpg` still reports exactly
+  these two lines, unchanged).
+- **"Counter orientation costs the focal lead 0.04 and nothing
+  compensates,"** still on the "Still open" list above, unstruck. Real,
+  measured (N·L = −0.116 vs +0.874 between the two facings) and
+  deliberately left because "the orientation is weak and not broken" --
+  no room currently fails *because* of this alone. The one lever the
+  original entry considered (boosting the rig's own lighting/geometry
+  until the metric agreed) was correctly rejected as tuning the instrument
+  to the answer. A genuinely different lever exists and was never tried --
+  a second, fill-style light reducing the N·L spread between facings is a
+  rendering-stage change, not a geometry knob -- but it is also global: it
+  would touch the lambert value behind every check in this file that reads
+  a pixel, across both style packs, not just the two rooms nearest this
+  particular floor. Left untried this hour on purpose rather than half-done
+  under time pressure: the blast radius doesn't match the size of the
+  actual problem, since nothing is currently failing from it. A candidate
+  for a pass with room to run the full regression matrix (every `check_*`
+  that reads pixels, both styles, byte-identical or explained) before
+  touching it, not a same-hour experiment.
+
+No PR beyond this doc entry -- nothing in the repo changed. Recorded so the
+next hour that reaches for these three candidates starts from what was
+already checked instead of re-deriving it.
