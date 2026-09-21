@@ -627,6 +627,30 @@ def check(man: dict, style: str = "cozy_ghibli") -> int:
         from build_plan import check_stool_occupancy
         for msg in check_stool_occupancy():
             errs.append(f"occupancy: {msg}")
+        # Props get the same duplicate-sprite-set audit `portrait.py`'s own
+        # `check_distinct` already gets here (PR #176) -- `furnish.py`'s own
+        # `check_distinct` is the check that caught `saucer`/`cup_latte`
+        # shipping as one asset under two declared ids (see its own
+        # docstring), but it only ever runs inside `furnish.py`'s own full
+        # (non---only) build, never re-verified against what actually
+        # shipped. Reads the already-built `out/sprites/manifest.json` and
+        # PNGs rather than re-rendering, same as `check_ui` does for `cat:
+        # ui` -- this validates what shipped, not what a fresh run would
+        # produce.
+        from style import DEFAULT_STYLE
+        from furnish import check_distinct as check_props_distinct
+        sprites_dir = (ROOT / "out" / "sprites" if active.name == DEFAULT_STYLE
+                      else ROOT / "out" / "sprites" / active.name)
+        sprites_manifest = sprites_dir / "manifest.json"
+        if sprites_manifest.exists():
+            rows = json.loads(sprites_manifest.read_text(encoding="utf-8"))
+            by_asset: dict[str, list[dict]] = {}
+            for row in rows:
+                by_asset.setdefault(row["asset"], []).append(row)
+            prop_reports = [{"id": aid, "dir": sprites_dir, "entries": rows_}
+                            for aid, rows_ in by_asset.items()]
+            for msg in check_props_distinct(prop_reports):
+                errs.append(f"furnish: {msg}")
     except Exception as exc:                       # pragma: no cover
         warns.append(f"clip cross-check skipped: {exc}")
 

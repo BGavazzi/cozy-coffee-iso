@@ -9467,3 +9467,74 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## `furnish.py`'s own duplicate-sprite-set check was the same gap shape a fifth time, and the first one outside UI/character producers
+
+Continuing the hand-classification that already found `organic_rig.py`,
+`portrait.py` (#176), and `ui_forge.py`/`ui_chrome.py` (#179) unreachable
+from `manifest.py --check`: `furnish.py`'s own `check_distinct(reports)` --
+"do any two ids render the same eight images?" -- is exactly the same check
+`portrait.py`'s own `check_distinct` already got wired in for (#176), one
+producer over. Its own docstring names the real defect it exists to catch:
+`saucer` and `cup_latte` both resolved to the same `cup_and_saucer` mesh
+under `fit`'s uniform scaling, shipping as one asset under two declared
+`cat: props` ids, invisible to every *per-asset* check because each of the
+two assets was individually fine.
+
+Confirmed via `grep -n "check_distinct" tools/furnish.py`: exactly two hits,
+both inside `furnish.py` itself -- the real call, inside `main()`'s
+full-build blocker (skipped entirely when `--only` is used, and never
+consulted again afterward), and one mention in an error string. Nothing in
+`manifest.py` ever re-verifies this against what's actually shipped in
+`out/sprites/`.
+
+**Fix:** `manifest.py`'s `check()`, right after the existing
+`check_stool_occupancy()` call, now reads `out/sprites/manifest.json` (or
+`out/sprites/<style>/manifest.json` for a non-default style) directly off
+disk -- not re-rendering, the same "validate what shipped" pattern
+`check_ui()` already uses -- groups the rows by `asset`, and calls
+`furnish.py`'s own `check_distinct()` function directly against them, rather
+than reimplementing its hashing logic a second, divergeable way. Reported as
+an error (`furnish: {msg}`), matching `furnish.py`'s own treatment of this
+as a build blocker rather than a warning.
+
+**Zero regression, git-stash verified both directions** (with-fix run,
+independently re-confirmed via a true stashed baseline, both matching):
+
+| style | before | after |
+|---|---|---|
+| cozy_ghibli | 3 errors, 17 warnings | 3 errors, 17 warnings |
+| snes_rpg | 4 errors, 18 warnings | 4 errors, 18 warnings |
+
+Both currently-shipped prop libraries (`out/sprites/`, 57 assets;
+`out/sprites/snes_rpg/`, 56 assets) already pass cleanly -- same as every
+fix in this shape so far, the value is catching a future collision like the
+`saucer`/`cup_latte` one, not a currently-failing asset.
+
+**Teeth test:** picked two declared props sharing the same symmetry class
+(`sym: none`, both with all 8 azimuths built) -- `armchair` and `bean_sack`
+-- backed up `bean_sack`'s real 8 PNGs, then overwrote
+`bean_sack_dir{0-7}.png` with `armchair_dir{0-7}.png`'s exact bytes
+(confirmed byte-identical via `sha256` across all 8 directions before
+re-running the check). Re-ran `manifest.py --check --style cozy_ghibli`:
+one new line appeared that the clean baseline never reports --
+
+```
+ERROR   furnish: identical sprite sets for ['armchair', 'bean_sack'] -- these are one asset under two declared ids, not two assets
+```
+
+(4 errors, 17 warnings -- exactly the baseline's 3 plus this one, nothing
+else moved.) Restored `bean_sack`'s real PNGs from backup immediately after,
+confirmed via `sha256` the two assets no longer match, and confirmed
+`out/sprites/` is gitignored/untracked throughout (no trace before, during,
+or after). 40-test suite
+(`tools/test_content_pipeline.py`/`tools/test_design_wizard.py`/`tools/test_game_factory.py`)
+passes.
+
+This is the fifth instance this session of the "a producer measures a real,
+disjoint property that `manifest.py`'s generic per-section audit never
+touches, and only checks it at its own generation time" gap shape, and the
+first one outside a UI or character producer -- `organic_rig.py`,
+`portrait.py`, and `ui_forge.py`/`ui_chrome.py` were all character or UI;
+`furnish.py` is a prop producer, suggesting the shape generalizes across the
+whole pipeline rather than being specific to any one producer family.
