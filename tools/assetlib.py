@@ -2061,6 +2061,17 @@ def tip_jar(seed: int | None = None) -> Mesh:
     closing are the same object at different fill -- plus a small jar-radius
     and label-height wobble, both bounded well inside the outer glass so the
     label never pokes past the rim.
+
+    The coins are the outer surface below the fill line, not a smaller prism
+    drawn inside a full-height glass shell -- the same fix `bean_hopper`'s own
+    comment already documents and applies ("this rasteriser has no
+    transparency... so the wall is beans, and the glass is two narrow bands").
+    A same-radius-inside-glass coin prism never won a single pixel at any of
+    the 8 ship azimuths (confirmed by `check_buried_detail`, 42% buried, flat
+    across every azimuth because a radially symmetric shell hides its own
+    interior identically no matter which way it turns), which silently
+    defeated the one line in this docstring that has always said the coin
+    mass is the point of the object.
     """
     st = None if seed is None else _mix(seed)
 
@@ -2075,8 +2086,8 @@ def tip_jar(seed: int | None = None) -> Mesh:
     fill = 0.05 + rnd() * 0.14
     label_z = 0.13 + rnd() * 0.05
     m = Mesh()
-    m.add_prism((0.5, 0.5, 0.0), r, r, 0.30, GLASS, 12)
-    m.add_prism((0.5, 0.5, 0.0), r * 0.87, r * 0.87, fill, "gold_coin", 12)  # coins
+    m.add_prism((0.5, 0.5, 0.0), r, r, fill, "gold_coin", 12)       # coins, outer wall
+    m.add_prism((0.5, 0.5, fill), r, r, 0.30 - fill, GLASS, 12)     # empty headspace
     m.add_prism((0.5, 0.5, label_z), r * 1.03, r * 1.03, 0.07, "cream+2", 12)  # label
     m.add_prism((0.5, 0.5, 0.30), r * 1.05, r * 1.05, 0.035, "neutral+1", 12)  # ring
     return m
