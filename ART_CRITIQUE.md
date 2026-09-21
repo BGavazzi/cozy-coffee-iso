@@ -9467,3 +9467,71 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## Two more "deliberately left" claims, both already closed by later commits already on `main`
+
+Same search this file's own tileset-wiring finding used: grepped for
+`deliberately left|Not fixed here|left unfixed on purpose|coverage note` and
+worked through every hit not yet individually checked. Two of them turned
+out to be the exact "prose claim outlived the code it described" shape the
+`NEXT.md`/`PIPELINE.md` stale-count entries already named, just never
+checked against `git log` before now.
+
+**`organic_rig.py`'s checks, claimed "Not wired into `manifest.py --check`,
+and deliberately left that way this hour" (line 8347).** That claim's own
+commit (`9e7b4b6`, 2026-09-17 15:30) is real and accurate as of when it was
+written. `tools/manifest.py`'s current `check()` (lines 506-513) already
+imports `organic_rig` and calls `check_roster`/`check_eyes_visible`/
+`check_direction_stability` for any `cylinder_sphere`-rig style, unconditional
+on nothing but the rig primitive. Traced it: `git log --all -S
+"cylinder_sphere" -- tools/manifest.py` finds `614e06f` ("wire in
+organic_rig.py, the rig that actually ships for cylinder_sphere styles",
+2026-09-18 04:41) and a same-day follow-up `6582f6f` ("manifest.py still
+reported the non-shipping box/prism roster as build-blocking for
+cylinder_sphere styles", 2026-09-18 14:24) that stopped the pre-existing
+box/prism checks from also running against `snes_rpg`'s roster. Both are
+already merged to `main`, both already carry their own honest ART_CRITIQUE.md
+write-ups (70 and 63 lines respectively) — this file's own later entries
+already superseded the line-8347 claim; it just never got a backward pointer.
+Nothing to fix here. `git branch --all --contains 9e7b4b6` shows a whole
+graveyard of session branches for this exact rig, including one literally
+named `manifest-check-missing-organic-rig`, already fully merged (`git log
+--oneline origin/main..origin/manifest-check-missing-organic-rig` is empty).
+
+**`check_albedo_regression`'s `manifest.py` call site, claimed "deliberately
+left bare until the floor/ceiling question above is actually resolved" (line
+8009), the floor/ceiling question being per-style `ALBEDO_L_FLOOR`/
+`ALBEDO_L_CEIL` recalibration, named a "separate, larger pass" at the time.**
+Also already done: `tools/manifest.py:584` calls
+`check_albedo_regression(ramps=ramps, checks=active.checks)`, and
+`tools/ingest.py`'s `check_albedo_regression`/`check_albedo_centre` both
+read `checks.get("albedo_l_floor", ALBEDO_L_FLOOR)` /
+`checks.get("albedo_l_ceil", ALBEDO_L_CEIL)`. `styles/snes_rpg/bible.yaml`
+carries its own real, empirically-derived override (`albedo_l_floor: 0.479`,
+`albedo_l_ceil: 0.860`), not just plumbing with nothing behind it. Commit:
+`ee23571` ("ingest.py: per-style albedo floor/ceiling, closing the deferred
+narrower case", 2026-09-18 15:50, on `main`).
+
+**Four other candidates from the same grep pass, checked and confirmed
+correctly still-open or non-bugs, no action:** the galley `focal_box`
+mean-L/detail failure (line ~5349, a real structural consequence of the
+box's own size the commit that found it explicitly declined to fix by
+loosening the floor — re-verified live at n=12, still 3/3, still
+style-independent); `bitmap_font.py`'s `block()` leaving its line-height
+`glyph_box("A", cap)` call at weight 1 on purpose (line ~7451, checked
+directly that height/baseline don't move across weights — never the bug);
+the `reader`/`archivist` `neutral-2` hair/eye collision under `snes_rpg`
+(line ~6181, already fixed within its own entry's hour, not a live gap); and
+`check_buried_detail`'s widened-coverage warnings for `bookshelf`/`chair`/
+`menu_board`/`wall_art_framed` (line ~8575, real per-asset modelling debt,
+correctly left as warnings rather than quietly widening `ACCEPTED_BURIAL` —
+each already has its own named fix branch elsewhere in this session's
+history).
+
+**Net for this hour: no new code fix.** Two stale-doc corrections (this
+entry) are the shippable output — same shape as the `NEXT.md`/`PIPELINE.md`
+stale-count PRs earlier this session, just caught in `ART_CRITIQUE.md`
+itself this time. Verified via `git log`/`git blame`/`git branch --all
+--contains`, not assumed from memory, per this session's own "verify
+empirically" rule applied to its own prior claims, not just to the shipped
+game.
