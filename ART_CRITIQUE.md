@@ -9467,3 +9467,44 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## PR-pile reconciliation round six (35 -> 43, one stale assumption caught along the way)
+
+`gh pr list --state open` had been read as "30, unchanged for several hours"
+across this session's last several hourly checks -- trusted at face value
+each time, per the standing discipline of re-checking rather than assuming.
+It was wrong the whole time for a boring reason: `gh pr list` defaults to a
+page size of 30 and every one of those checks piped straight to `wc -l`
+without a `--limit`, so the count silently capped at exactly 30 regardless
+of the real total. `--limit 200` this hour reads the true number: **43**
+open PRs, `#128` through `#170`, not 30. Worth naming precisely because it
+is the same shape of bug this whole recurring audit exists to catch --
+a measurement that looks like a real answer and is actually reporting a
+ceiling -- just found in this session's own tooling instead of the game's.
+
+43 crosses the 35+ resweep threshold round five (`#163`) set by a wide
+margin (round five swept at 35; this is +8 since then, `#163` through
+`#170`). Same method as every prior round: sequential merge of all eight
+new branches into a scratch worktree on top of `main`, in PR-number order.
+
+**Zero new real conflicts.** All eight (`#163`-`#170`) merged clean --
+fast-forwards where nothing preceded them, ordinary three-way merges
+elsewhere, `ART_CRITIQUE.md`'s own expected append-point the only file that
+ever needed auto-merging. Notably `#166`, `#167` and `#168` all touch
+`tools/assetlib.py`/`tools/mesh.py` (bean_hopper's cap seams, sandwich_
+board's skip faces, drip_brewer's follow-up) and `#170` touches `tools/
+character.py` (eye-legibility pixel filter) -- none of the four collide
+with each other or with anything upstream. Full 40-test suite: 40 passed
+on the fully-merged tree.
+
+**The two standing conflicts from round four/five, actually re-verified
+this time rather than carried forward again:** `#150` vs `#128` (galley
+`focal_box`, unchanged, `#128` wins) still conflicts as before. `#148` vs
+`#143` had been repeated across four rounds without anyone re-running the
+merge since round two first found it -- exactly the kind of claim this
+hour's PR-count bug shows is worth re-checking rather than trusting on
+its own past word. Re-ran it directly: still a real, three-file conflict
+(`ART_CRITIQUE.md`, `PIPELINE.md`, `README.md`) -- the carried-forward
+claim was correct, just never actually re-verified until now.
+
+Doc-only, no code changed. Left unmerged per standing practice.
