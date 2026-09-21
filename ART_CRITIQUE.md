@@ -9467,3 +9467,98 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## `ui_forge.py`'s icon-coverage check and `ui_chrome.py`'s nine-slice check were the same gap as `portrait.py` and `bitmap_font.py`, one producer pair later
+
+The "N checks" hand-classification done for the `portrait.py` fix (see
+"`portrait.py`'s own checks were never wired into `manifest.py --check`
+either") mapped every `check_*` function in `tools/*.py` to its call sites.
+Revisiting that map against the two remaining UI producers found the same
+shape of gap a third and fourth time, in `ui_forge.py` and `ui_chrome.py`:
+
+- `ui_forge.check_icon(px, target, ramps)` measures three things: off-palette
+  pixels, isolated-pixel speckle, and frame coverage (`MIN_ICON_COVERAGE`,
+  the percentage of the target square an icon must actually fill to read at
+  size). It has exactly one call site in the whole repo: inside
+  `ui_forge.forge()`'s own retry loop, which regenerates an icon until this
+  check passes before ever writing the PNG.
+- `ui_chrome.check_nine_slice(px, w, h, insets)` measures whether the
+  declared stretch bands are pixel-constant along their own axis -- a frame
+  whose band isn't constant will visibly smear when nine-sliced up at
+  runtime. It also has exactly one call site: inside `ui_chrome.build()`'s
+  own write gate.
+
+`manifest.py`'s `check_ui()` already audits every declared `cat: ui` entry
+generically -- off-palette percentage and isolated-pixel ratio, for both
+`ui_forge` icons and `ui_chrome` frames alike. Those two properties are
+exactly the two `check_icon` and `check_nine_slice`'s own coverage/isolation
+halves already duplicate. But neither producer's *other* property --
+`check_icon`'s coverage floor, `check_nine_slice`'s band-uniformity test --
+was ever re-verified anywhere outside its own producer's generation-time
+retry loop. `check_ui()`'s own docstring already states the exact reason
+this matters: "a file can be built, pass at build time, and later be
+replaced by hand or by a palette change; this is the check that would
+notice" -- true for the properties it already checks, silently untrue for
+the two it didn't.
+
+This is the identical shape to the `bitmap_font.py` finding (a declared,
+shipped `cat: ui` asset whose producer measures a real, disjoint property
+that `manifest.py`'s existing pixel audit never touches), applied to the
+other two UI producers. Confirmed via `grep -rn "check_nine_slice(\|check_icon("
+tools/*.py` that each name appears exactly twice: once as its own
+definition, once as its own producer's sole call site.
+
+**Fix:** `manifest.py`'s `check_ui()` per-`aid` pixel-audit loop (the same
+loop that already computes off-palette% and isolated-pixel ratio for every
+declared `cat: ui` id) now also computes frame coverage and compares it
+against `ui_forge.MIN_ICON_COVERAGE`, and, for any id with a declared
+nine-slice (`ui_chrome.CHROME` entries with insets), re-runs
+`ui_chrome.check_nine_slice` against the resolved insets. The insets
+themselves are read from `nine_slice.json`, a per-style artifact
+`ui_chrome.py`'s own `main()` already writes next to the PNGs it describes
+(`out/ui/nine_slice.json` for the default style, confirmed to exist on disk
+with real data: `ui_dialogue_frame`, `ui_nameplate`, `ui_upgrade_frame`) --
+reusing it rather than re-deriving `scale`/insets a second, divergeable way,
+the same pattern `check_ui()` already uses for `ui_font`'s `font.json`.
+Unconditional, not gated on style or rig primitive -- both properties are
+pixel/JSON-level and independent of the active palette or character rig.
+
+**Zero regression, git-stash verified** (this session's standard mitigation
+for background-task timing risk across an hour boundary: stash the edit,
+run a true baseline, diff against the earlier uncertain-timing run, confirm
+byte-identical, pop, re-run with-fix, diff again):
+
+| style | before | after |
+|---|---|---|
+| cozy_ghibli | 3 errors, 17 warnings | 3 errors, 17 warnings |
+| snes_rpg | 4 errors, 18 warnings | 4 errors, 18 warnings |
+
+Both currently-shipped UI libraries (`out/ui/`, `out/ui/snes_rpg/`) already
+pass both new properties cleanly -- same as `portrait.py`/`bitmap_font.py`
+before them, the value here is catching future drift or a hand-replaced
+file, not a currently-failing asset.
+
+**Teeth test:** temporarily overwrote `out/ui/nine_slice.json`'s
+`ui_dialogue_frame` entry from its real value `[24, 12, 14, 17]` to a
+deliberately-broken `[1, 1, 1, 1]`, re-ran `manifest.py --check --style
+cozy_ghibli`. Two new lines appeared that the unmodified baseline never
+reports:
+
+```
+warning ui: ui_dialogue_frame: row 0 is not constant across the horizontal stretch band x=[1,63) -- it would smear when the frame widens
+warning ui: ui_dialogue_frame: column 0 is not constant across the vertical stretch band y=[1,47) -- it would smear when the frame grows taller
+```
+
+(3 errors, 19 warnings -- exactly the clean baseline's 17 plus these two,
+nothing else moved.) Reverted the corruption immediately after
+(`out/ui/nine_slice.json` is a build artifact, not git-tracked; confirmed
+`git status`/`git diff` show no trace either during or after the test).
+40-test suite (`tools/test_content_pipeline.py`,
+`tools/test_design_wizard.py`, `tools/test_game_factory.py`) passes.
+
+This closes the fourth and, per the same hand-classification that found
+`organic_rig.py` (an earlier session), `portrait.py` (this session, above),
+and `bitmap_font.py` (this session, above), likely last instance of this
+specific gap shape in the current UI/character producer set: a real,
+disjoint, generation-time-only property with a declared shipped asset and
+no re-verification at `manifest.py --check` time.
