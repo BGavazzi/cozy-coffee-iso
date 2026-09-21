@@ -9550,3 +9550,76 @@ comment proves it), `tip_jar` got it this session (#162), `drip_brewer`
 and `pourover_stand` got it this hour (one fully resolved, one
 substantially improved and honestly left open), and `lamp_table` turned
 out to need no fix at all -- verified structural occlusion, not a defect.
+
+
+## `drip_brewer`/`pourover_stand`: the redundant-cap-seam lever, applied where it's actually safe
+
+The section above ("Closing the loose thread") left `drip_brewer` at 46%
+buried on purpose, naming the likely cause but not chasing it: "a redundant
+internal seam (coffee's top cap sits flush against glass's bottom cap, both
+closed solids)." `bean_hopper` and `sandwich_board` (this session, two
+different open branches) have since verified exactly that lever --
+`Mesh.add_prism`'s new `cap_top`/`cap_bottom` and `Mesh.add_box`'s new
+`skip` -- against two other assets. Came back to spend it here, on the
+asset that named it first.
+
+**Not a single fix -- two, with different risk, verified separately.**
+`front_facing`/`visible_faces` across all 8 real ship azimuths finds 28
+always-hidden faces in `drip_brewer`, in three groups: coffee's own top cap
+(10 faces, flush against glass's bottom -- the exact `bean_hopper` seam),
+glass's own top cap (10 faces, NOT touching anything -- there's a real
+0.05-unit air gap before the brew head begins -- but occluded by the brew
+head's overhang from every angle the check samples), and 8 faces scattered
+across the base/column/warm-plate/handle assembly, unrelated to the
+coffee/glass carafe and not this pass's concern.
+
+**Coffee's cap: verified safe, shipped.** Byte-identical sha256 render
+hashes at all 8 real ship azimuths, before and after, through the real
+`render_sprite` path -- the same clean pass `bean_hopper`/`sandwich_board`
+got. `cap_top=False` on `drip_brewer`'s coffee prism.
+
+**Glass's cap: tested, found NOT safe, reverted.** This is exactly the
+warning `chair`'s own commit already put in writing -- "the check's own
+occlusion pass (res=160) and the shipped supersampled render disagreed."
+Dropping glass's top cap cleared `check_buried_detail` entirely (36% -> 0%)
+but broke byte-identical rendering at 3 of the 8 azimuths (45, 90, 135) --
+confirmed by hash, then isolated by testing the coffee-only change alone
+(which matched "before" at all 8) to prove it was specifically the glass
+cap doing it, not some other interaction. The air gap under the brew head
+is real enough, at some azimuths, for a sliver of that cap to actually
+matter -- occlusion-by-overhang isn't the same guarantee as occlusion-by-
+touching-seal, even though both looked identical to the res=160 check.
+Reverted; `drip_brewer` ships with only the coffee-cap fix.
+
+**Honest result, not forced:** `drip_brewer` 46% -> **36%** -- real
+improvement, still above the 30% floor, left open rather than chased into
+the riskier fix. Same discipline the section above already used once for
+this exact asset.
+
+**`pourover_stand` gets the same coffee-cap fix as a bonus.** It already
+clears `check_buried_detail` (`findings: []`, unchanged before and after),
+but carries the identical coffee/glass seam (`front_facing`/`visible_faces`
+found its own coffee top cap, 10 of its 22 always-hidden faces, same
+flush-radius pattern). Applied for consistency and real triangle-count
+reduction, not because anything required it -- verified the same way,
+byte-identical renders at all 8 azimuths, confirmed safe before shipping.
+The remaining 12 always-hidden faces (a ring and a cone cap near the top of
+the pour-over arm) are a different assembly, not investigated here.
+
+**Verified, both assets, `manifest.py --check`, both styles, against a real
+stashed baseline of this exact branch (not assumed from an earlier commit
+message):** `cozy_ghibli` 3 errors/15 warnings both before and after --
+warning *count* unchanged, because `drip_brewer`'s line stays present, just
+with its number moved (46% (238/520) -> 36% (158/440)); every other line,
+text-identical. `snes_rpg` 4 errors/16 warnings, same pattern -- only
+`drip_brewer`'s number changed, `pourover_stand` contributes no line in
+either run since it already passed before this change.
+
+**Where this leaves the lever.** Two for two on the flush-seal case
+(`bean_hopper`, now `drip_brewer`/`pourover_stand`'s coffee), zero for one
+on the overhang-gap case (`drip_brewer`'s glass) -- the distinction that
+matters is touching-by-construction versus occluded-by-nearby-geometry, and
+only the first is safe to assume from the geometry alone. The second still
+needs the real render check every time, which is exactly why this file
+keeps running it rather than trusting `check_buried_detail` clearing as
+sufficient on its own.
