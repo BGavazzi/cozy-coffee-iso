@@ -9467,3 +9467,73 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## `ui_heart_mood`: a fourth icon in the same "passes `check_icon`, fails the eye" family, and the 14-icon "not built" warning was a local tooling gap, not a code defect
+
+Every hourly `manifest.py --check` run this whole audit loop has printed `warning
+ui: 14 declared but not built: ui_clock_day, ui_heart_mood, ui_icon_bagel, ...`
+despite this file's own history recording those exact icons as already fixed and
+building clean at "20/20" (the `ui_icon_milk`/`ui_icon_muffin` section two above).
+Chased why rather than continuing to treat it as background noise: the system
+`python` on PATH has no `torch`, `numpy`, or `PIL` at all -- `ModuleNotFoundError:
+No module named 'torch'` on the first attempt. Not a repo/infra blocker like
+TRELLIS2/UniRig's missing CUDA toolchain; `NEXT.md`'s own "Environment" section
+already says plainly, "Python is `.venv/Scripts/python.exe`. The system `python`
+on PATH has no numpy, no torch, no PIL." A wrong-tool mistake on this machine's
+checkout, caught by reading the repo's own setup docs before accepting the error
+as a real finding.
+
+Built all 14 with the right interpreter: **13/14 built clean on the first pass**,
+one reseed for `ui_icon_pastry` (already-known frame-fill gate, auto-reseed
+handled it). The "declared but not built" warning fully disappeared from a fresh
+`manifest.py --check`. This has no code change of its own -- `out/` is gitignored
+-- so it is recorded here rather than shipped as a diff.
+
+Looked at all 14 by eye rather than trusting the gate (`proof/ui_14_icons_newly_
+built_contact_sheet.png`), the same discipline the `ui_coin`/`ui_icon_milk`
+sections above used. Thirteen read as their intended subject.
+`ui_icon_bagel` looked small and grainy at first glance; a 6x zoom
+(`proof/ui_icon_bagel_zoom_reviewed_ok.png`) shows a plausible sesame bagel, not
+a clear defect -- looked at, nothing to fix.
+
+**`ui_heart_mood` is a real fourth instance of the family.** At its default seed
+(1, today's silent default with no override), `check_icon` passes it clean, but
+the actual image is a small dark angular blob that reads as a bird or a torn
+wing -- confirmed by eye at 6x zoom
+(`proof/ui_heart_mood_default_seed1_zoom.png`). `check_icon`'s isolated-pixel
+rule has nothing to say about *shape*, same gap already named for `ui_coin` and
+`ui_icon_milk`/`ui_icon_muffin` above -- clean pixel adjacency is not the same
+claim as "recognizable as the prompted subject."
+
+**Swept seeds 1-6** (`ui_forge.forge()` called directly against the loaded
+`cozy_ghibli` pipe, each seed copied out before the next call overwrote it):
+`proof/ui_heart_mood_6seed_sweep.png` (3x zoom, all 6 side by side) and the raw
+frames in `proof/ui_heart_mood_seed_sweep/`. Seeds 1 and 4 are unreadable (a
+blob; a dark chaotic maze-like tangle). Seeds 2, 3, 5 and 6 are each a clean,
+unambiguous heart. All 6 confirmed to pass `check_icon` on their own -- the gate
+was never the problem, the drawn shape was.
+
+**The fix:** `UI_SEED_OVERRIDE` gains `ui_heart_mood: 2` in `tools/ui_forge.py`
+-- picked 2 as the first passing seed in the sweep, matching this file's own
+"first-good-seed, not best-of-several" convention (`ui_icon_milk`/`ui_icon_
+muffin` above), not seed 5, which read as the visually cleanest of the four but
+loses to 2 on the file's own stated rule. Confirmed `ui_heart_mood` is not one of
+the six chrome ids (`ui_ticket`, `ui_coin`, `ui_dialogue_frame`, `ui_nameplate`,
+`ui_upgrade_frame`, `ui_star_rating`) that `ui_chrome.py` silently overwrites --
+unlike the now-dead `UI_SEED_OVERRIDE["ui_coin"]` entry this file already
+documents removing, this override is real and reachable.
+
+**Verified.** Rebuilt via the real `tools/ui_forge.py` CLI path (not the
+standalone sweep script) with the override in place: `ui_heart_mood` built OK on
+the first try, no reseed needed, output visually confirmed as the same clean
+heart seed 2 produced in the sweep (`proof/ui_heart_mood_seed2_fixed.png`).
+`manifest.py --check` before and after this change: identical -- 3 errors, 17
+warnings, the same 20 lines verbatim. Expected, not a weak check: this gate has
+no visibility into UI icon subject-legibility at all (it checks 3D geometry
+occlusion and seed-spread, and skin/composition placement -- nothing about
+whether an SDXL icon reads as its prompted subject). That blind spot is exactly
+the gap this fix, and the three before it, close by hand.
+
+**Left exactly as narrow as before.** A fourth icon in the same family
+(`ui_coin`, `ui_icon_milk`, `ui_icon_muffin`, now `ui_heart_mood`) -- still not
+a general fix, still one icon looked at, at a time, by a person.
