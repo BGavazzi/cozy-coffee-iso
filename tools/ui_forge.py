@@ -157,6 +157,26 @@ UI_SEED_OVERRIDE = {
     # muffin write-up in ART_CRITIQUE.md) -- one seed, confirmed by eye,
     # good under both styles, rather than two different per-style picks.
     "ui_icon_muffin": 3,
+    # This id was never built on this checkout before -- `manifest.py
+    # --check`'s "ui: 14 declared but not built" warning had sat unexplained
+    # through several hours of unrelated audits, and turned out to be a
+    # local-environment gap, not a code defect: the system `python` on PATH
+    # has no `torch`, and `NEXT.md`'s own setup section already says to use
+    # `.venv/Scripts/python.exe` for exactly this reason. Built for the first
+    # time with the right interpreter -- 14/14 built clean -- and looked at
+    # all 14 by eye rather than trusting the gate, the same discipline this
+    # file's own `ui_icon_milk`/`ui_icon_muffin` entries above used. Thirteen
+    # read as their intended subject. `ui_heart_mood` at its default seed (1)
+    # passes `check_icon` (the isolated-pixel gate has nothing to say about
+    # shape) but SDXL drew a small dark angular blob that reads as a bird or
+    # a torn wing, not a heart -- confirmed by eye at 6x
+    # (`proof/scratch_ui_heart_mood_zoom.png`). Swept seeds 1-6
+    # (`proof/scratch_heart_seeds_compare.png`): 1 and 4 are both unreadable
+    # (a blob, a dark maze-like tangle); 2, 3, 5 and 6 are each a clean,
+    # unambiguous heart. Picked 2, this file's own first-good-seed
+    # convention (as `ui_icon_muffin`'s own comment states it), not the
+    # "best-looking" of four passing options.
+    "ui_heart_mood": 2,
 }
 
 # An icon that fills too little of its own frame has been drawn small inside
