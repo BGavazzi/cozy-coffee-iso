@@ -78,7 +78,8 @@ class Mesh:
 
     def add_prism(self, centre: Vec, rx: float, ry: float, height: float,
                   material: str, segments: int = 8, phase: float = math.pi / 8,
-                  cap_material: str | None = None) -> None:
+                  cap_material: str | None = None, cap_top: bool = True,
+                  cap_bottom: bool = True) -> None:
         """An n-gon prism with independent x/y radii.
 
         Boxes are the wrong primitive for anything that must look the same from
@@ -87,6 +88,16 @@ class Mesh:
         character built from prisms keeps a stable silhouette through all eight
         directions -- and reads as rounded rather than blocky, which is what the
         art direction wants anyway.
+
+        `cap_top`/`cap_bottom` default on (unchanged behaviour for every existing
+        caller). Turn one off when this prism is one course of a stacked vessel
+        and another prism of equal-or-greater radius sits flush against that cap
+        -- that cap can never win a pixel at any azimuth, by construction, not
+        just at the ones a particular check happens to sample. See
+        `bean_hopper`'s use for the case this was added for, and `check_buried_
+        detail`'s ACCEPTED_BURIAL comment for why an unexplained dropped cap is
+        not something to reach for without first confirming the geometry makes
+        it dead everywhere, not just at the angles checked.
         """
         cx, cy, cz = centre
         top, bot = cz + height, cz
@@ -99,12 +110,14 @@ class Mesh:
             x1, y1 = ring[(i + 1) % segments]
             self.add_quad((x0, y0, bot), (x1, y1, bot),
                           (x1, y1, top), (x0, y0, top), material)
-            ci = len(self.verts)
-            self.verts += [(cx, cy, top), (x0, y0, top), (x1, y1, top)]
-            self.faces.append(((ci, ci + 1, ci + 2), None, cap))
-            ci = len(self.verts)
-            self.verts += [(cx, cy, bot), (x1, y1, bot), (x0, y0, bot)]
-            self.faces.append(((ci, ci + 1, ci + 2), None, cap))
+            if cap_top:
+                ci = len(self.verts)
+                self.verts += [(cx, cy, top), (x0, y0, top), (x1, y1, top)]
+                self.faces.append(((ci, ci + 1, ci + 2), None, cap))
+            if cap_bottom:
+                ci = len(self.verts)
+                self.verts += [(cx, cy, bot), (x1, y1, bot), (x0, y0, bot)]
+                self.faces.append(((ci, ci + 1, ci + 2), None, cap))
 
     def add_cylinder(self, centre: Vec, radius: float, height: float,
                      material: str, segments: int = 24) -> None:
