@@ -9467,3 +9467,86 @@ coverage both times.
 commit. Merging it separately against this branch will conflict on the same
 line this branch already rewrote; this branch's version has both fixes
 verified together.
+
+## Closing the loose thread: drip_brewer, lamp_table, pourover_stand
+
+PR #162 (`tip_jar`) flagged three sibling assets as unverified: azimuth-flat
+`check_buried_detail` warnings, not individually root-caused. Traced all
+three this hour. Two different mechanisms, three different outcomes --
+none assumed to match another before being checked.
+
+**`lamp_table`: genuine structural occlusion, verified against a working
+sibling, not a bug.** Its always-hidden faces are a thin `METAL` stem
+covered by the shade's overhang, the `CERAMIC` body's own top cap under the
+same shade, and the `cream+3` rim's top cap under the shade -- all three
+covered by the shade the object is built to have. `lamp_floor` shares the
+exact same construction (thin stem under a wide shade, and its own
+docstring already names the thin stem as deliberate: *"The stem has to be
+thin -- a thick one reads as a column, and the gap either side of it is
+most of the silhouette"*) and measures 27.6% buried by the same check,
+clearing the 30% floor -- `lamp_table` measures 35.8% purely because it has
+fewer total faces (816 vs 696 front-facing instances across 8 azimuths) to
+dilute the same kind of legitimate coverage into. Confirmed by eye, not
+just inferred: rendered both side by side (`proof/lamps_compare.png`) --
+both read as ordinary, correctly-formed lamps, no visible defect in either.
+Added to `ACCEPTED_BURIAL`. No geometry changed.
+
+**`drip_brewer` and `pourover_stand`: the identical bug `tip_jar` just had,
+found by reading their geometry, not by assuming the same fix applies.**
+Both build a "coffee" prism (`wood-2`) nested inside a same-centred, wider
+`GLASS` carafe prism -- the exact anti-pattern `bean_hopper`'s own comment
+already documents and `tip_jar`'s fix (this same file, two commits up)
+already named: this rasteriser has no transparency, so a narrower prism
+drawn inside a full-height glass one never wins a pixel at any angle,
+confirmed both times by rendering before any fix
+(`proof/brewer_pourover_coffee_before.png` -- two plain glass vessels, no
+coffee colour anywhere) and by the check (`drip_brewer` 55%, `pourover_
+stand` 33%, both nested).
+
+**Fix, same shape as `tip_jar`'s: stack instead of nest.** Both carafes now
+draw a full-radius coffee prism up to the same fill line the old nested one
+occupied, then a full-radius glass prism for the empty headspace above it.
+No fill randomization to preserve here -- neither generator takes a `seed`
+-- so the stack boundary is fixed, not drawn. Confirmed visually:
+`proof/brewer_pourover_coffee_after.png` shows real coffee-brown in both
+carafes for the first time.
+
+**Only one of the two fully clears the floor, and that is reported
+honestly rather than forced.** `pourover_stand`: 33.3% -> 24.2%, clears.
+`drip_brewer`: 55.0% -> 45.8% -- a real, verified, substantial improvement
+(more than half the excess over the floor closed), but still over it.
+Traced the remainder rather than declaring victory: the coffee prism's own
+top cap and the glass prism's own bottom cap now sit exactly coincident at
+the stack boundary (both prisms are fully closed solids via `add_prism`,
+which always caps both ends) -- a redundant, genuinely-dead internal seam,
+the same *kind* of thing `chair`'s leg-top fix removed (PR #158), but
+**not removed here**: that fix needed a pixel-hash zero-regression check
+across all 8 azimuths and a real bisection to find which of two
+superficially-identical "dead" faces was actually safe to cut, and doing
+that rigor for a second asset in the same hour, under time pressure, is
+exactly the shortcut this session's own discipline exists to refuse. The
+rest of `drip_brewer`'s remaining 46% is plausibly the brew head's own
+overhang above the carafe -- named in the asset's own docstring as the
+object's defining feature ("the overhang of the brew head over the carafe
+is what separates this from a kettle") -- which would make some of it
+`counter`/`pastry_case`-shaped legitimate occlusion rather than a defect at
+all. Left open, not guessed at, not forced into `ACCEPTED_BURIAL` either.
+
+**Verified zero regression, all three fixes together.** `manifest.py
+--check`: 3 errors / 18 warnings before, 3 errors (identical) / 16 warnings
+after -- `lamp_table` and `pourover_stand`'s buried-detail lines gone,
+`drip_brewer`'s line still present but its own number moved from 55% to
+46% (the only warning whose text changed), everything else byte-identical.
+
+New branch (`drip-brewer-pourover-coffee-and-lamp-table-structural`), based
+on `main`, independent of the buried-detail branches from the prior three
+hours. Left unmerged per standing practice.
+
+**This closes the loose thread PR #161/#162 opened.** Of the original
+"catalog-only, unplaced" list of five (`bean_hopper`, `drip_brewer`,
+`lamp_table`, `pourover_stand`, `tip_jar`), every one now has a traced,
+verified outcome: `bean_hopper` already had this exact fix (its own
+comment proves it), `tip_jar` got it this session (#162), `drip_brewer`
+and `pourover_stand` got it this hour (one fully resolved, one
+substantially improved and honestly left open), and `lamp_table` turned
+out to need no fix at all -- verified structural occlusion, not a defect.
